@@ -76,6 +76,13 @@
           "title": "MS SQL Manager",
           "icon": "$(database)"
         }
+      ],
+      "panel": [
+        {
+          "id": "mssqlResultsContainer",
+          "title": "SQL Results",
+          "icon": "$(table)"
+        }
       ]
     },
     "views": {
@@ -86,7 +93,7 @@
           "when": "true"
         }
       ],
-      "panel": [
+      "mssqlResultsContainer": [
         {
           "id": "mssqlManager.results",
           "name": "SQL Results",
