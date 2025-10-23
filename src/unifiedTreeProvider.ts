@@ -227,7 +227,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 
                 return result.recordset.map((table: any) => {
                     const tableNode = new SchemaItemNode(
-                        `[${table.TABLE_SCHEMA}].${table.TABLE_NAME}`, // Include schema in display name
+                        `${table.TABLE_SCHEMA}.${table.TABLE_NAME}`, // Simple format: schema.tableName
                         'table',
                         table.TABLE_SCHEMA,
                         vscode.TreeItemCollapsibleState.Collapsed
@@ -251,7 +251,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 
                 return result.recordset.map((view: any) => {
                     const viewNode = new SchemaItemNode(
-                        `[${view.TABLE_SCHEMA}].${view.TABLE_NAME}`, // Include schema in display name
+                        `${view.TABLE_SCHEMA}.${view.TABLE_NAME}`, // Simple format: schema.tableName
                         'view',
                         view.TABLE_SCHEMA,
                         vscode.TreeItemCollapsibleState.None
@@ -276,7 +276,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 
                 return result.recordset.map((proc: any) => {
                     const procNode = new SchemaItemNode(
-                        `[${proc.ROUTINE_SCHEMA}].${proc.ROUTINE_NAME}`, // Include schema in display name
+                        `${proc.ROUTINE_SCHEMA}.${proc.ROUTINE_NAME}`, // Simple format: schema.procedureName
                         'procedure',
                         proc.ROUTINE_SCHEMA,
                         vscode.TreeItemCollapsibleState.None
@@ -286,17 +286,17 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 });
             } else if (element.itemType === 'table') {
                 // Show table details (columns, keys, etc.)
-                // Extract table name from label format [schema].tableName
+                // Extract table name from label format schema.tableName
                 const fullLabel = element.label as string;
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Expanding table with label: ${fullLabel}`);
                 
                 let tableName: string;
                 let schema: string;
                 
-                if (fullLabel.includes('].')) {
-                    // Format: [schema].tableName
-                    const parts = fullLabel.split('].');
-                    schema = parts[0].substring(1); // Remove leading [
+                if (fullLabel.includes('.')) {
+                    // Format: schema.tableName
+                    const parts = fullLabel.split('.');
+                    schema = parts[0];
                     tableName = parts[1];
                 } else {
                     // Fallback: use existing schema and full label as table name

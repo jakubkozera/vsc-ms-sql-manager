@@ -141,8 +141,22 @@ export function activate(context: vscode.ExtensionContext) {
 
     const generateSelectCommand = vscode.commands.registerCommand('mssqlManager.generateSelectScript', async (item: any) => {
         if (item && item.label) {
-            const tableName = item.label;
-            const schemaName = item.schema || 'dbo';
+            const fullLabel = item.label;
+            let tableName: string;
+            let schemaName: string;
+            
+            // Parse the label format: schema.tableName
+            if (fullLabel.includes('.')) {
+                const parts = fullLabel.split('.');
+                schemaName = parts[0];
+                tableName = parts[1];
+            } else {
+                // Fallback for old format
+                tableName = fullLabel;
+                schemaName = item.schema || 'dbo';
+            }
+            
+            // Generate proper SQL with brackets only in the query
             const query = `SELECT TOP 100 *\nFROM [${schemaName}].[${tableName}]`;
             
             const document = await vscode.workspace.openTextDocument({
