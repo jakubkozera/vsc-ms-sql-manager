@@ -901,7 +901,7 @@ export class ConnectionNode extends TreeNode {
             : vscode.TreeItemCollapsibleState.Collapsed;
             
         super(
-            isActive ? `${name} (Active)` : isPending ? `${name} (Connecting...)` : name, 
+            isPending ? `${name} (Connecting...)` : name, 
             collapsibleState
         );
         
@@ -913,6 +913,8 @@ export class ConnectionNode extends TreeNode {
         // Set icon based on connection state
         if (isPending) {
             this.iconPath = createLoadingSpinnerIcon();
+        } else if (isActive) {
+            this.iconPath = createDatabaseIcon(true);
         } else {
             this.iconPath = createDatabaseIcon();
         }
