@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
-import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon } from './serverGroupIcon';
+import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon, createFunctionIcon, createTriggerIcon, createTypeIcon, createSequenceIcon, createSynonymIcon, createAssemblyIcon } from './serverGroupIcon';
 
 export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.FileDecorationProvider {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -1501,6 +1501,74 @@ export class SchemaItemNode extends TreeNode {
                 break;
             case 'procedures':
                 this.iconPath = new vscode.ThemeIcon('folder');
+                break;
+            case 'programmability':
+                this.iconPath = new vscode.ThemeIcon('folder');
+                break;
+            case 'stored-procedures':
+                this.iconPath = createStoredProcedureIcon();
+                break;
+            case 'functions':
+                this.iconPath = createFunctionIcon();
+                break;
+            case 'table-valued-functions':
+            case 'scalar-valued-functions':
+            case 'aggregate-functions':
+                this.iconPath = new vscode.ThemeIcon('symbol-method');
+                break;
+            case 'function':
+                this.iconPath = createFunctionIcon();
+                break;
+            case 'database-triggers':
+                this.iconPath = createTriggerIcon();
+                break;
+            case 'database-trigger':
+                this.iconPath = createTriggerIcon();
+                break;
+            case 'assemblies':
+                this.iconPath = createAssemblyIcon();
+                break;
+            case 'assembly':
+                this.iconPath = createAssemblyIcon();
+                break;
+            case 'types':
+                this.iconPath = createTypeIcon();
+                break;
+            case 'user-defined-data-types':
+            case 'user-defined-table-types':
+            case 'clr-types':
+            case 'xml-schema-collections':
+                this.iconPath = new vscode.ThemeIcon('symbol-class');
+                break;
+            case 'user-defined-type':
+            case 'user-defined-table-type':
+            case 'clr-type':
+            case 'xml-schema-collection':
+                this.iconPath = createTypeIcon();
+                break;
+            case 'sequences':
+                this.iconPath = createSequenceIcon();
+                break;
+            case 'sequence':
+                this.iconPath = createSequenceIcon();
+                break;
+            case 'synonyms':
+                this.iconPath = createSynonymIcon();
+                break;
+            case 'synonym':
+                this.iconPath = createSynonymIcon();
+                break;
+            case 'rules':
+            case 'rule':
+                this.iconPath = new vscode.ThemeIcon('symbol-ruler');
+                break;
+            case 'defaults':
+            case 'default':
+                this.iconPath = new vscode.ThemeIcon('symbol-constant');
+                break;
+            case 'system-procedures':
+            case 'extended-procedures':
+                this.iconPath = new vscode.ThemeIcon('package');
                 break;
             case 'table':
                 this.iconPath = createTableIcon();

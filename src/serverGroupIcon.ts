@@ -126,3 +126,109 @@ export function createDatabaseIcon(isActive: boolean = false): { light: vscode.U
 
     return createThemedSvgIcon(lightSvg, darkSvg);
 }
+
+export function createFunctionIcon(): { light: vscode.Uri; dark: vscode.Uri } {
+    const lightSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 4m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h10.666a2.667 2.667 0 0 1 2.667 2.667v10.666a2.667 2.667 0 0 1 -2.667 2.667h-10.666a2.667 2.667 0 0 1 -2.667 -2.667z" />
+        <path d="M9 15.5v.25c0 .69 .56 1.25 1.25 1.25c.71 0 1.304 -.538 1.374 -1.244l.752 -7.512a1.381 1.381 0 0 1 1.374 -1.244c.69 0 1.25 .56 1.25 1.25v.25" />
+    </svg>`;
+    
+    const darkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CCCCCC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 4m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h10.666a2.667 2.667 0 0 1 2.667 2.667v10.666a2.667 2.667 0 0 1 -2.667 2.667h-10.666a2.667 2.667 0 0 1 -2.667 -2.667z" />
+        <path d="M9 15.5v.25c0 .69 .56 1.25 1.25 1.25c.71 0 1.304 -.538 1.374 -1.244l.752 -7.512a1.381 1.381 0 0 1 1.374 -1.244c.69 0 1.25 .56 1.25 1.25v.25" />
+    </svg>`;
+
+    return createThemedSvgIcon(lightSvg, darkSvg);
+}
+
+export function createTriggerIcon(): { light: vscode.Uri; dark: vscode.Uri } {
+    const lightSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" />
+    </svg>`;
+    
+    const darkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CCCCCC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" />
+    </svg>`;
+
+    return createThemedSvgIcon(lightSvg, darkSvg);
+}
+
+export function createTypeIcon(): { light: vscode.Uri; dark: vscode.Uri } {
+    const lightSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 5h11" />
+        <path d="M9 3v2c0 4.418 -2.239 8 -5 8" />
+        <path d="M8 9a14 14 0 0 0 6 6" />
+        <path d="M3 13c6 0 10 -4 10 -10" />
+        <path d="M17 17m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
+    </svg>`;
+    
+    const darkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CCCCCC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 5h11" />
+        <path d="M9 3v2c0 4.418 -2.239 8 -5 8" />
+        <path d="M8 9a14 14 0 0 0 6 6" />
+        <path d="M3 13c6 0 10 -4 10 -10" />
+        <path d="M17 17m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
+    </svg>`;
+
+    return createThemedSvgIcon(lightSvg, darkSvg);
+}
+
+export function createSequenceIcon(): { light: vscode.Uri; dark: vscode.Uri } {
+    const lightSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 5h3a1 1 0 0 1 1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1z" />
+        <path d="M9 14h3a1 1 0 0 1 1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1z" />
+        <path d="M5 7h4" />
+        <path d="M5 16h4" />
+        <path d="M11.5 10v4" />
+        <path d="M16 7l3 3l-3 3" />
+        <path d="M16 16l3 -3" />
+    </svg>`;
+    
+    const darkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CCCCCC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 5h3a1 1 0 0 1 1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1z" />
+        <path d="M9 14h3a1 1 0 0 1 1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1z" />
+        <path d="M5 7h4" />
+        <path d="M5 16h4" />
+        <path d="M11.5 10v4" />
+        <path d="M16 7l3 3l-3 3" />
+        <path d="M16 16l3 -3" />
+    </svg>`;
+
+    return createThemedSvgIcon(lightSvg, darkSvg);
+}
+
+export function createSynonymIcon(): { light: vscode.Uri; dark: vscode.Uri } {
+    const lightSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 18h10" />
+        <path d="M7 15l5 -5l5 5" />
+        <path d="M7 12l5 -5l5 5" />
+        <path d="M7 9l5 -5l5 5" />
+    </svg>`;
+    
+    const darkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CCCCCC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 18h10" />
+        <path d="M7 15l5 -5l5 5" />
+        <path d="M7 12l5 -5l5 5" />
+        <path d="M7 9l5 -5l5 5" />
+    </svg>`;
+
+    return createThemedSvgIcon(lightSvg, darkSvg);
+}
+
+export function createAssemblyIcon(): { light: vscode.Uri; dark: vscode.Uri } {
+    const lightSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" />
+        <path d="M12 12l8 -4.5" />
+        <path d="M12 12l0 9" />
+        <path d="M12 12l-8 -4.5" />
+    </svg>`;
+    
+    const darkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CCCCCC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" />
+        <path d="M12 12l8 -4.5" />
+        <path d="M12 12l0 9" />
+        <path d="M12 12l-8 -4.5" />
+    </svg>`;
+
+    return createThemedSvgIcon(lightSvg, darkSvg);
+}
