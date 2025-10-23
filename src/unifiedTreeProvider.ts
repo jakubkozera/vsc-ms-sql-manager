@@ -119,6 +119,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
             const tablesRequest = connection.request();
             const tablesResult = await tablesRequest.query(tablesQuery);
             
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${tablesResult.recordset.length} tables`);
+            
             // Group tables by schema
             const tablesBySchema: { [schema: string]: any[] } = {};
             tablesResult.recordset.forEach((table: any) => {
@@ -129,16 +131,19 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 tablesBySchema[schema].push(table);
             });
             
-            // Add schema nodes with tables - use folder icons
-            for (const [schema, tables] of Object.entries(tablesBySchema)) {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Tables grouped by schema: ${JSON.stringify(Object.keys(tablesBySchema).map(schema => `${schema}: ${tablesBySchema[schema].length}`))}`);
+            
+            // Add a single "Tables" node instead of one per schema
+            if (tablesResult.recordset.length > 0) {
                 const tablesNode = new SchemaItemNode(
-                    `Tables (${tables.length})`,
+                    `Tables (${tablesResult.recordset.length})`,
                     'tables',
-                    schema,
+                    'all', // Use 'all' to indicate all schemas
                     vscode.TreeItemCollapsibleState.Collapsed
                 );
                 tablesNode.connectionId = connectionId;
                 items.push(tablesNode);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables`);
             }
             
             // Get views
@@ -151,11 +156,13 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
             const viewsRequest = connection.request();
             const viewsResult = await viewsRequest.query(viewsQuery);
             
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${viewsResult.recordset.length} views`);
+            
             if (viewsResult.recordset.length > 0) {
                 const viewsNode = new SchemaItemNode(
                     `Views (${viewsResult.recordset.length})`,
                     'views',
-                    'dbo',
+                    'all',
                     vscode.TreeItemCollapsibleState.Collapsed
                 );
                 viewsNode.connectionId = connectionId;
@@ -173,18 +180,20 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
             const procsRequest = connection.request();
             const procsResult = await procsRequest.query(procsQuery);
             
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${procsResult.recordset.length} stored procedures`);
+            
             if (procsResult.recordset.length > 0) {
                 const procsNode = new SchemaItemNode(
                     `Stored Procedures (${procsResult.recordset.length})`,
                     'procedures',
-                    'dbo',
+                    'all',
                     vscode.TreeItemCollapsibleState.Collapsed
                 );
                 procsNode.connectionId = connectionId;
                 items.push(procsNode);
             }
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Loaded ${items.length} schema categories`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Total schema items created: ${items.length}`);
             return items;
             
         } catch (error) {
@@ -201,19 +210,24 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
         try {
             if (element.itemType === 'tables') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all tables for schema: ${element.schema}`);
+                
+                // Load all tables regardless of schema since we now have a single "Tables" node
                 const query = `
                     SELECT TABLE_NAME, TABLE_SCHEMA 
                     FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = '${element.schema}'
-                    ORDER BY TABLE_NAME
+                    WHERE TABLE_TYPE = 'BASE TABLE'
+                    ORDER BY TABLE_SCHEMA, TABLE_NAME
                 `;
                 
                 const request = connection.request();
                 const result = await request.query(query);
                 
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} tables to display`);
+                
                 return result.recordset.map((table: any) => {
                     const tableNode = new SchemaItemNode(
-                        table.TABLE_NAME,
+                        `[${table.TABLE_SCHEMA}].${table.TABLE_NAME}`, // Include schema in display name
                         'table',
                         table.TABLE_SCHEMA,
                         vscode.TreeItemCollapsibleState.Collapsed
@@ -222,18 +236,22 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                     return tableNode;
                 });
             } else if (element.itemType === 'views') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all views`);
+                
                 const query = `
                     SELECT TABLE_NAME, TABLE_SCHEMA 
                     FROM INFORMATION_SCHEMA.VIEWS 
-                    ORDER BY TABLE_NAME
+                    ORDER BY TABLE_SCHEMA, TABLE_NAME
                 `;
                 
                 const request = connection.request();
                 const result = await request.query(query);
                 
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} views to display`);
+                
                 return result.recordset.map((view: any) => {
                     const viewNode = new SchemaItemNode(
-                        view.TABLE_NAME,
+                        `[${view.TABLE_SCHEMA}].${view.TABLE_NAME}`, // Include schema in display name
                         'view',
                         view.TABLE_SCHEMA,
                         vscode.TreeItemCollapsibleState.None
@@ -242,19 +260,23 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                     return viewNode;
                 });
             } else if (element.itemType === 'procedures') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all procedures`);
+                
                 const query = `
                     SELECT ROUTINE_NAME, ROUTINE_SCHEMA 
                     FROM INFORMATION_SCHEMA.ROUTINES 
                     WHERE ROUTINE_TYPE = 'PROCEDURE'
-                    ORDER BY ROUTINE_NAME
+                    ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
                 `;
                 
                 const request = connection.request();
                 const result = await request.query(query);
                 
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} procedures to display`);
+                
                 return result.recordset.map((proc: any) => {
                     const procNode = new SchemaItemNode(
-                        proc.ROUTINE_NAME,
+                        `[${proc.ROUTINE_SCHEMA}].${proc.ROUTINE_NAME}`, // Include schema in display name
                         'procedure',
                         proc.ROUTINE_SCHEMA,
                         vscode.TreeItemCollapsibleState.None
@@ -264,7 +286,26 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 });
             } else if (element.itemType === 'table') {
                 // Show table details (columns, keys, etc.)
-                return await this.getTableDetails(element.label as string, element.schema, element.connectionId!);
+                // Extract table name from label format [schema].tableName
+                const fullLabel = element.label as string;
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Expanding table with label: ${fullLabel}`);
+                
+                let tableName: string;
+                let schema: string;
+                
+                if (fullLabel.includes('].')) {
+                    // Format: [schema].tableName
+                    const parts = fullLabel.split('].');
+                    schema = parts[0].substring(1); // Remove leading [
+                    tableName = parts[1];
+                } else {
+                    // Fallback: use existing schema and full label as table name
+                    tableName = fullLabel;
+                    schema = element.schema;
+                }
+                
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Parsed table: ${tableName}, schema: ${schema}`);
+                return await this.getTableDetails(tableName, schema, element.connectionId!);
             } else if (element.itemType === 'columns') {
                 // Show individual columns - get table name from stored property
                 const tableName = (element as any).tableName;
@@ -282,8 +323,11 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     }
 
     private async getTableDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
+        this.outputChannel.appendLine(`[UnifiedTreeProvider] Getting table details for: ${tableName} in schema: ${schema}`);
+        
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] No connection found for connectionId: ${connectionId}`);
             return [];
         }
 
@@ -303,8 +347,12 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 ORDER BY ORDINAL_POSITION
             `;
             
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Executing columns query: ${columnsQuery}`);
+            
             const columnsRequest = connection.request();
             const columnsResult = await columnsRequest.query(columnsQuery);
+            
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${columnsResult.recordset.length} columns for table ${tableName}`);
             
             if (columnsResult.recordset.length > 0) {
                 const columnsNode = new SchemaItemNode(
@@ -317,12 +365,15 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 (columnsNode as any).tableName = tableName;
                 columnsNode.connectionId = connectionId;
                 items.push(columnsNode);
+                
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Created columns node for table ${tableName}`);
             }
             
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${items.length} items for table ${tableName}`);
             return items;
             
         } catch (error) {
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading table details: ${error}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading table details for ${tableName}: ${error}`);
             return [];
         }
     }
