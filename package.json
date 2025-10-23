@@ -74,6 +74,11 @@
         "icon": "$(folder-library)"
       },
       {
+        "command": "mssqlManager.editServerGroup",
+        "title": "Edit Server Group",
+        "icon": "$(edit)"
+      },
+      {
         "command": "mssqlManager.disconnectConnection",
         "title": "Disconnect",
         "icon": "$(close)"
@@ -179,6 +184,11 @@
           "command": "mssqlManager.disconnectConnection",
           "when": "view == mssqlManager.explorer && viewItem == connection",
           "group": "inline@4"
+        },
+        {
+          "command": "mssqlManager.editServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "inline@1"
         }
       ],
       "commandPalette": [

@@ -461,6 +461,20 @@ export class ServerGroupNode extends TreeNode {
         
         // Set colored icon
         this.iconPath = createServerGroupIcon(group.color);
+
+        // Add edit button (VS Code TreeItem button API)
+        // Only available in VS Code 1.78+
+        (this as any).buttons = [
+            {
+                iconPath: new vscode.ThemeIcon('edit'),
+                tooltip: 'Edit Server Group',
+                command: {
+                    command: 'mssqlManager.editServerGroup',
+                    title: 'Edit Server Group',
+                    arguments: [this]
+                }
+            }
+        ];
     }
 }
 

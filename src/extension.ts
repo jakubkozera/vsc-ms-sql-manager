@@ -259,6 +259,33 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    // Edit Server Group command
+    const editServerGroupCommand = vscode.commands.registerCommand('mssqlManager.editServerGroup', async (serverGroupNode?: any) => {
+        try {
+            if (!serverGroupNode || !serverGroupNode.group) {
+                vscode.window.showErrorMessage('Invalid server group item');
+                return;
+            }
+            const group = serverGroupNode.group;
+            const serverGroupWebview = new ServerGroupWebview(context, async (updatedGroup) => {
+                try {
+                    await connectionProvider.saveServerGroup(updatedGroup);
+                    vscode.window.showInformationMessage(`Server group "${updatedGroup.name}" updated successfully`);
+                    unifiedTreeProvider.refresh();
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                    vscode.window.showErrorMessage(`Failed to update server group: ${errorMessage}`);
+                    outputChannel.appendLine(`Update server group failed: ${errorMessage}`);
+                }
+            });
+            await serverGroupWebview.show(group);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to edit server group: ${errorMessage}`);
+            outputChannel.appendLine(`Edit server group failed: ${errorMessage}`);
+        }
+    });
+
     // Add subscriptions
     context.subscriptions.push(
         outputChannel,
@@ -275,6 +302,7 @@ export function activate(context: vscode.ExtensionContext) {
         deleteConnectionCommand,
         createServerGroupCommand,
         disconnectConnectionCommand
+        , editServerGroupCommand
     );
 
     outputChannel.appendLine('MS SQL Manager commands registered successfully');
