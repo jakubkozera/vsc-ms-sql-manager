@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
-import { createServerGroupIcon, createFolderIcon } from './serverGroupIcon';
+import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon } from './serverGroupIcon';
 
 export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -459,8 +459,9 @@ export class ServerGroupNode extends TreeNode {
         this.tooltip = `${group.name}\n${group.description || ''}\n${connectionCount} connection(s)`;
         this.contextValue = 'serverGroup';
         
-        // Set colored icon
-        this.iconPath = createServerGroupIcon(group.color);
+        // Set colored icon - use theme-aware icons
+        const isOpen = this.collapsibleState === vscode.TreeItemCollapsibleState.Expanded;
+        this.iconPath = createServerGroupIcon(group.color, isOpen);
 
         // Add edit button (VS Code TreeItem button API)
         // Only available in VS Code 1.78+
@@ -533,29 +534,35 @@ export class SchemaItemNode extends TreeNode {
         this.contextValue = itemType;
         this.schema = schema;
         
-        // Set icons based on item type - use folder icons for database-level items
+        // Set icons based on item type (theme-aware for schema items)
         switch (itemType) {
             case 'tables':
-            case 'views':  
+                this.iconPath = new vscode.ThemeIcon('folder');
+                break;
+            case 'views':
+                this.iconPath = new vscode.ThemeIcon('folder');
+                break;
             case 'procedures':
-                this.iconPath = createFolderIcon();
+                this.iconPath = new vscode.ThemeIcon('folder');
                 break;
             case 'table':
-                this.iconPath = createFolderIcon();
+                this.iconPath = createTableIcon();
                 this.contextValue = 'table';
                 break;
             case 'view':
-                this.iconPath = createFolderIcon();
+                this.iconPath = createViewIcon();
                 this.contextValue = 'view';
                 break;
             case 'procedure':
-                this.iconPath = createFolderIcon();
+                this.iconPath = createStoredProcedureIcon();
+                this.contextValue = 'procedure';
                 break;
             case 'columns':
-                this.iconPath = new vscode.ThemeIcon('symbol-field');
+                this.iconPath = createColumnIcon();
                 break;
             case 'column':
-                this.iconPath = new vscode.ThemeIcon('symbol-property');
+                // Individual columns use a simple theme icon, not the columns aggregate icon
+                this.iconPath = new vscode.ThemeIcon('symbol-field');
                 break;
             default:
                 this.iconPath = new vscode.ThemeIcon('circle-outline');
