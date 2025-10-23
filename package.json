@@ -3,16 +3,14 @@
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution",
   "version": "0.0.1",
-  "publisher": "your-publisher-name",
+  "publisher": "jakubkozera",
   "engines": {
     "vscode": "^1.105.0"
   },
   "categories": [
-    "Other",
-    "Database"
+    "Other"
   ],
   "activationEvents": [
-    "onCommand:mssqlManager.connect",
     "onLanguage:sql"
   ],
   "main": "./dist/extension.js",
@@ -102,6 +100,89 @@
         "command": "mssqlManager.refreshTable",
         "title": "Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.newStoredProcedure",
+        "title": "New Stored Procedure...",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mssqlManager.modifyStoredProcedure",
+        "title": "Modify",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mssqlManager.executeStoredProcedure",
+        "title": "Execute Stored Procedure...",
+        "icon": "$(play)"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureCreateToWindow",
+        "title": "Script as CREATE To New Query Editor Window"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureCreateToFile",
+        "title": "Script as CREATE To File"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureCreateToClipboard",
+        "title": "Script as CREATE To Clipboard"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureAlterToWindow",
+        "title": "Script as ALTER To New Query Editor Window"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureAlterToFile",
+        "title": "Script as ALTER To File"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureAlterToClipboard",
+        "title": "Script as ALTER To Clipboard"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureDropToWindow",
+        "title": "Script as DROP To New Query Editor Window"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureDropToFile",
+        "title": "Script as DROP To File"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureDropToClipboard",
+        "title": "Script as DROP To Clipboard"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureExecuteToWindow",
+        "title": "Script as EXECUTE To New Query Editor Window"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureExecuteToFile",
+        "title": "Script as EXECUTE To File"
+      },
+      {
+        "command": "mssqlManager.scriptProcedureExecuteToClipboard",
+        "title": "Script as EXECUTE To Clipboard"
+      },
+      {
+        "command": "mssqlManager.viewProcedureDependencies",
+        "title": "View Dependencies",
+        "icon": "$(references)"
+      },
+      {
+        "command": "mssqlManager.renameStoredProcedure",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mssqlManager.deleteStoredProcedure",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mssqlManager.showStoredProcedureProperties",
+        "title": "Properties",
+        "icon": "$(info)"
       }
     ],
     "viewsContainers": {
@@ -116,7 +197,7 @@
         {
           "id": "mssqlResultsContainer",
           "title": "SQL Results",
-          "icon": "$(table)"
+          "icon": "resources/database-dark.svg"
         }
       ]
     },
@@ -125,7 +206,8 @@
         {
           "id": "mssqlManager.explorer",
           "name": "Database Explorer",
-          "when": "true"
+          "when": "true",
+          "icon": "resources/database-dark.svg"
         }
       ],
       "mssqlResultsContainer": [
@@ -133,11 +215,113 @@
           "id": "mssqlManager.results",
           "name": "SQL Results",
           "type": "webview",
-          "when": "true"
+          "when": "true",
+          "icon": "$(table)"
         }
       ]
     },
+    "submenus": [
+      {
+        "id": "mssqlManager.scriptProcedureAs",
+        "label": "Script Stored Procedure as",
+        "icon": "$(file-code)"
+      },
+      {
+        "id": "mssqlManager.scriptProcedureCreateTo",
+        "label": "CREATE To",
+        "icon": "$(file-code)"
+      },
+      {
+        "id": "mssqlManager.scriptProcedureAlterTo",
+        "label": "ALTER To",
+        "icon": "$(edit)"
+      },
+      {
+        "id": "mssqlManager.scriptProcedureDropTo",
+        "label": "DROP To",
+        "icon": "$(trash)"
+      },
+      {
+        "id": "mssqlManager.scriptProcedureExecuteTo",
+        "label": "EXECUTE To",
+        "icon": "$(play)"
+      }
+    ],
     "menus": {
+      "mssqlManager.scriptProcedureAs": [
+        {
+          "submenu": "mssqlManager.scriptProcedureCreateTo",
+          "group": "1_create"
+        },
+        {
+          "submenu": "mssqlManager.scriptProcedureAlterTo",
+          "group": "2_alter"
+        },
+        {
+          "submenu": "mssqlManager.scriptProcedureDropTo",
+          "group": "3_drop"
+        },
+        {
+          "submenu": "mssqlManager.scriptProcedureExecuteTo",
+          "group": "4_execute"
+        }
+      ],
+      "mssqlManager.scriptProcedureCreateTo": [
+        {
+          "command": "mssqlManager.scriptProcedureCreateToWindow",
+          "group": "1_destination@1"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureCreateToFile",
+          "group": "1_destination@2"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureCreateToClipboard",
+          "group": "1_destination@3"
+        }
+      ],
+      "mssqlManager.scriptProcedureAlterTo": [
+        {
+          "command": "mssqlManager.scriptProcedureAlterToWindow",
+          "group": "1_destination@1"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureAlterToFile",
+          "group": "1_destination@2"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureAlterToClipboard",
+          "group": "1_destination@3"
+        }
+      ],
+      "mssqlManager.scriptProcedureDropTo": [
+        {
+          "command": "mssqlManager.scriptProcedureDropToWindow",
+          "group": "1_destination@1"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureDropToFile",
+          "group": "1_destination@2"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureDropToClipboard",
+          "group": "1_destination@3"
+        }
+      ],
+      "mssqlManager.scriptProcedureExecuteTo": [
+        {
+          "command": "mssqlManager.scriptProcedureExecuteToWindow",
+          "group": "1_destination@1"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureExecuteToFile",
+          "group": "1_destination@2"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureExecuteToClipboard",
+          "group": "1_destination@3"
+        }
+      ],
       "editor/title": [
         {
           "command": "mssqlManager.executeQuery",
@@ -229,6 +413,51 @@
           "command": "mssqlManager.refreshTable",
           "when": "view == mssqlManager.explorer && viewItem == table",
           "group": "3_refresh@1"
+        },
+        {
+          "command": "mssqlManager.newStoredProcedure",
+          "when": "view == mssqlManager.explorer && viewItem == stored-procedures",
+          "group": "1_new@1"
+        },
+        {
+          "submenu": "mssqlManager.scriptProcedureAs",
+          "when": "view == mssqlManager.explorer && viewItem == stored-procedures",
+          "group": "2_script@1"
+        },
+        {
+          "command": "mssqlManager.modifyStoredProcedure",
+          "when": "view == mssqlManager.explorer && viewItem == procedure",
+          "group": "1_modify@1"
+        },
+        {
+          "command": "mssqlManager.executeStoredProcedure",
+          "when": "view == mssqlManager.explorer && viewItem == procedure",
+          "group": "1_modify@2"
+        },
+        {
+          "submenu": "mssqlManager.scriptProcedureAs",
+          "when": "view == mssqlManager.explorer && viewItem == procedure",
+          "group": "2_script@1"
+        },
+        {
+          "command": "mssqlManager.viewProcedureDependencies",
+          "when": "view == mssqlManager.explorer && viewItem == procedure",
+          "group": "3_view@1"
+        },
+        {
+          "command": "mssqlManager.renameStoredProcedure",
+          "when": "view == mssqlManager.explorer && viewItem == procedure",
+          "group": "4_modify@1"
+        },
+        {
+          "command": "mssqlManager.deleteStoredProcedure",
+          "when": "view == mssqlManager.explorer && viewItem == procedure",
+          "group": "4_modify@2"
+        },
+        {
+          "command": "mssqlManager.showStoredProcedureProperties",
+          "when": "view == mssqlManager.explorer && viewItem == procedure",
+          "group": "5_properties@1"
         }
       ],
       "commandPalette": [
@@ -258,6 +487,82 @@
         },
         {
           "command": "mssqlManager.refreshTable",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.newStoredProcedure",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.modifyStoredProcedure",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.executeStoredProcedure",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureCreateToWindow",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureCreateToFile",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureCreateToClipboard",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureAlterToWindow",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureAlterToFile",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureAlterToClipboard",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureDropToWindow",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureDropToFile",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureDropToClipboard",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureExecuteToWindow",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureExecuteToFile",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptProcedureExecuteToClipboard",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.viewProcedureDependencies",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.renameStoredProcedure",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.deleteStoredProcedure",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.showStoredProcedureProperties",
           "when": "false"
         }
       ]
