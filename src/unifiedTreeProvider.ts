@@ -186,29 +186,15 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 items.push(viewsNode);
             }
             
-            // Get stored procedures
-            const procsQuery = `
-                SELECT ROUTINE_NAME, ROUTINE_SCHEMA 
-                FROM INFORMATION_SCHEMA.ROUTINES 
-                WHERE ROUTINE_TYPE = 'PROCEDURE'
-                ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
-            `;
-            
-            const procsRequest = connection.request();
-            const procsResult = await procsRequest.query(procsQuery);
-            
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${procsResult.recordset.length} stored procedures`);
-            
-            if (procsResult.recordset.length > 0) {
-                const procsNode = new SchemaItemNode(
-                    `Stored Procedures (${procsResult.recordset.length})`,
-                    'procedures',
-                    'all',
-                    vscode.TreeItemCollapsibleState.Collapsed
-                );
-                procsNode.connectionId = connectionId;
-                items.push(procsNode);
-            }
+            // Add Programmability node
+            const programmabilityNode = new SchemaItemNode(
+                'Programmability',
+                'programmability',
+                'all',
+                vscode.TreeItemCollapsibleState.Collapsed
+            );
+            programmabilityNode.connectionId = connectionId;
+            items.push(programmabilityNode);
             
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Total schema items created: ${items.length}`);
             return items;
@@ -276,9 +262,188 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     viewNode.connectionId = element.connectionId;
                     return viewNode;
                 });
-            } else if (element.itemType === 'procedures') {
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all procedures`);
+            } else if (element.itemType === 'programmability') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading programmability items`);
                 
+                const items: SchemaItemNode[] = [];
+                
+                // Get stored procedures count
+                const procsQuery = `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE'`;
+                const procsResult = await connection.request().query(procsQuery);
+                const procsCount = procsResult.recordset[0]?.count || 0;
+                
+                if (procsCount > 0) {
+                    const storedProcsNode = new SchemaItemNode(
+                        `Stored Procedures (${procsCount})`,
+                        'stored-procedures',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    storedProcsNode.connectionId = element.connectionId;
+                    items.push(storedProcsNode);
+                }
+                
+                // Get functions count
+                const functionsQuery = `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'FUNCTION'`;
+                const functionsResult = await connection.request().query(functionsQuery);
+                const functionsCount = functionsResult.recordset[0]?.count || 0;
+                
+                if (functionsCount > 0) {
+                    const functionsNode = new SchemaItemNode(
+                        `Functions (${functionsCount})`,
+                        'functions',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    functionsNode.connectionId = element.connectionId;
+                    items.push(functionsNode);
+                }
+                
+                // Get database triggers count
+                const triggersQuery = `SELECT COUNT(*) as count FROM sys.triggers WHERE parent_class = 0`;
+                const triggersResult = await connection.request().query(triggersQuery);
+                const triggersCount = triggersResult.recordset[0]?.count || 0;
+                
+                if (triggersCount > 0) {
+                    const triggersNode = new SchemaItemNode(
+                        `Database Triggers (${triggersCount})`,
+                        'database-triggers',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    triggersNode.connectionId = element.connectionId;
+                    items.push(triggersNode);
+                }
+                
+                // Get assemblies count
+                const assembliesQuery = `SELECT COUNT(*) as count FROM sys.assemblies WHERE is_user_defined = 1`;
+                const assembliesResult = await connection.request().query(assembliesQuery);
+                const assembliesCount = assembliesResult.recordset[0]?.count || 0;
+                
+                if (assembliesCount > 0) {
+                    const assembliesNode = new SchemaItemNode(
+                        `Assemblies (${assembliesCount})`,
+                        'assemblies',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    assembliesNode.connectionId = element.connectionId;
+                    items.push(assembliesNode);
+                }
+                
+                // Add Types node
+                const typesNode = new SchemaItemNode(
+                    'Types',
+                    'types',
+                    'all',
+                    vscode.TreeItemCollapsibleState.Collapsed
+                );
+                typesNode.connectionId = element.connectionId;
+                items.push(typesNode);
+                
+                // Get sequences count
+                const sequencesQuery = `SELECT COUNT(*) as count FROM sys.sequences`;
+                const sequencesResult = await connection.request().query(sequencesQuery);
+                const sequencesCount = sequencesResult.recordset[0]?.count || 0;
+                
+                if (sequencesCount > 0) {
+                    const sequencesNode = new SchemaItemNode(
+                        `Sequences (${sequencesCount})`,
+                        'sequences',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    sequencesNode.connectionId = element.connectionId;
+                    items.push(sequencesNode);
+                }
+                
+                // Get synonyms count
+                const synonymsQuery = `SELECT COUNT(*) as count FROM sys.synonyms`;
+                const synonymsResult = await connection.request().query(synonymsQuery);
+                const synonymsCount = synonymsResult.recordset[0]?.count || 0;
+                
+                if (synonymsCount > 0) {
+                    const synonymsNode = new SchemaItemNode(
+                        `Synonyms (${synonymsCount})`,
+                        'synonyms',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    synonymsNode.connectionId = element.connectionId;
+                    items.push(synonymsNode);
+                }
+                
+                // Get rules count (deprecated but still queryable)
+                const rulesQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'R'`;
+                const rulesResult = await connection.request().query(rulesQuery);
+                const rulesCount = rulesResult.recordset[0]?.count || 0;
+                
+                if (rulesCount > 0) {
+                    const rulesNode = new SchemaItemNode(
+                        `Rules (${rulesCount})`,
+                        'rules',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    rulesNode.connectionId = element.connectionId;
+                    items.push(rulesNode);
+                }
+                
+                // Get defaults count (deprecated but still queryable)
+                const defaultsQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'D' AND parent_object_id = 0`;
+                const defaultsResult = await connection.request().query(defaultsQuery);
+                const defaultsCount = defaultsResult.recordset[0]?.count || 0;
+                
+                if (defaultsCount > 0) {
+                    const defaultsNode = new SchemaItemNode(
+                        `Defaults (${defaultsCount})`,
+                        'defaults',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    defaultsNode.connectionId = element.connectionId;
+                    items.push(defaultsNode);
+                }
+                
+                return items;
+            } else if (element.itemType === 'stored-procedures') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading stored procedures subcategories`);
+                
+                const items: SchemaItemNode[] = [];
+                
+                // System Stored Procedures
+                const systemProcsQuery = `SELECT COUNT(*) as count FROM sys.procedures WHERE is_ms_shipped = 1`;
+                const systemProcsResult = await connection.request().query(systemProcsQuery);
+                const systemProcsCount = systemProcsResult.recordset[0]?.count || 0;
+                
+                if (systemProcsCount > 0) {
+                    const systemProcsNode = new SchemaItemNode(
+                        `System Stored Procedures (${systemProcsCount})`,
+                        'system-procedures',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    systemProcsNode.connectionId = element.connectionId;
+                    items.push(systemProcsNode);
+                }
+                
+                // Extended Stored Procedures
+                const extendedProcsQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'X'`;
+                const extendedProcsResult = await connection.request().query(extendedProcsQuery);
+                const extendedProcsCount = extendedProcsResult.recordset[0]?.count || 0;
+                
+                if (extendedProcsCount > 0) {
+                    const extendedProcsNode = new SchemaItemNode(
+                        `Extended Stored Procedures (${extendedProcsCount})`,
+                        'extended-procedures',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    extendedProcsNode.connectionId = element.connectionId;
+                    items.push(extendedProcsNode);
+                }
+                
+                // User Stored Procedures
                 const query = `
                     SELECT ROUTINE_NAME, ROUTINE_SCHEMA 
                     FROM INFORMATION_SCHEMA.ROUTINES 
@@ -289,18 +454,144 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 const request = connection.request();
                 const result = await request.query(query);
                 
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} procedures to display`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} user procedures to display`);
                 
-                return result.recordset.map((proc: any) => {
+                const userProcs = result.recordset.map((proc: any) => {
                     const procNode = new SchemaItemNode(
-                        `${proc.ROUTINE_SCHEMA}.${proc.ROUTINE_NAME}`, // Simple format: schema.procedureName
+                        `${proc.ROUTINE_SCHEMA}.${proc.ROUTINE_NAME}`,
                         'procedure',
                         proc.ROUTINE_SCHEMA,
-                        vscode.TreeItemCollapsibleState.None
+                        vscode.TreeItemCollapsibleState.Collapsed
                     );
                     procNode.connectionId = element.connectionId;
                     return procNode;
                 });
+                
+                return [...items, ...userProcs];
+            } else if (element.itemType === 'functions') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading functions subcategories`);
+                
+                const items: SchemaItemNode[] = [];
+                
+                // Table-valued Functions
+                const tvfQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type IN ('TF', 'IF')`;
+                const tvfResult = await connection.request().query(tvfQuery);
+                const tvfCount = tvfResult.recordset[0]?.count || 0;
+                
+                if (tvfCount > 0) {
+                    const tvfNode = new SchemaItemNode(
+                        `Table-valued Functions (${tvfCount})`,
+                        'table-valued-functions',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    tvfNode.connectionId = element.connectionId;
+                    items.push(tvfNode);
+                }
+                
+                // Scalar-valued Functions
+                const svfQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'FN'`;
+                const svfResult = await connection.request().query(svfQuery);
+                const svfCount = svfResult.recordset[0]?.count || 0;
+                
+                if (svfCount > 0) {
+                    const svfNode = new SchemaItemNode(
+                        `Scalar-valued Functions (${svfCount})`,
+                        'scalar-valued-functions',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    svfNode.connectionId = element.connectionId;
+                    items.push(svfNode);
+                }
+                
+                // Aggregate Functions
+                const aggQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'AF'`;
+                const aggResult = await connection.request().query(aggQuery);
+                const aggCount = aggResult.recordset[0]?.count || 0;
+                
+                if (aggCount > 0) {
+                    const aggNode = new SchemaItemNode(
+                        `Aggregate Functions (${aggCount})`,
+                        'aggregate-functions',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    aggNode.connectionId = element.connectionId;
+                    items.push(aggNode);
+                }
+                
+                return items;
+            } else if (element.itemType === 'types') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading types subcategories`);
+                
+                const items: SchemaItemNode[] = [];
+                
+                // User-Defined Data Types
+                const uddtQuery = `SELECT COUNT(*) as count FROM sys.types WHERE is_user_defined = 1 AND is_table_type = 0 AND is_assembly_type = 0`;
+                const uddtResult = await connection.request().query(uddtQuery);
+                const uddtCount = uddtResult.recordset[0]?.count || 0;
+                
+                if (uddtCount > 0) {
+                    const uddtNode = new SchemaItemNode(
+                        `User-Defined Data Types (${uddtCount})`,
+                        'user-defined-data-types',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    uddtNode.connectionId = element.connectionId;
+                    items.push(uddtNode);
+                }
+                
+                // User-Defined Table Types
+                const udttQuery = `SELECT COUNT(*) as count FROM sys.types WHERE is_user_defined = 1 AND is_table_type = 1`;
+                const udttResult = await connection.request().query(udttQuery);
+                const udttCount = udttResult.recordset[0]?.count || 0;
+                
+                if (udttCount > 0) {
+                    const udttNode = new SchemaItemNode(
+                        `User-Defined Table Types (${udttCount})`,
+                        'user-defined-table-types',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    udttNode.connectionId = element.connectionId;
+                    items.push(udttNode);
+                }
+                
+                // CLR Types
+                const clrQuery = `SELECT COUNT(*) as count FROM sys.types WHERE is_assembly_type = 1`;
+                const clrResult = await connection.request().query(clrQuery);
+                const clrCount = clrResult.recordset[0]?.count || 0;
+                
+                if (clrCount > 0) {
+                    const clrNode = new SchemaItemNode(
+                        `User-Defined Types (CLR) (${clrCount})`,
+                        'clr-types',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    clrNode.connectionId = element.connectionId;
+                    items.push(clrNode);
+                }
+                
+                // XML Schema Collections
+                const xmlQuery = `SELECT COUNT(*) as count FROM sys.xml_schema_collections WHERE xml_collection_id > 65535`;
+                const xmlResult = await connection.request().query(xmlQuery);
+                const xmlCount = xmlResult.recordset[0]?.count || 0;
+                
+                if (xmlCount > 0) {
+                    const xmlNode = new SchemaItemNode(
+                        `XML Schema Collections (${xmlCount})`,
+                        'xml-schema-collections',
+                        'all',
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    xmlNode.connectionId = element.connectionId;
+                    items.push(xmlNode);
+                }
+                
+                return items;
             } else if (element.itemType === 'table') {
                 // Show table details (columns, keys, etc.)
                 // Extract table name from label format schema.tableName
@@ -360,6 +651,243 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     return await this.getStatisticsDetails(tableName, element.schema, element.connectionId!);
                 }
                 return [];
+            } else if (element.itemType === 'system-procedures' || element.itemType === 'extended-procedures') {
+                // For now, return empty - these are system objects
+                return [];
+            } else if (element.itemType === 'table-valued-functions') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as ROUTINE_SCHEMA, name as ROUTINE_NAME
+                    FROM sys.objects 
+                    WHERE type IN ('TF', 'IF')
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((func: any) => {
+                    const funcNode = new SchemaItemNode(
+                        `${func.ROUTINE_SCHEMA}.${func.ROUTINE_NAME}`,
+                        'function',
+                        func.ROUTINE_SCHEMA,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    funcNode.connectionId = element.connectionId;
+                    return funcNode;
+                });
+            } else if (element.itemType === 'scalar-valued-functions') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as ROUTINE_SCHEMA, name as ROUTINE_NAME
+                    FROM sys.objects 
+                    WHERE type = 'FN'
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((func: any) => {
+                    const funcNode = new SchemaItemNode(
+                        `${func.ROUTINE_SCHEMA}.${func.ROUTINE_NAME}`,
+                        'function',
+                        func.ROUTINE_SCHEMA,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    funcNode.connectionId = element.connectionId;
+                    return funcNode;
+                });
+            } else if (element.itemType === 'aggregate-functions') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as ROUTINE_SCHEMA, name as ROUTINE_NAME
+                    FROM sys.objects 
+                    WHERE type = 'AF'
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((func: any) => {
+                    const funcNode = new SchemaItemNode(
+                        `${func.ROUTINE_SCHEMA}.${func.ROUTINE_NAME}`,
+                        'function',
+                        func.ROUTINE_SCHEMA,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    funcNode.connectionId = element.connectionId;
+                    return funcNode;
+                });
+            } else if (element.itemType === 'database-triggers') {
+                const query = `
+                    SELECT name, OBJECT_SCHEMA_NAME(parent_id) as schema_name
+                    FROM sys.triggers 
+                    WHERE parent_class = 0
+                    ORDER BY name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((trigger: any) => {
+                    const triggerNode = new SchemaItemNode(
+                        trigger.name,
+                        'database-trigger',
+                        trigger.schema_name || 'dbo',
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    triggerNode.connectionId = element.connectionId;
+                    return triggerNode;
+                });
+            } else if (element.itemType === 'assemblies') {
+                const query = `
+                    SELECT name
+                    FROM sys.assemblies 
+                    WHERE is_user_defined = 1
+                    ORDER BY name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((assembly: any) => {
+                    const assemblyNode = new SchemaItemNode(
+                        assembly.name,
+                        'assembly',
+                        'dbo',
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    assemblyNode.connectionId = element.connectionId;
+                    return assemblyNode;
+                });
+            } else if (element.itemType === 'user-defined-data-types') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name, system_type_id, max_length, precision, scale
+                    FROM sys.types 
+                    WHERE is_user_defined = 1 AND is_table_type = 0 AND is_assembly_type = 0
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((type: any) => {
+                    const typeNode = new SchemaItemNode(
+                        `${type.schema_name}.${type.name}`,
+                        'user-defined-type',
+                        type.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    typeNode.connectionId = element.connectionId;
+                    return typeNode;
+                });
+            } else if (element.itemType === 'user-defined-table-types') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name
+                    FROM sys.types 
+                    WHERE is_user_defined = 1 AND is_table_type = 1
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((type: any) => {
+                    const typeNode = new SchemaItemNode(
+                        `${type.schema_name}.${type.name}`,
+                        'user-defined-table-type',
+                        type.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    typeNode.connectionId = element.connectionId;
+                    return typeNode;
+                });
+            } else if (element.itemType === 'clr-types') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name
+                    FROM sys.types 
+                    WHERE is_assembly_type = 1
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((type: any) => {
+                    const typeNode = new SchemaItemNode(
+                        `${type.schema_name}.${type.name}`,
+                        'clr-type',
+                        type.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    typeNode.connectionId = element.connectionId;
+                    return typeNode;
+                });
+            } else if (element.itemType === 'xml-schema-collections') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name
+                    FROM sys.xml_schema_collections 
+                    WHERE xml_collection_id > 65535
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((collection: any) => {
+                    const collectionNode = new SchemaItemNode(
+                        `${collection.schema_name}.${collection.name}`,
+                        'xml-schema-collection',
+                        collection.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    collectionNode.connectionId = element.connectionId;
+                    return collectionNode;
+                });
+            } else if (element.itemType === 'sequences') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name, 
+                           CAST(start_value as varchar) as start_value, 
+                           CAST(increment as varchar) as increment
+                    FROM sys.sequences
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((sequence: any) => {
+                    const sequenceNode = new SchemaItemNode(
+                        `${sequence.schema_name}.${sequence.name}`,
+                        'sequence',
+                        sequence.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    sequenceNode.connectionId = element.connectionId;
+                    return sequenceNode;
+                });
+            } else if (element.itemType === 'synonyms') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name, base_object_name
+                    FROM sys.synonyms
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((synonym: any) => {
+                    const synonymNode = new SchemaItemNode(
+                        `${synonym.schema_name}.${synonym.name}`,
+                        'synonym',
+                        synonym.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    synonymNode.connectionId = element.connectionId;
+                    return synonymNode;
+                });
+            } else if (element.itemType === 'rules') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name
+                    FROM sys.objects 
+                    WHERE type = 'R'
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((rule: any) => {
+                    const ruleNode = new SchemaItemNode(
+                        `${rule.schema_name}.${rule.name}`,
+                        'rule',
+                        rule.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    ruleNode.connectionId = element.connectionId;
+                    return ruleNode;
+                });
+            } else if (element.itemType === 'defaults') {
+                const query = `
+                    SELECT SCHEMA_NAME(schema_id) as schema_name, name
+                    FROM sys.objects 
+                    WHERE type = 'D' AND parent_object_id = 0
+                    ORDER BY SCHEMA_NAME(schema_id), name
+                `;
+                const result = await connection.request().query(query);
+                return result.recordset.map((defaultObj: any) => {
+                    const defaultNode = new SchemaItemNode(
+                        `${defaultObj.schema_name}.${defaultObj.name}`,
+                        'default',
+                        defaultObj.schema_name,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    defaultNode.connectionId = element.connectionId;
+                    return defaultNode;
+                });
             }
             
         } catch (error) {
