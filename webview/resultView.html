@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';">
+    <title>Query Results</title>
+    <style>
+        body {
+            font-family: var(--vscode-font-family);
+            font-size: var(--vscode-font-size);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .header {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+        }
+
+        .query-info {
+            font-size: 0.9em;
+            color: var(--vscode-descriptionForeground);
+            margin-bottom: 10px;
+        }
+
+        .results-container {
+            overflow: auto;
+            max-height: calc(100vh - 120px);
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background-color: var(--vscode-editor-background);
+        }
+
+        th, td {
+            border: 1px solid var(--vscode-panel-border);
+            padding: 8px 12px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 300px;
+        }
+
+        th {
+            background-color: var(--vscode-editor-lineHighlightBackground);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            background-color: var(--vscode-list-hoverBackground);
+        }
+
+        th.sorted-asc::after {
+            content: " ↑";
+            color: var(--vscode-charts-blue);
+        }
+
+        th.sorted-desc::after {
+            content: " ↓";
+            color: var(--vscode-charts-blue);
+        }
+
+        tr:nth-child(even) {
+            background-color: var(--vscode-list-evenBackground);
+        }
+
+        tr:hover {
+            background-color: var(--vscode-list-hoverBackground);
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: var(--vscode-descriptionForeground);
+            font-style: italic;
+        }
+
+        .error {
+            color: var(--vscode-errorForeground);
+            background-color: var(--vscode-inputValidation-errorBackground);
+            border: 1px solid var(--vscode-inputValidation-errorBorder);
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--vscode-descriptionForeground);
+        }
+
+        .spinner {
+            border: 2px solid var(--vscode-progressBar-background);
+            border-top: 2px solid var(--vscode-progressBar-background);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .stats {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: var(--vscode-descriptionForeground);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>Query Results</h2>
+        <div class="query-info" id="queryInfo"></div>
+    </div>
+    
+    <div class="results-container">
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            Executing query...
+        </div>
+        
+        <div class="error" id="error" style="display: none;"></div>
+        
+        <table id="resultsTable" style="display: none;">
+            <thead>
+                <tr id="header"></tr>
+            </thead>
+            <tbody id="body"></tbody>
+        </table>
+        
+        <div class="no-data" id="noData" style="display: none;">
+            No results to display
+        </div>
+    </div>
+    
+    <div class="stats" id="stats" style="display: none;"></div>
+
+    <script>
+        let currentData = [];
+        let sortColumn = -1;
+        let sortDirection = 'asc';
+
+        window.addEventListener('message', event => {
+            const message = event.data;
+            
+            switch (message.command) {
+                case 'showLoading':
+                    showLoading();
+                    break;
+                case 'showResults':
+                    showResults(message.results, message.query, message.executionTime);
+                    break;
+                case 'showError':
+                    showError(message.error);
+                    break;
+            }
+        });
+
+        function showLoading() {
+            hideAll();
+            document.getElementById('loading').style.display = 'block';
+        }
+
+        function showResults(results, query, executionTime) {
+            hideAll();
+            
+            if (!results || results.length === 0) {
+                document.getElementById('noData').style.display = 'block';
+                document.getElementById('queryInfo').textContent = query ? `Query: ${query}` : '';
+                return;
+            }
+
+            currentData = results;
+            const table = document.getElementById('resultsTable');
+            const header = document.getElementById('header');
+            const body = document.getElementById('body');
+            
+            // Clear previous results
+            header.innerHTML = '';
+            body.innerHTML = '';
+            
+            // Create headers
+            const columns = Object.keys(results[0]);
+            columns.forEach((column, index) => {
+                const th = document.createElement('th');
+                th.textContent = column;
+                th.addEventListener('click', () => sortTable(index, column));
+                header.appendChild(th);
+            });
+            
+            // Create rows
+            renderTableBody(results);
+            
+            // Show table and stats
+            table.style.display = 'table';
+            document.getElementById('queryInfo').textContent = query ? `Query: ${query}` : '';
+            
+            const stats = document.getElementById('stats');
+            stats.textContent = `${results.length} row(s) returned${executionTime ? ` in ${executionTime}ms` : ''}`;
+            stats.style.display = 'block';
+        }
+
+        function renderTableBody(data) {
+            const body = document.getElementById('body');
+            body.innerHTML = '';
+            
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                Object.values(row).forEach(value => {
+                    const td = document.createElement('td');
+                    td.textContent = value === null ? 'NULL' : String(value);
+                    td.title = td.textContent; // Tooltip for truncated content
+                    tr.appendChild(td);
+                });
+                body.appendChild(tr);
+            });
+        }
+
+        function sortTable(columnIndex, columnName) {
+            const headers = document.querySelectorAll('th');
+            
+            // Remove previous sort indicators
+            headers.forEach(h => {
+                h.classList.remove('sorted-asc', 'sorted-desc');
+            });
+            
+            // Determine sort direction
+            if (sortColumn === columnIndex) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortDirection = 'asc';
+                sortColumn = columnIndex;
+            }
+            
+            // Add sort indicator
+            headers[columnIndex].classList.add(`sorted-${sortDirection}`);
+            
+            // Sort data
+            const sortedData = [...currentData].sort((a, b) => {
+                const aVal = Object.values(a)[columnIndex];
+                const bVal = Object.values(b)[columnIndex];
+                
+                if (aVal === null) return sortDirection === 'asc' ? 1 : -1;
+                if (bVal === null) return sortDirection === 'asc' ? -1 : 1;
+                
+                if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+                
+                const aStr = String(aVal).toLowerCase();
+                const bStr = String(bVal).toLowerCase();
+                
+                if (sortDirection === 'asc') {
+                    return aStr.localeCompare(bStr);
+                } else {
+                    return bStr.localeCompare(aStr);
+                }
+            });
+            
+            renderTableBody(sortedData);
+        }
+
+        function showError(error) {
+            hideAll();
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = error;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideAll() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('resultsTable').style.display = 'none';
+            document.getElementById('noData').style.display = 'none';
+            document.getElementById('stats').style.display = 'none';
+        }
+
+        // Initial state
+        hideAll();
+    </script>
+</body>
+</html>

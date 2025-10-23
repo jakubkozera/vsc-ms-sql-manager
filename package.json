@@ -1,0 +1,213 @@
+{
+  "name": "ms-sql-manager",
+  "displayName": "MS SQL Manager",
+  "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution",
+  "version": "0.0.1",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": [
+    "Other",
+    "Database"
+  ],
+  "activationEvents": [
+    "onCommand:mssqlManager.connect",
+    "onLanguage:sql"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mssqlManager.connect",
+        "title": "MS SQL Manager: Connect to Database",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "mssqlManager.executeQuery",
+        "title": "Execute SQL Query",
+        "icon": "$(play)"
+      },
+      {
+        "command": "mssqlManager.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.disconnect",
+        "title": "Disconnect",
+        "icon": "$(close)"
+      },
+      {
+        "command": "mssqlManager.generateSelectScript",
+        "title": "Generate SELECT Script",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "mssqlManager.manageConnections",
+        "title": "MS SQL Manager: Manage Connections",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "mssqlManager.debugConnections",
+        "title": "MS SQL Manager: Debug Connections",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "mssqlManager.editConnection",
+        "title": "Edit Connection",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mssqlManager.deleteConnection",
+        "title": "Delete Connection",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mssqlManager.connectToSaved",
+        "title": "Connect",
+        "icon": "$(plug)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mssqlManager",
+          "title": "MS SQL Manager",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "views": {
+      "mssqlManager": [
+        {
+          "id": "mssqlManager.explorer",
+          "name": "Database Explorer",
+          "when": "true"
+        }
+      ],
+      "panel": [
+        {
+          "id": "mssqlManager.results",
+          "name": "SQL Results",
+          "type": "webview",
+          "when": "true"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "mssqlManager.executeQuery",
+          "when": "resourceLangId == sql",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mssqlManager.executeQuery",
+          "when": "resourceLangId == sql",
+          "group": "execution"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "mssqlManager.connect",
+          "when": "view == mssqlManager.explorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mssqlManager.refresh",
+          "when": "view == mssqlManager.explorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mssqlManager.manageConnections",
+          "when": "view == mssqlManager.explorer",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mssqlManager.generateSelectScript",
+          "when": "view == mssqlManager.explorer && viewItem == table",
+          "group": "inline"
+        },
+        {
+          "command": "mssqlManager.generateSelectScript",
+          "when": "view == mssqlManager.explorer && viewItem == view",
+          "group": "inline"
+        },
+        {
+          "command": "mssqlManager.connectToSaved",
+          "when": "view == mssqlManager.explorer && viewItem == connection",
+          "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.editConnection",
+          "when": "view == mssqlManager.explorer && viewItem == connection",
+          "group": "inline@2"
+        },
+        {
+          "command": "mssqlManager.deleteConnection",
+          "when": "view == mssqlManager.explorer && viewItem == connection",
+          "group": "inline@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mssqlManager.generateSelectScript",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.refresh",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.disconnect",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "mssqlManager.executeQuery",
+        "key": "ctrl+shift+e",
+        "when": "editorTextFocus && editorLangId == sql"
+      },
+      {
+        "command": "mssqlManager.executeQuery",
+        "key": "f5",
+        "when": "editorTextFocus && editorLangId == sql"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "install-extension": "code --install-extension ms-sql-manager-0.0.1.vsix"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.105.0",
+    "@types/node": "^20.x",
+    "@typescript-eslint/eslint-plugin": "^8.7.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.11.1",
+    "typescript": "^5.6.2",
+    "webpack": "^5.95.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.1"
+  },
+  "dependencies": {
+    "mssql": "^10.0.2"
+  }
+}
