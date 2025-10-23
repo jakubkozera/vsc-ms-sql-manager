@@ -82,6 +82,26 @@
         "command": "mssqlManager.disconnectConnection",
         "title": "Disconnect",
         "icon": "$(close)"
+      },
+      {
+        "command": "mssqlManager.selectTop1000",
+        "title": "Select Top 1000",
+        "icon": "$(output)"
+      },
+      {
+        "command": "mssqlManager.scriptTableCreate",
+        "title": "Script as Create",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "mssqlManager.scriptTableDrop",
+        "title": "Script as Drop",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mssqlManager.refreshTable",
+        "title": "Refresh",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
@@ -189,6 +209,26 @@
           "command": "mssqlManager.editServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.selectTop1000",
+          "when": "view == mssqlManager.explorer && viewItem == table",
+          "group": "1_query@1"
+        },
+        {
+          "command": "mssqlManager.scriptTableCreate",
+          "when": "view == mssqlManager.explorer && viewItem == table",
+          "group": "2_script@1"
+        },
+        {
+          "command": "mssqlManager.scriptTableDrop",
+          "when": "view == mssqlManager.explorer && viewItem == table",
+          "group": "2_script@2"
+        },
+        {
+          "command": "mssqlManager.refreshTable",
+          "when": "view == mssqlManager.explorer && viewItem == table",
+          "group": "3_refresh@1"
         }
       ],
       "commandPalette": [
@@ -202,6 +242,22 @@
         },
         {
           "command": "mssqlManager.disconnect",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.selectTop1000",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptTableCreate",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.scriptTableDrop",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.refreshTable",
           "when": "false"
         }
       ]
