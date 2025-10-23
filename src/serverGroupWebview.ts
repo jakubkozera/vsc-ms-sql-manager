@@ -242,7 +242,11 @@ export class ServerGroupWebview {
                     <div class="color-option" data-color="#4452A6" style="background-color: #4452A6;"></div>
                     <div class="color-option" data-color="#6A6599" style="background-color: #6A6599;"></div>
                     <div class="color-option" data-color="#515151" style="background-color: #515151;"></div>
+                    <div class="color-option custom-color-option" style="background: none; display: flex; align-items: center; justify-content: center; border-style: dashed;">
+                        <input type="color" id="customColorInput" title="Pick custom color" style="width: 32px; height: 32px; border: none; background: none; padding: 0; cursor: pointer;" />
+                    </div>
                 </div>
+                <div style="margin-top: 8px; font-size: 0.95em; color: var(--vscode-descriptionForeground);">You can pick a custom color or select one of the presets above.</div>
             </div>
 
             <div class="preview" id="preview" style="display: none;">
@@ -279,19 +283,41 @@ export class ServerGroupWebview {
             }
         }
 
-        // Color selection
+
+        // Color selection for preset colors
         document.querySelectorAll('.color-option').forEach(option => {
+            // Skip the custom color input
+            if (option.classList.contains('custom-color-option')) return;
             option.addEventListener('click', () => {
-                // Remove previous selection
-                document.querySelectorAll('.color-option').forEach(opt => 
-                    opt.classList.remove('selected'));
-                
-                // Add selection to clicked option
+                document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
                 option.classList.add('selected');
                 selectedColor = option.dataset.color;
+                // Reset custom color input
+                document.getElementById('customColorInput').value = '';
                 updatePreview();
             });
         });
+
+        // Custom color picker logic
+        const customColorInput = document.getElementById('customColorInput');
+        customColorInput.addEventListener('input', (e) => {
+            const color = e.target.value;
+            selectedColor = color;
+            // Remove selection from all preset options
+            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
+            // Highlight the custom color box
+            customColorInput.parentElement.classList.add('selected');
+            updatePreview();
+        });
+
+        // If editing and color is not a preset, set custom color input
+        if (editingGroup && editingGroup.color) {
+            const presetColors = ["#A16340","#7F0000","#914576","#6E9859","#5F82A5","#4452A6","#6A6599","#515151"];
+            if (!presetColors.includes(editingGroup.color)) {
+                customColorInput.value = editingGroup.color;
+                customColorInput.parentElement.classList.add('selected');
+            }
+        }
 
         // Form submission
         document.getElementById('serverGroupForm').addEventListener('submit', (e) => {
