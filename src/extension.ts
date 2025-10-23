@@ -3,6 +3,7 @@ import { ConnectionProvider } from './connectionProvider';
 import { UnifiedTreeProvider } from './unifiedTreeProvider';
 import { QueryExecutor } from './queryExecutor';
 import { ResultWebviewProvider } from './resultWebview';
+import { ServerGroupWebview } from './serverGroupWebview';
 
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
@@ -212,6 +213,38 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    const createServerGroupCommand = vscode.commands.registerCommand('mssqlManager.createServerGroup', async () => {
+        const serverGroupWebview = new ServerGroupWebview(context, async (group) => {
+            try {
+                await connectionProvider.saveServerGroup(group);
+                vscode.window.showInformationMessage(`Server group "${group.name}" created successfully`);
+                unifiedTreeProvider.refresh();
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                vscode.window.showErrorMessage(`Failed to create server group: ${errorMessage}`);
+                outputChannel.appendLine(`Create server group failed: ${errorMessage}`);
+            }
+        });
+        await serverGroupWebview.show();
+    });
+
+    const disconnectConnectionCommand = vscode.commands.registerCommand('mssqlManager.disconnectConnection', async (connectionItem?: any) => {
+        try {
+            if (connectionItem && connectionItem.connectionId) {
+                await connectionProvider.disconnect(connectionItem.connectionId);
+                const connectionName = connectionItem.name || connectionItem.label || 'Connection';
+                vscode.window.showInformationMessage(`Disconnected from "${connectionName}"`);
+                unifiedTreeProvider.refresh();
+            } else {
+                vscode.window.showErrorMessage('Invalid connection item');
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to disconnect: ${errorMessage}`);
+            outputChannel.appendLine(`Disconnect failed: ${errorMessage}`);
+        }
+    });
+
     // Add subscriptions
     context.subscriptions.push(
         outputChannel,
@@ -225,7 +258,9 @@ export function activate(context: vscode.ExtensionContext) {
         manageConnectionsCommand,
         connectToSavedCommand,
         editConnectionCommand,
-        deleteConnectionCommand
+        deleteConnectionCommand,
+        createServerGroupCommand,
+        disconnectConnectionCommand
     );
 
     outputChannel.appendLine('MS SQL Manager commands registered successfully');

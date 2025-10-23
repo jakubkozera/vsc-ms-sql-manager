@@ -67,6 +67,16 @@
         "command": "mssqlManager.connectToSaved",
         "title": "Connect",
         "icon": "$(plug)"
+      },
+      {
+        "command": "mssqlManager.createServerGroup",
+        "title": "Create Server Group",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "mssqlManager.disconnectConnection",
+        "title": "Disconnect",
+        "icon": "$(close)"
       }
     ],
     "viewsContainers": {
@@ -132,6 +142,11 @@
           "command": "mssqlManager.manageConnections",
           "when": "view == mssqlManager.explorer",
           "group": "navigation@3"
+        },
+        {
+          "command": "mssqlManager.createServerGroup",
+          "when": "view == mssqlManager.explorer",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -159,6 +174,11 @@
           "command": "mssqlManager.deleteConnection",
           "when": "view == mssqlManager.explorer && viewItem == connection",
           "group": "inline@3"
+        },
+        {
+          "command": "mssqlManager.disconnectConnection",
+          "when": "view == mssqlManager.explorer && viewItem == connection",
+          "group": "inline@4"
         }
       ],
       "commandPalette": [

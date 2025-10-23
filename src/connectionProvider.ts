@@ -1,6 +1,13 @@
 import * as vscode from 'vscode';
 import * as sql from 'mssql';
 
+export interface ServerGroup {
+    id: string;
+    name: string;
+    description?: string;
+    color: string;
+}
+
 export interface ConnectionConfig {
     id: string;
     name: string;
@@ -14,11 +21,13 @@ export interface ConnectionConfig {
     trustServerCertificate?: boolean;
     connectionString?: string;
     useConnectionString?: boolean;
+    serverGroupId?: string; // New field for server group
 }
 
 export class ConnectionProvider {
-    private currentConnection: sql.ConnectionPool | null = null;
-    private currentConfig: ConnectionConfig | null = null;
+    private activeConnections: Map<string, sql.ConnectionPool> = new Map();
+    private activeConfigs: Map<string, ConnectionConfig> = new Map();
+    private currentActiveId: string | null = null;
     private onConnectionChanged: (() => void) | null = null;
 
     constructor(
@@ -32,6 +41,64 @@ export class ConnectionProvider {
         this.onConnectionChanged = callback;
     }
 
+    // Server Groups management
+    getServerGroups(): ServerGroup[] {
+        return this.context.globalState.get<ServerGroup[]>('mssqlManager.serverGroups', []);
+    }
+
+    async saveServerGroup(group: ServerGroup): Promise<void> {
+        const groups = this.getServerGroups();
+        const existingIndex = groups.findIndex(g => g.id === group.id);
+        
+        if (existingIndex >= 0) {
+            groups[existingIndex] = group;
+        } else {
+            groups.push(group);
+        }
+        
+        await this.context.globalState.update('mssqlManager.serverGroups', groups);
+        this.outputChannel.appendLine(`Server group saved: ${group.name}`);
+    }
+
+    async deleteServerGroup(groupId: string): Promise<void> {
+        const groups = this.getServerGroups();
+        const groupIndex = groups.findIndex(g => g.id === groupId);
+        
+        if (groupIndex === -1) {
+            throw new Error('Server group not found');
+        }
+        
+        // Check if any connections are using this group
+        const connections = this.getSavedConnections();
+        const connectionsInGroup = connections.filter(conn => conn.serverGroupId === groupId);
+        
+        if (connectionsInGroup.length > 0) {
+            const move = await vscode.window.showWarningMessage(
+                `This group contains ${connectionsInGroup.length} connection(s). What would you like to do?`,
+                'Move to Default',
+                'Cancel'
+            );
+            
+            if (move === 'Cancel') {
+                return;
+            }
+            
+            if (move === 'Move to Default') {
+                // Remove group assignment from connections
+                for (const conn of connectionsInGroup) {
+                    delete conn.serverGroupId;
+                }
+                await this.context.globalState.update('mssqlManager.connections', connections);
+            }
+        }
+        
+        // Remove the group
+        groups.splice(groupIndex, 1);
+        await this.context.globalState.update('mssqlManager.serverGroups', groups);
+        
+        this.outputChannel.appendLine(`Server group deleted: ${groupId}`);
+    }
+
     async connectWithWebview(): Promise<void> {
         const { ConnectionWebview } = await import('./connectionWebview');
         const connectionWebview = new ConnectionWebview(this.context, (config) => {
@@ -43,6 +110,7 @@ export class ConnectionProvider {
 
     private async handleWebviewConnection(config: ConnectionConfig): Promise<void> {
         try {
+            this.outputChannel.appendLine(`[ConnectionProvider] Handling webview connection: ${JSON.stringify({...config, password: '***'})}`);
             await this.establishConnection(config);
             await this.saveConnection(config);
             if (this.onConnectionChanged) {
@@ -148,9 +216,12 @@ export class ConnectionProvider {
         }, async (progress) => {
             progress.report({ message: `Connecting to ${config.server}...` });
 
-            // Close existing connection if any
-            if (this.currentConnection) {
-                await this.currentConnection.close();
+            // Close existing connection with same ID if any
+            const existingConnection = this.activeConnections.get(config.id);
+            if (existingConnection) {
+                await existingConnection.close();
+                this.activeConnections.delete(config.id);
+                this.activeConfigs.delete(config.id);
             }
 
             // Build connection config for mssql
@@ -185,14 +256,17 @@ export class ConnectionProvider {
             }
 
             // Create and test connection
-            this.currentConnection = new sql.ConnectionPool(sqlConfig);
-            await this.currentConnection.connect();
+            const newConnection = new sql.ConnectionPool(sqlConfig);
+            await newConnection.connect();
             
             // Test with a simple query
-            const request = this.currentConnection.request();
+            const request = newConnection.request();
             await request.query('SELECT 1 as test');
 
-            this.currentConfig = config;
+            // Store the new connection
+            this.activeConnections.set(config.id, newConnection);
+            this.activeConfigs.set(config.id, config);
+            this.currentActiveId = config.id;
             this.updateStatusBar(config);
             
             this.outputChannel.appendLine(`Successfully connected to ${config.server}/${config.database}`);
@@ -200,32 +274,108 @@ export class ConnectionProvider {
         });
     }
 
-    async disconnect(): Promise<void> {
-        if (this.currentConnection) {
-            try {
-                await this.currentConnection.close();
-                this.outputChannel.appendLine('Disconnected from SQL Server');
-                vscode.window.showInformationMessage('Disconnected from SQL Server');
-            } catch (error) {
-                this.outputChannel.appendLine(`Error during disconnect: ${error}`);
+    async disconnect(connectionId?: string): Promise<void> {
+        if (connectionId) {
+            // Disconnect specific connection
+            const connection = this.activeConnections.get(connectionId);
+            if (connection) {
+                try {
+                    await connection.close();
+                    this.activeConnections.delete(connectionId);
+                    this.activeConfigs.delete(connectionId);
+                    
+                    if (this.currentActiveId === connectionId) {
+                        // Find another active connection to make current
+                        const remainingIds = Array.from(this.activeConnections.keys());
+                        this.currentActiveId = remainingIds.length > 0 ? remainingIds[0] : null;
+                        
+                        if (this.currentActiveId) {
+                            this.updateStatusBar(this.activeConfigs.get(this.currentActiveId)!);
+                        } else {
+                            this.updateStatusBar(null);
+                        }
+                    }
+                    
+                    this.outputChannel.appendLine(`Disconnected from connection: ${connectionId}`);
+                } catch (error) {
+                    this.outputChannel.appendLine(`Error during disconnect: ${error}`);
+                }
             }
+        } else {
+            // Disconnect all connections
+            for (const [id, connection] of this.activeConnections) {
+                try {
+                    await connection.close();
+                } catch (error) {
+                    this.outputChannel.appendLine(`Error disconnecting ${id}: ${error}`);
+                }
+            }
+            
+            this.activeConnections.clear();
+            this.activeConfigs.clear();
+            this.currentActiveId = null;
+            this.updateStatusBar(null);
+            
+            this.outputChannel.appendLine('Disconnected from all SQL Server connections');
+            vscode.window.showInformationMessage('Disconnected from all SQL Server connections');
         }
-
-        this.currentConnection = null;
-        this.currentConfig = null;
-        this.updateStatusBar(null);
     }
 
-    getConnection(): sql.ConnectionPool | null {
-        return this.currentConnection;
+    getConnection(connectionId?: string): sql.ConnectionPool | null {
+        if (connectionId) {
+            return this.activeConnections.get(connectionId) || null;
+        }
+        
+        // Return current active connection
+        if (this.currentActiveId) {
+            return this.activeConnections.get(this.currentActiveId) || null;
+        }
+        
+        return null;
     }
 
     getCurrentConfig(): ConnectionConfig | null {
-        return this.currentConfig;
+        if (this.currentActiveId) {
+            return this.activeConfigs.get(this.currentActiveId) || null;
+        }
+        return null;
     }
 
-    isConnected(): boolean {
-        return this.currentConnection !== null && this.currentConnection.connected;
+    getConnectionConfig(connectionId: string): ConnectionConfig | null {
+        return this.activeConfigs.get(connectionId) || null;
+    }
+
+    getAllActiveConnections(): { id: string; config: ConnectionConfig; connection: sql.ConnectionPool }[] {
+        const result = [];
+        for (const [id, connection] of this.activeConnections) {
+            const config = this.activeConfigs.get(id);
+            if (config) {
+                result.push({ id, config, connection });
+            }
+        }
+        return result;
+    }
+
+    setActiveConnection(connectionId: string): boolean {
+        if (this.activeConnections.has(connectionId)) {
+            this.currentActiveId = connectionId;
+            const config = this.activeConfigs.get(connectionId);
+            if (config) {
+                this.updateStatusBar(config);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    isConnected(connectionId?: string): boolean {
+        if (connectionId) {
+            const connection = this.activeConnections.get(connectionId);
+            return connection !== undefined && connection.connected;
+        }
+        
+        // Check if any connection is active
+        return this.activeConnections.size > 0;
     }
 
     private updateStatusBar(config: ConnectionConfig | null): void {
@@ -244,6 +394,7 @@ export class ConnectionProvider {
         // Use extension context global state for persistence
         const connections = this.context.globalState.get<ConnectionConfig[]>('mssqlManager.connections', []);
         this.outputChannel.appendLine(`[ConnectionProvider] Loaded ${connections.length} saved connections`);
+        this.outputChannel.appendLine(`[ConnectionProvider] Connections with groups: ${JSON.stringify(connections.map(c => ({id: c.id, name: c.name, serverGroupId: c.serverGroupId})))}`);
         return connections;
     }
 
@@ -252,7 +403,11 @@ export class ConnectionProvider {
     }
 
     isCurrentConnection(config: ConnectionConfig): boolean {
-        return this.currentConfig?.id === config.id;
+        return this.currentActiveId === config.id;
+    }
+
+    isConnectionActive(connectionId: string): boolean {
+        return this.activeConnections.has(connectionId);
     }
 
     async getCompleteConnectionConfig(config: ConnectionConfig): Promise<ConnectionConfig> {
@@ -324,6 +479,8 @@ export class ConnectionProvider {
     }
 
     private async saveConnection(connection: ConnectionConfig): Promise<void> {
+        this.outputChannel.appendLine(`[ConnectionProvider] Saving connection: ${JSON.stringify({...connection, password: '***'})}`);
+        
         const savedConnections = this.getSavedConnections();
         
         // Separate sensitive and non-sensitive data
@@ -331,6 +488,8 @@ export class ConnectionProvider {
         delete publicConfig.password;
         delete publicConfig.username;
         delete publicConfig.connectionString;
+        
+        this.outputChannel.appendLine(`[ConnectionProvider] Public config to save: ${JSON.stringify(publicConfig)}`);
         
         // Store sensitive data in secure storage
         if (connection.password) {
@@ -347,15 +506,18 @@ export class ConnectionProvider {
         const existingIndex = savedConnections.findIndex(conn => conn.id === connection.id);
 
         if (existingIndex >= 0) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Updating existing connection at index ${existingIndex}`);
             savedConnections[existingIndex] = publicConfig;
         } else {
+            this.outputChannel.appendLine(`[ConnectionProvider] Adding new connection`);
             savedConnections.push(publicConfig);
         }
 
         // Use extension context global state for persistence across VS Code restarts
-        this.context.globalState.update('mssqlManager.connections', savedConnections);
+        await this.context.globalState.update('mssqlManager.connections', savedConnections);
         
-        this.outputChannel.appendLine(`Connection saved: ${connection.name}`);
+        this.outputChannel.appendLine(`[ConnectionProvider] Connection saved: ${connection.name}. Total connections: ${savedConnections.length}`);
+        this.outputChannel.appendLine(`[ConnectionProvider] All saved connections: ${JSON.stringify(savedConnections.map(c => ({id: c.id, name: c.name, serverGroupId: c.serverGroupId})))}`);
     }
 
     async deleteConnection(connectionId: string): Promise<void> {
@@ -381,9 +543,9 @@ export class ConnectionProvider {
             this.outputChannel.appendLine(`[ConnectionProvider] Warning: Could not delete all sensitive data for ${connectionId}`);
         }
         
-        // If this was the current connection, disconnect
-        if (this.currentConfig?.id === connectionId) {
-            await this.disconnect();
+        // If this was an active connection, disconnect it
+        if (this.isConnectionActive(connectionId)) {
+            await this.disconnect(connectionId);
         }
         
         this.outputChannel.appendLine(`Connection deleted: ${connection.name}`);

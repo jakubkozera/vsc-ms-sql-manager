@@ -1,27 +1,45 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { ConnectionConfig } from './connectionProvider';
+import { ConnectionConfig, ServerGroup } from './connectionProvider';
 
 export class ConnectionWebview {
     private panel: vscode.WebviewPanel | undefined;
     private onConnectionCreated: (config: ConnectionConfig) => void;
+    private serverGroups: ServerGroup[] = [];
 
     constructor(
         private context: vscode.ExtensionContext,
         onConnectionCreated: (config: ConnectionConfig) => void
     ) {
         this.onConnectionCreated = onConnectionCreated;
+        // Load server groups from global state
+        this.serverGroups = this.context.globalState.get<ServerGroup[]>('mssqlManager.serverGroups', []);
     }
 
     async show(existingConfig?: ConnectionConfig): Promise<void> {
+        // Refresh server groups from global state every time
+        this.serverGroups = this.context.globalState.get<ServerGroup[]>('mssqlManager.serverGroups', []);
+        
         if (this.panel) {
             this.panel.reveal(vscode.ViewColumn.One);
-            if (existingConfig) {
-                this.panel.webview.postMessage({
-                    command: 'loadConnection',
-                    config: existingConfig
+            
+            // Always send server groups first
+            setTimeout(() => {
+                this.panel?.webview.postMessage({
+                    command: 'loadServerGroups',
+                    serverGroups: this.serverGroups
                 });
-            }
+                
+                // Then load existing config if provided
+                if (existingConfig) {
+                    setTimeout(() => {
+                        this.panel?.webview.postMessage({
+                            command: 'loadConnection',
+                            config: existingConfig
+                        });
+                    }, 50);
+                }
+            }, 100);
             return;
         }
 
@@ -61,6 +79,24 @@ export class ConnectionWebview {
         );
 
         this.panel.webview.html = this.getWebviewContent();
+        
+        // Send server groups to webview
+        setTimeout(() => {
+            this.panel?.webview.postMessage({
+                command: 'loadServerGroups',
+                serverGroups: this.serverGroups
+            });
+            
+            // If editing existing connection, load it after groups are loaded
+            if (existingConfig) {
+                setTimeout(() => {
+                    this.panel?.webview.postMessage({
+                        command: 'loadConnection',
+                        config: existingConfig
+                    });
+                }, 50);
+            }
+        }, 100);
 
         if (existingConfig) {
             // Wait a moment for the webview to load, then send the config
@@ -152,7 +188,8 @@ export class ConnectionWebview {
                 encrypt: config.encrypt !== false,
                 trustServerCertificate: config.trustServerCertificate !== false,
                 connectionString: config.useConnectionString ? config.connectionString : undefined,
-                useConnectionString: config.useConnectionString || false
+                useConnectionString: config.useConnectionString || false,
+                serverGroupId: config.serverGroupId // Add this line!
             };
 
             this.onConnectionCreated(connectionConfig);
@@ -426,6 +463,14 @@ export class ConnectionWebview {
                 <div class="help-text">Friendly name for this connection</div>
             </div>
 
+            <div class="form-group">
+                <label for="serverGroup">Server Group</label>
+                <select id="serverGroup">
+                    <option value="">No Group (Default)</option>
+                </select>
+                <div class="help-text">Optional: Organize connections into groups</div>
+            </div>
+
             <div class="form-toggle">
                 <div class="checkbox-group">
                     <input type="checkbox" id="useConnectionString">
@@ -638,6 +683,9 @@ export class ConnectionWebview {
                 case 'loadConnection':
                     loadConnection(message.config);
                     break;
+                case 'loadServerGroups':
+                    loadServerGroups(message.serverGroups);
+                    break;
                 case 'testProgress':
                     showMessage('info', '<span class="spinner"></span>' + message.message);
                     break;
@@ -752,10 +800,14 @@ export class ConnectionWebview {
 
         function getFormData() {
             const useConnectionString = document.getElementById('useConnectionString').checked;
+            const serverGroupValue = document.getElementById('serverGroup').value;
             
-            return {
+            console.log('[ConnectionWebview] Form data - serverGroup value:', serverGroupValue);
+            
+            const formData = {
                 id: form.dataset.connectionId,
                 name: document.getElementById('connectionName').value.trim(),
+                serverGroupId: serverGroupValue || undefined,
                 useConnectionString: useConnectionString,
                 connectionString: useConnectionString ? document.getElementById('connectionString').value.trim() : null,
                 server: document.getElementById('server').value.trim(),
@@ -767,12 +819,19 @@ export class ConnectionWebview {
                 encrypt: document.getElementById('encrypt').checked,
                 trustServerCertificate: document.getElementById('trustServerCertificate').checked
             };
+            
+            console.log('[ConnectionWebview] Complete form data:', formData);
+            return formData;
         }
 
         function loadConnection(config) {
+            console.log('[ConnectionWebview] Loading connection config:', config);
             if (config) {
                 form.dataset.connectionId = config.id;
                 document.getElementById('connectionName').value = config.name || '';
+                document.getElementById('serverGroup').value = config.serverGroupId || '';
+                
+                console.log('[ConnectionWebview] Set serverGroup value to:', config.serverGroupId);
                 
                 if (config.useConnectionString && config.connectionString) {
                     document.getElementById('useConnectionString').checked = true;
@@ -793,6 +852,29 @@ export class ConnectionWebview {
                 useConnectionStringCheckbox.dispatchEvent(new Event('change'));
                 authTypeSelect.dispatchEvent(new Event('change'));
             }
+        }
+
+        function loadServerGroups(serverGroups) {
+            console.log('[ConnectionWebview] Loading server groups:', serverGroups);
+            const serverGroupSelect = document.getElementById('serverGroup');
+            
+            // Clear existing options except the default one
+            while (serverGroupSelect.children.length > 1) {
+                serverGroupSelect.removeChild(serverGroupSelect.lastChild);
+            }
+            
+            // Add server groups as options
+            if (serverGroups && serverGroups.length > 0) {
+                serverGroups.forEach(group => {
+                    const option = document.createElement('option');
+                    option.value = group.id;
+                    option.textContent = group.name;
+                    serverGroupSelect.appendChild(option);
+                    console.log('[ConnectionWebview] Added group option:', group.name, 'with value:', group.id);
+                });
+            }
+            
+            console.log('[ConnectionWebview] Total options in dropdown:', serverGroupSelect.children.length);
         }
 
         function showMessage(type, text) {
