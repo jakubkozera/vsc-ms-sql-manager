@@ -109,7 +109,7 @@
         {
           "id": "mssqlManager",
           "title": "MS SQL Manager",
-          "icon": "$(database)"
+          "icon": "resources/database-dark.svg"
         }
       ],
       "panel": [

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
-import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon } from './serverGroupIcon';
+import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon } from './serverGroupIcon';
 
 export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -913,10 +913,8 @@ export class ConnectionNode extends TreeNode {
         // Set icon based on connection state
         if (isPending) {
             this.iconPath = createLoadingSpinnerIcon();
-        } else if (isActive) {
-            this.iconPath = new vscode.ThemeIcon('database', new vscode.ThemeColor('charts.green'));
         } else {
-            this.iconPath = new vscode.ThemeIcon('database');
+            this.iconPath = createDatabaseIcon();
         }
         
         // Add command to connect on click (will trigger expansion)
