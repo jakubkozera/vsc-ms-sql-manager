@@ -365,7 +365,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             let createScript = 'SET ANSI_NULLS ON\nGO\nSET QUOTED_IDENTIFIER ON\nGO\n';
 
-            // Get columns with more details
+            // Get columns with more details including temporal and generated columns
             const columnsQuery = `
                 SELECT 
                     c.name AS COLUMN_NAME,
@@ -374,10 +374,16 @@ export function activate(context: vscode.ExtensionContext) {
                     c.precision,
                     c.scale,
                     c.is_nullable,
-                    OBJECT_DEFINITION(c.default_object_id) AS COLUMN_DEFAULT,
-                    c.is_identity
+                    c.default_object_id,
+                    dc.name AS default_constraint_name,
+                    dc.definition AS default_definition,
+                    c.is_identity,
+                    c.generated_always_type,
+                    c.generated_always_type_desc,
+                    c.is_hidden
                 FROM sys.columns c
                 INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                LEFT JOIN sys.default_constraints dc ON c.default_object_id = dc.object_id
                 WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
                 ORDER BY c.column_id;
             `;
@@ -398,6 +404,25 @@ export function activate(context: vscode.ExtensionContext) {
             const dataSpace = fgResult.recordset[0]?.data_space || 'PRIMARY';
             const lobDataSpace = fgResult.recordset[0]?.lob_data_space;
 
+            // Check for temporal table
+            const temporalQuery = `
+                SELECT 
+                    t.temporal_type,
+                    t.temporal_type_desc,
+                    OBJECT_SCHEMA_NAME(t.history_table_id) AS history_schema,
+                    OBJECT_NAME(t.history_table_id) AS history_table,
+                    c1.name AS period_start_column,
+                    c2.name AS period_end_column
+                FROM sys.tables t
+                LEFT JOIN sys.periods p ON t.object_id = p.object_id
+                LEFT JOIN sys.columns c1 ON p.object_id = c1.object_id AND p.start_column_id = c1.column_id
+                LEFT JOIN sys.columns c2 ON p.object_id = c2.object_id AND p.end_column_id = c2.column_id
+                WHERE t.object_id = OBJECT_ID('[${schema}].[${table}]');
+            `;
+            const temporalResult = await connection.request().query(temporalQuery);
+            const temporalInfo = temporalResult.recordset[0];
+            const isTemporalTable = temporalInfo?.temporal_type === 2;
+
             // Build CREATE TABLE
             createScript += `CREATE TABLE [${schema}].[${table}](\n`;
             
@@ -414,20 +439,50 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 } else if (['decimal', 'numeric'].includes(dataType)) {
                     dataType = `[${dataType}](${col.precision},${col.scale})`;
+                } else if (['time', 'datetime2', 'datetimeoffset'].includes(dataType)) {
+                    // Include precision for date/time types
+                    dataType = `[${dataType}](${col.scale})`;
                 } else {
                     dataType = `[${dataType}]`;
                 }
                 
-                const nullable = col.is_nullable ? 'NULL' : 'NOT NULL';
+                let colDef = `\t[${col.COLUMN_NAME}] ${dataType}`;
                 
-                return `\t[${col.COLUMN_NAME}] ${dataType} ${nullable}`;
+                // Check if this is a generated always column (temporal)
+                if (col.generated_always_type === 1) {
+                    colDef += ' GENERATED ALWAYS AS ROW START';
+                } else if (col.generated_always_type === 2) {
+                    colDef += ' GENERATED ALWAYS AS ROW END';
+                }
+                
+                // Add HIDDEN attribute if column is hidden
+                if (col.is_hidden) {
+                    colDef += ' HIDDEN';
+                }
+                
+                const nullable = col.is_nullable ? 'NULL' : 'NOT NULL';
+                colDef += ' ' + nullable;
+                
+                return colDef;
             });
             
             createScript += columnDefs.join(',\n');
+            
+            // Add PERIOD FOR SYSTEM_TIME if temporal table
+            if (isTemporalTable && temporalInfo.period_start_column && temporalInfo.period_end_column) {
+                createScript += `,\n\tPERIOD FOR SYSTEM_TIME ([${temporalInfo.period_start_column}], [${temporalInfo.period_end_column}])`;
+            }
+            
             createScript += `\n) ON [${dataSpace}]`;
-            if (lobDataSpace && lobDataSpace !== dataSpace) {
+            if (lobDataSpace) {
                 createScript += ` TEXTIMAGE_ON [${lobDataSpace}]`;
             }
+            
+            // Add temporal table options
+            if (isTemporalTable && temporalInfo.history_table) {
+                createScript += `\nWITH\n(\nSYSTEM_VERSIONING = ON (HISTORY_TABLE = [${temporalInfo.history_schema}].[${temporalInfo.history_table}])\n)`;
+            }
+            
             createScript += '\nGO\n';
 
             // Get primary key
@@ -478,6 +533,13 @@ export function activate(context: vscode.ExtensionContext) {
                 const clustered = idx.type_desc === 'CLUSTERED' ? 'CLUSTERED' : 'NONCLUSTERED';
                 createScript += `CREATE ${unique}${clustered} INDEX [${idx.index_name}] ON [${schema}].[${table}]\n(\n\t${idx.columns}\n)`;
                 createScript += `WITH (STATISTICS_NORECOMPUTE = OFF, DROP_EXISTING = OFF, ONLINE = OFF, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [${idx.data_space}]\nGO\n`;
+            }
+
+            // Add default constraints
+            for (const col of colResult.recordset) {
+                if (col.default_constraint_name && col.default_definition) {
+                    createScript += `ALTER TABLE [${schema}].[${table}] ADD  DEFAULT ${col.default_definition} FOR [${col.COLUMN_NAME}]\nGO\n`;
+                }
             }
 
             // Get foreign keys
