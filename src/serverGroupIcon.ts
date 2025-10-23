@@ -87,3 +87,21 @@ export function createViewIcon(): { light: vscode.Uri; dark: vscode.Uri } {
 
     return createThemedSvgIcon(lightSvg, darkSvg);
 }
+
+export function createLoadingSpinnerIcon(): vscode.Uri {
+    const svg = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+        <style>
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+            .spinner {
+                transform-origin: center;
+                animation: spin 1s linear infinite;
+            }
+        </style>
+        <circle class="spinner" cx="12" cy="12" r="10" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round" stroke-dasharray="50 15" />
+    </svg>`;
+    
+    return vscode.Uri.parse(`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`);
+}

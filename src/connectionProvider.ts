@@ -29,6 +29,7 @@ export class ConnectionProvider {
     private activeConfigs: Map<string, ConnectionConfig> = new Map();
     private currentActiveId: string | null = null;
     private onConnectionChanged: (() => void) | null = null;
+    private pendingConnections: Set<string> = new Set();
 
     constructor(
         private context: vscode.ExtensionContext,
@@ -175,6 +176,13 @@ export class ConnectionProvider {
 
     private async connectToSaved(config: ConnectionConfig): Promise<void> {
         try {
+            // Mark as pending and trigger UI update
+            this.pendingConnections.add(config.id);
+            if (this.onConnectionChanged) {
+                this.outputChannel.appendLine('[ConnectionProvider] Triggering connection change callback - pending state');
+                this.onConnectionChanged();
+            }
+            
             // Get complete config with sensitive data from secure storage
             const completeConfig = await this.getCompleteConnectionConfig(config);
             
@@ -186,6 +194,10 @@ export class ConnectionProvider {
                     placeHolder: 'Password'
                 });
                 if (!password) {
+                    this.pendingConnections.delete(config.id);
+                    if (this.onConnectionChanged) {
+                        this.onConnectionChanged();
+                    }
                     return;
                 }
                 completeConfig.password = password;
@@ -194,11 +206,21 @@ export class ConnectionProvider {
             }
 
             await this.establishConnection(completeConfig);
+            
+            // Remove from pending
+            this.pendingConnections.delete(config.id);
+            
             if (this.onConnectionChanged) {
                 this.outputChannel.appendLine('[ConnectionProvider] Triggering connection change callback from manageConnections');
                 this.onConnectionChanged();
             }
         } catch (error) {
+            // Remove from pending on error
+            this.pendingConnections.delete(config.id);
+            if (this.onConnectionChanged) {
+                this.onConnectionChanged();
+            }
+            
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
             vscode.window.showErrorMessage(`Failed to connect: ${errorMessage}`);
@@ -408,6 +430,10 @@ export class ConnectionProvider {
 
     isConnectionActive(connectionId: string): boolean {
         return this.activeConnections.has(connectionId);
+    }
+
+    isConnectionPending(connectionId: string): boolean {
+        return this.pendingConnections.has(connectionId);
     }
 
     async getCompleteConnectionConfig(config: ConnectionConfig): Promise<ConnectionConfig> {

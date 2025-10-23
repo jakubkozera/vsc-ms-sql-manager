@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
-import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon } from './serverGroupIcon';
+import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon } from './serverGroupIcon';
 
 export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -49,7 +49,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                         conn.database,
                         conn.id,
                         conn.authType || 'sql',
-                        this.connectionProvider.isConnectionActive(conn.id)
+                        this.connectionProvider.isConnectionActive(conn.id),
+                        this.connectionProvider.isConnectionPending(conn.id)
                     ));
                 }
                 
@@ -74,7 +75,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                     conn.database,
                     conn.id,
                     conn.authType || 'sql',
-                    this.connectionProvider.isConnectionActive(conn.id)
+                    this.connectionProvider.isConnectionActive(conn.id),
+                    this.connectionProvider.isConnectionPending(conn.id)
                 ));
             } catch (error) {
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading group connections: ${error}`);
@@ -481,13 +483,16 @@ export class ServerGroupNode extends TreeNode {
 
 // Connection nodes
 export class ConnectionNode extends TreeNode {
+    public isPending: boolean = false;
+    
     constructor(
         public readonly name: string,
         public readonly server: string,
         public readonly database: string,
         public readonly connectionId: string,
         public readonly authType: string,
-        public readonly isActive: boolean
+        public readonly isActive: boolean,
+        isPending: boolean = false
     ) {
         // Determine collapsible state based on active status
         const collapsibleState = isActive 
@@ -495,16 +500,19 @@ export class ConnectionNode extends TreeNode {
             : vscode.TreeItemCollapsibleState.Collapsed;
             
         super(
-            isActive ? `${name} (Active)` : name, 
+            isActive ? `${name} (Active)` : isPending ? `${name} (Connecting...)` : name, 
             collapsibleState
         );
         
+        this.isPending = isPending;
         this.description = `${server}/${database}`;
-        this.tooltip = `Server: ${server}\nDatabase: ${database}\nAuth: ${authType}${isActive ? '\n(Active)' : ''}`;
+        this.tooltip = `Server: ${server}\nDatabase: ${database}\nAuth: ${authType}${isActive ? '\n(Active)' : isPending ? '\n(Connecting...)' : ''}`;
         this.contextValue = 'connection';
         
-        // Set icon based on active state
-        if (isActive) {
+        // Set icon based on connection state
+        if (isPending) {
+            this.iconPath = createLoadingSpinnerIcon();
+        } else if (isActive) {
             this.iconPath = new vscode.ThemeIcon('database', new vscode.ThemeColor('charts.green'));
         } else {
             this.iconPath = new vscode.ThemeIcon('database');
