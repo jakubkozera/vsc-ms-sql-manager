@@ -39,6 +39,11 @@ export function activate(context: vscode.ExtensionContext) {
     // Register tree data provider
     vscode.window.registerTreeDataProvider('mssqlManager.explorer', unifiedTreeProvider);
 
+    // Register file decoration provider
+    context.subscriptions.push(
+        vscode.window.registerFileDecorationProvider(unifiedTreeProvider)
+    );
+
     // Register all commands
     registerAllCommands(
         context,

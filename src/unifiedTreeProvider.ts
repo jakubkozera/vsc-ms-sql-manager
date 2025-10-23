@@ -2,9 +2,12 @@ import * as vscode from 'vscode';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
 import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon } from './serverGroupIcon';
 
-export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
+export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.FileDecorationProvider {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = new vscode.EventEmitter<TreeNode | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<TreeNode | undefined | null | void> = this._onDidChangeTreeData.event;
+
+    private _onDidChangeFileDecorations: vscode.EventEmitter<vscode.Uri | vscode.Uri[]> = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
+    readonly onDidChangeFileDecorations: vscode.Event<vscode.Uri | vscode.Uri[]> = this._onDidChangeFileDecorations.event;
 
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -13,10 +16,22 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
+        this._onDidChangeFileDecorations.fire(undefined as any);
     }
 
     getTreeItem(element: TreeNode): vscode.TreeItem {
         return element;
+    }
+
+    provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+        if (uri.scheme === 'mssql-connection' && uri.fragment === 'active') {
+            return new vscode.FileDecoration(
+                "",
+                "Active",
+                new vscode.ThemeColor("charts.green")
+            );
+        }
+        return undefined;
     }
 
     async getChildren(element?: TreeNode): Promise<TreeNode[]> {
@@ -917,6 +932,11 @@ export class ConnectionNode extends TreeNode {
             this.iconPath = createDatabaseIcon(true);
         } else {
             this.iconPath = createDatabaseIcon();
+        }
+        
+        // Set resource URI for file decoration
+        if (isActive) {
+            this.resourceUri = vscode.Uri.parse(`mssql-connection:${connectionId}#active`);
         }
         
         // Add command to connect on click (will trigger expansion)
