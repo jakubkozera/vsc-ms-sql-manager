@@ -101,7 +101,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             // Show schema for this specific connection
             if (this.connectionProvider.isConnectionActive(element.connectionId)) {
                 // If this connection is active, show current schema
-                return await this.getSchemaChildren(element.connectionId);
+                return await this.getSchemaChildren(element.connectionId, element.database);
             } else {
                 // Not active connection - show nothing or offer to connect
                 return [];
@@ -114,7 +114,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         return [];
     }
 
-    private async getSchemaChildren(connectionId: string): Promise<SchemaItemNode[]> {
+    private async getSchemaChildren(connectionId: string, database: string): Promise<SchemaItemNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
@@ -159,6 +159,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     vscode.TreeItemCollapsibleState.Collapsed
                 );
                 tablesNode.connectionId = connectionId;
+                tablesNode.database = database;
                 items.push(tablesNode);
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables`);
             }
@@ -183,6 +184,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     vscode.TreeItemCollapsibleState.Collapsed
                 );
                 viewsNode.connectionId = connectionId;
+                viewsNode.database = database;
                 items.push(viewsNode);
             }
             
@@ -194,6 +196,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 vscode.TreeItemCollapsibleState.Collapsed
             );
             programmabilityNode.connectionId = connectionId;
+            programmabilityNode.database = database;
             items.push(programmabilityNode);
             
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Total schema items created: ${items.length}`);
@@ -280,6 +283,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     storedProcsNode.connectionId = element.connectionId;
+                    storedProcsNode.database = element.database;
                     items.push(storedProcsNode);
                 }
                 
@@ -296,6 +300,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     functionsNode.connectionId = element.connectionId;
+                    functionsNode.database = element.database;
                     items.push(functionsNode);
                 }
                 
@@ -312,6 +317,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     triggersNode.connectionId = element.connectionId;
+                    triggersNode.database = element.database;
                     items.push(triggersNode);
                 }
                 
@@ -328,6 +334,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     assembliesNode.connectionId = element.connectionId;
+                    assembliesNode.database = element.database;
                     items.push(assembliesNode);
                 }
                 
@@ -339,6 +346,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     vscode.TreeItemCollapsibleState.Collapsed
                 );
                 typesNode.connectionId = element.connectionId;
+                typesNode.database = element.database;
                 items.push(typesNode);
                 
                 // Get sequences count
@@ -354,6 +362,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     sequencesNode.connectionId = element.connectionId;
+                    sequencesNode.database = element.database;
                     items.push(sequencesNode);
                 }
                 
@@ -370,6 +379,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     synonymsNode.connectionId = element.connectionId;
+                    synonymsNode.database = element.database;
                     items.push(synonymsNode);
                 }
                 
@@ -386,6 +396,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     rulesNode.connectionId = element.connectionId;
+                    rulesNode.database = element.database;
                     items.push(rulesNode);
                 }
                 
@@ -402,6 +413,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     defaultsNode.connectionId = element.connectionId;
+                    defaultsNode.database = element.database;
                     items.push(defaultsNode);
                 }
                 
@@ -424,6 +436,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     systemProcsNode.connectionId = element.connectionId;
+                    systemProcsNode.database = element.database;
                     items.push(systemProcsNode);
                 }
                 
@@ -440,6 +453,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     extendedProcsNode.connectionId = element.connectionId;
+                    extendedProcsNode.database = element.database;
                     items.push(extendedProcsNode);
                 }
                 
@@ -464,6 +478,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     procNode.connectionId = element.connectionId;
+                    procNode.database = element.database;
+                    procNode.name = proc.ROUTINE_NAME;
                     return procNode;
                 });
                 
@@ -1479,6 +1495,8 @@ export class ConnectionNode extends TreeNode {
 // Schema item nodes (tables, views, procedures, columns, etc.)
 export class SchemaItemNode extends TreeNode {
     public connectionId?: string;
+    public database?: string;
+    public name?: string;
     
     constructor(
         public readonly label: string,
@@ -1507,6 +1525,7 @@ export class SchemaItemNode extends TreeNode {
                 break;
             case 'stored-procedures':
                 this.iconPath = createStoredProcedureIcon();
+                this.contextValue = 'stored-procedures';
                 break;
             case 'functions':
                 this.iconPath = createFunctionIcon();

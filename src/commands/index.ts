@@ -6,6 +6,7 @@ import { ResultWebviewProvider } from '../resultWebview';
 import { registerConnectionCommands } from './connectionCommands';
 import { registerQueryCommands } from './queryCommands';
 import { registerTableCommands } from './tableCommands';
+import { registerStoredProcedureCommands } from './storedProcedureCommands';
 
 export function registerAllCommands(
     context: vscode.ExtensionContext,
@@ -41,11 +42,18 @@ export function registerAllCommands(
         outputChannel
     );
 
+    const storedProcedureCommands = registerStoredProcedureCommands(
+        connectionProvider,
+        resultWebviewProvider,
+        outputChannel
+    );
+
     context.subscriptions.push(
         refreshCommand,
         ...connectionCommands,
         ...queryCommands,
-        ...tableCommands
+        ...tableCommands,
+        ...storedProcedureCommands
     );
 
     outputChannel.appendLine('MS SQL Manager commands registered successfully');
