@@ -364,7 +364,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         #resultsContainer {
             display: none;
             flex-direction: column;
-            background-color: var(--vscode-editor-background);
+            background-color: var(--vscode-editorGroupHeader-tabsBackground);
             overflow: hidden;
             min-height: 100px;
         }
