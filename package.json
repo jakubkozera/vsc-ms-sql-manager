@@ -204,13 +204,6 @@
           "title": "MS SQL Manager",
           "icon": "resources/database-dark.svg"
         }
-      ],
-      "panel": [
-        {
-          "id": "mssqlResultsContainer",
-          "title": "SQL Results",
-          "icon": "resources/database-dark.svg"
-        }
       ]
     },
     "views": {
@@ -220,15 +213,6 @@
           "name": "Database Explorer",
           "when": "true",
           "icon": "resources/database-dark.svg"
-        }
-      ],
-      "mssqlResultsContainer": [
-        {
-          "id": "mssqlManager.results",
-          "name": "SQL Results",
-          "type": "webview",
-          "when": "true",
-          "icon": "$(table)"
         }
       ]
     },

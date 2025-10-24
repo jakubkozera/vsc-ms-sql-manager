@@ -1512,7 +1512,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
                     const sortIcon = document.createElement('span');
                     const isSorted = sortCfg.field === col.field;
-                    sortIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${isSorted ? 1 : 0.6}; transition: opacity 0.2s, background-color 0.2s;\`;
+                    sortIcon.className = 'ag-header-icon';
+                    sortIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${isSorted ? 1 : 0}; transition: opacity 0.2s, background-color 0.2s;\`;
                     
                     if (isSorted) {
                         // Show chevron when sorted
@@ -1531,15 +1532,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         \`;
                     }
                     
-                    sortIcon.onmouseover = () => sortIcon.style.opacity = '1';
-                    sortIcon.onmouseout = () => sortIcon.style.opacity = isSorted ? '1' : '0.6';
                     sortIcon.onclick = (e) => {
                         e.stopPropagation();
                         handleSort(col, colDefs, sortCfg, filters);
                     };
 
                     const pinIcon = document.createElement('span');
-                    pinIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${col.pinned ? 1 : 0.6}; transition: opacity 0.2s, background-color 0.2s;\`;
+                    pinIcon.className = 'ag-header-icon';
+                    pinIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${col.pinned ? 1 : 0}; transition: opacity 0.2s, background-color 0.2s;\`;
                     pinIcon.innerHTML = \`
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="\${col.pinned ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5 -1.5l1.5 -4l4 -4" />
@@ -1547,8 +1547,6 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                             <path d="M14.5 4l5.5 5.5" />
                         </svg>
                     \`;
-                    pinIcon.onmouseover = () => pinIcon.style.opacity = '1';
-                    pinIcon.onmouseout = () => pinIcon.style.opacity = col.pinned ? '1' : '0.6';
                     pinIcon.onclick = (e) => {
                         e.stopPropagation();
                         col.pinned = !col.pinned;
@@ -1558,15 +1556,29 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
                     const filterIcon = document.createElement('span');
                     const isFiltered = !!filters[col.field];
-                    filterIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${isFiltered ? 1 : 0.6}; transition: opacity 0.2s, background-color 0.2s;\`;
+                    filterIcon.className = 'ag-header-icon';
+                    filterIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${isFiltered ? 1 : 0}; transition: opacity 0.2s, background-color 0.2s;\`;
                     filterIcon.innerHTML = \`
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="\${isFiltered ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z" />
                         </svg>
                     \`;
-                    filterIcon.onmouseover = () => filterIcon.style.opacity = '1';
-                    filterIcon.onmouseout = () => filterIcon.style.opacity = isFiltered ? '1' : '0.6';
                     filterIcon.onclick = (e) => showAgGridFilter(e, col, th, colDefs, sortCfg, filters);
+
+                    // Add hover effect to show icons
+                    th.onmouseenter = () => {
+                        const icons = th.querySelectorAll('.ag-header-icon');
+                        icons.forEach(icon => {
+                            if (icon.style.opacity === '0') {
+                                icon.style.opacity = '0.6';
+                            }
+                        });
+                    };
+                    th.onmouseleave = () => {
+                        if (!isSorted) sortIcon.style.opacity = '0';
+                        if (!col.pinned) pinIcon.style.opacity = '0';
+                        if (!isFiltered) filterIcon.style.opacity = '0';
+                    };
 
                     // Add resize handle
                     const resizeHandle = document.createElement('div');
