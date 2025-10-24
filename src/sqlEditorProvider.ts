@@ -58,6 +58,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     case 'cancelQuery':
                         this.queryExecutor.cancelCurrentQuery();
                         break;
+                    case 'manageConnections':
+                        await this.connectionProvider.manageConnections();
+                        break;
                     case 'switchConnection':
                         this.connectionProvider.setActiveConnection(message.connectionId);
                         this.sendActiveConnections(webviewPanel.webview);
@@ -501,6 +504,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             <select class="database-selector" id="databaseSelector">
                 <option value="">Not Connected</option>
             </select>
+            <button class="toolbar-button secondary" id="connectButton" title="Manage Connections">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5z" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5z" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" /></svg>
+            </button>
             <div class="toolbar-separator"></div>
             <span id="statusLabel">Ready</span>
         </div>
@@ -589,6 +595,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         document.getElementById('cancelButton').addEventListener('click', () => {
             vscode.postMessage({ type: 'cancelQuery' });
+        });
+
+        document.getElementById('connectButton').addEventListener('click', () => {
+            vscode.postMessage({ type: 'manageConnections' });
         });
 
         // Database selector
