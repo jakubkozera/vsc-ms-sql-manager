@@ -153,18 +153,30 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const endTime = new Date();
             
             const messages = [
-                { type: 'info', text: `Query executed successfully on ${currentConfig?.server}/${currentConfig?.database}` },
-                { type: 'info', text: `${results.recordset.length} row(s) returned` },
-                { type: 'info', text: `Execution time: ${results.executionTime}ms` },
-                { type: 'info', text: `Completed at: ${endTime.toLocaleTimeString()}` }
+                { type: 'info', text: `Query executed successfully on ${currentConfig?.server}/${currentConfig?.database}` }
             ];
 
+            // Add rows returned/affected info
+            const rowsReturned = results.recordset.length;
+            let totalAffected = 0;
             if (results.rowsAffected && results.rowsAffected.length > 0) {
-                const totalAffected = results.rowsAffected.reduce((a, b) => a + b, 0);
+                totalAffected = results.rowsAffected.reduce((a, b) => a + b, 0);
+            }
+
+            // Only show one message if returned and affected are the same, otherwise show both
+            if (rowsReturned > 0 && totalAffected > 0 && rowsReturned === totalAffected) {
+                messages.push({ type: 'info', text: `${rowsReturned} row(s) returned` });
+            } else {
+                if (rowsReturned > 0) {
+                    messages.push({ type: 'info', text: `${rowsReturned} row(s) returned` });
+                }
                 if (totalAffected > 0) {
-                    messages.splice(2, 0, { type: 'info', text: `${totalAffected} row(s) affected` });
+                    messages.push({ type: 'info', text: `${totalAffected} row(s) affected` });
                 }
             }
+
+            messages.push({ type: 'info', text: `Execution time: ${results.executionTime}ms` });
+            messages.push({ type: 'info', text: `Completed at: ${endTime.toLocaleTimeString()}` });
             
             webview.postMessage({
                 type: 'results',
@@ -395,13 +407,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             padding: 12px;
         }
 
-        #executionTime {
+        #executionStats {
+            margin-left: auto;
             padding: 8px 16px;
-            background-color: var(--vscode-editorGroupHeader-tabsBackground);
-            border-top: 1px solid var(--vscode-panel-border);
             font-size: 12px;
             color: var(--vscode-descriptionForeground);
-            flex-shrink: 0;
         }
 
         table {
@@ -479,10 +489,12 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     <div id="container">
         <div id="toolbar">
             <button class="toolbar-button" id="executeButton" title="Execute Query (F5 or Ctrl+Shift+E)">
-                <span>▶</span> Run
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13 -8z" /></svg>
+                Run
             </button>
             <button class="toolbar-button secondary" id="cancelButton" disabled title="Cancel Query">
-                <span>⏹</span> Cancel
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /></svg>
+                Cancel
             </button>
             <div class="toolbar-separator"></div>
             <label style="font-size: 13px;">Database:</label>
@@ -503,9 +515,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             <div class="results-tabs">
                 <button class="results-tab active" data-tab="results">Results</button>
                 <button class="results-tab" data-tab="messages">Messages</button>
+                <span id="executionStats"></span>
             </div>
             <div id="resultsContent"></div>
-            <div id="executionTime"></div>
         </div>
     </div>
 
@@ -717,7 +729,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 connections.forEach(conn => {
                     const option = document.createElement('option');
                     option.value = conn.id;
-                    option.textContent = \`\${conn.server}/\${conn.database}\`;
+                    option.textContent = conn.database;
+                    option.title = \`\${conn.server}/\${conn.database}\`;
                     if (conn.id === currentId) {
                         option.selected = true;
                     }
@@ -756,7 +769,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const executeButton = document.getElementById('executeButton');
             const cancelButton = document.getElementById('cancelButton');
             const statusLabel = document.getElementById('statusLabel');
-            const executionTimeEl = document.getElementById('executionTime');
+            const executionStatsEl = document.getElementById('executionStats');
             
             lastResults = results;
             lastMessages = messages || [];
@@ -765,8 +778,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             cancelButton.disabled = true;
             statusLabel.textContent = \`Query completed (\${results.length} rows)\`;
 
-            // Update execution time footer
-            executionTimeEl.textContent = \`Execution time: \${executionTime}ms | Rows: \${results.length}\`;
+            // Update execution stats in compact format
+            executionStatsEl.textContent = \`\${results.length} rows | \${executionTime}ms\`;
 
             if (currentTab === 'results') {
                 displayResults(results);
@@ -834,7 +847,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const executeButton = document.getElementById('executeButton');
             const cancelButton = document.getElementById('cancelButton');
             const statusLabel = document.getElementById('statusLabel');
-            const executionTimeEl = document.getElementById('executionTime');
+            const executionStatsEl = document.getElementById('executionStats');
             const resizer = document.getElementById('resizer');
             
             lastResults = [];
@@ -845,7 +858,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             
             const isCancelled = error.includes('cancel');
             statusLabel.textContent = isCancelled ? 'Query cancelled' : 'Query failed';
-            executionTimeEl.textContent = '';
+            executionStatsEl.textContent = '';
 
             resultsContainer.classList.add('visible');
             resizer.classList.add('visible');
