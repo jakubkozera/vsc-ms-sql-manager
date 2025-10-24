@@ -83,6 +83,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         // Cleanup
         webviewPanel.onDidDispose(() => {
             changeDocumentSubscription.dispose();
+            // Note: We don't need to manually remove the callback as the connectionProvider
+            // will automatically filter out disposed callbacks when they throw errors
         });
     }
 
@@ -200,17 +202,50 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 }
             });
 
+            // Fetch foreign key relationships
+            const foreignKeysQuery = `
+                SELECT 
+                    fk.name AS constraint_name,
+                    tp.name AS from_table,
+                    SCHEMA_NAME(tp.schema_id) AS from_schema,
+                    cp.name AS from_column,
+                    tr.name AS to_table,
+                    SCHEMA_NAME(tr.schema_id) AS to_schema,
+                    cr.name AS to_column
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.tables tp ON fk.parent_object_id = tp.object_id
+                INNER JOIN sys.tables tr ON fk.referenced_object_id = tr.object_id
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                INNER JOIN sys.columns cp ON fkc.parent_column_id = cp.column_id AND fkc.parent_object_id = cp.object_id
+                INNER JOIN sys.columns cr ON fkc.referenced_column_id = cr.column_id AND fkc.referenced_object_id = cr.object_id
+                ORDER BY tp.name, fk.name
+            `;
+
+            const fkRequest = connection.request();
+            const fkResult = await fkRequest.query(foreignKeysQuery);
+            
+            const foreignKeys = fkResult.recordset.map((row: any) => ({
+                constraintName: row.constraint_name,
+                fromTable: row.from_table,
+                fromSchema: row.from_schema,
+                fromColumn: row.from_column,
+                toTable: row.to_table,
+                toSchema: row.to_schema,
+                toColumn: row.to_column
+            }));
+
             webview.postMessage({
                 type: 'schemaUpdate',
                 schema: {
                     tables: Array.from(tablesMap.values()),
-                    views: Array.from(viewsMap.values())
+                    views: Array.from(viewsMap.values()),
+                    foreignKeys: foreignKeys
                 }
             });
 
         } catch (error) {
             this.outputChannel.appendLine(`Failed to fetch schema: ${error}`);
-            webview.postMessage({ type: 'schemaUpdate', schema: { tables: [], views: [] } });
+            webview.postMessage({ type: 'schemaUpdate', schema: { tables: [], views: [], foreignKeys: [] } });
         }
     }
 
@@ -651,7 +686,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         let isResizing = false;
         let activeConnections = [];
         let currentConnectionId = null;
-        let dbSchema = { tables: [], views: [] };
+        let dbSchema = { tables: [], views: [], foreignKeys: [] };
 
         // Initialize Monaco Editor
         require.config({ 
@@ -856,6 +891,52 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
             // Check if we're in SELECT or WHERE clause - suggest columns
             const lowerText = textUntilPosition.toLowerCase();
+            
+            // Check if we're in JOIN clause (after JOIN keyword, before ON)
+            const joinMatch = /\\b((?:inner|left|right|full|cross)\\s+)?join\\s+$/i.exec(lineUntilPosition);
+            if (joinMatch) {
+                // Suggest tables that have foreign key relationships with tables already in the query
+                const fullText = model.getValue();
+                const tablesInQuery = extractTablesFromQuery(fullText);
+                
+                if (tablesInQuery.length > 0) {
+                    const relatedTables = getRelatedTables(tablesInQuery);
+                    return {
+                        suggestions: relatedTables.map(table => {
+                            const fullName = table.schema === 'dbo' ? table.name : \`\${table.schema}.\${table.name}\`;
+                            
+                            // Generate alias (first letter of table name or full name if short)
+                            const tableAlias = table.name.length <= 3 ? table.name.toLowerCase() : table.name.charAt(0).toLowerCase();
+                            
+                            // Build the ON clause with FK relationship
+                            let insertText = \`\${fullName} \${tableAlias}\`;
+                            if (table.foreignKeyInfo) {
+                                const fromAlias = table.foreignKeyInfo.fromAlias || table.foreignKeyInfo.fromTable.toLowerCase();
+                                const toAlias = tableAlias;
+                                
+                                if (table.foreignKeyInfo.direction === 'to') {
+                                    // Current table references the joined table
+                                    insertText = \`\${fullName} \${toAlias} ON \${fromAlias}.\${table.foreignKeyInfo.fromColumn} = \${toAlias}.\${table.foreignKeyInfo.toColumn}\`;
+                                } else {
+                                    // Joined table references the current table
+                                    insertText = \`\${fullName} \${toAlias} ON \${toAlias}.\${table.foreignKeyInfo.fromColumn} = \${fromAlias}.\${table.foreignKeyInfo.toColumn}\`;
+                                }
+                            }
+                            
+                            return {
+                                label: fullName,
+                                kind: monaco.languages.CompletionItemKind.Class,
+                                detail: table.foreignKeyInfo 
+                                    ? \`Join on \${table.foreignKeyInfo.fromTable}.\${table.foreignKeyInfo.fromColumn} = \${table.name}.\${table.foreignKeyInfo.toColumn}\`
+                                    : \`Table (\${table.columns.length} columns)\`,
+                                insertText: insertText,
+                                range: range,
+                                sortText: \`0_\${fullName}\`
+                            };
+                        })
+                    };
+                }
+            }
             
             // Check if we're in SELECT clause (between SELECT and FROM, or after SELECT with no FROM yet)
             const selectMatch = /\\bselect\\b(.*?)(?:\\bfrom\\b|$)/is.exec(lowerText);
@@ -1069,6 +1150,83 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             return [];
         }
 
+        function getRelatedTables(tablesInQuery) {
+            const relatedTables = [];
+            const existingTableNames = tablesInQuery.map(t => t.table.toLowerCase());
+            
+            // Get all tables with foreign keys
+            if (dbSchema.foreignKeys) {
+                tablesInQuery.forEach(tableInfo => {
+                    const tableName = tableInfo.table.toLowerCase();
+                    
+                    // Find foreign keys FROM this table (this table references other tables)
+                    dbSchema.foreignKeys.forEach(fk => {
+                        if (fk.fromTable.toLowerCase() === tableName && 
+                            !existingTableNames.includes(fk.toTable.toLowerCase())) {
+                            
+                            const table = dbSchema.tables.find(t => 
+                                t.name.toLowerCase() === fk.toTable.toLowerCase() && 
+                                t.schema === fk.toSchema
+                            );
+                            
+                            if (table && !relatedTables.find(rt => 
+                                rt.name.toLowerCase() === table.name.toLowerCase() && 
+                                rt.schema === table.schema
+                            )) {
+                                relatedTables.push({
+                                    ...table,
+                                    foreignKeyInfo: {
+                                        direction: 'to',
+                                        fromTable: fk.fromTable,
+                                        fromAlias: tableInfo.alias,
+                                        fromColumn: fk.fromColumn,
+                                        toTable: fk.toTable,
+                                        toColumn: fk.toColumn
+                                    }
+                                });
+                            }
+                        }
+                        
+                        // Find foreign keys TO this table (other tables reference this table)
+                        if (fk.toTable.toLowerCase() === tableName && 
+                            !existingTableNames.includes(fk.fromTable.toLowerCase())) {
+                            
+                            const table = dbSchema.tables.find(t => 
+                                t.name.toLowerCase() === fk.fromTable.toLowerCase() && 
+                                t.schema === fk.fromSchema
+                            );
+                            
+                            if (table && !relatedTables.find(rt => 
+                                rt.name.toLowerCase() === table.name.toLowerCase() && 
+                                rt.schema === table.schema
+                            )) {
+                                relatedTables.push({
+                                    ...table,
+                                    foreignKeyInfo: {
+                                        direction: 'from',
+                                        fromTable: fk.fromTable,
+                                        fromAlias: tableInfo.alias,
+                                        fromColumn: fk.fromColumn,
+                                        toTable: fk.toTable,
+                                        toColumn: fk.toColumn
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+            }
+            
+            // If no related tables found or no FK info, return all tables except those already in query
+            if (relatedTables.length === 0) {
+                return dbSchema.tables.filter(table => 
+                    !existingTableNames.includes(table.name.toLowerCase())
+                );
+            }
+            
+            return relatedTables;
+        }
+
         // Handle messages from extension
         window.addEventListener('message', event => {
             const message = event.data;
@@ -1093,8 +1251,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'schemaUpdate':
-                    dbSchema = message.schema || { tables: [], views: [] };
-                    console.log('Schema updated:', dbSchema.tables.length, 'tables', dbSchema.views.length, 'views');
+                    dbSchema = message.schema || { tables: [], views: [], foreignKeys: [] };
+                    console.log('Schema updated:', dbSchema.tables.length, 'tables', dbSchema.views.length, 'views', dbSchema.foreignKeys.length, 'foreign keys');
                     break;
 
                 case 'executing':
