@@ -2,8 +2,10 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { ResultWebviewProvider } from '../resultWebview';
+import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 
 export function registerTableCommands(
+    context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
     unifiedTreeProvider: UnifiedTreeProvider,
     resultWebviewProvider: ResultWebviewProvider,
@@ -25,35 +27,7 @@ export function registerTableCommands(
             const tableName = tableNode.label as string;
             const query = `SELECT TOP 1000 * FROM ${tableName};`;
             
-            const document = await vscode.workspace.openTextDocument({
-                content: query,
-                language: 'sql'
-            });
-            
-            const editor = await vscode.window.showTextDocument(document);
-            
-            setTimeout(async () => {
-                try {
-                    const conn = connectionProvider.getConnection(tableNode.connectionId);
-                    if (conn) {
-                        resultWebviewProvider.showLoading();
-                        const startTime = Date.now();
-                        const result = await conn.request().query(query);
-                        const executionTime = Date.now() - startTime;
-                        
-                        resultWebviewProvider.showResults(result.recordset, executionTime);
-                        
-                        outputChannel.appendLine(`Query executed successfully. ${result.recordset.length} rows returned in ${executionTime}ms.`);
-                    } else {
-                        vscode.window.showErrorMessage('Connection was lost. Please reconnect.');
-                    }
-                } catch (execError) {
-                    const errorMessage = execError instanceof Error ? execError.message : 'Unknown error occurred';
-                    resultWebviewProvider.showError(errorMessage);
-                    vscode.window.showErrorMessage(`Failed to execute query: ${errorMessage}`);
-                    outputChannel.appendLine(`Query execution failed: ${errorMessage}`);
-                }
-            }, 100);
+            await openSqlInCustomEditor(query, `select_top_1000_${tableName.replace('.', '_')}.sql`, context);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate SELECT query: ${errorMessage}`);
@@ -275,12 +249,7 @@ export function registerTableCommands(
                 createScript += `ALTER TABLE [${schema}].[${table}] CHECK CONSTRAINT [${fk.constraint_name}]\nGO\n`;
             }
 
-            const document = await vscode.workspace.openTextDocument({
-                content: createScript,
-                language: 'sql'
-            });
-            
-            await vscode.window.showTextDocument(document);
+            await openSqlInCustomEditor(createScript, `create_${table}.sql`, context);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate CREATE script: ${errorMessage}`);
@@ -302,12 +271,7 @@ export function registerTableCommands(
 DROP TABLE [${schema}].[${table}]
 GO`;
 
-            const document = await vscode.workspace.openTextDocument({
-                content: dropScript,
-                language: 'sql'
-            });
-            
-            await vscode.window.showTextDocument(document);
+            await openSqlInCustomEditor(dropScript, `drop_${table}.sql`, context);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate DROP script: ${errorMessage}`);

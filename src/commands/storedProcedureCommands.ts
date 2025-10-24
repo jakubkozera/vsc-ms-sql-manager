@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { ResultWebviewProvider } from '../resultWebview';
+import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 
 export function registerStoredProcedureCommands(
+    context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
     resultWebviewProvider: ResultWebviewProvider,
     outputChannel: vscode.OutputChannel
@@ -54,11 +56,7 @@ END
 GO
 `;
 
-            const doc = await vscode.workspace.openTextDocument({
-                content: template,
-                language: 'sql'
-            });
-            await vscode.window.showTextDocument(doc);
+            await openSqlInCustomEditor(template, `create_${procedureName}.sql`, context);
         })
     );
 
@@ -93,11 +91,7 @@ GO
                     // Add USE database statement
                     const content = `USE [${node.database}];\nGO\n\n${definition}\nGO\n`;
 
-                    const doc = await vscode.workspace.openTextDocument({
-                        content: content,
-                        language: 'sql'
-                    });
-                    await vscode.window.showTextDocument(doc);
+                    await openSqlInCustomEditor(content, `alter_${node.name}.sql`, context);
                 } else {
                     vscode.window.showErrorMessage('Could not retrieve procedure definition');
                 }
@@ -169,16 +163,9 @@ GO
                     execStatement += '\n    ' + paramValues.join(',\n    ');
                 }
                 
-                execStatement += ';\nGO\n';
+                execStatement += ';\\nGO\\n';
 
-                const doc = await vscode.workspace.openTextDocument({
-                    content: execStatement,
-                    language: 'sql'
-                });
-                const editor = await vscode.window.showTextDocument(doc);
-                
-                // Auto-execute
-                await vscode.commands.executeCommand('mssqlManager.executeQuery');
+                await openSqlInCustomEditor(execStatement, `exec_${node.name}.sql`, context);
                 
             } catch (error) {
                 vscode.window.showErrorMessage(`Error executing procedure: ${error}`);
@@ -190,84 +177,84 @@ GO
     // Script Stored Procedure as CREATE To New Query Editor Window
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureCreateToWindow', async (node) => {
-            await scriptProcedureTo(node, 'CREATE', 'window', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'CREATE', 'window', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as CREATE To File
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureCreateToFile', async (node) => {
-            await scriptProcedureTo(node, 'CREATE', 'file', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'CREATE', 'file', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as CREATE To Clipboard
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureCreateToClipboard', async (node) => {
-            await scriptProcedureTo(node, 'CREATE', 'clipboard', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'CREATE', 'clipboard', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as ALTER To New Query Editor Window
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureAlterToWindow', async (node) => {
-            await scriptProcedureTo(node, 'ALTER', 'window', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'ALTER', 'window', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as ALTER To File
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureAlterToFile', async (node) => {
-            await scriptProcedureTo(node, 'ALTER', 'file', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'ALTER', 'file', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as ALTER To Clipboard
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureAlterToClipboard', async (node) => {
-            await scriptProcedureTo(node, 'ALTER', 'clipboard', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'ALTER', 'clipboard', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as DROP To New Query Editor Window
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureDropToWindow', async (node) => {
-            await scriptProcedureTo(node, 'DROP', 'window', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'DROP', 'window', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as DROP To File
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureDropToFile', async (node) => {
-            await scriptProcedureTo(node, 'DROP', 'file', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'DROP', 'file', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as DROP To Clipboard
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureDropToClipboard', async (node) => {
-            await scriptProcedureTo(node, 'DROP', 'clipboard', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'DROP', 'clipboard', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as EXECUTE To New Query Editor Window
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureExecuteToWindow', async (node) => {
-            await scriptProcedureTo(node, 'EXECUTE', 'window', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'EXECUTE', 'window', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as EXECUTE To File
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureExecuteToFile', async (node) => {
-            await scriptProcedureTo(node, 'EXECUTE', 'file', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'EXECUTE', 'file', connectionProvider, outputChannel, context);
         })
     );
 
     // Script Stored Procedure as EXECUTE To Clipboard
     disposables.push(
         vscode.commands.registerCommand('mssqlManager.scriptProcedureExecuteToClipboard', async (node) => {
-            await scriptProcedureTo(node, 'EXECUTE', 'clipboard', connectionProvider, outputChannel);
+            await scriptProcedureTo(node, 'EXECUTE', 'clipboard', connectionProvider, outputChannel, context);
         })
     );
 
@@ -467,7 +454,8 @@ async function scriptProcedureTo(
     scriptType: 'CREATE' | 'ALTER' | 'DROP' | 'EXECUTE',
     destination: 'window' | 'file' | 'clipboard',
     connectionProvider: ConnectionProvider,
-    outputChannel: vscode.OutputChannel
+    outputChannel: vscode.OutputChannel,
+    context: vscode.ExtensionContext
 ): Promise<void> {
     if (!node || !node.connectionId || !node.database || !node.schema || !node.name) {
         vscode.window.showErrorMessage('Invalid stored procedure node');
@@ -540,11 +528,7 @@ async function scriptProcedureTo(
 
         // Handle destination
         if (destination === 'window') {
-            const doc = await vscode.workspace.openTextDocument({
-                content: script,
-                language: 'sql'
-            });
-            await vscode.window.showTextDocument(doc);
+            await openSqlInCustomEditor(script, `${node.name}_${scriptType.toLowerCase()}.sql`, context);
         } else if (destination === 'file') {
             const uri = await vscode.window.showSaveDialog({
                 defaultUri: vscode.Uri.file(`${node.name}_${scriptType.toLowerCase()}.sql`),

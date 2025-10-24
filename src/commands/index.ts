@@ -29,6 +29,7 @@ export function registerAllCommands(
     );
 
     const queryCommands = registerQueryCommands(
+        context,
         connectionProvider,
         queryExecutor,
         resultWebviewProvider,
@@ -36,6 +37,7 @@ export function registerAllCommands(
     );
 
     const tableCommands = registerTableCommands(
+        context,
         connectionProvider,
         unifiedTreeProvider,
         resultWebviewProvider,
@@ -43,6 +45,7 @@ export function registerAllCommands(
     );
 
     const storedProcedureCommands = registerStoredProcedureCommands(
+        context,
         connectionProvider,
         resultWebviewProvider,
         outputChannel

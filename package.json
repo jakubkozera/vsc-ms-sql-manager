@@ -15,6 +15,18 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "mssqlManager.sqlEditor",
+        "displayName": "SQL Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.sql"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "commands": [
       {
         "command": "mssqlManager.connect",
@@ -421,7 +433,7 @@
         },
         {
           "submenu": "mssqlManager.scriptProcedureAs",
-          "when": "view == mssqlManager.explorer && viewItem == stored-procedures",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^(stored-procedures|procedure)$/",
           "group": "2_script@1"
         },
         {
@@ -433,11 +445,6 @@
           "command": "mssqlManager.executeStoredProcedure",
           "when": "view == mssqlManager.explorer && viewItem == procedure",
           "group": "1_modify@2"
-        },
-        {
-          "submenu": "mssqlManager.scriptProcedureAs",
-          "when": "view == mssqlManager.explorer && viewItem == procedure",
-          "group": "2_script@1"
         },
         {
           "command": "mssqlManager.viewProcedureDependencies",

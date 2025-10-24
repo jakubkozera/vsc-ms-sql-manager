@@ -2,8 +2,10 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { QueryExecutor } from '../queryExecutor';
 import { ResultWebviewProvider } from '../resultWebview';
+import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 
 export function registerQueryCommands(
+    context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
     queryExecutor: QueryExecutor,
     resultWebviewProvider: ResultWebviewProvider,
@@ -92,12 +94,7 @@ export function registerQueryCommands(
             
             const query = `SELECT TOP 100 *\nFROM [${schemaName}].[${tableName}]`;
             
-            const document = await vscode.workspace.openTextDocument({
-                content: query,
-                language: 'sql'
-            });
-            
-            await vscode.window.showTextDocument(document);
+            await openSqlInCustomEditor(query, `select_${tableName}.sql`, context);
         }
     });
 
