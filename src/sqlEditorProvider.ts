@@ -893,14 +893,18 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const lowerText = textUntilPosition.toLowerCase();
             
             // Check if we're in JOIN clause (after JOIN keyword, before ON)
-            const joinMatch = /\\b((?:inner|left|right|full|cross)\\s+)?join\\s+$/i.exec(lineUntilPosition);
+            const joinMatch = /\\b((?:inner|left|right|full|cross)\\s+)?join\\s*$/i.exec(lineUntilPosition);
             if (joinMatch) {
                 // Suggest tables that have foreign key relationships with tables already in the query
-                const fullText = model.getValue();
-                const tablesInQuery = extractTablesFromQuery(fullText);
+                // Use text until current position (excluding the JOIN keyword we're typing after)
+                console.log('Text until position for JOIN analysis:', textUntilPosition);
+                const tablesInQuery = extractTablesFromQuery(textUntilPosition);
                 
                 if (tablesInQuery.length > 0) {
                     const relatedTables = getRelatedTables(tablesInQuery);
+                    console.log('Related tables for JOIN:', relatedTables.map(t => ({ name: t.name, hasFKInfo: !!t.foreignKeyInfo })));
+                    console.log('Tables in query:', JSON.stringify(tablesInQuery, null, 2));
+                    
                     return {
                         suggestions: relatedTables.map(table => {
                             const fullName = table.schema === 'dbo' ? table.name : \`\${table.schema}.\${table.name}\`;
@@ -910,26 +914,34 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                             
                             // Build the ON clause with FK relationship
                             let insertText = \`\${fullName} \${tableAlias}\`;
+                            let detailText = \`Table (\${table.columns?.length || 0} columns)\`;
+                            
                             if (table.foreignKeyInfo) {
-                                const fromAlias = table.foreignKeyInfo.fromAlias || table.foreignKeyInfo.fromTable.toLowerCase();
+                                const fkInfo = table.foreignKeyInfo;
                                 const toAlias = tableAlias;
                                 
-                                if (table.foreignKeyInfo.direction === 'to') {
-                                    // Current table references the joined table
-                                    insertText = \`\${fullName} \${toAlias} ON \${fromAlias}.\${table.foreignKeyInfo.fromColumn} = \${toAlias}.\${table.foreignKeyInfo.toColumn}\`;
+                                // Use the alias from the query (which is the table name if no explicit alias)
+                                const fromAlias = fkInfo.fromAlias;
+                                
+                                console.log('FK Info:', { direction: fkInfo.direction, fromTable: fkInfo.fromTable, fromAlias, hasExplicitAlias: fkInfo.fromHasExplicitAlias });
+                                
+                                if (fkInfo.direction === 'to') {
+                                    insertText = \`\${fullName} \${toAlias} ON \${fromAlias}.\${fkInfo.fromColumn} = \${toAlias}.\${fkInfo.toColumn}\`;
+                                    detailText = \`Join on \${fromAlias}.\${fkInfo.fromColumn} = \${toAlias}.\${fkInfo.toColumn}\`;
                                 } else {
-                                    // Joined table references the current table
-                                    insertText = \`\${fullName} \${toAlias} ON \${toAlias}.\${table.foreignKeyInfo.fromColumn} = \${fromAlias}.\${table.foreignKeyInfo.toColumn}\`;
+                                    insertText = \`\${fullName} \${toAlias} ON \${toAlias}.\${fkInfo.fromColumn} = \${fromAlias}.\${fkInfo.toColumn}\`;
+                                    detailText = \`Join on \${toAlias}.\${fkInfo.fromColumn} = \${fromAlias}.\${fkInfo.toColumn}\`;
                                 }
+                                
+                                console.log('Generated insertText:', insertText);
                             }
                             
                             return {
                                 label: fullName,
                                 kind: monaco.languages.CompletionItemKind.Class,
-                                detail: table.foreignKeyInfo 
-                                    ? \`Join on \${table.foreignKeyInfo.fromTable}.\${table.foreignKeyInfo.fromColumn} = \${table.name}.\${table.foreignKeyInfo.toColumn}\`
-                                    : \`Table (\${table.columns.length} columns)\`,
+                                detail: detailText,
                                 insertText: insertText,
+                                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                                 range: range,
                                 sortText: \`0_\${fullName}\`
                             };
@@ -1057,6 +1069,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const tables = [];
             const lowerQuery = query.toLowerCase();
             
+            // SQL keywords that should not be considered as aliases
+            const sqlKeywords = ['select', 'from', 'where', 'join', 'inner', 'left', 'right', 'full', 'cross', 'on', 'and', 'or', 'order', 'group', 'by', 'having'];
+            
             // Match FROM and JOIN clauses with optional aliases
             // Patterns: FROM schema.table alias, FROM table alias, JOIN schema.table alias, etc.
             const patterns = [
@@ -1068,15 +1083,28 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 while ((match = pattern.exec(query)) !== null) {
                     const schema = match[1] || 'dbo';
                     const table = match[2];
-                    const alias = match[3] || table;
+                    let alias = match[3];
+                    
+                    // Skip if the captured alias is actually a SQL keyword
+                    if (alias && sqlKeywords.includes(alias.toLowerCase())) {
+                        alias = undefined;
+                    }
                     
                     // Verify this is a valid table in our schema
                     const tableInfo = findTable(table.toLowerCase());
                     if (tableInfo) {
+                        const hasExplicitAlias = !!alias;
+                        
+                        // If no explicit alias, use the table name as the alias
+                        if (!alias) {
+                            alias = tableInfo.table;
+                        }
+                        
                         tables.push({
                             schema: tableInfo.schema,
                             table: tableInfo.table,
-                            alias: alias
+                            alias: alias,
+                            hasExplicitAlias: hasExplicitAlias
                         });
                     }
                 }
@@ -1179,6 +1207,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                                         direction: 'to',
                                         fromTable: fk.fromTable,
                                         fromAlias: tableInfo.alias,
+                                        fromHasExplicitAlias: tableInfo.hasExplicitAlias,
                                         fromColumn: fk.fromColumn,
                                         toTable: fk.toTable,
                                         toColumn: fk.toColumn
@@ -1206,6 +1235,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                                         direction: 'from',
                                         fromTable: fk.fromTable,
                                         fromAlias: tableInfo.alias,
+                                        fromHasExplicitAlias: tableInfo.hasExplicitAlias,
                                         fromColumn: fk.fromColumn,
                                         toTable: fk.toTable,
                                         toColumn: fk.toColumn
