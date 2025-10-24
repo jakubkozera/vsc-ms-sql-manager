@@ -10,6 +10,8 @@ export interface QueryResult {
 }
 
 export class QueryExecutor {
+    private currentRequest: sql.Request | null = null;
+    
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel
@@ -37,6 +39,7 @@ export class QueryExecutor {
                 progress.report({ message: 'Running query...' });
 
                 const request = connection.request();
+                this.currentRequest = request;
                 
                 // Parse and execute the query
                 const queries = this.parseQueries(queryText);
@@ -73,6 +76,7 @@ export class QueryExecutor {
                     }
                 }
 
+                this.currentRequest = null;
                 const executionTime = Date.now() - startTime;
                 this.outputChannel.appendLine(`Total execution time: ${executionTime}ms`);
 
@@ -96,6 +100,7 @@ export class QueryExecutor {
             });
 
         } catch (error) {
+            this.currentRequest = null;
             const executionTime = Date.now() - startTime;
             this.outputChannel.appendLine(`Query failed after ${executionTime}ms: ${error}`);
             
@@ -115,6 +120,17 @@ export class QueryExecutor {
             }
             
             throw error;
+        }
+    }
+
+    cancelCurrentQuery(): void {
+        if (this.currentRequest) {
+            try {
+                this.currentRequest.cancel();
+                this.outputChannel.appendLine('Query cancellation requested');
+            } catch (error) {
+                this.outputChannel.appendLine(`Failed to cancel query: ${error}`);
+            }
         }
     }
 

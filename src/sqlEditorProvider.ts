@@ -29,6 +29,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         // Send initial document content to webview
         this.updateWebview(webviewPanel.webview, document);
 
+        // Send active connections to webview
+        this.sendActiveConnections(webviewPanel.webview);
+
+        // Listen for connection changes
+        const updateConnections = () => {
+            this.sendActiveConnections(webviewPanel.webview);
+        };
+        this.connectionProvider.setConnectionChangeCallback(updateConnections);
+
         // Listen for changes to the document
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(e => {
             if (e.document.uri.toString() === document.uri.toString()) {
@@ -44,11 +53,19 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         this.updateTextDocument(document, message.content);
                         break;
                     case 'executeQuery':
-                        await this.executeQuery(webviewPanel.webview, message.query);
+                        await this.executeQuery(webviewPanel.webview, message.query, message.connectionId);
+                        break;
+                    case 'cancelQuery':
+                        this.queryExecutor.cancelCurrentQuery();
+                        break;
+                    case 'switchConnection':
+                        this.connectionProvider.setActiveConnection(message.connectionId);
+                        this.sendActiveConnections(webviewPanel.webview);
                         break;
                     case 'ready':
                         // Webview is ready, send initial content
                         this.updateWebview(webviewPanel.webview, document);
+                        this.sendActiveConnections(webviewPanel.webview);
                         break;
                 }
             }
@@ -67,6 +84,22 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         });
     }
 
+    private sendActiveConnections(webview: vscode.Webview) {
+        const activeConnections = this.connectionProvider.getAllActiveConnections();
+        const currentConfig = this.connectionProvider.getCurrentConfig();
+        
+        webview.postMessage({
+            type: 'connectionsUpdate',
+            connections: activeConnections.map(conn => ({
+                id: conn.id,
+                name: conn.config.name,
+                server: conn.config.server,
+                database: conn.config.database
+            })),
+            currentConnectionId: currentConfig?.id || null
+        });
+    }
+
     private updateTextDocument(document: vscode.TextDocument, content: string) {
         const edit = new vscode.WorkspaceEdit();
         
@@ -80,11 +113,19 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         vscode.workspace.applyEdit(edit);
     }
 
-    private async executeQuery(webview: vscode.Webview, queryText: string) {
+    private async executeQuery(webview: vscode.Webview, queryText: string, connectionId?: string) {
+        // Switch to specified connection if provided
+        if (connectionId) {
+            this.connectionProvider.setActiveConnection(connectionId);
+        }
+
         if (!this.connectionProvider.isConnected()) {
             webview.postMessage({
                 type: 'error',
-                error: 'Not connected to database. Please connect first.'
+                error: 'Not connected to database. Please connect first.',
+                messages: [
+                    { type: 'error', text: 'Not connected to database. Please connect first.' }
+                ]
             });
             vscode.window.showWarningMessage('Not connected to database. Please connect first.');
             return;
@@ -93,36 +134,72 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         if (!queryText.trim()) {
             webview.postMessage({
                 type: 'error',
-                error: 'No query text found to execute'
+                error: 'No query text found to execute',
+                messages: [
+                    { type: 'error', text: 'No query text found to execute' }
+                ]
             });
             return;
         }
 
         try {
+            const currentConfig = this.connectionProvider.getCurrentConfig();
             webview.postMessage({ type: 'executing' });
             
             this.outputChannel.appendLine(`[SqlEditor] Executing query (${queryText.length} characters)`);
             
+            const startTime = new Date();
             const results = await this.queryExecutor.executeQuery(queryText);
+            const endTime = new Date();
+            
+            const messages = [
+                { type: 'info', text: `Query executed successfully on ${currentConfig?.server}/${currentConfig?.database}` },
+                { type: 'info', text: `${results.recordset.length} row(s) returned` },
+                { type: 'info', text: `Execution time: ${results.executionTime}ms` },
+                { type: 'info', text: `Completed at: ${endTime.toLocaleTimeString()}` }
+            ];
+
+            if (results.rowsAffected && results.rowsAffected.length > 0) {
+                const totalAffected = results.rowsAffected.reduce((a, b) => a + b, 0);
+                if (totalAffected > 0) {
+                    messages.splice(2, 0, { type: 'info', text: `${totalAffected} row(s) affected` });
+                }
+            }
             
             webview.postMessage({
                 type: 'results',
                 results: results.recordset,
                 executionTime: results.executionTime,
-                rowsAffected: results.rowsAffected
+                rowsAffected: results.rowsAffected,
+                messages: messages
             });
 
             this.outputChannel.appendLine(`[SqlEditor] Query completed: ${results.recordset.length} rows returned`);
             
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            const isCancelled = errorMessage.includes('cancel');
+            
+            const messages = [
+                { 
+                    type: isCancelled ? 'warning' : 'error', 
+                    text: errorMessage 
+                }
+            ];
+
+            if (!isCancelled) {
+                messages.push({ type: 'info', text: `Error occurred at: ${new Date().toLocaleTimeString()}` });
+            }
             
             webview.postMessage({
                 type: 'error',
-                error: errorMessage
+                error: errorMessage,
+                messages: messages
             });
             
-            vscode.window.showErrorMessage(`Query execution failed: ${errorMessage}`);
+            if (!isCancelled) {
+                vscode.window.showErrorMessage(`Query execution failed: ${errorMessage}`);
+            }
             this.outputChannel.appendLine(`[SqlEditor] Query execution error: ${errorMessage}`);
         }
     }
@@ -167,12 +244,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             flex-direction: column;
             height: 100vh;
             width: 100%;
+            position: relative;
         }
 
         #editorContainer {
             width: 100%;
-            height: 100%;
+            flex: 1;
             position: relative;
+            min-height: 100px;
         }
 
         #editor {
@@ -187,9 +266,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             background-color: var(--vscode-editorGroupHeader-tabsBackground);
             border-bottom: 1px solid var(--vscode-panel-border);
             gap: 8px;
+            flex-shrink: 0;
         }
 
-        #executeButton {
+        .toolbar-button {
             background-color: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
             border: none;
@@ -203,58 +283,125 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             gap: 6px;
         }
 
-        #executeButton:hover {
+        .toolbar-button:hover:not(:disabled) {
             background-color: var(--vscode-button-hoverBackground);
         }
 
-        #executeButton:disabled {
+        .toolbar-button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
 
-        #connectionStatus {
+        .toolbar-button.secondary {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+        }
+
+        .toolbar-button.secondary:hover:not(:disabled) {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+
+        .toolbar-separator {
+            width: 1px;
+            height: 24px;
+            background-color: var(--vscode-panel-border);
+            margin: 0 4px;
+        }
+
+        .database-selector {
+            background-color: var(--vscode-dropdown-background);
+            color: var(--vscode-dropdown-foreground);
+            border: 1px solid var(--vscode-dropdown-border);
+            padding: 4px 8px;
+            border-radius: 2px;
+            font-family: var(--vscode-font-family);
+            font-size: 13px;
+            cursor: pointer;
+            min-width: 200px;
+        }
+
+        .database-selector:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #statusLabel {
             color: var(--vscode-descriptionForeground);
             font-size: 12px;
             margin-left: auto;
         }
 
+        .resizer {
+            height: 4px;
+            background-color: var(--vscode-panel-border);
+            cursor: ns-resize;
+            flex-shrink: 0;
+            display: none;
+            position: relative;
+        }
+
+        .resizer:hover,
+        .resizer.active {
+            background-color: var(--vscode-focusBorder);
+        }
+
+        .resizer.visible {
+            display: block;
+        }
+
         #resultsContainer {
             display: none;
-            width: 100%;
-            height: 0%;
-            border-top: 2px solid var(--vscode-panel-border);
-            background-color: var(--vscode-editor-background);
-            overflow: auto;
             flex-direction: column;
+            background-color: var(--vscode-editor-background);
+            overflow: hidden;
+            min-height: 100px;
         }
 
         #resultsContainer.visible {
             display: flex;
         }
 
-        #resultsHeader {
-            padding: 8px 12px;
+        .results-tabs {
             background-color: var(--vscode-editorGroupHeader-tabsBackground);
-            border-bottom: 1px solid var(--vscode-panel-border);
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            padding: 0 8px;
+            flex-shrink: 0;
         }
 
-        #resultsTitle {
-            font-weight: 600;
+        .results-tab {
+            padding: 8px 16px;
+            cursor: pointer;
             font-size: 13px;
+            border-bottom: 2px solid transparent;
+            color: var(--vscode-tab-inactiveForeground);
+            background: transparent;
+            border: none;
+            font-family: var(--vscode-font-family);
         }
 
-        #resultsStats {
-            font-size: 12px;
-            color: var(--vscode-descriptionForeground);
+        .results-tab:hover {
+            color: var(--vscode-tab-activeForeground);
+        }
+
+        .results-tab.active {
+            color: var(--vscode-tab-activeForeground);
+            border-bottom-color: var(--vscode-focusBorder);
         }
 
         #resultsContent {
             flex: 1;
             overflow: auto;
             padding: 12px;
+        }
+
+        #executionTime {
+            padding: 8px 16px;
+            background-color: var(--vscode-editorGroupHeader-tabsBackground);
+            border-top: 1px solid var(--vscode-panel-border);
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            flex-shrink: 0;
         }
 
         table {
@@ -291,15 +438,27 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             text-align: right;
         }
 
-        .error-message {
-            color: var(--vscode-errorForeground);
-            background-color: var(--vscode-inputValidation-errorBackground);
-            border: 1px solid var(--vscode-inputValidation-errorBorder);
-            padding: 12px;
-            border-radius: 4px;
-            margin: 12px;
-            white-space: pre-wrap;
+        .message {
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border-left: 3px solid var(--vscode-focusBorder);
+            background-color: var(--vscode-editor-lineHighlightBackground);
             font-family: var(--vscode-editor-font-family);
+            font-size: 13px;
+        }
+
+        .message.error {
+            border-left-color: var(--vscode-errorForeground);
+            color: var(--vscode-errorForeground);
+        }
+
+        .message.warning {
+            border-left-color: var(--vscode-editorWarning-foreground);
+            color: var(--vscode-editorWarning-foreground);
+        }
+
+        .message.info {
+            border-left-color: var(--vscode-focusBorder);
         }
 
         .no-results {
@@ -319,22 +478,34 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 <body>
     <div id="container">
         <div id="toolbar">
-            <button id="executeButton" title="Execute Query (F5 or Ctrl+Shift+E)">
-                ▶ Execute
+            <button class="toolbar-button" id="executeButton" title="Execute Query (F5 or Ctrl+Shift+E)">
+                <span>▶</span> Run
             </button>
-            <span id="connectionStatus">Not Connected</span>
+            <button class="toolbar-button secondary" id="cancelButton" disabled title="Cancel Query">
+                <span>⏹</span> Cancel
+            </button>
+            <div class="toolbar-separator"></div>
+            <label style="font-size: 13px;">Database:</label>
+            <select class="database-selector" id="databaseSelector">
+                <option value="">Not Connected</option>
+            </select>
+            <div class="toolbar-separator"></div>
+            <span id="statusLabel">Ready</span>
         </div>
         
         <div id="editorContainer">
             <div id="editor"></div>
         </div>
+
+        <div class="resizer" id="resizer"></div>
         
         <div id="resultsContainer">
-            <div id="resultsHeader">
-                <span id="resultsTitle">Results</span>
-                <span id="resultsStats"></span>
+            <div class="results-tabs">
+                <button class="results-tab active" data-tab="results">Results</button>
+                <button class="results-tab" data-tab="messages">Messages</button>
             </div>
             <div id="resultsContent"></div>
+            <div id="executionTime"></div>
         </div>
     </div>
 
@@ -344,6 +515,12 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         console.log('SQL Editor Webview loaded');
         let editor;
         let isUpdatingFromExtension = false;
+        let currentTab = 'results';
+        let lastResults = null;
+        let lastMessages = [];
+        let isResizing = false;
+        let activeConnections = [];
+        let currentConnectionId = null;
 
         // Initialize Monaco Editor
         require.config({ 
@@ -393,9 +570,75 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             vscode.postMessage({ type: 'ready' });
         });
 
-        // Execute button
+        // Toolbar buttons
         document.getElementById('executeButton').addEventListener('click', () => {
             executeQuery();
+        });
+
+        document.getElementById('cancelButton').addEventListener('click', () => {
+            vscode.postMessage({ type: 'cancelQuery' });
+        });
+
+        // Database selector
+        document.getElementById('databaseSelector').addEventListener('change', (e) => {
+            const connectionId = e.target.value;
+            if (connectionId) {
+                vscode.postMessage({
+                    type: 'switchConnection',
+                    connectionId: connectionId
+                });
+            }
+        });
+
+        // Tab switching
+        document.querySelectorAll('.results-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentTab = tab.dataset.tab;
+
+                if (currentTab === 'results' && lastResults) {
+                    displayResults(lastResults);
+                } else if (currentTab === 'messages') {
+                    displayMessages(lastMessages);
+                }
+            });
+        });
+
+        // Resizer functionality
+        const resizer = document.getElementById('resizer');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const editorContainer = document.getElementById('editorContainer');
+        const container = document.getElementById('container');
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            resizer.classList.add('active');
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            const containerRect = container.getBoundingClientRect();
+            const newResultsHeight = containerRect.bottom - e.clientY;
+            const minHeight = 100;
+            const maxResultsHeight = containerRect.height - minHeight - 40; // 40 for toolbar
+
+            if (newResultsHeight >= minHeight && newResultsHeight <= maxResultsHeight) {
+                resultsContainer.style.flex = \`0 0 \${newResultsHeight}px\`;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('active');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
         });
 
         function executeQuery() {
@@ -411,9 +654,13 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 queryText = editor.getValue();
             }
 
+            const databaseSelector = document.getElementById('databaseSelector');
+            const connectionId = databaseSelector.value || null;
+
             vscode.postMessage({
                 type: 'executeQuery',
-                query: queryText
+                query: queryText,
+                connectionId: connectionId
             });
         }
 
@@ -434,49 +681,105 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     }
                     break;
 
+                case 'connectionsUpdate':
+                    updateConnectionsList(message.connections, message.currentConnectionId);
+                    break;
+
                 case 'executing':
                     showLoading();
                     break;
 
                 case 'results':
-                    showResults(message.results, message.executionTime, message.rowsAffected);
+                    showResults(message.results, message.executionTime, message.rowsAffected, message.messages);
                     break;
 
                 case 'error':
-                    showError(message.error);
+                    showError(message.error, message.messages);
                     break;
             }
         });
 
+        function updateConnectionsList(connections, currentId) {
+            activeConnections = connections;
+            currentConnectionId = currentId;
+            
+            const databaseSelector = document.getElementById('databaseSelector');
+            databaseSelector.innerHTML = '';
+            
+            if (connections.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'Not Connected';
+                databaseSelector.appendChild(option);
+                databaseSelector.disabled = true;
+            } else {
+                databaseSelector.disabled = false;
+                connections.forEach(conn => {
+                    const option = document.createElement('option');
+                    option.value = conn.id;
+                    option.textContent = \`\${conn.server}/\${conn.database}\`;
+                    if (conn.id === currentId) {
+                        option.selected = true;
+                    }
+                    databaseSelector.appendChild(option);
+                });
+            }
+        }
+
         function showLoading() {
-            const resultsContainer = document.getElementById('resultsContainer');
             const resultsContent = document.getElementById('resultsContent');
-            const editorContainer = document.getElementById('editorContainer');
+            const statusLabel = document.getElementById('statusLabel');
+            const executeButton = document.getElementById('executeButton');
+            const cancelButton = document.getElementById('cancelButton');
+            const resizer = document.getElementById('resizer');
             
             resultsContent.innerHTML = '<div class="loading">Executing query...</div>';
             resultsContainer.classList.add('visible');
+            resizer.classList.add('visible');
             
-            // Split view: 60% editor, 40% results
-            editorContainer.style.height = '60%';
-            resultsContainer.style.height = '40%';
+            executeButton.disabled = true;
+            cancelButton.disabled = false;
+            statusLabel.textContent = 'Executing query...';
+
+            // Show results panel with initial height if not already set
+            if (!resultsContainer.style.flex) {
+                resultsContainer.style.flex = '0 0 300px';
+            }
+
+            // Switch to results tab
+            document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
+            currentTab = 'results';
         }
 
-        function showResults(results, executionTime, rowsAffected) {
-            const resultsContainer = document.getElementById('resultsContainer');
-            const resultsContent = document.getElementById('resultsContent');
-            const resultsStats = document.getElementById('resultsStats');
-            const editorContainer = document.getElementById('editorContainer');
-
-            // Show results panel
-            resultsContainer.classList.add('visible');
+        function showResults(results, executionTime, rowsAffected, messages) {
+            const executeButton = document.getElementById('executeButton');
+            const cancelButton = document.getElementById('cancelButton');
+            const statusLabel = document.getElementById('statusLabel');
+            const executionTimeEl = document.getElementById('executionTime');
             
-            // Split view: 60% editor, 40% results
-            editorContainer.style.height = '60%';
-            resultsContainer.style.height = '40%';
+            lastResults = results;
+            lastMessages = messages || [];
+            
+            executeButton.disabled = false;
+            cancelButton.disabled = true;
+            statusLabel.textContent = \`Query completed (\${results.length} rows)\`;
+
+            // Update execution time footer
+            executionTimeEl.textContent = \`Execution time: \${executionTime}ms | Rows: \${results.length}\`;
+
+            if (currentTab === 'results') {
+                displayResults(results);
+            } else if (currentTab === 'messages') {
+                displayMessages(messages);
+            }
+        }
+
+        function displayResults(results) {
+            const resultsContent = document.getElementById('resultsContent');
 
             if (!results || results.length === 0) {
                 resultsContent.innerHTML = '<div class="no-results">No rows returned</div>';
-                resultsStats.textContent = \`0 row(s) • \${executionTime}ms\`;
                 return;
             }
 
@@ -508,21 +811,56 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             tableHtml += '</tbody></table>';
             
             resultsContent.innerHTML = tableHtml;
-            resultsStats.textContent = \`\${results.length} row(s) • \${executionTime}ms\`;
         }
 
-        function showError(error) {
-            const resultsContainer = document.getElementById('resultsContainer');
+        function displayMessages(messages) {
             const resultsContent = document.getElementById('resultsContent');
-            const editorContainer = document.getElementById('editorContainer');
             
+            if (!messages || messages.length === 0) {
+                resultsContent.innerHTML = '<div class="message info">No messages</div>';
+                return;
+            }
+
+            let messagesHtml = '';
+            messages.forEach(msg => {
+                const msgClass = msg.type || 'info';
+                messagesHtml += \`<div class="message \${msgClass}">\${escapeHtml(msg.text)}</div>\`;
+            });
+            
+            resultsContent.innerHTML = messagesHtml;
+        }
+
+        function showError(error, messages) {
+            const executeButton = document.getElementById('executeButton');
+            const cancelButton = document.getElementById('cancelButton');
+            const statusLabel = document.getElementById('statusLabel');
+            const executionTimeEl = document.getElementById('executionTime');
+            const resizer = document.getElementById('resizer');
+            
+            lastResults = [];
+            lastMessages = messages || [{ type: 'error', text: error }];
+            
+            executeButton.disabled = false;
+            cancelButton.disabled = true;
+            
+            const isCancelled = error.includes('cancel');
+            statusLabel.textContent = isCancelled ? 'Query cancelled' : 'Query failed';
+            executionTimeEl.textContent = '';
+
             resultsContainer.classList.add('visible');
-            
-            // Split view: 60% editor, 40% results
-            editorContainer.style.height = '60%';
-            resultsContainer.style.height = '40%';
-            
-            resultsContent.innerHTML = \`<div class="error-message">\${escapeHtml(error)}</div>\`;
+            resizer.classList.add('visible');
+
+            // Show results panel with initial height if not already set
+            if (!resultsContainer.style.flex) {
+                resultsContainer.style.flex = '0 0 300px';
+            }
+
+            // Switch to messages tab to show error
+            document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector('.results-tab[data-tab="messages"]').classList.add('active');
+            currentTab = 'messages';
+
+            displayMessages(lastMessages);
         }
 
         function escapeHtml(text) {
