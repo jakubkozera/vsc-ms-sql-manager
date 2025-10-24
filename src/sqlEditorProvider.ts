@@ -1377,6 +1377,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         }
 
         function displayResults(results) {
+            console.log('[SQL EDITOR] displayResults called with AG-Grid table - NEW VERSION', results.length, 'rows');
             const resultsContent = document.getElementById('resultsContent');
 
             if (!results || results.length === 0) {
@@ -1384,34 +1385,578 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 return;
             }
 
-            // Create table
-            const columns = Object.keys(results[0]);
-            let tableHtml = '<table><thead><tr>';
-            
-            columns.forEach(column => {
-                tableHtml += \`<th>\${escapeHtml(column)}</th>\`;
+            // Initialize AG-Grid-like table
+            initAgGridTable(results, resultsContent);
+        }
+
+        function initAgGridTable(rowData, container) {
+            // Detect column types and create columnDefs
+            const columns = Object.keys(rowData[0]);
+            const columnDefs = columns.map(col => {
+                const sampleValue = rowData[0][col];
+                let type = 'string';
+                
+                if (typeof sampleValue === 'number') {
+                    type = 'number';
+                } else if (typeof sampleValue === 'boolean') {
+                    type = 'boolean';
+                } else if (sampleValue instanceof Date || (typeof sampleValue === 'string' && !isNaN(Date.parse(sampleValue)) && sampleValue.match(/\\d{4}-\\d{2}-\\d{2}/))) {
+                    type = 'date';
+                }
+                
+                return {
+                    field: col,
+                    headerName: col,
+                    type: type,
+                    width: 150,
+                    pinned: false
+                };
             });
+
+            let filteredData = [...rowData];
+            let activeFilters = {};
+            let currentFilterPopup = null;
+            let sortConfig = { field: null, direction: null };
+
+            // Build the table HTML structure
+            const tableHtml = \`
+                <div class="ag-grid-container" style="width: 100%; height: 100%; overflow: auto; position: relative;">
+                    <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; min-width: 100%;">
+                        <thead id="agGridHead"></thead>
+                        <tbody id="agGridBody"></tbody>
+                    </table>
+                </div>
+            \`;
             
-            tableHtml += '</tr></thead><tbody>';
-            
-            results.forEach(row => {
-                tableHtml += '<tr>';
-                columns.forEach(column => {
-                    const value = row[column];
-                    if (value === null || value === undefined) {
-                        tableHtml += '<td class="null-value">NULL</td>';
-                    } else if (typeof value === 'number') {
-                        tableHtml += \`<td class="number-value">\${value}</td>\`;
+            container.innerHTML = tableHtml;
+
+            renderAgGridHeaders(columnDefs, sortConfig, activeFilters);
+            renderAgGridRows(columnDefs, filteredData);
+
+            function renderAgGridHeaders(colDefs, sortCfg, filters) {
+                const thead = document.getElementById('agGridHead');
+                if (!thead) return;
+                
+                const tr = document.createElement('tr');
+                
+                // Add row number header
+                const rowNumTh = document.createElement('th');
+                rowNumTh.className = 'ag-grid-row-number-header';
+                rowNumTh.textContent = '#';
+                rowNumTh.style.cssText = \`
+                    width: 50px;
+                    min-width: 50px;
+                    max-width: 50px;
+                    position: sticky;
+                    left: 0;
+                    background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+                    border-right: 2px solid var(--vscode-panel-border, #3c3c3c);
+                    text-align: center;
+                    font-weight: 600;
+                    user-select: none;
+                    z-index: 20;
+                    top: 0;
+                    border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+                    padding: 8px;
+                \`;
+                tr.appendChild(rowNumTh);
+                
+                const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
+                const table = container.querySelector('.ag-grid-table');
+                table.style.width = totalWidth + 'px';
+                table.style.minWidth = totalWidth + 'px';
+
+                colDefs.forEach((col, index) => {
+                    const th = document.createElement('th');
+                    th.style.cssText = \`
+                        width: \${col.width}px;
+                        min-width: \${col.width}px;
+                        max-width: \${col.width}px;
+                        background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+                        border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+                        border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
+                        padding: 8px;
+                        text-align: left;
+                        font-weight: 600;
+                        position: sticky;
+                        top: 0;
+                        z-index: \${col.pinned ? 19 : 10};
+                        user-select: none;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    \`;
+                    
+                    if (col.pinned) {
+                        const leftOffset = calculatePinnedOffset(colDefs, index);
+                        th.style.left = leftOffset + 'px';
+                        th.classList.add('ag-grid-pinned-header');
+                    }
+                    
+                    th.dataset.field = col.field;
+
+                    const headerContent = document.createElement('div');
+                    headerContent.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 8px;';
+
+                    const headerTitle = document.createElement('span');
+                    headerTitle.style.cssText = 'flex: 1; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; cursor: pointer;';
+                    
+                    const titleText = document.createElement('span');
+                    titleText.textContent = col.headerName;
+                    headerTitle.appendChild(titleText);
+
+                    headerTitle.onclick = (e) => {
+                        e.stopPropagation();
+                        highlightColumn(index, colDefs);
+                    };
+
+                    const sortIcon = document.createElement('span');
+                    const isSorted = sortCfg.field === col.field;
+                    sortIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${isSorted ? 1 : 0.6}; transition: opacity 0.2s, background-color 0.2s;\`;
+                    
+                    if (isSorted) {
+                        // Show chevron when sorted
+                        sortIcon.innerHTML = \`
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="\${sortCfg.direction === 'desc' ? 'transform: rotate(180deg);' : ''}">
+                                <path d="M6 15l6 -6l6 6" />
+                            </svg>
+                        \`;
                     } else {
-                        tableHtml += \`<td title="\${escapeHtml(String(value))}">\${escapeHtml(String(value))}</td>\`;
+                        // Show sort icon when not sorted
+                        sortIcon.innerHTML = \`
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 9l4 -4l4 4m-4 -4v14" />
+                                <path d="M21 15l-4 4l-4 -4m4 4v-14" />
+                            </svg>
+                        \`;
+                    }
+                    
+                    sortIcon.onmouseover = () => sortIcon.style.opacity = '1';
+                    sortIcon.onmouseout = () => sortIcon.style.opacity = isSorted ? '1' : '0.6';
+                    sortIcon.onclick = (e) => {
+                        e.stopPropagation();
+                        handleSort(col, colDefs, sortCfg, filters);
+                    };
+
+                    const pinIcon = document.createElement('span');
+                    pinIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${col.pinned ? 1 : 0.6}; transition: opacity 0.2s, background-color 0.2s;\`;
+                    pinIcon.innerHTML = \`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="\${col.pinned ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5 -1.5l1.5 -4l4 -4" />
+                            <path d="M9 15l-4.5 4.5" />
+                            <path d="M14.5 4l5.5 5.5" />
+                        </svg>
+                    \`;
+                    pinIcon.onmouseover = () => pinIcon.style.opacity = '1';
+                    pinIcon.onmouseout = () => pinIcon.style.opacity = col.pinned ? '1' : '0.6';
+                    pinIcon.onclick = (e) => {
+                        e.stopPropagation();
+                        col.pinned = !col.pinned;
+                        renderAgGridHeaders(colDefs, sortCfg, filters);
+                        renderAgGridRows(colDefs, filteredData);
+                    };
+
+                    const filterIcon = document.createElement('span');
+                    const isFiltered = !!filters[col.field];
+                    filterIcon.style.cssText = \`display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 2px 4px; border-radius: 2px; opacity: \${isFiltered ? 1 : 0.6}; transition: opacity 0.2s, background-color 0.2s;\`;
+                    filterIcon.innerHTML = \`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="\${isFiltered ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z" />
+                        </svg>
+                    \`;
+                    filterIcon.onmouseover = () => filterIcon.style.opacity = '1';
+                    filterIcon.onmouseout = () => filterIcon.style.opacity = isFiltered ? '1' : '0.6';
+                    filterIcon.onclick = (e) => showAgGridFilter(e, col, th, colDefs, sortCfg, filters);
+
+                    // Add resize handle
+                    const resizeHandle = document.createElement('div');
+                    resizeHandle.style.cssText = \`
+                        position: absolute;
+                        right: 0;
+                        top: 0;
+                        width: 4px;
+                        height: 100%;
+                        cursor: col-resize;
+                        background-color: transparent;
+                        transition: background-color 0.2s;
+                        z-index: 25;
+                    \`;
+                    resizeHandle.onmouseover = () => resizeHandle.style.backgroundColor = 'var(--vscode-button-background, #0e639c)';
+                    resizeHandle.onmouseout = () => resizeHandle.style.backgroundColor = 'transparent';
+                    resizeHandle.onmousedown = (e) => startResize(e, th, index, colDefs, sortCfg, filters);
+
+                    th.style.position = 'relative';
+                    headerContent.appendChild(headerTitle);
+                    headerContent.appendChild(sortIcon);
+                    headerContent.appendChild(pinIcon);
+                    headerContent.appendChild(filterIcon);
+                    th.appendChild(headerContent);
+                    th.appendChild(resizeHandle);
+                    tr.appendChild(th);
+                });
+
+                thead.innerHTML = '';
+                thead.appendChild(tr);
+            }
+
+            // Column highlighting functionality
+            function highlightColumn(colIndex, colDefs) {
+                const table = container.querySelector('.ag-grid-table');
+                const allCells = table.querySelectorAll('th, td');
+                
+                // Remove previous column highlights
+                allCells.forEach(cell => {
+                    cell.style.backgroundColor = '';
+                });
+                
+                // Remove row selection
+                const allRows = table.querySelectorAll('tbody tr');
+                allRows.forEach(row => {
+                    row.classList.remove('selected');
+                });
+                
+                // Highlight the selected column (colIndex + 2 because row number is column 1)
+                const columnCells = table.querySelectorAll(\`th:nth-child(\${colIndex + 2}), td:nth-child(\${colIndex + 2})\`);
+                columnCells.forEach(cell => {
+                    if (cell.classList.contains('ag-grid-pinned-cell') || cell.classList.contains('ag-grid-pinned-header')) {
+                        cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                    } else {
+                        cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
                     }
                 });
-                tableHtml += '</tr>';
-            });
-            
-            tableHtml += '</tbody></table>';
-            
-            resultsContent.innerHTML = tableHtml;
+            }
+
+            // Column resizing functionality
+            let resizingColumn = null;
+            let startX = 0;
+            let startWidth = 0;
+
+            function startResize(e, th, colIndex, colDefs, sortCfg, filters) {
+                resizingColumn = { th, colIndex };
+                startX = e.clientX;
+                startWidth = th.offsetWidth;
+
+                document.addEventListener('mousemove', doResize);
+                document.addEventListener('mouseup', stopResize);
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            function doResize(e) {
+                if (!resizingColumn) return;
+
+                const diff = e.clientX - startX;
+                const newWidth = Math.max(50, startWidth + diff);
+                
+                resizingColumn.th.style.width = newWidth + 'px';
+                resizingColumn.th.style.minWidth = newWidth + 'px';
+                resizingColumn.th.style.maxWidth = newWidth + 'px';
+                columnDefs[resizingColumn.colIndex].width = newWidth;
+                
+                // Update total table width
+                const totalWidth = columnDefs.reduce((sum, col) => sum + col.width, 0) + 50;
+                const table = container.querySelector('.ag-grid-table');
+                table.style.width = totalWidth + 'px';
+                table.style.minWidth = totalWidth + 'px';
+                
+                // Update all cells in this column (+2 because row number is first column)
+                const cells = table.querySelectorAll(\`td:nth-child(\${resizingColumn.colIndex + 2})\`);
+                cells.forEach(cell => {
+                    cell.style.width = newWidth + 'px';
+                    cell.style.minWidth = newWidth + 'px';
+                    cell.style.maxWidth = newWidth + 'px';
+                });
+            }
+
+            function stopResize() {
+                resizingColumn = null;
+                document.removeEventListener('mousemove', doResize);
+                document.removeEventListener('mouseup', stopResize);
+            }
+
+            function renderAgGridRows(colDefs, data) {
+                const tbody = document.getElementById('agGridBody');
+                if (!tbody) return;
+                
+                tbody.innerHTML = '';
+
+                data.forEach((row, rowIndex) => {
+                    const tr = document.createElement('tr');
+                    tr.dataset.rowIndex = rowIndex;
+                    tr.style.cssText = 'border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);';
+                    tr.onmouseenter = () => tr.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
+                    tr.onmouseleave = () => {
+                        if (!tr.classList.contains('selected')) {
+                            tr.style.backgroundColor = '';
+                        }
+                    };
+
+                    // Add row number cell
+                    const rowNumTd = document.createElement('td');
+                    rowNumTd.className = 'ag-grid-row-number-cell';
+                    rowNumTd.textContent = rowIndex + 1;
+                    rowNumTd.style.cssText = \`
+                        width: 50px;
+                        min-width: 50px;
+                        max-width: 50px;
+                        position: sticky;
+                        left: 0;
+                        background-color: var(--vscode-editor-background, #1e1e1e);
+                        border-right: 2px solid var(--vscode-panel-border, #3c3c3c);
+                        text-align: center;
+                        font-weight: 600;
+                        user-select: none;
+                        z-index: 6;
+                        cursor: pointer;
+                        padding: 6px 8px;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    \`;
+                    rowNumTd.onmouseenter = () => rowNumTd.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
+                    rowNumTd.onmouseleave = () => {
+                        if (!tr.classList.contains('selected')) {
+                            rowNumTd.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
+                        }
+                    };
+                    rowNumTd.onclick = () => {
+                        const table = container.querySelector('.ag-grid-table');
+                        
+                        // Remove column highlights
+                        const allCells = table.querySelectorAll('th, td');
+                        allCells.forEach(cell => {
+                            if (!cell.classList.contains('ag-grid-row-number-cell') && !cell.classList.contains('ag-grid-row-number-header')) {
+                                cell.style.backgroundColor = '';
+                            }
+                        });
+                        
+                        // Remove previous row selection
+                        const allRows = tbody.querySelectorAll('tr');
+                        allRows.forEach(r => {
+                            r.classList.remove('selected');
+                            r.style.backgroundColor = '';
+                            const numCell = r.querySelector('.ag-grid-row-number-cell');
+                            if (numCell) numCell.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
+                        });
+                        
+                        // Highlight selected row
+                        tr.classList.add('selected');
+                        tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                        rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                    };
+                    tr.appendChild(rowNumTd);
+
+                    colDefs.forEach((col, colIndex) => {
+                        const td = document.createElement('td');
+                        td.style.cssText = \`
+                            width: \${col.width}px;
+                            min-width: \${col.width}px;
+                            max-width: \${col.width}px;
+                            border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
+                            padding: 6px 8px;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                        \`;
+                        
+                        if (col.pinned) {
+                            const leftOffset = calculatePinnedOffset(colDefs, colIndex);
+                            td.style.position = 'sticky';
+                            td.style.left = leftOffset + 'px';
+                            td.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
+                            td.style.zIndex = '5';
+                            td.classList.add('ag-grid-pinned-cell');
+                        }
+                        
+                        const value = row[col.field];
+                        
+                        if (value === null || value === undefined) {
+                            td.textContent = 'NULL';
+                            td.style.color = 'var(--vscode-descriptionForeground)';
+                            td.style.fontStyle = 'italic';
+                        } else if (col.type === 'boolean') {
+                            td.textContent = value ? '✓' : '✗';
+                        } else if (col.type === 'number') {
+                            td.textContent = typeof value === 'number' ? value.toLocaleString() : value;
+                            td.style.textAlign = 'right';
+                        } else {
+                            td.textContent = String(value);
+                        }
+
+                        tr.appendChild(td);
+                    });
+
+                    tbody.appendChild(tr);
+                });
+            }
+
+            function calculatePinnedOffset(colDefs, colIndex) {
+                let offset = 50; // Start after row number column
+                for (let i = 0; i < colIndex; i++) {
+                    if (colDefs[i].pinned) {
+                        offset += colDefs[i].width;
+                    }
+                }
+                return offset;
+            }
+
+            function handleSort(col, colDefs, sortCfg, filters) {
+                if (sortCfg.field === col.field) {
+                    if (sortCfg.direction === 'asc') {
+                        sortCfg.direction = 'desc';
+                    } else if (sortCfg.direction === 'desc') {
+                        sortCfg.field = null;
+                        sortCfg.direction = null;
+                    }
+                } else {
+                    sortCfg.field = col.field;
+                    sortCfg.direction = 'asc';
+                }
+                
+                updateFilteredData(colDefs, sortCfg, filters);
+                renderAgGridHeaders(colDefs, sortCfg, filters);
+            }
+
+            function showAgGridFilter(e, col, th, colDefs, sortCfg, filters) {
+                e.stopPropagation();
+
+                if (currentFilterPopup) {
+                    currentFilterPopup.remove();
+                    currentFilterPopup = null;
+                }
+
+                const popup = document.createElement('div');
+                popup.style.cssText = \`
+                    position: absolute;
+                    background-color: var(--vscode-dropdown-background, #3c3c3c);
+                    border: 1px solid var(--vscode-dropdown-border, #454545);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+                    padding: 12px;
+                    z-index: 1000;
+                    min-width: 200px;
+                    max-width: 300px;
+                    border-radius: 3px;
+                \`;
+
+                const rect = th.getBoundingClientRect();
+                popup.style.left = rect.left + 'px';
+                popup.style.top = (rect.bottom + 5) + 'px';
+
+                let html = \`<h4 style="margin-bottom: 8px; font-size: 12px;">Filter: \${col.headerName}</h4>\`;
+
+                // Simple value selection for now
+                const uniqueValues = [...new Set(rowData.map(row => row[col.field]))].sort();
+                const currentFilter = filters[col.field];
+                const selectedValues = currentFilter?.values || uniqueValues;
+
+                html += '<input type="text" id="agFilterSearch" placeholder="Search..." style="width: 100%; padding: 4px 6px; margin-bottom: 8px; background-color: var(--vscode-input-background, #3c3c3c); color: var(--vscode-input-foreground, #cccccc); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; font-size: 12px;">';
+                html += '<div style="font-size: 11px; color: var(--vscode-descriptionForeground, #999999); margin-bottom: 4px;">' + selectedValues.length + ' Selected</div>';
+                html += '<div style="margin-bottom: 8px; padding: 4px 0; border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);">';
+                html += '<label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="agSelectAll" ' + (selectedValues.length === uniqueValues.length ? 'checked' : '') + ' style="cursor: pointer; accent-color: var(--vscode-button-background, #0e639c);"><span style="font-size: 12px;">(Select All)</span></label>';
+                html += '</div>';
+                html += '<div id="agFilterValuesList" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">';
+
+                uniqueValues.forEach((value, idx) => {
+                    const displayValue = col.type === 'boolean' ? (value ? 'True' : 'False') : 
+                                       value === null || value === undefined ? 'NULL' : String(value);
+                    const checked = selectedValues.includes(value) ? 'checked' : '';
+                    html += \`
+                        <label style="display: flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer;" data-value="\${displayValue.toString().toLowerCase()}">
+                            <input type="checkbox" value="\${value}" \${checked} class="ag-value-checkbox" style="cursor: pointer; accent-color: var(--vscode-button-background, #0e639c);">
+                            <span style="flex: 1; font-size: 12px;">\${displayValue}</span>
+                        </label>
+                    \`;
+                });
+
+                html += '</div>';
+                html += \`
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button id="agFilterClear" style="padding: 4px 12px; background-color: var(--vscode-button-secondaryBackground, #3a3d41); color: var(--vscode-button-secondaryForeground, #cccccc); border: none; border-radius: 2px; cursor: pointer; font-size: 11px;">Clear</button>
+                        <button id="agFilterApply" style="padding: 4px 12px; background-color: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #ffffff); border: none; border-radius: 2px; cursor: pointer; font-size: 11px;">Apply</button>
+                    </div>
+                \`;
+
+                popup.innerHTML = html;
+                document.body.appendChild(popup);
+                currentFilterPopup = popup;
+
+                // Setup event listeners
+                const searchInput = popup.querySelector('#agFilterSearch');
+                searchInput.oninput = () => {
+                    const searchTerm = searchInput.value.toLowerCase();
+                    const items = popup.querySelectorAll('#agFilterValuesList label');
+                    items.forEach(item => {
+                        const value = item.dataset.value;
+                        item.style.display = value.includes(searchTerm) ? 'flex' : 'none';
+                    });
+                };
+
+                const selectAllCheckbox = popup.querySelector('#agSelectAll');
+                const valueCheckboxes = popup.querySelectorAll('.ag-value-checkbox');
+                
+                selectAllCheckbox.onchange = () => {
+                    valueCheckboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
+                };
+
+                popup.querySelector('#agFilterClear').onclick = () => {
+                    delete filters[col.field];
+                    updateFilteredData(colDefs, sortCfg, filters);
+                    renderAgGridHeaders(colDefs, sortCfg, filters);
+                    popup.remove();
+                    currentFilterPopup = null;
+                };
+
+                popup.querySelector('#agFilterApply').onclick = () => {
+                    const checkboxes = popup.querySelectorAll('.ag-value-checkbox:checked');
+                    const values = [...checkboxes].map(cb => {
+                        const val = cb.value;
+                        if (col.type === 'number') return parseFloat(val);
+                        if (col.type === 'boolean') return val === 'true';
+                        return val;
+                    });
+                    filters[col.field] = { values };
+                    updateFilteredData(colDefs, sortCfg, filters);
+                    renderAgGridHeaders(colDefs, sortCfg, filters);
+                    popup.remove();
+                    currentFilterPopup = null;
+                };
+
+                setTimeout(() => {
+                    document.addEventListener('click', closeFilterPopup);
+                }, 0);
+
+                function closeFilterPopup(e) {
+                    if (currentFilterPopup && !currentFilterPopup.contains(e.target)) {
+                        currentFilterPopup.remove();
+                        currentFilterPopup = null;
+                        document.removeEventListener('click', closeFilterPopup);
+                    }
+                }
+            }
+
+            function updateFilteredData(colDefs, sortCfg, filters) {
+                filteredData = rowData.filter(row => {
+                    return Object.entries(filters).every(([field, filter]) => {
+                        const value = row[field];
+                        return filter.values && filter.values.includes(value);
+                    });
+                });
+
+                if (sortCfg.field) {
+                    filteredData.sort((a, b) => {
+                        const aVal = a[sortCfg.field];
+                        const bVal = b[sortCfg.field];
+                        
+                        let comparison = 0;
+                        if (aVal < bVal) comparison = -1;
+                        if (aVal > bVal) comparison = 1;
+                        
+                        return sortCfg.direction === 'asc' ? comparison : -comparison;
+                    });
+                }
+
+                renderAgGridRows(colDefs, filteredData);
+            }
         }
 
         function displayMessages(messages) {

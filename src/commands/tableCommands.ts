@@ -1,14 +1,12 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
-import { ResultWebviewProvider } from '../resultWebview';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 
 export function registerTableCommands(
     context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
     unifiedTreeProvider: UnifiedTreeProvider,
-    resultWebviewProvider: ResultWebviewProvider,
     outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
     const selectTop1000Command = vscode.commands.registerCommand('mssqlManager.selectTop1000', async (tableNode?: any) => {

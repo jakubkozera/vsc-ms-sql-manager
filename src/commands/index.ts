@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { QueryExecutor } from '../queryExecutor';
-import { ResultWebviewProvider } from '../resultWebview';
 import { registerConnectionCommands } from './connectionCommands';
 import { registerQueryCommands } from './queryCommands';
 import { registerTableCommands } from './tableCommands';
@@ -13,7 +12,6 @@ export function registerAllCommands(
     connectionProvider: ConnectionProvider,
     unifiedTreeProvider: UnifiedTreeProvider,
     queryExecutor: QueryExecutor,
-    resultWebviewProvider: ResultWebviewProvider,
     outputChannel: vscode.OutputChannel
 ): void {
     const refreshCommand = vscode.commands.registerCommand('mssqlManager.refresh', () => {
@@ -32,7 +30,6 @@ export function registerAllCommands(
         context,
         connectionProvider,
         queryExecutor,
-        resultWebviewProvider,
         outputChannel
     );
 
@@ -40,14 +37,12 @@ export function registerAllCommands(
         context,
         connectionProvider,
         unifiedTreeProvider,
-        resultWebviewProvider,
         outputChannel
     );
 
     const storedProcedureCommands = registerStoredProcedureCommands(
         context,
         connectionProvider,
-        resultWebviewProvider,
         outputChannel
     );
 

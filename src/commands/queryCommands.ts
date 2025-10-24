@@ -1,14 +1,12 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { QueryExecutor } from '../queryExecutor';
-import { ResultWebviewProvider } from '../resultWebview';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 
 export function registerQueryCommands(
     context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
     queryExecutor: QueryExecutor,
-    resultWebviewProvider: ResultWebviewProvider,
     outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
     const executeQueryCommand = vscode.commands.registerCommand('mssqlManager.executeQuery', async () => {
@@ -46,32 +44,11 @@ export function registerQueryCommands(
         }
 
         try {
-            try {
-                await vscode.commands.executeCommand('mssqlManager.results.focus');
-            } catch {
-                try {
-                    await vscode.commands.executeCommand('workbench.view.extension.mssqlManager');
-                } catch {
-                    outputChannel.appendLine('[Extension] Panel focus commands failed, results will show anyway');
-                }
-            }
-            
-            resultWebviewProvider.showLoading();
-            
-            const results = await queryExecutor.executeQuery(queryText);
-            
-            resultWebviewProvider.showResults(results.recordset, results.executionTime);
+            outputChannel.appendLine(`[Extension] Executing query...`);
+            // Query execution is handled by the SQL Editor webview directly
+            vscode.window.showInformationMessage('Query execution is handled by the SQL Editor. Use the Run button or F5 in the SQL file.');
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            
-            try {
-                await vscode.commands.executeCommand('mssqlManager.results.focus');
-            } catch {
-                // Panel will be shown when error is posted
-            }
-            
-            resultWebviewProvider.showError(errorMessage);
-            
             vscode.window.showErrorMessage(`Query execution failed: ${errorMessage}`);
             outputChannel.appendLine(`Query execution error: ${errorMessage}`);
         }

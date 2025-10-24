@@ -1,12 +1,10 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
-import { ResultWebviewProvider } from '../resultWebview';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 
 export function registerStoredProcedureCommands(
     context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
-    resultWebviewProvider: ResultWebviewProvider,
     outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
     const disposables: vscode.Disposable[] = [];
@@ -299,7 +297,8 @@ GO
                 const result = await connection.request().query(query);
                 
                 if (result && result.recordset && result.recordset.length > 0) {
-                    await resultWebviewProvider.showResults(result.recordset);
+                    vscode.window.showInformationMessage(`Found ${result.recordset.length} dependencies for ${node.schema}.${node.name}`);
+                    outputChannel.appendLine(JSON.stringify(result.recordset, null, 2));
                 } else {
                     vscode.window.showInformationMessage(`No dependencies found for ${node.schema}.${node.name}`);
                 }
@@ -435,7 +434,8 @@ GO
                 const result = await connection.request().query(query);
                 
                 if (result && result.recordset && result.recordset.length > 0) {
-                    await resultWebviewProvider.showResults(result.recordset);
+                    vscode.window.showInformationMessage(`Retrieved properties for ${node.schema}.${node.name}`);
+                    outputChannel.appendLine(JSON.stringify(result.recordset, null, 2));
                 } else {
                     vscode.window.showErrorMessage('Could not retrieve procedure properties');
                 }

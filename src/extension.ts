@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from './connectionProvider';
 import { UnifiedTreeProvider } from './unifiedTreeProvider';
 import { QueryExecutor } from './queryExecutor';
-import { ResultWebviewProvider } from './resultWebview';
 import { SqlEditorProvider } from './sqlEditorProvider';
 import { registerAllCommands } from './commands';
 
@@ -24,7 +23,6 @@ export function activate(context: vscode.ExtensionContext) {
     const connectionProvider = new ConnectionProvider(context, outputChannel, statusBarItem);
     const unifiedTreeProvider = new UnifiedTreeProvider(connectionProvider, outputChannel);
     const queryExecutor = new QueryExecutor(connectionProvider, outputChannel);
-    const resultWebviewProvider = new ResultWebviewProvider(context.extensionUri);
     
     // Register SQL custom editor provider
     const sqlEditorProvider = new SqlEditorProvider(context, queryExecutor, connectionProvider, outputChannel);
@@ -38,11 +36,6 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             }
         )
-    );
-
-    // Register webview provider for panel
-    context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(ResultWebviewProvider.viewType, resultWebviewProvider)
     );
 
     // Set up connection change callback
@@ -65,7 +58,6 @@ export function activate(context: vscode.ExtensionContext) {
         connectionProvider,
         unifiedTreeProvider,
         queryExecutor,
-        resultWebviewProvider,
         outputChannel
     );
 
