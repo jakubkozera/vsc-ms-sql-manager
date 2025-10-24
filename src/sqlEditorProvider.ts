@@ -67,10 +67,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         this.connectionProvider.setActiveConnection(message.connectionId);
                         this.sendActiveConnections(webviewPanel.webview);
                         break;
+                    case 'getSchema':
+                        await this.sendSchemaToWebview(webviewPanel.webview);
+                        break;
                     case 'ready':
                         // Webview is ready, send initial content
                         this.updateWebview(webviewPanel.webview, document);
                         this.sendActiveConnections(webviewPanel.webview);
+                        await this.sendSchemaToWebview(webviewPanel.webview);
                         break;
                 }
             }
@@ -103,6 +107,111 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             })),
             currentConnectionId: currentConfig?.id || null
         });
+    }
+
+    private async sendSchemaToWebview(webview: vscode.Webview): Promise<void> {
+        if (!this.connectionProvider.isConnected()) {
+            webview.postMessage({ type: 'schemaUpdate', schema: { tables: [], views: [] } });
+            return;
+        }
+
+        try {
+            const connection = this.connectionProvider.getConnection();
+            if (!connection) {
+                return;
+            }
+
+            // Fetch tables and their columns
+            const tablesQuery = `
+                SELECT 
+                    t.TABLE_SCHEMA,
+                    t.TABLE_NAME,
+                    c.COLUMN_NAME,
+                    c.DATA_TYPE,
+                    c.IS_NULLABLE
+                FROM INFORMATION_SCHEMA.TABLES t
+                LEFT JOIN INFORMATION_SCHEMA.COLUMNS c 
+                    ON t.TABLE_SCHEMA = c.TABLE_SCHEMA 
+                    AND t.TABLE_NAME = c.TABLE_NAME
+                WHERE t.TABLE_TYPE = 'BASE TABLE'
+                ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION
+            `;
+
+            const request = connection.request();
+            const result = await request.query(tablesQuery);
+            
+            // Group by table
+            const tablesMap = new Map<string, any>();
+            
+            result.recordset.forEach((row: any) => {
+                const tableKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
+                if (!tablesMap.has(tableKey)) {
+                    tablesMap.set(tableKey, {
+                        schema: row.TABLE_SCHEMA,
+                        name: row.TABLE_NAME,
+                        columns: []
+                    });
+                }
+                
+                if (row.COLUMN_NAME) {
+                    tablesMap.get(tableKey)!.columns.push({
+                        name: row.COLUMN_NAME,
+                        type: row.DATA_TYPE,
+                        nullable: row.IS_NULLABLE === 'YES'
+                    });
+                }
+            });
+
+            // Fetch views
+            const viewsQuery = `
+                SELECT 
+                    TABLE_SCHEMA,
+                    TABLE_NAME,
+                    COLUMN_NAME,
+                    DATA_TYPE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME IN (
+                    SELECT TABLE_NAME 
+                    FROM INFORMATION_SCHEMA.VIEWS
+                )
+                ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+            `;
+
+            const viewsRequest = connection.request();
+            const viewsResult = await viewsRequest.query(viewsQuery);
+            
+            const viewsMap = new Map<string, any>();
+            
+            viewsResult.recordset.forEach((row: any) => {
+                const viewKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
+                if (!viewsMap.has(viewKey)) {
+                    viewsMap.set(viewKey, {
+                        schema: row.TABLE_SCHEMA,
+                        name: row.TABLE_NAME,
+                        columns: []
+                    });
+                }
+                
+                if (row.COLUMN_NAME) {
+                    viewsMap.get(viewKey)!.columns.push({
+                        name: row.COLUMN_NAME,
+                        type: row.DATA_TYPE
+                    });
+                }
+            });
+
+            webview.postMessage({
+                type: 'schemaUpdate',
+                schema: {
+                    tables: Array.from(tablesMap.values()),
+                    views: Array.from(viewsMap.values())
+                }
+            });
+
+        } catch (error) {
+            this.outputChannel.appendLine(`Failed to fetch schema: ${error}`);
+            webview.postMessage({ type: 'schemaUpdate', schema: { tables: [], views: [] } });
+        }
     }
 
     private updateTextDocument(document: vscode.TextDocument, content: string) {
@@ -403,7 +512,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         .results-tab.active {
             color: var(--vscode-tab-activeForeground);
-            border-bottom-color: var(--vscode-focusBorder);
+            border-bottom: 2px solid var(--vscode-focusBorder);
         }
 
         #resultsContent {
@@ -542,6 +651,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         let isResizing = false;
         let activeConnections = [];
         let currentConnectionId = null;
+        let dbSchema = { tables: [], views: [] };
 
         // Initialize Monaco Editor
         require.config({ 
@@ -585,6 +695,13 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE, () => {
                 executeQuery();
+            });
+
+            // Register SQL completion provider
+            monaco.languages.registerCompletionItemProvider('sql', {
+                provideCompletionItems: (model, position) => {
+                    return provideSqlCompletions(model, position);
+                }
             });
 
             // Notify extension that webview is ready
@@ -689,6 +806,269 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             });
         }
 
+        // SQL Completion Provider Function
+        function provideSqlCompletions(model, position) {
+            const textUntilPosition = model.getValueInRange({
+                startLineNumber: 1,
+                startColumn: 1,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column
+            });
+
+            const word = model.getWordUntilPosition(position);
+            const range = {
+                startLineNumber: position.lineNumber,
+                endLineNumber: position.lineNumber,
+                startColumn: word.startColumn,
+                endColumn: word.endColumn
+            };
+
+            // Check if we're after a dot (for column suggestions)
+            const lineUntilPosition = model.getValueInRange({
+                startLineNumber: position.lineNumber,
+                startColumn: 1,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column
+            });
+
+            const dotMatch = lineUntilPosition.match(/(\\w+)\\\.\\w*$/);
+            
+            if (dotMatch) {
+                // User is typing after a dot, suggest columns
+                const prefix = dotMatch[1].toLowerCase();
+                
+                // Find table/alias in the query
+                const tableAlias = findTableForAlias(textUntilPosition, prefix);
+                
+                if (tableAlias) {
+                    const columns = getColumnsForTable(tableAlias.schema, tableAlias.table);
+                    return {
+                        suggestions: columns.map(col => ({
+                            label: col.name,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: \`\${col.type}\${col.nullable ? ' (nullable)' : ''}\`,
+                            insertText: col.name,
+                            range: range
+                        }))
+                    };
+                }
+            }
+
+            // Check if we're in SELECT or WHERE clause - suggest columns
+            const lowerText = textUntilPosition.toLowerCase();
+            
+            // Check if we're in SELECT clause (between SELECT and FROM, or after SELECT with no FROM yet)
+            const selectMatch = /\\bselect\\b(.*?)(?:\\bfrom\\b|$)/is.exec(lowerText);
+            const fromMatch = /\\bfrom\\b/i.exec(lowerText);
+            const whereMatch = /\\bwhere\\b/i.exec(lowerText);
+            
+            let inSelectClause = false;
+            let inWhereClause = false;
+            
+            if (selectMatch && fromMatch) {
+                // Check if cursor is between SELECT and FROM
+                const selectPos = lowerText.indexOf('select');
+                const fromPos = lowerText.indexOf('from');
+                inSelectClause = fromPos > selectPos && textUntilPosition.length <= lowerText.lastIndexOf('from') + 4;
+            } else if (selectMatch && !fromMatch) {
+                inSelectClause = true;
+            }
+            
+            if (whereMatch) {
+                inWhereClause = true;
+            }
+            
+            if (inSelectClause || inWhereClause) {
+                // Get all tables/aliases from the FULL query (not just textUntilPosition)
+                const fullText = model.getValue();
+                const tablesInQuery = extractTablesFromQuery(fullText);
+                
+                if (tablesInQuery.length > 0) {
+                    const suggestions = [];
+                    
+                    // Add columns from all tables in the query
+                    tablesInQuery.forEach(tableInfo => {
+                        const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
+                        columns.forEach(col => {
+                            const prefix = tableInfo.alias || tableInfo.table;
+                            suggestions.push({
+                                label: col.name,
+                                kind: monaco.languages.CompletionItemKind.Field,
+                                detail: \`\${prefix}.\${col.name} (\${col.type})\`,
+                                insertText: col.name,
+                                range: range,
+                                sortText: \`0_\${col.name}\` // Prioritize columns
+                            });
+                            
+                            // Also suggest with table prefix
+                            suggestions.push({
+                                label: \`\${prefix}.\${col.name}\`,
+                                kind: monaco.languages.CompletionItemKind.Field,
+                                detail: \`\${col.type}\${col.nullable ? ' (nullable)' : ''}\`,
+                                insertText: \`\${prefix}.\${col.name}\`,
+                                range: range,
+                                sortText: \`1_\${col.name}\`
+                            });
+                        });
+                    });
+                    
+                    // Add SQL keywords too
+                    const keywords = ['AS', 'AND', 'OR', 'DISTINCT', 'TOP', 'ORDER BY', 'GROUP BY'];
+                    keywords.forEach(keyword => {
+                        suggestions.push({
+                            label: keyword,
+                            kind: monaco.languages.CompletionItemKind.Keyword,
+                            insertText: keyword,
+                            range: range,
+                            sortText: \`9_\${keyword}\` // Lower priority
+                        });
+                    });
+                    
+                    return { suggestions };
+                }
+            }
+
+            // Default: suggest tables and views
+            const suggestions = [];
+
+            // Add tables
+            dbSchema.tables.forEach(table => {
+                const fullName = table.schema === 'dbo' ? table.name : \`\${table.schema}.\${table.name}\`;
+                suggestions.push({
+                    label: fullName,
+                    kind: monaco.languages.CompletionItemKind.Class,
+                    detail: \`Table (\${table.columns.length} columns)\`,
+                    insertText: fullName,
+                    range: range
+                });
+            });
+
+            // Add views
+            dbSchema.views.forEach(view => {
+                const fullName = view.schema === 'dbo' ? view.name : \`\${view.schema}.\${view.name}\`;
+                suggestions.push({
+                    label: fullName,
+                    kind: monaco.languages.CompletionItemKind.Interface,
+                    detail: \`View (\${view.columns.length} columns)\`,
+                    insertText: fullName,
+                    range: range
+                });
+            });
+
+            // Add SQL keywords
+            const keywords = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'OUTER', 
+                            'ON', 'AND', 'OR', 'ORDER BY', 'GROUP BY', 'HAVING', 'INSERT', 'UPDATE', 
+                            'DELETE', 'CREATE', 'ALTER', 'DROP', 'AS', 'DISTINCT', 'TOP', 'LIMIT'];
+            
+            keywords.forEach(keyword => {
+                suggestions.push({
+                    label: keyword,
+                    kind: monaco.languages.CompletionItemKind.Keyword,
+                    insertText: keyword,
+                    range: range
+                });
+            });
+
+            return { suggestions };
+        }
+
+        function extractTablesFromQuery(query) {
+            const tables = [];
+            const lowerQuery = query.toLowerCase();
+            
+            // Match FROM and JOIN clauses with optional aliases
+            // Patterns: FROM schema.table alias, FROM table alias, JOIN schema.table alias, etc.
+            const patterns = [
+                /\\b(?:from|join)\\s+(?:(\\w+)\\.)?(\\w+)(?:\\s+(?:as\\s+)?(\\w+))?/gi
+            ];
+            
+            patterns.forEach(pattern => {
+                let match;
+                while ((match = pattern.exec(query)) !== null) {
+                    const schema = match[1] || 'dbo';
+                    const table = match[2];
+                    const alias = match[3] || table;
+                    
+                    // Verify this is a valid table in our schema
+                    const tableInfo = findTable(table.toLowerCase());
+                    if (tableInfo) {
+                        tables.push({
+                            schema: tableInfo.schema,
+                            table: tableInfo.table,
+                            alias: alias
+                        });
+                    }
+                }
+            });
+            
+            return tables;
+        }
+
+        function findTableForAlias(query, alias) {
+            const lowerQuery = query.toLowerCase();
+            const lowerAlias = alias.toLowerCase();
+
+            // Pattern: FROM tableName alias or JOIN tableName alias
+            const patterns = [
+                new RegExp(\`from\\\\s+(?:(\\\\w+)\\\\.)?(\\\\w+)\\\\s+(?:as\\\\s+)?\${lowerAlias}(?:\\\\s|,|\\$)\`, 'i'),
+                new RegExp(\`join\\\\s+(?:(\\\\w+)\\\\.)?(\\\\w+)\\\\s+(?:as\\\\s+)?\${lowerAlias}(?:\\\\s|,|\\$)\`, 'i')
+            ];
+
+            for (const pattern of patterns) {
+                const match = query.match(pattern);
+                if (match) {
+                    return {
+                        schema: match[1] || 'dbo',
+                        table: match[2]
+                    };
+                }
+            }
+
+            // Check if alias is actually the table name itself
+            const directTable = findTable(lowerAlias);
+            if (directTable) {
+                return directTable;
+            }
+
+            return null;
+        }
+
+        function findTable(tableName) {
+            const lowerName = tableName.toLowerCase();
+            
+            for (const table of dbSchema.tables) {
+                if (table.name.toLowerCase() === lowerName) {
+                    return { schema: table.schema, table: table.name };
+                }
+            }
+            
+            for (const view of dbSchema.views) {
+                if (view.name.toLowerCase() === lowerName) {
+                    return { schema: view.schema, table: view.name };
+                }
+            }
+            
+            return null;
+        }
+
+        function getColumnsForTable(schema, tableName) {
+            const lowerName = tableName.toLowerCase();
+            
+            for (const table of dbSchema.tables) {
+                if (table.name.toLowerCase() === lowerName && table.schema === schema) {
+                    return table.columns;
+                }
+            }
+            
+            for (const view of dbSchema.views) {
+                if (view.name.toLowerCase() === lowerName && view.schema === schema) {
+                    return view.columns;
+                }
+            }
+            
+            return [];
+        }
+
         // Handle messages from extension
         window.addEventListener('message', event => {
             const message = event.data;
@@ -708,6 +1088,13 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
                 case 'connectionsUpdate':
                     updateConnectionsList(message.connections, message.currentConnectionId);
+                    // Request schema update when connection changes
+                    vscode.postMessage({ type: 'getSchema' });
+                    break;
+
+                case 'schemaUpdate':
+                    dbSchema = message.schema || { tables: [], views: [] };
+                    console.log('Schema updated:', dbSchema.tables.length, 'tables', dbSchema.views.length, 'views');
                     break;
 
                 case 'executing':
