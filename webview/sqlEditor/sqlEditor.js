@@ -784,7 +784,6 @@ function displayResults(resultSets) {
         // Create container for this result set
         const resultSetContainer = document.createElement('div');
         resultSetContainer.className = 'result-set-container';
-        resultSetContainer.style.cssText = 'margin-bottom: 20px;';
 
         // Create table container
         const tableContainer = document.createElement('div');
@@ -807,6 +806,12 @@ function displayResults(resultSets) {
 function initAgGridTable(rowData, container) {
     console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows');
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
+    
+    // Virtual scrolling configuration
+    const ROW_HEIGHT = 30; // Fixed row height in pixels
+    const VISIBLE_ROWS = 30; // Number of rows to render in viewport
+    const BUFFER_ROWS = 10; // Extra rows to render above/below viewport
+    const RENDER_CHUNK_SIZE = VISIBLE_ROWS + (BUFFER_ROWS * 2);
     
     // Detect column types and create columnDefs
     const columns = Object.keys(rowData[0]);
@@ -839,54 +844,49 @@ function initAgGridTable(rowData, container) {
     let activeFilters = {};
     let currentFilterPopup = null;
     let sortConfig = { field: null, direction: null };
+    
+    // Virtual scrolling state
+    let currentStartRow = 0;
+    let scrollTimeout = null;
 
-    // Build the table HTML structure
+    // Build the table HTML structure with virtual scrolling support
     const tableId = `agGrid_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const tableHtml = `
-        <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; width: 100%;">
-            <thead class="ag-grid-thead"></thead>
-            <tbody class="ag-grid-tbody"></tbody>
-        </table>
+        <div class="ag-grid-viewport" style="overflow: auto; position: relative; height: 100%; width: 100%;">
+            <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; width: 100%;">
+                <thead class="ag-grid-thead"></thead>
+                <tbody class="ag-grid-tbody" style="position: relative;"></tbody>
+            </table>
+        </div>
     `;
     
     console.log('[AG-GRID] Setting container innerHTML');
     container.innerHTML = tableHtml;
     
+    const viewport = container.querySelector('.ag-grid-viewport');
     const table = container.querySelector('.ag-grid-table');
+    const tbody = container.querySelector('.ag-grid-tbody');
     console.log('[AG-GRID] Table element:', table, 'border-collapse:', table?.style.borderCollapse);
 
     renderAgGridHeaders(columnDefs, sortConfig, activeFilters, container);
-    renderAgGridRows(columnDefs, filteredData, container);
+    renderAgGridRows(columnDefs, filteredData, container, 0, ROW_HEIGHT, RENDER_CHUNK_SIZE);
     
-    console.log('[AG-GRID] Initial render complete. Checking header positions...');
-    
-    // Add scroll event listener for debugging on the scrollable container
-    console.log('[AG-GRID] Container dimensions:', {
-        offsetHeight: container.offsetHeight,
-        scrollHeight: container.scrollHeight,
-        clientHeight: container.clientHeight,
-        isScrollable: container.scrollHeight > container.clientHeight,
-        overflow: window.getComputedStyle(container).overflow
+    // Set up virtual scrolling
+    viewport.addEventListener('scroll', () => {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+            const scrollTop = viewport.scrollTop;
+            const newStartRow = Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS;
+            const clampedStartRow = Math.max(0, Math.min(newStartRow, filteredData.length - RENDER_CHUNK_SIZE));
+            
+            if (clampedStartRow !== currentStartRow) {
+                currentStartRow = clampedStartRow;
+                renderAgGridRows(columnDefs, filteredData, container, currentStartRow, ROW_HEIGHT, RENDER_CHUNK_SIZE);
+            }
+        }, 10);
     });
     
-    container.addEventListener('scroll', () => {
-        console.log('[AG-GRID] Container scrolled - scrollTop:', container.scrollTop, 'scrollLeft:', container.scrollLeft);
-        // Check if headers are still sticky
-        const firstHeader = container.querySelector('.ag-grid-thead th');
-        if (firstHeader) {
-            const rect = firstHeader.getBoundingClientRect();
-            const computed = window.getComputedStyle(firstHeader);
-            console.log('[AG-GRID] First header position during scroll - top:', rect.top, 'position:', computed.position);
-        }
-    });
-    
-    setTimeout(() => {
-        const headers = container.querySelectorAll('.ag-grid-thead th');
-        headers.forEach((h, i) => {
-            const computed = window.getComputedStyle(h);
-            console.log(`[AG-GRID] Header ${i} computed styles - position: ${computed.position}, top: ${computed.top}, z-index: ${computed.zIndex}, sticky: ${computed.position === 'sticky'}`);
-        });
-    }, 100);
+    console.log('[AG-GRID] Virtual scrolling initialized with', filteredData.length, 'total rows, rendering', RENDER_CHUNK_SIZE, 'at a time');
 
     function renderAgGridHeaders(colDefs, sortCfg, filters, containerEl) {
         console.log('[AG-GRID] renderAgGridHeaders called with', colDefs.length, 'columns');
@@ -1193,26 +1193,57 @@ function initAgGridTable(rowData, container) {
         document.removeEventListener('mouseup', stopResize);
     }
 
-    function renderAgGridRows(colDefs, data, containerEl) {
-        console.log('[AG-GRID] renderAgGridRows called with', data.length, 'rows');
+    function renderAgGridRows(colDefs, data, containerEl, startRow = 0, rowHeight = 30, chunkSize = 50) {
+        console.log('[AG-GRID] renderAgGridRows called - total:', data.length, 'rows, rendering from:', startRow, 'chunk:', chunkSize);
         const tbody = containerEl.querySelector('.ag-grid-tbody');
         if (!tbody) {
             console.error('[AG-GRID] tbody element not found!');
             return;
         }
         
+        // Clear existing rows
         tbody.innerHTML = '';
+        
+        // Calculate visible range
+        const endRow = Math.min(startRow + chunkSize, data.length);
+        const totalHeight = data.length * rowHeight;
+        const offsetY = startRow * rowHeight;
+        
+        // Set tbody height to accommodate all rows (for scrolling)
+        tbody.style.height = totalHeight + 'px';
+        
+        console.log('[AG-GRID] Rendering rows', startRow, 'to', endRow, '- offset:', offsetY, 'total height:', totalHeight);
 
-        data.forEach((row, rowIndex) => {
+        // Only render visible rows
+        for (let i = startRow; i < endRow; i++) {
+            const row = data[i];
+            const rowIndex = i;
+            
             const tr = document.createElement('tr');
             tr.dataset.rowIndex = rowIndex;
-            tr.style.cssText = 'border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);';
-            tr.onmouseenter = () => tr.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
-            tr.onmouseleave = () => {
-                if (!tr.classList.contains('selected')) {
-                    tr.style.backgroundColor = '';
+            // Position rows absolutely with calculated offset
+            tr.style.cssText = `
+                position: absolute;
+                top: ${i * rowHeight}px;
+                left: 0;
+                right: 0;
+                height: ${rowHeight}px;
+                border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+                display: table;
+                width: 100%;
+                table-layout: fixed;
+            `;
+            // Mouse hover handling
+            tr.addEventListener('mouseenter', function() {
+                if (!this.classList.contains('selected')) {
+                    this.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
                 }
-            };
+            });
+            tr.addEventListener('mouseleave', function() {
+                if (!this.classList.contains('selected')) {
+                    this.style.backgroundColor = '';
+                }
+            });
 
             // Add row number cell
             const rowNumTd = document.createElement('td');
@@ -1231,19 +1262,28 @@ function initAgGridTable(rowData, container) {
                 user-select: none;
                 z-index: 6;
                 cursor: pointer;
-                padding: 6px 8px;
+                padding: 0 8px;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                height: ${rowHeight}px;
+                line-height: ${rowHeight}px;
+                display: table-cell;
+                vertical-align: middle;
             `;
-            rowNumTd.onmouseenter = () => rowNumTd.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
-            rowNumTd.onmouseleave = () => {
+            rowNumTd.addEventListener('mouseenter', function() {
                 if (!tr.classList.contains('selected')) {
-                    rowNumTd.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
+                    this.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
                 }
-            };
-            rowNumTd.onclick = () => {
-                const table = container.querySelector('.ag-grid-table');
+            });
+            rowNumTd.addEventListener('mouseleave', function() {
+                if (!tr.classList.contains('selected')) {
+                    this.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
+                }
+            });
+            rowNumTd.addEventListener('click', function() {
+                const table = containerEl.querySelector('.ag-grid-table');
+                const tbody = containerEl.querySelector('.ag-grid-tbody');
                 
                 // Remove column highlights
                 const allCells = table.querySelectorAll('th, td');
@@ -1266,7 +1306,7 @@ function initAgGridTable(rowData, container) {
                 tr.classList.add('selected');
                 tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
                 rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-            };
+            });
             tr.appendChild(rowNumTd);
 
             colDefs.forEach((col, colIndex) => {
@@ -1276,10 +1316,14 @@ function initAgGridTable(rowData, container) {
                     min-width: ${col.width}px;
                     max-width: ${col.width}px;
                     border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
-                    padding: 6px 8px;
+                    padding: 0 8px;
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
+                    height: ${rowHeight}px;
+                    line-height: ${rowHeight}px;
+                    display: table-cell;
+                    vertical-align: middle;
                 `;
                 
                 if (col.pinned) {
@@ -1321,9 +1365,9 @@ function initAgGridTable(rowData, container) {
             });
 
             tbody.appendChild(tr);
-        });
+        }
         
-        console.log('[AG-GRID] Rendered', data.length, 'rows successfully');
+        console.log('[AG-GRID] Rendered', endRow - startRow, 'rows successfully (from', startRow, 'to', endRow, ')');
     }
 
     function calculatePinnedOffset(colDefs, colIndex) {
@@ -1348,6 +1392,10 @@ function initAgGridTable(rowData, container) {
             sortCfg.field = col.field;
             sortCfg.direction = 'asc';
         }
+        
+        currentStartRow = 0; // Reset to top after sort
+        const viewport = containerEl.querySelector('.ag-grid-viewport');
+        if (viewport) viewport.scrollTop = 0;
         
         updateFilteredData(colDefs, sortCfg, filters, containerEl);
         renderAgGridHeaders(colDefs, sortCfg, filters, containerEl);
@@ -1436,6 +1484,11 @@ function initAgGridTable(rowData, container) {
 
         popup.querySelector('#agFilterClear').onclick = () => {
             delete filters[col.field];
+            
+            currentStartRow = 0; // Reset to top after clearing filter
+            const viewport = containerEl.querySelector('.ag-grid-viewport');
+            if (viewport) viewport.scrollTop = 0;
+            
             updateFilteredData(colDefs, sortCfg, filters, containerEl);
             renderAgGridHeaders(colDefs, sortCfg, filters, containerEl);
             popup.remove();
@@ -1451,6 +1504,11 @@ function initAgGridTable(rowData, container) {
                 return val;
             });
             filters[col.field] = { values };
+            
+            currentStartRow = 0; // Reset to top after filter
+            const viewport = containerEl.querySelector('.ag-grid-viewport');
+            if (viewport) viewport.scrollTop = 0;
+            
             updateFilteredData(colDefs, sortCfg, filters, containerEl);
             renderAgGridHeaders(colDefs, sortCfg, filters, containerEl);
             popup.remove();
@@ -1491,7 +1549,7 @@ function initAgGridTable(rowData, container) {
             });
         }
 
-        renderAgGridRows(colDefs, filteredData, containerEl);
+        renderAgGridRows(colDefs, filteredData, containerEl, currentStartRow, ROW_HEIGHT, RENDER_CHUNK_SIZE);
     }
 }
 

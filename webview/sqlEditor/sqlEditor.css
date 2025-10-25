@@ -208,6 +208,15 @@ th {
 }
 
 /* AG Grid specific styles for sticky headers */
+.ag-grid-table thead,
+.ag-grid-thead {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 100 !important;
+    display: table-header-group;
+}
+
 .ag-grid-table thead th,
 .ag-grid-thead th {
     position: -webkit-sticky !important;
@@ -267,6 +276,9 @@ th {
 
 .result-set-container {
     margin-bottom: 20px;
+    height: calc(100% - 20px);
+    display: flex;
+    flex-direction: column;
 }
 
 .result-set-header {
@@ -280,7 +292,7 @@ th {
 
 .result-set-table {
     width: 100%;
-    max-height: 400px;
+    height: 100%;
     overflow: auto;
     position: relative;
 }
@@ -325,4 +337,32 @@ th {
     height: 1px;
     background-color: var(--vscode-menu-separatorBackground);
     margin: 4px 0;
+}
+
+/* AG Grid Virtual Scrolling Support */
+.ag-grid-viewport {
+    overflow: auto !important;
+    position: relative !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 400px;
+    max-height: 600px;
+}
+
+.ag-grid-table {
+    width: 100%;
+    border-collapse: separate !important;
+    border-spacing: 0;
+    position: relative;
+}
+
+.ag-grid-tbody {
+    position: relative;
+    display: block;
+}
+
+.ag-grid-tbody tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
 }
