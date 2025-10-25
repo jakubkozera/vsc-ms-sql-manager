@@ -9,6 +9,7 @@ let isResizing = false;
 let activeConnections = [];
 let currentConnectionId = null;
 let dbSchema = { tables: [], views: [], foreignKeys: [] };
+let validationTimeout = null;
 
 // Initialize Monaco Editor
 require.config({ 
@@ -42,6 +43,12 @@ require(['vs/editor/editor.main'], function () {
                 type: 'documentChanged',
                 content: editor.getValue()
             });
+            
+            // Validate SQL after a short delay
+            clearTimeout(validationTimeout);
+            validationTimeout = setTimeout(() => {
+                validateSql();
+            }, 500);
         }
     });
 
@@ -1546,6 +1553,166 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// SQL Validation
+function validateSql() {
+    if (!editor || !dbSchema || dbSchema.tables.length === 0) {
+        return;
+    }
+    
+    const model = editor.getModel();
+    if (!model) return;
+    
+    const content = model.getValue();
+    const markers = [];
+    
+    console.log('[SQL-VALIDATION] Starting validation...');
+    
+    // Parse SQL to find table and column references
+    const lines = content.split('\n');
+    
+    lines.forEach((line, lineIndex) => {
+        const lowerLine = line.toLowerCase();
+        
+        // Find FROM and JOIN clauses - supports both unquoted and bracket-quoted identifiers
+        // Matches: FROM table, FROM [table], FROM schema.table, FROM [schema].[table]
+        const fromMatch = /\bfrom\s+(?:\[?(\w+)\]?\.)?(\[?[\w]+\]?)/gi;
+        const joinMatch = /\bjoin\s+(?:\[?(\w+)\]?\.)?(\[?[\w]+\]?)/gi;
+        
+        let match;
+        
+        // Check table names in FROM
+        while ((match = fromMatch.exec(line)) !== null) {
+            const schema = match[1] || 'dbo';
+            let tableName = match[2];
+            
+            // Remove brackets if present
+            const cleanSchema = schema.replace(/[\[\]]/g, '');
+            const cleanTableName = tableName.replace(/[\[\]]/g, '');
+            
+            const tableInfo = findTableByName(`${cleanSchema}.${cleanTableName}`);
+            
+            if (!tableInfo) {
+                // Calculate position of the table name (not schema)
+                const tableNameIndex = match.index + match[0].lastIndexOf(match[2]);
+                const startColumn = tableNameIndex + 1;
+                markers.push({
+                    severity: monaco.MarkerSeverity.Error,
+                    message: `Table '${cleanSchema}.${cleanTableName}' does not exist in the database`,
+                    startLineNumber: lineIndex + 1,
+                    startColumn: startColumn,
+                    endLineNumber: lineIndex + 1,
+                    endColumn: startColumn + match[2].length
+                });
+                console.log('[SQL-VALIDATION] Invalid table in FROM:', `${cleanSchema}.${cleanTableName}`);
+            }
+        }
+        
+        // Check table names in JOIN
+        while ((match = joinMatch.exec(line)) !== null) {
+            const schema = match[1] || 'dbo';
+            let tableName = match[2];
+            
+            // Remove brackets if present
+            const cleanSchema = schema.replace(/[\[\]]/g, '');
+            const cleanTableName = tableName.replace(/[\[\]]/g, '');
+            
+            const tableInfo = findTableByName(`${cleanSchema}.${cleanTableName}`);
+            
+            if (!tableInfo) {
+                // Calculate position of the table name (not schema)
+                const tableNameIndex = match.index + match[0].lastIndexOf(match[2]);
+                const startColumn = tableNameIndex + 1;
+                markers.push({
+                    severity: monaco.MarkerSeverity.Error,
+                    message: `Table '${cleanSchema}.${cleanTableName}' does not exist in the database`,
+                    startLineNumber: lineIndex + 1,
+                    startColumn: startColumn,
+                    endLineNumber: lineIndex + 1,
+                    endColumn: startColumn + match[2].length
+                });
+                console.log('[SQL-VALIDATION] Invalid table in JOIN:', `${cleanSchema}.${cleanTableName}`);
+            }
+        }
+        
+        // Check column references (table.column pattern)
+        const columnMatch = /\b([\w]+)\.([\w]+)\b/g;
+        while ((match = columnMatch.exec(line)) !== null) {
+            const tableOrAlias = match[1];
+            const columnName = match[2];
+            
+            // Skip if it's a schema.table reference
+            if (lowerLine.includes(`from ${match[0].toLowerCase()}`) || 
+                lowerLine.includes(`join ${match[0].toLowerCase()}`)) {
+                continue;
+            }
+            
+            // Find the table in the query context
+            const fullQuery = content.toLowerCase();
+            const tableInfo = findTableForColumnCheck(fullQuery, tableOrAlias);
+            
+            if (tableInfo) {
+                const column = tableInfo.columns.find(col => 
+                    col.name.toLowerCase() === columnName.toLowerCase()
+                );
+                
+                if (!column) {
+                    const startColumn = match.index + match[1].length + 2; // +2 for the dot
+                    markers.push({
+                        severity: monaco.MarkerSeverity.Error,
+                        message: `Column '${columnName}' does not exist in table '${tableInfo.name}'`,
+                        startLineNumber: lineIndex + 1,
+                        startColumn: startColumn,
+                        endLineNumber: lineIndex + 1,
+                        endColumn: startColumn + columnName.length
+                    });
+                    console.log('[SQL-VALIDATION] Invalid column:', columnName, 'in table:', tableInfo.name);
+                }
+            }
+        }
+    });
+    
+    console.log('[SQL-VALIDATION] Found', markers.length, 'validation errors');
+    monaco.editor.setModelMarkers(model, 'sql-validation', markers);
+}
+
+function findTableByName(tableName) {
+    const parts = tableName.split('.');
+    const name = parts.length > 1 ? parts[1] : parts[0];
+    const schema = parts.length > 1 ? parts[0] : 'dbo';
+    
+    return dbSchema.tables.find(t => 
+        t.name.toLowerCase() === name.toLowerCase() && 
+        t.schema.toLowerCase() === schema.toLowerCase()
+    );
+}
+
+function findTableForColumnCheck(query, tableOrAlias) {
+    // Try to find table by alias or name in the query
+    const aliasPattern = new RegExp(`from\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?${tableOrAlias}\\b`, 'i');
+    const directPattern = new RegExp(`from\\s+(?:(\\w+)\\.)?(${tableOrAlias})\\b`, 'i');
+    
+    let match = aliasPattern.exec(query) || directPattern.exec(query);
+    
+    if (match) {
+        const schema = match[1] || 'dbo';
+        const tableName = match[2];
+        return findTableByName(`${schema}.${tableName}`);
+    }
+    
+    // Try JOIN clauses
+    const joinPattern = new RegExp(`join\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?${tableOrAlias}\\b`, 'i');
+    match = joinPattern.exec(query);
+    
+    if (match) {
+        const schema = match[1] || 'dbo';
+        const tableName = match[2];
+        return findTableByName(`${schema}.${tableName}`);
+    }
+    
+    // Try direct table name
+    return findTableByName(tableOrAlias);
 }
 
 // Update editor layout when window resizes
