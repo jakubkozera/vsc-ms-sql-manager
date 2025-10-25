@@ -313,12 +313,47 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const result = await this.queryExecutor.executeQuery(query);
             const executionTime = Date.now() - startTime;
 
+            // Build informational messages
+            const messages = [];
+            
+            if (result.recordsets && result.recordsets.length > 0) {
+                const totalRows = result.recordsets.reduce((sum, rs) => sum + rs.length, 0);
+                messages.push({
+                    type: 'info',
+                    text: `Query completed successfully. Returned ${result.recordsets.length} result set(s) with ${totalRows} total row(s).`
+                });
+                
+                // Add details for each result set
+                result.recordsets.forEach((rs, index) => {
+                    messages.push({
+                        type: 'info',
+                        text: `Result Set ${index + 1}: ${rs.length} row(s)`
+                    });
+                });
+            } else if (result.rowsAffected && result.rowsAffected.length > 0) {
+                const totalAffected = result.rowsAffected.reduce((sum, count) => sum + count, 0);
+                messages.push({
+                    type: 'info',
+                    text: `Query completed successfully. ${totalAffected} row(s) affected.`
+                });
+            } else {
+                messages.push({
+                    type: 'info',
+                    text: 'Query completed successfully.'
+                });
+            }
+            
+            messages.push({
+                type: 'info',
+                text: `Execution time: ${executionTime}ms`
+            });
+
             webview.postMessage({
                 type: 'results',
                 resultSets: result.recordsets || [],
                 executionTime: executionTime,
                 rowsAffected: result.rowsAffected?.[0] || 0,
-                messages: []
+                messages: messages
             });
         } catch (error: any) {
             webview.postMessage({
