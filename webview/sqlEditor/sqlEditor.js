@@ -701,6 +701,8 @@ function showResults(results, executionTime, rowsAffected, messages) {
 function displayResults(results) {
     console.log('[SQL EDITOR] displayResults called with AG-Grid table - NEW VERSION', results.length, 'rows');
     const resultsContent = document.getElementById('resultsContent');
+    console.log('[SQL EDITOR] resultsContent element:', resultsContent);
+    console.log('[SQL EDITOR] resultsContent computed styles:', window.getComputedStyle(resultsContent));
 
     if (!results || results.length === 0) {
         resultsContent.innerHTML = '<div class="no-results">No rows returned</div>';
@@ -708,12 +710,23 @@ function displayResults(results) {
     }
 
     // Initialize AG-Grid-like table
+    console.log('[SQL EDITOR] Calling initAgGridTable...');
     initAgGridTable(results, resultsContent);
+    
+    // Check if the results content parent has overflow
+    const resultsContainer = document.getElementById('resultsContainer');
+    console.log('[SQL EDITOR] resultsContainer height:', resultsContainer?.offsetHeight);
+    console.log('[SQL EDITOR] resultsContent height:', resultsContent?.offsetHeight, 'scrollHeight:', resultsContent?.scrollHeight);
 }
 
 function initAgGridTable(rowData, container) {
+    console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows');
+    console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
+    
     // Detect column types and create columnDefs
     const columns = Object.keys(rowData[0]);
+    console.log('[AG-GRID] Detected columns:', columns);
+    
     const columnDefs = columns.map(col => {
         const sampleValue = rowData[0][col];
         let type = 'string';
@@ -735,6 +748,8 @@ function initAgGridTable(rowData, container) {
         };
     });
 
+    console.log('[AG-GRID] Column definitions created:', columnDefs.map(c => ({ name: c.headerName, type: c.type, width: c.width })));
+
     let filteredData = [...rowData];
     let activeFilters = {};
     let currentFilterPopup = null;
@@ -750,14 +765,57 @@ function initAgGridTable(rowData, container) {
         </div>
     `;
     
+    console.log('[AG-GRID] Setting container innerHTML');
     container.innerHTML = tableHtml;
+    
+    const gridContainer = container.querySelector('.ag-grid-container');
+    const table = container.querySelector('.ag-grid-table');
+    console.log('[AG-GRID] Grid container:', gridContainer, 'overflow:', gridContainer?.style.overflow);
+    console.log('[AG-GRID] Table element:', table, 'border-collapse:', table?.style.borderCollapse);
 
     renderAgGridHeaders(columnDefs, sortConfig, activeFilters);
     renderAgGridRows(columnDefs, filteredData);
+    
+    console.log('[AG-GRID] Initial render complete. Checking header positions...');
+    
+    // Add scroll event listener for debugging
+    if (gridContainer) {
+        console.log('[AG-GRID] Grid container dimensions:', {
+            offsetHeight: gridContainer.offsetHeight,
+            scrollHeight: gridContainer.scrollHeight,
+            clientHeight: gridContainer.clientHeight,
+            isScrollable: gridContainer.scrollHeight > gridContainer.clientHeight,
+            overflow: window.getComputedStyle(gridContainer).overflow
+        });
+        
+        gridContainer.addEventListener('scroll', () => {
+            console.log('[AG-GRID] Container scrolled - scrollTop:', gridContainer.scrollTop, 'scrollLeft:', gridContainer.scrollLeft);
+            
+            // Check if headers are still sticky
+            const firstHeader = document.querySelector('#agGridHead th');
+            if (firstHeader) {
+                const rect = firstHeader.getBoundingClientRect();
+                const computed = window.getComputedStyle(firstHeader);
+                console.log('[AG-GRID] First header position during scroll - top:', rect.top, 'position:', computed.position);
+            }
+        });
+    }
+    
+    setTimeout(() => {
+        const headers = document.querySelectorAll('#agGridHead th');
+        headers.forEach((h, i) => {
+            const computed = window.getComputedStyle(h);
+            console.log(`[AG-GRID] Header ${i} computed styles - position: ${computed.position}, top: ${computed.top}, z-index: ${computed.zIndex}, sticky: ${computed.position === 'sticky'}`);
+        });
+    }, 100);
 
     function renderAgGridHeaders(colDefs, sortCfg, filters) {
+        console.log('[AG-GRID] renderAgGridHeaders called with', colDefs.length, 'columns');
         const thead = document.getElementById('agGridHead');
-        if (!thead) return;
+        if (!thead) {
+            console.error('[AG-GRID] thead element not found!');
+            return;
+        }
         
         const tr = document.createElement('tr');
         
@@ -781,12 +839,14 @@ function initAgGridTable(rowData, container) {
             border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
             padding: 8px;
         `;
+        console.log('[AG-GRID] Row number header z-index:', rowNumTh.style.zIndex, 'position:', rowNumTh.style.position, 'top:', rowNumTh.style.top);
         tr.appendChild(rowNumTh);
         
         const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
         const table = container.querySelector('.ag-grid-table');
         table.style.width = totalWidth + 'px';
         table.style.minWidth = totalWidth + 'px';
+        console.log('[AG-GRID] Table total width set to:', totalWidth);
 
         colDefs.forEach((col, index) => {
             const th = document.createElement('th');
@@ -808,11 +868,13 @@ function initAgGridTable(rowData, container) {
                 overflow: hidden;
                 text-overflow: ellipsis;
             `;
+            console.log(`[AG-GRID] Header for column "${col.headerName}" - position: sticky, top: 0, z-index: ${col.pinned ? 19 : 10}, pinned: ${col.pinned}`);
             
             if (col.pinned) {
                 const leftOffset = calculatePinnedOffset(colDefs, index);
                 th.style.left = leftOffset + 'px';
                 th.classList.add('ag-grid-pinned-header');
+                console.log(`[AG-GRID] Pinned column "${col.headerName}" left offset:`, leftOffset);
             }
             
             th.dataset.field = col.field;
@@ -1009,8 +1071,12 @@ function initAgGridTable(rowData, container) {
     }
 
     function renderAgGridRows(colDefs, data) {
+        console.log('[AG-GRID] renderAgGridRows called with', data.length, 'rows');
         const tbody = document.getElementById('agGridBody');
-        if (!tbody) return;
+        if (!tbody) {
+            console.error('[AG-GRID] tbody element not found!');
+            return;
+        }
         
         tbody.innerHTML = '';
 
@@ -1122,6 +1188,8 @@ function initAgGridTable(rowData, container) {
 
             tbody.appendChild(tr);
         });
+        
+        console.log('[AG-GRID] Rendered', data.length, 'rows successfully');
     }
 
     function calculatePinnedOffset(colDefs, colIndex) {

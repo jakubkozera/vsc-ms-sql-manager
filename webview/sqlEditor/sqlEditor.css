@@ -169,6 +169,7 @@ body {
     flex: 1;
     overflow: auto;
     padding: 12px;
+    position: relative;
 }
 
 #executionStats {
@@ -201,6 +202,20 @@ th {
     position: sticky;
     top: 0;
     z-index: 10;
+}
+
+/* AG Grid specific styles for sticky headers */
+.ag-grid-table th {
+    position: sticky !important;
+    top: 0 !important;
+}
+
+.ag-grid-row-number-header {
+    z-index: 20 !important;
+}
+
+.ag-grid-pinned-header {
+    z-index: 19 !important;
 }
 
 .null-value {
