@@ -208,6 +208,15 @@ th {
 .ag-grid-table th {
     position: sticky !important;
     top: 0 !important;
+    background-color: var(--vscode-editor-lineHighlightBackground);
+    z-index: 10;
+}
+
+.ag-grid-thead th {
+    position: sticky !important;
+    top: 0 !important;
+    background-color: var(--vscode-editor-lineHighlightBackground);
+    z-index: 10;
 }
 
 .ag-grid-row-number-header {
@@ -272,6 +281,10 @@ th {
 
 .result-set-table {
     width: 100%;
+    max-height: 500px;
+    overflow: auto;
+    position: relative;
+    display: block;
 }
 
 .loading {
