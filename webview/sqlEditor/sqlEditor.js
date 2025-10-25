@@ -99,10 +99,16 @@ document.querySelectorAll('.results-tab').forEach(tab => {
         tab.classList.add('active');
         currentTab = tab.dataset.tab;
 
-        if (currentTab === 'results' && lastResults) {
-            displayResults(lastResults);
+        // Show/hide appropriate container
+        const resultsContent = document.getElementById('resultsContent');
+        const messagesContent = document.getElementById('messagesContent');
+        
+        if (currentTab === 'results') {
+            resultsContent.style.display = 'block';
+            messagesContent.style.display = 'none';
         } else if (currentTab === 'messages') {
-            displayMessages(lastMessages);
+            resultsContent.style.display = 'none';
+            messagesContent.style.display = 'block';
         }
     });
 });
@@ -744,11 +750,11 @@ function showResults(resultSets, executionTime, rowsAffected, messages) {
     // Update execution stats in compact format
     executionStatsEl.textContent = `${resultSets.length} result set(s) | ${totalRows} rows | ${executionTime}ms`;
 
-    if (currentTab === 'results') {
-        displayResults(resultSets);
-    } else if (currentTab === 'messages') {
-        displayMessages(messages);
-    }
+    // Always update both containers
+    displayResults(resultSets);
+    displayMessages(messages);
+}
+
 function displayResults(resultSets) {
     console.log('[SQL EDITOR] displayResults called with', resultSets.length, 'result set(s)');
     const resultsContent = document.getElementById('resultsContent');
@@ -788,8 +794,6 @@ function displayResults(resultSets) {
     // Check if the results content parent has overflow
     const resultsContainer = document.getElementById('resultsContainer');
     console.log('[SQL EDITOR] resultsContainer height:', resultsContainer?.offsetHeight);
-    console.log('[SQL EDITOR] resultsContent height:', resultsContent?.offsetHeight, 'scrollHeight:', resultsContent?.scrollHeight);
-}   console.log('[SQL EDITOR] resultsContainer height:', resultsContainer?.offsetHeight);
     console.log('[SQL EDITOR] resultsContent height:', resultsContent?.offsetHeight, 'scrollHeight:', resultsContent?.scrollHeight);
 }
 
@@ -1485,10 +1489,10 @@ function initAgGridTable(rowData, container) {
 }
 
 function displayMessages(messages) {
-    const resultsContent = document.getElementById('resultsContent');
+    const messagesContent = document.getElementById('messagesContent');
     
     if (!messages || messages.length === 0) {
-        resultsContent.innerHTML = '<div class="message info">No messages</div>';
+        messagesContent.innerHTML = '<div class="message info">No messages</div>';
         return;
     }
 
@@ -1498,7 +1502,7 @@ function displayMessages(messages) {
         messagesHtml += `<div class="message ${msgClass}">${escapeHtml(msg.text)}</div>`;
     });
     
-    resultsContent.innerHTML = messagesHtml;
+    messagesContent.innerHTML = messagesHtml;
 }
 
 function showError(error, messages) {
@@ -1530,6 +1534,10 @@ function showError(error, messages) {
     document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
     document.querySelector('.results-tab[data-tab="messages"]').classList.add('active');
     currentTab = 'messages';
+    
+    // Show messages container, hide results
+    document.getElementById('resultsContent').style.display = 'none';
+    document.getElementById('messagesContent').style.display = 'block';
 
     displayMessages(lastMessages);
 }
