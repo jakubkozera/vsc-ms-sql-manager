@@ -202,7 +202,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
             webview.postMessage({
                 type: 'results',
-                results: result.recordset || [],
+                resultSets: result.recordsets || [],
                 executionTime: executionTime,
                 rowsAffected: result.rowsAffected?.[0] || 0,
                 messages: []

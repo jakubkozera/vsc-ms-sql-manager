@@ -3,7 +3,7 @@ import * as sql from 'mssql';
 import { ConnectionProvider } from './connectionProvider';
 
 export interface QueryResult {
-    recordset: any[];
+    recordsets: any[][]; // Changed from single recordset to array of recordsets
     rowsAffected: number[];
     executionTime: number;
     query: string;
@@ -41,55 +41,34 @@ export class QueryExecutor {
                 const request = connection.request();
                 this.currentRequest = request;
                 
-                // Parse and execute the query
-                const queries = this.parseQueries(queryText);
-                let finalResult: any = null;
-                let totalRowsAffected: number[] = [];
+                // Execute query as a single batch to handle multiple SELECT statements
+                progress.report({ message: 'Running query...' });
+                
+                this.outputChannel.appendLine(`Executing query batch`);
 
-                for (let i = 0; i < queries.length; i++) {
-                    const query = queries[i].trim();
-                    if (!query) continue;
+                const result = await request.query(queryText);
+                
+                // mssql library returns all recordsets in result.recordsets array
+                const allRecordsets: any[][] = result.recordsets || [];
+                const totalRowsAffected: number[] = result.rowsAffected || [];
 
-                    progress.report({ 
-                        message: `Executing query ${i + 1} of ${queries.length}...` 
-                    });
-
-                    this.outputChannel.appendLine(`Query ${i + 1}: ${query}`);
-
-                    try {
-                        const result = await request.query(query);
-                        
-                        // Keep the last recordset for display
-                        if (result.recordset && result.recordset.length > 0) {
-                            finalResult = result;
-                        }
-                        
-                        if (result.rowsAffected) {
-                            totalRowsAffected.push(...result.rowsAffected);
-                        }
-
-                        this.outputChannel.appendLine(`Query ${i + 1} completed. Rows affected: ${result.rowsAffected?.join(', ') || '0'}`);
-
-                    } catch (queryError) {
-                        this.outputChannel.appendLine(`Query ${i + 1} failed: ${queryError}`);
-                        throw queryError;
-                    }
-                }
+                this.outputChannel.appendLine(`Query completed. Result sets: ${allRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
 
                 this.currentRequest = null;
                 const executionTime = Date.now() - startTime;
                 this.outputChannel.appendLine(`Total execution time: ${executionTime}ms`);
 
                 const queryResult: QueryResult = {
-                    recordset: finalResult?.recordset || [],
+                    recordsets: allRecordsets,
                     rowsAffected: totalRowsAffected,
                     executionTime,
                     query: queryText
                 };
 
                 // Log results summary
-                if (queryResult.recordset.length > 0) {
-                    this.outputChannel.appendLine(`Query returned ${queryResult.recordset.length} row(s)`);
+                if (allRecordsets.length > 0) {
+                    const totalRows = allRecordsets.reduce((sum, rs) => sum + rs.length, 0);
+                    this.outputChannel.appendLine(`Query returned ${allRecordsets.length} result set(s) with ${totalRows} total row(s)`);
                 } else if (totalRowsAffected.length > 0) {
                     this.outputChannel.appendLine(`Query affected ${totalRowsAffected.reduce((a, b) => a + b, 0)} row(s)`);
                 } else {
@@ -195,7 +174,7 @@ export class QueryExecutor {
                 this.outputChannel.appendLine(`Stored procedure completed in ${executionTime}ms`);
 
                 return {
-                    recordset: result.recordset || [],
+                    recordsets: result.recordset ? [result.recordset] : [],
                     rowsAffected: result.rowsAffected || [],
                     executionTime,
                     query: `EXEC ${procedureName}`

@@ -257,6 +257,23 @@ th {
     font-style: italic;
 }
 
+.result-set-container {
+    margin-bottom: 20px;
+}
+
+.result-set-header {
+    padding: 8px 12px;
+    background-color: var(--vscode-editor-lineHighlightBackground);
+    border-left: 3px solid var(--vscode-button-background, #0e639c);
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.result-set-table {
+    width: 100%;
+}
+
 .loading {
     text-align: center;
     padding: 40px;
