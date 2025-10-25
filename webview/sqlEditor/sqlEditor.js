@@ -55,8 +55,11 @@ require(['vs/editor/editor.main'], function () {
     });
 
     // Register SQL completion provider
+    console.log('[SQL-COMPLETION] Registering completion provider');
     monaco.languages.registerCompletionItemProvider('sql', {
         provideCompletionItems: (model, position) => {
+            console.log('[SQL-COMPLETION] provideCompletionItems called at position:', position);
+            console.log('[SQL-COMPLETION] Current dbSchema:', dbSchema);
             return provideSqlCompletions(model, position);
         }
     });
@@ -165,6 +168,10 @@ function executeQuery() {
 
 // SQL Completion Provider Function
 function provideSqlCompletions(model, position) {
+    console.log('[SQL-COMPLETION] provideSqlCompletions called');
+    console.log('[SQL-COMPLETION] dbSchema tables count:', dbSchema?.tables?.length || 0);
+    console.log('[SQL-COMPLETION] dbSchema:', JSON.stringify(dbSchema, null, 2));
+    
     const textUntilPosition = model.getValueInRange({
         startLineNumber: 1,
         startColumn: 1,
@@ -172,7 +179,10 @@ function provideSqlCompletions(model, position) {
         endColumn: position.column
     });
 
+    console.log('[SQL-COMPLETION] Text until position:', textUntilPosition);
+    
     const word = model.getWordUntilPosition(position);
+    console.log('[SQL-COMPLETION] Word at position:', word);
     const range = {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
@@ -603,8 +613,11 @@ window.addEventListener('message', event => {
             break;
 
         case 'schemaUpdate':
+            console.log('[SQL-COMPLETION] Received schemaUpdate message');
+            console.log('[SQL-COMPLETION] Message schema:', message.schema);
             dbSchema = message.schema || { tables: [], views: [], foreignKeys: [] };
-            console.log('Schema updated:', dbSchema.tables.length, 'tables', dbSchema.views.length, 'views', dbSchema.foreignKeys.length, 'foreign keys');
+            console.log('[SQL-COMPLETION] Schema updated:', dbSchema.tables.length, 'tables', dbSchema.views.length, 'views', dbSchema.foreignKeys.length, 'foreign keys');
+            console.log('[SQL-COMPLETION] Tables:', dbSchema.tables?.map(t => `${t.schema}.${t.name}`).join(', '));
             break;
 
         case 'executing':

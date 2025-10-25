@@ -146,23 +146,100 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     private async sendSchemaUpdate(webview: vscode.Webview, connectionId?: string) {
+        console.log('[SCHEMA] sendSchemaUpdate called with connectionId:', connectionId);
+        
         const config = connectionId 
             ? this.connectionProvider.getConnectionConfig(connectionId)
             : this.connectionProvider.getCurrentConfig();
         
+        console.log('[SCHEMA] Config:', config?.id || 'none');
+        
         if (!config) {
+            console.log('[SCHEMA] No config found, returning empty schema');
             return;
         }
 
         try {
-            // Schema retrieval will be implemented later
-            // For now, send empty schema
+            // TODO: Implement proper schema retrieval from database
+            // For now, retrieve basic table information
+            const connection = this.connectionProvider.getConnection();
+            
+            if (!connection) {
+                console.log('[SCHEMA] No active connection, sending empty schema');
+                webview.postMessage({
+                    type: 'schemaUpdate',
+                    schema: { tables: [], views: [], foreignKeys: [] }
+                });
+                return;
+            }
+
+            console.log('[SCHEMA] Fetching schema from database...');
+            
+            // Query to get all tables with their columns
+            const tablesQuery = `
+                SELECT 
+                    t.TABLE_SCHEMA as [schema],
+                    t.TABLE_NAME as [name],
+                    c.COLUMN_NAME as columnName,
+                    c.DATA_TYPE as dataType,
+                    c.IS_NULLABLE as isNullable,
+                    c.CHARACTER_MAXIMUM_LENGTH as maxLength
+                FROM INFORMATION_SCHEMA.TABLES t
+                INNER JOIN INFORMATION_SCHEMA.COLUMNS c 
+                    ON t.TABLE_SCHEMA = c.TABLE_SCHEMA 
+                    AND t.TABLE_NAME = c.TABLE_NAME
+                WHERE t.TABLE_TYPE = 'BASE TABLE'
+                ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION
+            `;
+
+            const result = await connection.request().query(tablesQuery);
+            console.log('[SCHEMA] Query returned:', result.recordset?.length || 0, 'rows');
+            
+            // Group columns by table
+            const tablesMap = new Map<string, any>();
+            
+            for (const row of result.recordset) {
+                const tableKey = `${row.schema}.${row.name}`;
+                
+                if (!tablesMap.has(tableKey)) {
+                    tablesMap.set(tableKey, {
+                        schema: row.schema,
+                        name: row.name,
+                        columns: []
+                    });
+                }
+                
+                const table = tablesMap.get(tableKey);
+                table.columns.push({
+                    name: row.columnName,
+                    type: row.dataType,
+                    nullable: row.isNullable === 'YES',
+                    maxLength: row.maxLength
+                });
+            }
+            
+            const tables = Array.from(tablesMap.values());
+            console.log('[SCHEMA] Parsed', tables.length, 'tables');
+            console.log('[SCHEMA] Table names:', tables.map(t => `${t.schema}.${t.name}`).join(', '));
+            
+            const schema = {
+                tables: tables,
+                views: [], // TODO: Implement views
+                foreignKeys: [] // TODO: Implement foreign keys
+            };
+            
+            console.log('[SCHEMA] Sending schema update with', schema.tables.length, 'tables');
+            
+            webview.postMessage({
+                type: 'schemaUpdate',
+                schema: schema
+            });
+        } catch (error) {
+            console.error('[SCHEMA] Failed to get schema:', error);
             webview.postMessage({
                 type: 'schemaUpdate',
                 schema: { tables: [], views: [], foreignKeys: [] }
             });
-        } catch (error) {
-            console.error('Failed to get schema:', error);
         }
     }
 
