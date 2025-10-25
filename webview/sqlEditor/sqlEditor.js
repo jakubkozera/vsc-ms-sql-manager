@@ -899,14 +899,14 @@ function initAgGridTable(rowData, container) {
             sortIcon.className = 'ag-header-icon';
             sortIcon.style.cssText = `
                 position: absolute;
-                right: 32px;
+                right: 44px;
                 top: 50%;
                 transform: translateY(-50%);
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                padding: 2px;
+                padding: 4px;
                 border-radius: 2px;
                 opacity: ${isSorted ? 1 : 0};
                 transition: opacity 0.2s, background-color 0.2s;
@@ -917,14 +917,14 @@ function initAgGridTable(rowData, container) {
             if (isSorted) {
                 // Show chevron when sorted
                 sortIcon.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="${sortCfg.direction === 'desc' ? 'transform: rotate(180deg);' : ''}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="${sortCfg.direction === 'desc' ? 'transform: rotate(180deg);' : ''}">
                         <path d="M6 15l6 -6l6 6" />
                     </svg>
                 `;
             } else {
                 // Show sort icon when not sorted
                 sortIcon.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 9l4 -4l4 4m-4 -4v14" />
                         <path d="M21 15l-4 4l-4 -4m4 4v-14" />
                     </svg>
@@ -942,14 +942,14 @@ function initAgGridTable(rowData, container) {
             pinIcon.className = 'ag-header-icon';
             pinIcon.style.cssText = `
                 position: absolute;
-                right: 18px;
+                right: 24px;
                 top: 50%;
                 transform: translateY(-50%);
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                padding: 2px;
+                padding: 4px;
                 border-radius: 2px;
                 opacity: ${col.pinned ? 1 : 0};
                 transition: opacity 0.2s, background-color 0.2s;
@@ -957,7 +957,7 @@ function initAgGridTable(rowData, container) {
                 z-index: 1;
             `;
             pinIcon.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${col.pinned ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${col.pinned ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5 -1.5l1.5 -4l4 -4" />
                     <path d="M9 15l-4.5 4.5" />
                     <path d="M14.5 4l5.5 5.5" />
@@ -984,7 +984,7 @@ function initAgGridTable(rowData, container) {
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                padding: 2px;
+                padding: 4px;
                 border-radius: 2px;
                 opacity: ${isFiltered ? 1 : 0};
                 transition: opacity 0.2s, background-color 0.2s;
@@ -992,7 +992,7 @@ function initAgGridTable(rowData, container) {
                 z-index: 1;
             `;
             filterIcon.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${isFiltered ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isFiltered ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z" />
                 </svg>
             `;
