@@ -1294,6 +1294,17 @@ function initAgGridTable(rowData, container) {
                 } else {
                     td.textContent = String(value);
                 }
+                
+                // Add context menu handler
+                td.addEventListener('contextmenu', (e) => {
+                    showContextMenu(e, {
+                        table: containerEl.querySelector('.ag-grid-table'),
+                        rowIndex: rowIndex,
+                        columnIndex: colIndex,
+                        columnDefs: colDefs,
+                        data: data
+                    });
+                });
 
                 tr.appendChild(td);
             });
@@ -1535,3 +1546,132 @@ window.addEventListener('resize', () => {
         editor.layout();
     }
 });
+
+// Context menu functionality
+let contextMenu = null;
+let contextMenuData = null;
+
+// Create context menu HTML
+function createContextMenu() {
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.display = 'none';
+    menu.innerHTML = `
+        <div class="context-menu-item" data-action="copy-cell">Copy Cell</div>
+        <div class="context-menu-item" data-action="copy-row">Copy Row</div>
+        <div class="context-menu-item" data-action="copy-row-header">Copy Row with Headers</div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" data-action="copy-column">Copy Column</div>
+        <div class="context-menu-item" data-action="copy-table">Copy Table</div>
+    `;
+    document.body.appendChild(menu);
+    
+    // Add click handlers
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const action = item.dataset.action;
+            handleContextMenuAction(action);
+            hideContextMenu();
+        });
+    });
+    
+    return menu;
+}
+
+function showContextMenu(e, cellData) {
+    e.preventDefault();
+    
+    if (!contextMenu) {
+        contextMenu = createContextMenu();
+    }
+    
+    contextMenuData = cellData;
+    
+    // Position menu at cursor
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = e.pageX + 'px';
+    contextMenu.style.top = e.pageY + 'px';
+    
+    // Adjust if menu goes off screen
+    const rect = contextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+        contextMenu.style.left = (e.pageX - rect.width) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+        contextMenu.style.top = (e.pageY - rect.height) + 'px';
+    }
+}
+
+function hideContextMenu() {
+    if (contextMenu) {
+        contextMenu.style.display = 'none';
+    }
+    contextMenuData = null;
+}
+
+function handleContextMenuAction(action) {
+    if (!contextMenuData) return;
+    
+    const { table, rowIndex, columnIndex, columnDefs, data } = contextMenuData;
+    let textToCopy = '';
+    
+    switch (action) {
+        case 'copy-cell':
+            const cellValue = data[rowIndex][columnDefs[columnIndex].field];
+            textToCopy = cellValue === null ? 'NULL' : String(cellValue);
+            break;
+            
+        case 'copy-row':
+            const row = data[rowIndex];
+            textToCopy = columnDefs.map(col => {
+                const val = row[col.field];
+                return val === null ? 'NULL' : String(val);
+            }).join('\t');
+            break;
+            
+        case 'copy-row-header':
+            const headers = columnDefs.map(col => col.headerName).join('\t');
+            const rowData = columnDefs.map(col => {
+                const val = data[rowIndex][col.field];
+                return val === null ? 'NULL' : String(val);
+            }).join('\t');
+            textToCopy = headers + '\n' + rowData;
+            break;
+            
+        case 'copy-column':
+            const colField = columnDefs[columnIndex].field;
+            textToCopy = data.map(row => {
+                const val = row[colField];
+                return val === null ? 'NULL' : String(val);
+            }).join('\n');
+            break;
+            
+        case 'copy-table':
+            const tableHeaders = columnDefs.map(col => col.headerName).join('\t');
+            const tableRows = data.map(row => {
+                return columnDefs.map(col => {
+                    const val = row[col.field];
+                    return val === null ? 'NULL' : String(val);
+                }).join('\t');
+            }).join('\n');
+            textToCopy = tableHeaders + '\n' + tableRows;
+            break;
+    }
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        console.log('[CONTEXT-MENU] Copied to clipboard:', action);
+    }).catch(err => {
+        console.error('[CONTEXT-MENU] Failed to copy:', err);
+    });
+}
+
+// Hide context menu when clicking elsewhere
+document.addEventListener('click', (e) => {
+    if (contextMenu && !contextMenu.contains(e.target)) {
+        hideContextMenu();
+    }
+});
+
+// Hide context menu on scroll
+document.addEventListener('scroll', hideContextMenu, true);

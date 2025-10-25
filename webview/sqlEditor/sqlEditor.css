@@ -204,6 +204,7 @@ th {
     top: 0;
     z-index: 10;
     background-color: var(--vscode-sideBar-background);
+    box-shadow: 0 1px 0 0 var(--vscode-panel-border);
 }
 
 /* AG Grid specific styles for sticky headers */
@@ -214,6 +215,7 @@ th {
     top: 0 !important;
     background-color: var(--vscode-sideBar-background) !important;
     z-index: 10 !important;
+    box-shadow: 0 1px 0 0 var(--vscode-panel-border) !important;
 }
 
 .ag-grid-row-number-header {
@@ -292,4 +294,35 @@ th {
     text-align: center;
     padding: 40px;
     color: var(--vscode-descriptionForeground);
+}
+
+/* Context menu styles */
+.context-menu {
+    position: fixed;
+    background-color: var(--vscode-menu-background);
+    border: 1px solid var(--vscode-menu-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    min-width: 200px;
+    padding: 4px 0;
+}
+
+.context-menu-item {
+    padding: 6px 20px;
+    cursor: pointer;
+    color: var(--vscode-menu-foreground);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+}
+
+.context-menu-item:hover {
+    background-color: var(--vscode-menu-selectionBackground);
+    color: var(--vscode-menu-selectionForeground);
+}
+
+.context-menu-separator {
+    height: 1px;
+    background-color: var(--vscode-menu-separatorBackground);
+    margin: 4px 0;
 }
