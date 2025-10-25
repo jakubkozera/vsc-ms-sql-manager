@@ -196,27 +196,24 @@ th, td {
     max-width: 300px;
 }
 
+/* Sticky table headers */
 th {
-    background-color: var(--vscode-editor-lineHighlightBackground);
     font-weight: 600;
+    position: -webkit-sticky;
     position: sticky;
     top: 0;
     z-index: 10;
+    background-color: var(--vscode-sideBar-background);
 }
 
 /* AG Grid specific styles for sticky headers */
-.ag-grid-table th {
-    position: sticky !important;
-    top: 0 !important;
-    background-color: var(--vscode-editor-lineHighlightBackground);
-    z-index: 10;
-}
-
+.ag-grid-table thead th,
 .ag-grid-thead th {
+    position: -webkit-sticky !important;
     position: sticky !important;
     top: 0 !important;
-    background-color: var(--vscode-editor-lineHighlightBackground);
-    z-index: 10;
+    background-color: var(--vscode-sideBar-background) !important;
+    z-index: 10 !important;
 }
 
 .ag-grid-row-number-header {
@@ -281,10 +278,14 @@ th {
 
 .result-set-table {
     width: 100%;
-    max-height: 500px;
+    max-height: 400px;
     overflow: auto;
     position: relative;
-    display: block;
+}
+
+.result-set-table table {
+    width: 100%;
+    border-collapse: collapse;
 }
 
 .loading {

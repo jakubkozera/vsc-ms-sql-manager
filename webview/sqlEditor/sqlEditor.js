@@ -773,21 +773,6 @@ function displayResults(resultSets) {
         resultSetContainer.className = 'result-set-container';
         resultSetContainer.style.cssText = 'margin-bottom: 20px;';
 
-        // Add header for result set
-        const resultSetHeader = document.createElement('div');
-        resultSetHeader.className = 'result-set-header';
-        resultSetHeader.style.cssText = `
-            padding: 8px 12px;
-            background-color: var(--vscode-editor-lineHighlightBackground);
-            border-left: 3px solid var(--vscode-button-background, #0e639c);
-            margin-bottom: 8px;
-            font-weight: 600;
-            font-size: 13px;
-        `;
-        resultSetHeader.textContent = `Result Set ${index + 1} (${results.length} rows)`;
-
-        resultSetContainer.appendChild(resultSetHeader);
-
         // Create table container
         const tableContainer = document.createElement('div');
         tableContainer.className = 'result-set-table';
@@ -847,20 +832,16 @@ function initAgGridTable(rowData, container) {
     // Build the table HTML structure
     const tableId = `agGrid_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const tableHtml = `
-        <div class="ag-grid-container" style="width: 100%; height: 100%; overflow: auto; position: relative;">
-            <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; min-width: 100%;">
-                <thead class="ag-grid-thead"></thead>
-                <tbody class="ag-grid-tbody"></tbody>
-            </table>
-        </div>
+        <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; width: 100%;">
+            <thead class="ag-grid-thead"></thead>
+            <tbody class="ag-grid-tbody"></tbody>
+        </table>
     `;
     
     console.log('[AG-GRID] Setting container innerHTML');
     container.innerHTML = tableHtml;
     
-    const gridContainer = container.querySelector('.ag-grid-container');
     const table = container.querySelector('.ag-grid-table');
-    console.log('[AG-GRID] Grid container:', gridContainer, 'overflow:', gridContainer?.style.overflow);
     console.log('[AG-GRID] Table element:', table, 'border-collapse:', table?.style.borderCollapse);
 
     renderAgGridHeaders(columnDefs, sortConfig, activeFilters, container);
@@ -868,27 +849,25 @@ function initAgGridTable(rowData, container) {
     
     console.log('[AG-GRID] Initial render complete. Checking header positions...');
     
-    // Add scroll event listener for debugging
-    if (gridContainer) {
-        console.log('[AG-GRID] Grid container dimensions:', {
-            offsetHeight: gridContainer.offsetHeight,
-            scrollHeight: gridContainer.scrollHeight,
-            clientHeight: gridContainer.clientHeight,
-            isScrollable: gridContainer.scrollHeight > gridContainer.clientHeight,
-            overflow: window.getComputedStyle(gridContainer).overflow
-        });
-        
-        gridContainer.addEventListener('scroll', () => {
-            console.log('[AG-GRID] Container scrolled - scrollTop:', gridContainer.scrollTop, 'scrollLeft:', gridContainer.scrollLeft);
-            // Check if headers are still sticky
-            const firstHeader = containerEl.querySelector('.ag-grid-thead th');
-            if (firstHeader) {
-                const rect = firstHeader.getBoundingClientRect();
-                const computed = window.getComputedStyle(firstHeader);
-                console.log('[AG-GRID] First header position during scroll - top:', rect.top, 'position:', computed.position);
-            }
-        });
-    }
+    // Add scroll event listener for debugging on the scrollable container
+    console.log('[AG-GRID] Container dimensions:', {
+        offsetHeight: container.offsetHeight,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        isScrollable: container.scrollHeight > container.clientHeight,
+        overflow: window.getComputedStyle(container).overflow
+    });
+    
+    container.addEventListener('scroll', () => {
+        console.log('[AG-GRID] Container scrolled - scrollTop:', container.scrollTop, 'scrollLeft:', container.scrollLeft);
+        // Check if headers are still sticky
+        const firstHeader = container.querySelector('.ag-grid-thead th');
+        if (firstHeader) {
+            const rect = firstHeader.getBoundingClientRect();
+            const computed = window.getComputedStyle(firstHeader);
+            console.log('[AG-GRID] First header position during scroll - top:', rect.top, 'position:', computed.position);
+        }
+    });
     
     setTimeout(() => {
         const headers = container.querySelectorAll('.ag-grid-thead th');
