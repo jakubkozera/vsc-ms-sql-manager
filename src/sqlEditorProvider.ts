@@ -192,13 +192,34 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION
             `;
 
-            const result = await connection.request().query(tablesQuery);
-            console.log('[SCHEMA] Query returned:', result.recordset?.length || 0, 'rows');
+            // Query to get foreign key relationships
+            const foreignKeysQuery = `
+                SELECT 
+                    fk.name as constraintName,
+                    OBJECT_SCHEMA_NAME(fk.parent_object_id) as fromSchema,
+                    OBJECT_NAME(fk.parent_object_id) as fromTable,
+                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) as fromColumn,
+                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) as toSchema,
+                    OBJECT_NAME(fk.referenced_object_id) as toTable,
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) as toColumn
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc 
+                    ON fk.object_id = fkc.constraint_object_id
+                ORDER BY fromSchema, fromTable, toSchema, toTable
+            `;
+
+            const [tablesResult, fkResult] = await Promise.all([
+                connection.request().query(tablesQuery),
+                connection.request().query(foreignKeysQuery)
+            ]);
+            
+            console.log('[SCHEMA] Tables query returned:', tablesResult.recordset?.length || 0, 'rows');
+            console.log('[SCHEMA] FK query returned:', fkResult.recordset?.length || 0, 'foreign keys');
             
             // Group columns by table
             const tablesMap = new Map<string, any>();
             
-            for (const row of result.recordset) {
+            for (const row of tablesResult.recordset) {
                 const tableKey = `${row.schema}.${row.name}`;
                 
                 if (!tablesMap.has(tableKey)) {
@@ -220,15 +241,30 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             
             const tables = Array.from(tablesMap.values());
             console.log('[SCHEMA] Parsed', tables.length, 'tables');
-            console.log('[SCHEMA] Table names:', tables.map(t => `${t.schema}.${t.name}`).join(', '));
+            
+            // Parse foreign keys
+            const foreignKeys = fkResult.recordset.map((row: any) => ({
+                constraintName: row.constraintName,
+                fromSchema: row.fromSchema,
+                fromTable: row.fromTable,
+                fromColumn: row.fromColumn,
+                toSchema: row.toSchema,
+                toTable: row.toTable,
+                toColumn: row.toColumn
+            }));
+            
+            console.log('[SCHEMA] Parsed', foreignKeys.length, 'foreign keys');
+            if (foreignKeys.length > 0) {
+                console.log('[SCHEMA] Sample FK:', foreignKeys[0]);
+            }
             
             const schema = {
                 tables: tables,
                 views: [], // TODO: Implement views
-                foreignKeys: [] // TODO: Implement foreign keys
+                foreignKeys: foreignKeys
             };
             
-            console.log('[SCHEMA] Sending schema update with', schema.tables.length, 'tables');
+            console.log('[SCHEMA] Sending schema update with', schema.tables.length, 'tables and', schema.foreignKeys.length, 'foreign keys');
             
             webview.postMessage({
                 type: 'schemaUpdate',
