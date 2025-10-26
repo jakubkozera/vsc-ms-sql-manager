@@ -300,33 +300,42 @@ export class ConnectionWebview {
 
         .button-group {
             display: flex;
-            gap: 10px;
+            gap: 12px;
             margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--vscode-input-border);
             flex-wrap: wrap;
+            justify-content: flex-end;
         }
 
         button {
-            padding: 10px 20px;
-            border: none;
+            padding: 10px 24px;
+            border: 1px solid transparent;
             border-radius: 4px;
             cursor: pointer;
             font-size: var(--vscode-font-size);
             font-weight: 500;
-            min-width: 100px;
+            min-width: 110px;
+            transition: all 0.2s ease;
         }
 
         .primary-button {
             background-color: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
+            border-color: var(--vscode-button-background);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
 
         .primary-button:hover:not(:disabled) {
             background-color: var(--vscode-button-hoverBackground);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+            transform: translateY(-1px);
         }
 
         .secondary-button {
-            background-color: var(--vscode-button-secondaryBackground);
+            background-color: transparent;
             color: var(--vscode-button-secondaryForeground);
+            border-color: var(--vscode-button-secondaryBackground);
         }
 
         .secondary-button:hover:not(:disabled) {
@@ -334,12 +343,15 @@ export class ConnectionWebview {
         }
 
         .test-button {
-            background-color: var(--vscode-charts-green);
-            color: var(--vscode-button-foreground);
+            background-color: transparent;
+            color: var(--vscode-foreground);
+            border-color: var(--vscode-input-border);
+            order: -1;
         }
 
         .test-button:hover:not(:disabled) {
-            opacity: 0.9;
+            background-color: var(--vscode-button-secondaryHoverBackground);
+            border-color: var(--vscode-focusBorder);
         }
 
         button:disabled {
@@ -547,9 +559,9 @@ export class ConnectionWebview {
             <div class="message hidden" id="message"></div>
 
             <div class="button-group">
+                <button type="button" class="secondary-button" id="cancelBtn">Cancel</button>
                 <button type="button" class="test-button" id="testBtn">Test Connection</button>
                 <button type="submit" class="primary-button" id="saveBtn">Save Connection</button>
-                <button type="button" class="secondary-button" id="cancelBtn">Cancel</button>
             </div>
         </form>
     </div>
