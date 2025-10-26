@@ -13,6 +13,14 @@ let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
 
+// Global selection state for all tables in results
+let globalSelection = {
+    type: null, // 'row' or 'column'
+    tableContainer: null, // reference to the specific table container
+    rowIndex: null,
+    columnIndex: null
+};
+
 // Initialize Monaco Editor
 require.config({ 
     paths: { 
@@ -1131,6 +1139,11 @@ function initAgGridTable(rowData, container) {
                 e.stopPropagation();
                 handleSort(col, colDefs, sortCfg, filters, containerEl);
             };
+            
+            sortIcon.oncontextmenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
 
             headerContent.appendChild(sortIcon);
 
@@ -1165,6 +1178,11 @@ function initAgGridTable(rowData, container) {
                 renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
                 renderAgGridRows(colDefs, filteredData, containerEl);
             };
+            
+            pinIcon.oncontextmenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
 
             headerContent.appendChild(pinIcon);
 
@@ -1193,6 +1211,11 @@ function initAgGridTable(rowData, container) {
                 </svg>
             `;
             filterIcon.onclick = (e) => showAgGridFilter(e, col, th, colDefs, sortCfg, filters, containerEl);
+            
+            filterIcon.oncontextmenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
 
             headerContent.appendChild(filterIcon);
 
@@ -1224,6 +1247,10 @@ function initAgGridTable(rowData, container) {
             resizeHandle.onmouseover = () => resizeHandle.style.backgroundColor = 'var(--vscode-button-background, #0e639c)';
             resizeHandle.onmouseout = () => resizeHandle.style.backgroundColor = 'transparent';
             resizeHandle.onmousedown = (e) => startResize(e, th, index, colDefs, sortCfg, filters, containerEl);
+            resizeHandle.oncontextmenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
 
             th.style.position = 'relative';
             th.appendChild(headerContent);
@@ -1237,29 +1264,19 @@ function initAgGridTable(rowData, container) {
 
     // Column highlighting functionality
     function highlightColumn(colIndex, colDefs, containerEl) {
-        const table = containerEl.querySelector('.ag-grid-table');
-        const allCells = table.querySelectorAll('th, td');
+        // Clear all selections across all tables
+        clearAllSelections();
         
-        // Remove previous column highlights
-        allCells.forEach(cell => {
-            cell.style.backgroundColor = '';
-        });
+        // Set global selection state
+        globalSelection = {
+            type: 'column',
+            tableContainer: containerEl,
+            rowIndex: null,
+            columnIndex: colIndex
+        };
         
-        // Remove row selection
-        const allRows = table.querySelectorAll('tbody tr');
-        allRows.forEach(row => {
-            row.classList.remove('selected');
-        });
-        
-        // Highlight the selected column (colIndex + 2 because row number is column 1)
-        const columnCells = table.querySelectorAll(`th:nth-child(${colIndex + 2}), td:nth-child(${colIndex + 2})`);
-        columnCells.forEach(cell => {
-            if (cell.classList.contains('ag-grid-pinned-cell') || cell.classList.contains('ag-grid-pinned-header')) {
-                cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-            } else {
-                cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-            }
-        });
+        // Apply highlighting
+        applyColumnHighlightGlobal(containerEl, colIndex);
     }
 
     // Column resizing functionality
@@ -1399,27 +1416,18 @@ function initAgGridTable(rowData, container) {
                 }
             });
             rowNumTd.addEventListener('click', function() {
-                const table = containerEl.querySelector('.ag-grid-table');
-                const tbody = containerEl.querySelector('.ag-grid-tbody');
+                // Clear all selections across all tables
+                clearAllSelections();
                 
-                // Remove column highlights
-                const allCells = table.querySelectorAll('th, td');
-                allCells.forEach(cell => {
-                    if (!cell.classList.contains('ag-grid-row-number-cell') && !cell.classList.contains('ag-grid-row-number-header')) {
-                        cell.style.backgroundColor = '';
-                    }
-                });
+                // Set global selection state
+                globalSelection = {
+                    type: 'row',
+                    tableContainer: containerEl,
+                    rowIndex: rowIndex,
+                    columnIndex: null
+                };
                 
-                // Remove previous row selection
-                const allRows = tbody.querySelectorAll('tr');
-                allRows.forEach(r => {
-                    r.classList.remove('selected');
-                    r.style.backgroundColor = '';
-                    const numCell = r.querySelector('.ag-grid-row-number-cell');
-                    if (numCell) numCell.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
-                });
-                
-                // Highlight selected row
+                // Apply highlighting
                 tr.classList.add('selected');
                 tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
                 rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
@@ -1496,6 +1504,11 @@ function initAgGridTable(rowData, container) {
         }
         
         console.log('[AG-GRID] Rendered', endRow - startRow, 'rows successfully (from', startRow, 'to', endRow, ')');
+        
+        // Reapply selection if this is the selected table
+        if (globalSelection.tableContainer === containerEl) {
+            reapplySelection();
+        }
     }
 
     function calculatePinnedOffset(colDefs, colIndex) {
@@ -1929,6 +1942,12 @@ function createContextMenu() {
     `;
     document.body.appendChild(menu);
     
+    // Prevent default context menu on the custom menu itself
+    menu.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    
     // Add click handlers
     menu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', (e) => {
@@ -1951,6 +1970,12 @@ function createRowContextMenu() {
         <div class="context-menu-item" data-action="copy-row-header">Copy Row with Headers</div>
     `;
     document.body.appendChild(menu);
+    
+    // Prevent default context menu on the custom menu itself
+    menu.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
     
     // Add click handlers
     menu.querySelectorAll('.context-menu-item').forEach(item => {
@@ -1976,6 +2001,12 @@ function createColumnHeaderContextMenu() {
         <div class="context-menu-item" data-action="copy-column-distinct">Copy Distinct Values</div>
     `;
     document.body.appendChild(menu);
+    
+    // Prevent default context menu on the custom menu itself
+    menu.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
     
     // Add click handlers
     menu.querySelectorAll('.context-menu-item').forEach(item => {
@@ -2156,6 +2187,79 @@ function handleContextMenuAction(action) {
     }).catch(err => {
         console.error('[CONTEXT-MENU] Failed to copy:', err);
     });
+}
+
+// Global helper functions for selection management across all tables
+function clearAllSelections() {
+    // Find all result tables
+    const allTables = document.querySelectorAll('.result-set-table .ag-grid-table');
+    
+    allTables.forEach(table => {
+        // Clear column highlights
+        const allCells = table.querySelectorAll('th, td');
+        allCells.forEach(cell => {
+            if (!cell.classList.contains('ag-grid-row-number-cell') && 
+                !cell.classList.contains('ag-grid-row-number-header')) {
+                cell.style.backgroundColor = '';
+            }
+        });
+        
+        // Clear row selections
+        const allRows = table.querySelectorAll('tbody tr');
+        allRows.forEach(row => {
+            row.classList.remove('selected');
+            row.style.backgroundColor = '';
+        });
+        
+        // Reset row number cells
+        const rowNumCells = table.querySelectorAll('.ag-grid-row-number-cell');
+        rowNumCells.forEach(cell => {
+            cell.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
+        });
+    });
+}
+
+function reapplySelection() {
+    if (!globalSelection.type || !globalSelection.tableContainer) {
+        return;
+    }
+    
+    if (globalSelection.type === 'column' && globalSelection.columnIndex !== null) {
+        applyColumnHighlightGlobal(globalSelection.tableContainer, globalSelection.columnIndex);
+    } else if (globalSelection.type === 'row' && globalSelection.rowIndex !== null) {
+        applyRowHighlightGlobal(globalSelection.tableContainer, globalSelection.rowIndex);
+    }
+}
+
+function applyColumnHighlightGlobal(containerEl, colIndex) {
+    const table = containerEl.querySelector('.ag-grid-table');
+    if (!table) return;
+    
+    // Highlight the selected column (colIndex + 2 because row number is column 1)
+    const columnCells = table.querySelectorAll(`th:nth-child(${colIndex + 2}), td:nth-child(${colIndex + 2})`);
+    columnCells.forEach(cell => {
+        cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+    });
+}
+
+function applyRowHighlightGlobal(containerEl, rowIndex) {
+    const table = containerEl.querySelector('.ag-grid-table');
+    if (!table) return;
+    
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    
+    // Find the row by data attribute
+    const targetRow = tbody.querySelector(`tr[data-row-index="${rowIndex}"]`);
+    if (targetRow) {
+        targetRow.classList.add('selected');
+        targetRow.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+        
+        const rowNumCell = targetRow.querySelector('.ag-grid-row-number-cell');
+        if (rowNumCell) {
+            rowNumCell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+        }
+    }
 }
 
 // Hide context menu when clicking elsewhere
