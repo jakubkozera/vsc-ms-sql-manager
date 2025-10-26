@@ -268,13 +268,37 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             if (element.itemType === 'tables') {
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all tables for schema: ${element.schema}`);
                 
-                // Load all tables regardless of schema since we now have a single "Tables" node
-                const query = `
-                    SELECT TABLE_NAME, TABLE_SCHEMA 
-                    FROM INFORMATION_SCHEMA.TABLES 
-                    WHERE TABLE_TYPE = 'BASE TABLE'
-                    ORDER BY TABLE_SCHEMA, TABLE_NAME
-                `;
+                // Check if table statistics should be displayed
+                const showStats = vscode.workspace.getConfiguration('mssqlManager').get<boolean>('showTableStatistics', true);
+                
+                let query: string;
+                if (showStats) {
+                    // Load all tables with row count and size information
+                    query = `
+                        SELECT 
+                            t.TABLE_SCHEMA,
+                            t.TABLE_NAME,
+                            p.rows AS row_count,
+                            SUM(a.total_pages) * 8 / 1024.0 AS size_mb
+                        FROM INFORMATION_SCHEMA.TABLES t
+                        INNER JOIN sys.tables st ON t.TABLE_NAME = st.name AND t.TABLE_SCHEMA = SCHEMA_NAME(st.schema_id)
+                        INNER JOIN sys.indexes i ON st.object_id = i.object_id
+                        INNER JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+                        INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+                        WHERE t.TABLE_TYPE = 'BASE TABLE'
+                            AND i.index_id <= 1
+                        GROUP BY t.TABLE_SCHEMA, t.TABLE_NAME, p.rows
+                        ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
+                    `;
+                } else {
+                    // Load only table names without statistics
+                    query = `
+                        SELECT TABLE_NAME, TABLE_SCHEMA 
+                        FROM INFORMATION_SCHEMA.TABLES 
+                        WHERE TABLE_TYPE = 'BASE TABLE'
+                        ORDER BY TABLE_SCHEMA, TABLE_NAME
+                    `;
+                }
                 
                 const request = connection.request();
                 const result = await request.query(query);
@@ -289,6 +313,34 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     tableNode.connectionId = element.connectionId;
+                    
+                    if (showStats) {
+                        // Format row count (e.g., 1.6k, 23k, 1.2M)
+                        const rowCount = table.row_count || 0;
+                        let formattedRows: string;
+                        if (rowCount >= 1000000) {
+                            formattedRows = (rowCount / 1000000).toFixed(1) + 'M';
+                        } else if (rowCount >= 1000) {
+                            formattedRows = (rowCount / 1000).toFixed(1) + 'k';
+                        } else {
+                            formattedRows = rowCount.toString();
+                        }
+                        
+                        // Format size (e.g., 34 MB, 1.2 GB)
+                        const sizeMb = table.size_mb || 0;
+                        let formattedSize: string;
+                        if (sizeMb >= 1024) {
+                            formattedSize = (sizeMb / 1024).toFixed(1) + ' GB';
+                        } else if (sizeMb >= 1) {
+                            formattedSize = Math.round(sizeMb) + ' MB';
+                        } else {
+                            formattedSize = '< 1 MB';
+                        }
+                        
+                        // Set description: "1.6k Rows 34 MB"
+                        tableNode.description = `${formattedRows} Rows ${formattedSize}`;
+                    }
+                    
                     return tableNode;
                 });
             } else if (element.itemType === 'views') {

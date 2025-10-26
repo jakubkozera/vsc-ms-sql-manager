@@ -569,7 +569,17 @@
         "key": "f5",
         "when": "editorTextFocus && editorLangId == sql"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "MS SQL Manager",
+      "properties": {
+        "mssqlManager.showTableStatistics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show row count and size information for tables in the database explorer tree."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
