@@ -737,6 +737,10 @@ function showLoading() {
     document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
     document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
     currentTab = 'results';
+    
+    // Ensure results container is visible and messages is hidden
+    document.getElementById('resultsContent').style.display = 'block';
+    document.getElementById('messagesContent').style.display = 'none';
 }
 
 function showResults(resultSets, executionTime, rowsAffected, messages) {
