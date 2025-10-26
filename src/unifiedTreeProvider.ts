@@ -153,8 +153,17 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 // If this connection is active, show current schema
                 return await this.getSchemaChildren(element.connectionId, element.database);
             } else {
-                // Not active connection - show nothing or offer to connect
-                return [];
+                // Not active - auto-connect when user expands the node
+                try {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connecting to ${element.connectionId}...`);
+                    await this.connectionProvider.connectToSavedById(element.connectionId);
+                    this.refresh(); // Refresh to update the icon and state
+                    return await this.getSchemaChildren(element.connectionId, element.database);
+                } catch (error) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connect failed: ${error}`);
+                    vscode.window.showErrorMessage(`Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    return [];
+                }
             }
         } else if (element instanceof SchemaItemNode) {
             // Handle schema expansion (tables, views, etc.)
@@ -1585,12 +1594,15 @@ export class ConnectionNode extends TreeNode {
             this.resourceUri = vscode.Uri.parse(`mssql-connection:${connectionId}#active`);
         }
         
-        // Add command to connect on click (will trigger expansion)
-        this.command = {
-            command: 'mssqlManager.connectToSaved',
-            title: 'Connect',
-            arguments: [this]
-        };
+        // Only add command to connect on click when not active
+        // When active, allow normal expand/collapse toggle behavior
+        if (!isActive && !isPending) {
+            this.command = {
+                command: 'mssqlManager.connectToSaved',
+                title: 'Connect',
+                arguments: [this]
+            };
+        }
     }
 }
 
