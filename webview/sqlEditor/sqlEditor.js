@@ -2316,69 +2316,41 @@ function displayQueryPlanGraphical(planData) {
     const g = svg.append('g')
         .attr('transform', `translate(${padding - minX}, ${padding - minY})`);
     
-    // Draw links with arrows pointing to parent
+    // Draw links with arrows - data flows from right (children) to left (parent)
     const linkGroup = g.append('g').attr('class', 'links');
     
     root.each(node => {
         if (node.children) {
-            node.children.forEach(child => {
-                const sourceX = node.x + nodeWidth;
-                const sourceY = node.y + nodeHeight / 2;
-                const targetX = child.x;
-                const targetY = child.y + nodeHeight / 2;
+            const parentX = node.x;
+            const parentY = node.y + nodeHeight / 2;
+            
+            if (node.children.length === 1) {
+                // Single child - straight horizontal line with arrow at parent
+                const child = node.children[0];
+                const childX = child.x;
+                const childY = child.y + nodeHeight / 2;
                 
-                if (node.children.length === 1) {
-                    // Straight line from child to parent
-                    linkGroup.append('line')
-                        .attr('class', 'plan-link')
-                        .attr('x1', targetX + nodeWidth)
-                        .attr('y1', targetY)
-                        .attr('x2', sourceX + 10)
-                        .attr('y2', sourceY);
-                    
-                    // Arrow pointing to parent
+                linkGroup.append('line')
+                    .attr('class', 'plan-link')
+                    .attr('x1', childX)
+                    .attr('y1', childY)
+                    .attr('x2', parentX + nodeWidth + 10)
+                    .attr('y2', parentY);
+                
+                // Arrow pointing RIGHT to parent (only if not root)
+                if (node.depth > 0) {
                     linkGroup.append('polygon')
                         .attr('class', 'arrow')
-                        .attr('points', `${sourceX + 10},${sourceY - 6} ${sourceX},${sourceY} ${sourceX + 10},${sourceY + 6}`)
-                        .style('fill', 'var(--connection-color, #808080)');
-                } else {
-                    // Branch line for multiple children
-                    const branchX = targetX + nodeWidth + horizontalSpacing / 2;
-                    
-                    // Line from child to branch point
-                    linkGroup.append('line')
-                        .attr('class', 'plan-link')
-                        .attr('x1', targetX + nodeWidth)
-                        .attr('y1', targetY)
-                        .attr('x2', branchX)
-                        .attr('y2', targetY);
-                    
-                    // Vertical line to parent level
-                    linkGroup.append('line')
-                        .attr('class', 'plan-link')
-                        .attr('x1', branchX)
-                        .attr('y1', targetY)
-                        .attr('x2', branchX)
-                        .attr('y2', sourceY);
-                    
-                    // Line to parent with arrow
-                    linkGroup.append('line')
-                        .attr('class', 'plan-link')
-                        .attr('x1', branchX)
-                        .attr('y1', sourceY)
-                        .attr('x2', sourceX + 10)
-                        .attr('y2', sourceY);
-                    
-                    linkGroup.append('polygon')
-                        .attr('class', 'arrow')
-                        .attr('points', `${sourceX + 10},${sourceY - 6} ${sourceX},${sourceY} ${sourceX + 10},${sourceY + 6}`)
+                        .attr('points', `${parentX + nodeWidth + 10},${parentY - 6} ${parentX + nodeWidth},${parentY} ${parentX + nodeWidth + 10},${parentY + 6}`)
                         .style('fill', 'var(--connection-color, #808080)');
                 }
-            });
-            
-            // Draw vertical connecting line for multiple children
-            if (node.children.length > 1) {
-                const branchX = node.children[0].x + nodeWidth + horizontalSpacing / 2;
+            } else {
+                // Multiple children - branching with vertical connector
+                // Branch point is in the middle between children and parent
+                const firstChild = node.children[0];
+                const branchX = (firstChild.x + parentX + nodeWidth) / 2;
+                
+                // Draw vertical line connecting all children
                 const firstChildY = node.children[0].y + nodeHeight / 2;
                 const lastChildY = node.children[node.children.length - 1].y + nodeHeight / 2;
                 
@@ -2388,6 +2360,35 @@ function displayQueryPlanGraphical(planData) {
                     .attr('y1', firstChildY)
                     .attr('x2', branchX)
                     .attr('y2', lastChildY);
+                
+                // Draw horizontal line from branch point to parent
+                linkGroup.append('line')
+                    .attr('class', 'plan-link')
+                    .attr('x1', branchX)
+                    .attr('y1', parentY)
+                    .attr('x2', parentX + nodeWidth + 10)
+                    .attr('y2', parentY);
+                
+                // Arrow pointing RIGHT to parent (only if not root)
+                if (node.depth > 0) {
+                    linkGroup.append('polygon')
+                        .attr('class', 'arrow')
+                        .attr('points', `${parentX + nodeWidth + 10},${parentY - 6} ${parentX + nodeWidth},${parentY} ${parentX + nodeWidth + 10},${parentY + 6}`)
+                        .style('fill', 'var(--connection-color, #808080)');
+                }
+                
+                // Draw horizontal lines from each child to branch point
+                node.children.forEach(child => {
+                    const childX = child.x;
+                    const childY = child.y + nodeHeight / 2;
+                    
+                    linkGroup.append('line')
+                        .attr('class', 'plan-link')
+                        .attr('x1', childX)
+                        .attr('y1', childY)
+                        .attr('x2', branchX)
+                        .attr('y2', childY);
+                });
             }
         }
     });
@@ -2410,17 +2411,22 @@ function displayQueryPlanGraphical(planData) {
             if (isSelected) {
                 // Unclick - remove selection and hide tooltip
                 g.selectAll('.plan-node').classed('selected', false);
+                g.selectAll('.node-selection-outline').style('stroke', 'transparent');
                 hideTooltip();
             } else {
                 // Click - remove other selections, select this node, show tooltip
                 g.selectAll('.plan-node').classed('selected', false);
+                g.selectAll('.node-selection-outline').style('stroke', 'transparent');
                 d3.select(this).classed('selected', true);
+                d3.select(this).select('.node-selection-outline')
+                    .style('stroke', 'var(--vscode-button-background)');
                 showTooltip(event, d.data);
             }
         });
     
-    // Add rectangles for nodes
+    // Add main rectangles for nodes
     nodes.append('rect')
+        .attr('class', 'node-main-rect')
         .attr('width', nodeWidth)
         .attr('height', nodeHeight)
         .attr('rx', 4)
@@ -2428,10 +2434,17 @@ function displayQueryPlanGraphical(planData) {
         .style('stroke', 'var(--vscode-panel-border)')
         .style('stroke-width', 1);
     
-    nodes.filter(d => d.classed && d.classed('selected'))
-        .select('rect')
-        .style('stroke', 'var(--vscode-button-background)')
-        .style('stroke-width', 2);
+    // Add selection outline (dashed border on entire node)
+    nodes.append('rect')
+        .attr('class', 'node-selection-outline')
+        .attr('width', nodeWidth)
+        .attr('height', nodeHeight)
+        .attr('rx', 4)
+        .style('fill', 'none')
+        .style('stroke', 'transparent')
+        .style('stroke-width', 3)
+        .style('stroke-dasharray', '5,5')
+        .style('pointer-events', 'none');
     
     // Add operation name
     nodes.append('text')

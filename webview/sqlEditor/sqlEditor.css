@@ -416,9 +416,7 @@ th {
 }
 
 .plan-node.selected rect {
-    stroke: var(--vscode-button-background, #0e639c);
-    fill: var(--vscode-list-activeSelectionBackground, #094771);
-    stroke-width: 3px;
+    /* Selection is now handled by separate outline element */
 }
 
 .plan-node.high-cost rect {
