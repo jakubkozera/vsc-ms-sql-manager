@@ -453,6 +453,10 @@ th {
     stroke-width: 2px;
 }
 
+.arrow {
+    fill: var(--vscode-panel-border, #3c3c3c);
+}
+
 .plan-tooltip {
     position: absolute;
     background-color: var(--vscode-editorHoverWidget-background, #252526);

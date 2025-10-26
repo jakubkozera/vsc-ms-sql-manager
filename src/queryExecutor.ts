@@ -85,8 +85,16 @@ export class QueryExecutor {
                         // Calculate row counts for each result set
                         const rowCounts = allRecordsets.map(recordset => recordset.length);
                         
+                        // Strip SET commands from query for history
+                        // Remove lines that start with SET (case-insensitive)
+                        const cleanedQuery = queryText
+                            .split('\n')
+                            .filter(line => !line.trim().match(/^SET\s+/i))
+                            .join('\n')
+                            .trim();
+                        
                         this.historyManager.addEntry({
-                            query: queryText,
+                            query: cleanedQuery,
                             connectionId: activeConnectionInfo.id,
                             connectionName: activeConnectionInfo.name,
                             database: activeConnectionInfo.database,

@@ -115,12 +115,6 @@ export class DatabaseGroupItem extends vscode.TreeItem {
         this.iconPath = new vscode.ThemeIcon('database');
     }
 }
-        } catch (error) {
-            this.outputChannel.appendLine(`[QueryHistoryTreeProvider] Error loading history: ${error}`);
-            return [];
-        }
-    }
-}
 
 export class QueryHistoryItem extends vscode.TreeItem {
     constructor(public readonly entry: QueryHistoryEntry) {

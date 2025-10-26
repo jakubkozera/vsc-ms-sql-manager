@@ -329,16 +329,20 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             let resultSets = result.recordsets || [];
             
             if (includeActualPlan && result.recordsets) {
+                console.log('[SQL Editor] Checking for execution plan in', result.recordsets.length, 'result sets');
                 // Look for the XML plan in the result sets
                 for (let i = 0; i < result.recordsets.length; i++) {
                     const rs = result.recordsets[i];
+                    console.log('[SQL Editor] Result set', i, 'columns:', rs.length > 0 ? Object.keys(rs[0]) : 'empty');
                     if (rs.length > 0 && rs[0]['Microsoft SQL Server 2005 XML Showplan']) {
                         planXml = rs[0]['Microsoft SQL Server 2005 XML Showplan'];
+                        console.log('[SQL Editor] Found execution plan XML, length:', planXml.length);
                         // Remove plan result set from results
                         resultSets = result.recordsets.filter((_, index) => index !== i);
                         break;
                     }
                 }
+                console.log('[SQL Editor] Final planXml:', planXml ? 'present' : 'null');
             }
 
             // Build informational messages
@@ -377,24 +381,21 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             });
             
             if (planXml) {
-                // Send query plan with results
-                webview.postMessage({
-                    type: 'queryPlan',
-                    planXml: planXml,
-                    resultSets: resultSets,
-                    executionTime: executionTime,
-                    messages: messages
-                });
-            } else {
-                // Send regular results
-                webview.postMessage({
-                    type: 'results',
-                    resultSets: resultSets,
-                    executionTime: executionTime,
-                    rowsAffected: result.rowsAffected?.[0] || 0,
-                    messages: messages
+                messages.push({
+                    type: 'info',
+                    text: 'Execution plan included'
                 });
             }
+            
+            // Always send as 'results' type, include planXml when present
+            webview.postMessage({
+                type: 'results',
+                resultSets: resultSets,
+                executionTime: executionTime,
+                rowsAffected: result.rowsAffected?.[0] || 0,
+                messages: messages,
+                planXml: planXml
+            });
         } catch (error: any) {
             webview.postMessage({
                 type: 'error',

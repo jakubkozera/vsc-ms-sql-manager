@@ -725,7 +725,7 @@ window.addEventListener('message', event => {
             break;
 
         case 'results':
-            showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages);
+            showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages, message.planXml);
             break;
 
         case 'queryPlan':
@@ -796,7 +796,7 @@ function showLoading() {
     document.getElementById('messagesContent').style.display = 'none';
 }
 
-function showResults(resultSets, executionTime, rowsAffected, messages) {
+function showResults(resultSets, executionTime, rowsAffected, messages, planXml) {
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
@@ -814,13 +814,39 @@ function showResults(resultSets, executionTime, rowsAffected, messages) {
     // Update execution stats in compact format
     executionStatsEl.textContent = `${resultSets.length} result set(s) | ${totalRows} rows | ${executionTime}ms`;
 
+    // Show/hide plan tabs based on whether we have a plan
+    if (planXml) {
+        // Parse and store the plan data
+        currentQueryPlan = parseQueryPlan(planXml);
+        
+        // Show plan tabs
+        document.querySelectorAll('.results-tab').forEach(tab => {
+            if (tab.dataset.tab === 'queryPlan' || tab.dataset.tab === 'planTree' || tab.dataset.tab === 'topOperations') {
+                tab.style.display = 'block';
+            }
+        });
+        
+        // Display the plan in different views
+        displayQueryPlanGraphical(currentQueryPlan);
+        displayPlanTree(currentQueryPlan);
+        displayTopOperations(currentQueryPlan);
+    } else {
+        // Hide plan tabs when no plan
+        document.querySelectorAll('.results-tab').forEach(tab => {
+            if (tab.dataset.tab === 'queryPlan' || tab.dataset.tab === 'planTree' || tab.dataset.tab === 'topOperations') {
+                tab.style.display = 'none';
+            }
+        });
+    }
+
     // Always update both containers
-    displayResults(resultSets);
+    displayResults(resultSets, planXml);
     displayMessages(messages);
 }
 
-function displayResults(resultSets) {
+function displayResults(resultSets, planXml) {
     console.log('[SQL EDITOR] displayResults called with', resultSets.length, 'result set(s)');
+    console.log('[SQL EDITOR] planXml present:', !!planXml, 'length:', planXml ? planXml.length : 0);
     const resultsContent = document.getElementById('resultsContent');
     console.log('[SQL EDITOR] resultsContent element:', resultsContent);
 
@@ -853,6 +879,28 @@ function displayResults(resultSets) {
         resultSetContainer.appendChild(tableContainer);
         resultsContent.appendChild(resultSetContainer);
     });
+    
+    // Add execution plan as a separate result set if present
+    if (planXml) {
+        const planContainer = document.createElement('div');
+        planContainer.className = 'result-set-container';
+        planContainer.style.marginTop = '20px';
+        
+        const planTitle = document.createElement('h3');
+        planTitle.textContent = 'Execution Plan (XML)';
+        planTitle.style.marginBottom = '10px';
+        planContainer.appendChild(planTitle);
+        
+        const planTableContainer = document.createElement('div');
+        planTableContainer.className = 'result-set-table';
+        
+        // Create a single-cell table with the XML plan
+        const planData = [{ 'Microsoft SQL Server 2005 XML Showplan': planXml }];
+        initAgGridTable(planData, planTableContainer);
+        
+        planContainer.appendChild(planTableContainer);
+        resultsContent.appendChild(planContainer);
+    }
     
     // Check if the results content parent has overflow
     const resultsContainer = document.getElementById('resultsContainer');
@@ -1206,9 +1254,41 @@ function initAgGridTable(rowData, container) {
     let resizingColumn = null;
     let startX = 0;
     let startWidth = 0;
+    
+    function doResize(e) {
+        if (!resizingColumn) return;
+
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(50, startWidth + diff);
+        
+        resizingColumn.th.style.width = newWidth + 'px';
+        resizingColumn.th.style.minWidth = newWidth + 'px';
+        resizingColumn.th.style.maxWidth = newWidth + 'px';
+        resizingColumn.colDefs[resizingColumn.colIndex].width = newWidth;
+        
+        // Update total table width
+        const totalWidth = resizingColumn.colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
+        const table = resizingColumn.containerEl.querySelector('.ag-grid-table');
+        table.style.width = totalWidth + 'px';
+        table.style.minWidth = totalWidth + 'px';
+        
+        // Update all cells in this column (+2 because row number is first column)
+        const cells = table.querySelectorAll(`td:nth-child(${resizingColumn.colIndex + 2})`);
+        cells.forEach(cell => {
+            cell.style.width = newWidth + 'px';
+            cell.style.minWidth = newWidth + 'px';
+            cell.style.maxWidth = newWidth + 'px';
+        });
+    }
+    
+    function stopResize() {
+        resizingColumn = null;
+        document.removeEventListener('mousemove', doResize);
+        document.removeEventListener('mouseup', stopResize);
+    }
 
     function startResize(e, th, colIndex, colDefs, sortCfg, filters, containerEl) {
-        resizingColumn = { th, colIndex };
+        resizingColumn = { th, colIndex, colDefs, containerEl };
         startX = e.clientX;
         startWidth = th.offsetWidth;
 
@@ -1216,38 +1296,6 @@ function initAgGridTable(rowData, container) {
         document.addEventListener('mouseup', stopResize);
         e.preventDefault();
         e.stopPropagation();
-        
-        function doResize(e) {
-            if (!resizingColumn) return;
-
-            const diff = e.clientX - startX;
-            const newWidth = Math.max(50, startWidth + diff);
-            
-            resizingColumn.th.style.width = newWidth + 'px';
-            resizingColumn.th.style.minWidth = newWidth + 'px';
-            resizingColumn.th.style.maxWidth = newWidth + 'px';
-            colDefs[resizingColumn.colIndex].width = newWidth;
-            
-            // Update total table width
-            const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
-            const table = containerEl.querySelector('.ag-grid-table');
-            table.style.width = totalWidth + 'px';
-            table.style.minWidth = totalWidth + 'px';
-            
-            // Update all cells in this column (+2 because row number is first column)
-            const cells = table.querySelectorAll(`td:nth-child(${resizingColumn.colIndex + 2})`);
-            cells.forEach(cell => {
-                cell.style.width = newWidth + 'px';
-                cell.style.minWidth = newWidth + 'px';
-                cell.style.maxWidth = newWidth + 'px';
-            });
-        }
-    }
-
-    function stopResize() {
-        resizingColumn = null;
-        document.removeEventListener('mousemove', doResize);
-        document.removeEventListener('mouseup', stopResize);
     }
 
     function renderAgGridRows(colDefs, data, containerEl, startRow = 0, rowHeight = 30, chunkSize = 50) {
@@ -2174,42 +2222,144 @@ function displayQueryPlanGraphical(planData) {
     // Clear previous content
     queryPlanContent.innerHTML = '';
     
-    // Create SVG container
-    const width = queryPlanContent.offsetWidth || 1200;
-    const height = 600;
-    
-    const svg = d3.select(queryPlanContent)
-        .append('svg')
-        .attr('class', 'query-plan-svg')
-        .attr('width', width)
-        .attr('height', height)
-        .attr('viewBox', [0, 0, width, height]);
-    
-    const g = svg.append('g')
-        .attr('transform', 'translate(40, 40)');
+    // Node dimensions
+    const nodeWidth = 180;
+    const nodeHeight = 100;
+    const horizontalSpacing = 60;
+    const verticalSpacing = 40;
     
     // Create D3 hierarchy from our data
     const root = d3.hierarchy(convertToHierarchy(planData.hierarchicalOperations[0]), d => d.children);
     
-    // Create tree layout (top to bottom)
-    const treeLayout = d3.tree()
-        .size([width - 80, height - 80])
-        .separation((a, b) => (a.parent === b.parent ? 1 : 1.2));
+    // Custom left-to-right layout
+    let nodeId = 0;
+    root.eachBefore(node => {
+        node.id = nodeId++;
+    });
     
-    treeLayout(root);
+    function calculateLayout(node, x = 0, y = 0) {
+        node.x = x;
+        node.y = y;
+        
+        if (node.children) {
+            if (node.children.length === 1) {
+                calculateLayout(node.children[0], x + nodeWidth + horizontalSpacing, y);
+            } else {
+                const totalHeight = (node.children.length - 1) * (nodeHeight + verticalSpacing);
+                let currentY = y - totalHeight / 2;
+                
+                node.children.forEach(child => {
+                    calculateLayout(child, x + nodeWidth + horizontalSpacing, currentY);
+                    currentY += nodeHeight + verticalSpacing;
+                });
+            }
+        }
+    }
     
-    // Create links (connections between nodes)
-    g.selectAll('.plan-link')
-        .data(root.links())
-        .join('path')
-        .attr('class', 'plan-link')
-        .attr('d', d3.linkVertical()
-            .x(d => d.x)
-            .y(d => d.y)
-        );
+    calculateLayout(root);
+    
+    // Calculate bounds
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    root.each(node => {
+        minX = Math.min(minX, node.x);
+        maxX = Math.max(maxX, node.x + nodeWidth);
+        minY = Math.min(minY, node.y);
+        maxY = Math.max(maxY, node.y + nodeHeight);
+    });
+    
+    const padding = 40;
+    const width = maxX - minX + padding * 2;
+    const height = maxY - minY + padding * 2;
+    
+    const svg = d3.select(queryPlanContent)
+        .append('svg')
+        .attr('class', 'query-plan-svg')
+        .attr('width', '100%')
+        .attr('height', Math.max(600, height))
+        .attr('viewBox', [0, 0, width, height]);
+    
+    const g = svg.append('g')
+        .attr('transform', `translate(${padding - minX}, ${padding - minY})`);
+    
+    // Draw links with arrows pointing to parent
+    const linkGroup = g.append('g').attr('class', 'links');
+    
+    root.each(node => {
+        if (node.children) {
+            node.children.forEach(child => {
+                const sourceX = node.x + nodeWidth;
+                const sourceY = node.y + nodeHeight / 2;
+                const targetX = child.x;
+                const targetY = child.y + nodeHeight / 2;
+                
+                if (node.children.length === 1) {
+                    // Straight line from child to parent
+                    linkGroup.append('line')
+                        .attr('class', 'plan-link')
+                        .attr('x1', targetX + nodeWidth)
+                        .attr('y1', targetY)
+                        .attr('x2', sourceX + 10)
+                        .attr('y2', sourceY);
+                    
+                    // Arrow pointing to parent
+                    linkGroup.append('polygon')
+                        .attr('class', 'arrow')
+                        .attr('points', `${sourceX + 10},${sourceY - 6} ${sourceX},${sourceY} ${sourceX + 10},${sourceY + 6}`)
+                        .style('fill', 'var(--connection-color, #808080)');
+                } else {
+                    // Branch line for multiple children
+                    const branchX = targetX + nodeWidth + horizontalSpacing / 2;
+                    
+                    // Line from child to branch point
+                    linkGroup.append('line')
+                        .attr('class', 'plan-link')
+                        .attr('x1', targetX + nodeWidth)
+                        .attr('y1', targetY)
+                        .attr('x2', branchX)
+                        .attr('y2', targetY);
+                    
+                    // Vertical line to parent level
+                    linkGroup.append('line')
+                        .attr('class', 'plan-link')
+                        .attr('x1', branchX)
+                        .attr('y1', targetY)
+                        .attr('x2', branchX)
+                        .attr('y2', sourceY);
+                    
+                    // Line to parent with arrow
+                    linkGroup.append('line')
+                        .attr('class', 'plan-link')
+                        .attr('x1', branchX)
+                        .attr('y1', sourceY)
+                        .attr('x2', sourceX + 10)
+                        .attr('y2', sourceY);
+                    
+                    linkGroup.append('polygon')
+                        .attr('class', 'arrow')
+                        .attr('points', `${sourceX + 10},${sourceY - 6} ${sourceX},${sourceY} ${sourceX + 10},${sourceY + 6}`)
+                        .style('fill', 'var(--connection-color, #808080)');
+                }
+            });
+            
+            // Draw vertical connecting line for multiple children
+            if (node.children.length > 1) {
+                const branchX = node.children[0].x + nodeWidth + horizontalSpacing / 2;
+                const firstChildY = node.children[0].y + nodeHeight / 2;
+                const lastChildY = node.children[node.children.length - 1].y + nodeHeight / 2;
+                
+                linkGroup.append('line')
+                    .attr('class', 'plan-link')
+                    .attr('x1', branchX)
+                    .attr('y1', firstChildY)
+                    .attr('x2', branchX)
+                    .attr('y2', lastChildY);
+            }
+        }
+    });
     
     // Create nodes
-    const nodes = g.selectAll('.plan-node')
+    const nodes = g.append('g').attr('class', 'nodes')
+        .selectAll('.plan-node')
         .data(root.descendants())
         .join('g')
         .attr('class', d => {
@@ -2218,66 +2368,120 @@ function displayQueryPlanGraphical(planData) {
         })
         .attr('transform', d => `translate(${d.x},${d.y})`)
         .on('click', function(event, d) {
-            // Remove previous selection
-            g.selectAll('.plan-node').classed('selected', false);
-            // Select current node
-            d3.select(this).classed('selected', true);
-            // Hide tooltip on click
-            hideTooltip();
-        })
-        .on('mouseenter', function(event, d) {
-            showTooltip(event, d.data);
-        })
-        .on('mousemove', function(event, d) {
-            updateTooltipPosition(event);
-        })
-        .on('mouseleave', function(event, d) {
-            hideTooltip();
+            event.stopPropagation();
+            
+            const isSelected = d3.select(this).classed('selected');
+            
+            if (isSelected) {
+                // Unclick - remove selection and hide tooltip
+                g.selectAll('.plan-node').classed('selected', false);
+                hideTooltip();
+            } else {
+                // Click - remove other selections, select this node, show tooltip
+                g.selectAll('.plan-node').classed('selected', false);
+                d3.select(this).classed('selected', true);
+                showTooltip(event, d.data);
+            }
         });
     
     // Add rectangles for nodes
     nodes.append('rect')
-        .attr('x', -80)
-        .attr('y', -30)
-        .attr('width', 160)
-        .attr('height', 60)
-        .attr('rx', 4);
+        .attr('width', nodeWidth)
+        .attr('height', nodeHeight)
+        .attr('rx', 4)
+        .style('fill', 'var(--vscode-input-background)')
+        .style('stroke', 'var(--vscode-panel-border)')
+        .style('stroke-width', 1);
+    
+    nodes.filter(d => d.classed && d.classed('selected'))
+        .select('rect')
+        .style('stroke', 'var(--vscode-button-background)')
+        .style('stroke-width', 2);
     
     // Add operation name
     nodes.append('text')
         .attr('class', 'node-title')
         .attr('text-anchor', 'middle')
-        .attr('dy', '-8')
+        .attr('x', nodeWidth / 2)
+        .attr('y', 30)
+        .style('fill', 'var(--vscode-editor-foreground)')
+        .style('font-size', '12px')
+        .style('font-weight', '600')
         .text(d => d.data.physicalOp);
     
-    // Add cost percentage
-    nodes.append('text')
-        .attr('class', d => {
-            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100) : 0;
-            return `node-cost ${costPercent > 10 ? 'high' : ''}`;
-        })
+    // Add subtitle if exists (table/index name)
+    nodes.filter(d => d.data.details && (d.data.details.table || d.data.details.index))
+        .append('text')
+        .attr('class', 'node-subtitle')
         .attr('text-anchor', 'middle')
-        .attr('dy', '8')
+        .attr('x', nodeWidth / 2)
+        .attr('y', 45)
+        .style('fill', '#858585')
+        .style('font-size', '10px')
         .text(d => {
-            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100).toFixed(1) : 0;
-            return `Cost: ${costPercent}%`;
+            const table = d.data.details.table ? `[${d.data.details.schema || 'dbo'}].[${d.data.details.table}]` : '';
+            const index = d.data.details.index ? `[${d.data.details.index}]` : '';
+            const text = table + (index ? ' ' + index : '');
+            return text.length > 30 ? text.substring(0, 27) + '...' : text;
         });
     
-    // Add row count
+    // Add cost percentage badge
+    nodes.append('rect')
+        .attr('class', d => {
+            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100) : 0;
+            return costPercent >= 50 ? 'cost-badge high' : costPercent >= 10 ? 'cost-badge medium' : 'cost-badge low';
+        })
+        .attr('x', nodeWidth / 2 - 20)
+        .attr('y', 60)
+        .attr('width', 40)
+        .attr('height', 18)
+        .attr('rx', 9)
+        .style('fill', d => {
+            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100) : 0;
+            if (costPercent >= 50) return '#d73027';
+            if (costPercent >= 10) return '#fc8d59';
+            return '#4575b4';
+        });
+    
     nodes.append('text')
-        .attr('class', 'node-cost')
+        .attr('class', 'cost-text')
         .attr('text-anchor', 'middle')
-        .attr('dy', '22')
-        .text(d => `${d.data.estimatedRows.toLocaleString()} rows`);
+        .attr('x', nodeWidth / 2)
+        .attr('y', 73)
+        .style('fill', '#ffffff')
+        .style('font-size', '10px')
+        .style('font-weight', '600')
+        .text(d => {
+            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100).toFixed(0) : 0;
+            return `${costPercent}%`;
+        });
+    
+    // Add row count in bottom right
+    nodes.append('text')
+        .attr('class', 'row-count')
+        .attr('text-anchor', 'end')
+        .attr('x', nodeWidth - 10)
+        .attr('y', nodeHeight - 10)
+        .style('fill', '#858585')
+        .style('font-size', '11px')
+        .text(d => d.data.estimatedRows.toLocaleString());
     
     // Add zoom behavior
     const zoom = d3.zoom()
         .scaleExtent([0.3, 3])
         .on('zoom', (event) => {
-            g.attr('transform', event.transform);
+            g.attr('transform', `translate(${padding - minX}, ${padding - minY}) ${event.transform}`);
         });
     
     svg.call(zoom);
+    
+    // Click outside to deselect and hide tooltip
+    queryPlanContent.addEventListener('click', function(event) {
+        if (event.target === queryPlanContent || event.target.tagName === 'svg') {
+            g.selectAll('.plan-node').classed('selected', false);
+            hideTooltip();
+        }
+    });
     
     // Create tooltip element
     let tooltip = d3.select('body').select('.plan-tooltip');
@@ -2285,7 +2489,8 @@ function displayQueryPlanGraphical(planData) {
         tooltip = d3.select('body')
             .append('div')
             .attr('class', 'plan-tooltip')
-            .style('display', 'none');
+            .style('display', 'none')
+            .style('position', 'fixed');
     }
     
     function showTooltip(event, operation) {
@@ -2319,26 +2524,37 @@ function displayQueryPlanGraphical(planData) {
             .html(html)
             .style('display', 'block');
         
-        updateTooltipPosition(event);
+        // Position tooltip next to the node
+        positionTooltip(event);
     }
     
-    function updateTooltipPosition(event) {
+    function positionTooltip(event) {
         const tooltipNode = tooltip.node();
-        const tooltipWidth = tooltipNode.offsetWidth;
+        const tooltipWidth = 400;
         const tooltipHeight = tooltipNode.offsetHeight;
         
-        let left = event.pageX + 15;
-        let top = event.pageY - tooltipHeight / 2;
+        // Get the clicked element's position
+        const nodeRect = event.target.closest('g').getBoundingClientRect();
         
-        // Keep tooltip on screen
+        let left = nodeRect.right + 15;
+        let top = nodeRect.top;
+        
+        // Keep tooltip on screen - if it would go off right edge, put it on left side
         if (left + tooltipWidth > window.innerWidth) {
-            left = event.pageX - tooltipWidth - 15;
+            left = nodeRect.left - tooltipWidth - 15;
+        }
+        
+        // If still off screen on left, just position with some margin
+        if (left < 0) {
+            left = nodeRect.right + 15;
+        }
+        
+        // Adjust vertical position if needed
+        if (top + tooltipHeight > window.innerHeight) {
+            top = window.innerHeight - tooltipHeight - 10;
         }
         if (top < 0) {
             top = 10;
-        }
-        if (top + tooltipHeight > window.innerHeight) {
-            top = window.innerHeight - tooltipHeight - 10;
         }
         
         tooltip
