@@ -2102,6 +2102,11 @@ function parseQueryPlan(xmlString) {
         totalCost: 0
     };
     
+    // Get statement info for root SELECT node
+    const stmtSimple = xmlDoc.querySelector('StmtSimple');
+    const statementText = stmtSimple?.getAttribute('StatementText') || 'SELECT';
+    const statementCost = parseFloat(stmtSimple?.getAttribute('StatementSubTreeCost') || '0');
+    
     // Find the root RelOp (usually under QueryPlan > RelOp)
     const rootRelOp = xmlDoc.querySelector('QueryPlan > RelOp, StmtSimple > QueryPlan > RelOp');
     
@@ -2109,19 +2114,46 @@ function parseQueryPlan(xmlString) {
         return planData;
     }
     
+    // Set total cost from statement
+    planData.totalCost = statementCost;
+    
     let operationId = 0;
     
+    // Create artificial SELECT root node
+    const selectNode = {
+        id: operationId++,
+        level: 0,
+        parent: null,
+        physicalOp: 'SELECT',
+        logicalOp: 'SELECT',
+        estimatedCost: 0,
+        estimatedRows: parseFloat(stmtSimple?.getAttribute('StatementEstRows') || '0'),
+        estimatedSubtreeCost: statementCost,
+        estimatedCPU: 0,
+        estimatedIO: 0,
+        avgRowSize: 0,
+        estimatedExecutions: 1,
+        actualRows: 0,
+        actualExecutions: 0,
+        children: [],
+        details: { statement: statementText }
+    };
+    
+    planData.operations.push(selectNode);
+    
     // Recursive function to parse operation tree
-    function parseOperation(relOpElement, level = 0, parent = null) {
+    function parseOperation(relOpElement, level = 1, parent = selectNode) {
+        const estimatedSubtreeCost = parseFloat(relOpElement.getAttribute('EstimatedTotalSubtreeCost') || '0');
+        
         const operation = {
             id: operationId++,
             level: level,
             parent: parent,
             physicalOp: relOpElement.getAttribute('PhysicalOp') || 'Unknown',
             logicalOp: relOpElement.getAttribute('LogicalOp') || 'Unknown',
-            estimatedCost: parseFloat(relOpElement.getAttribute('EstimateOperatorCost') || '0'),
+            estimatedCost: 0, // Will be calculated later
             estimatedRows: parseFloat(relOpElement.getAttribute('EstimateRows') || '0'),
-            estimatedSubtreeCost: parseFloat(relOpElement.getAttribute('EstimatedTotalSubtreeCost') || '0'),
+            estimatedSubtreeCost: estimatedSubtreeCost,
             estimatedCPU: parseFloat(relOpElement.getAttribute('EstimateCPU') || '0'),
             estimatedIO: parseFloat(relOpElement.getAttribute('EstimateIO') || '0'),
             avgRowSize: parseInt(relOpElement.getAttribute('AvgRowSize') || '0'),
@@ -2133,22 +2165,15 @@ function parseQueryPlan(xmlString) {
         };
         
         // Extract specific operation details
-        const indexScan = relOpElement.querySelector(':scope > IndexScan, :scope > TableScan, :scope > ClusteredIndexScan, :scope > NestedLoops > IndexScan, :scope > NestedLoops > ClusteredIndexScan');
+        const indexScan = relOpElement.querySelector(':scope > IndexScan, :scope > TableScan, :scope > ClusteredIndexScan');
         if (indexScan) {
             const object = indexScan.querySelector('Object');
             if (object) {
-                operation.details.table = object.getAttribute('Table') || '';
-                operation.details.index = object.getAttribute('Index') || '';
-                operation.details.schema = object.getAttribute('Schema') || 'dbo';
+                operation.details.table = object.getAttribute('Table')?.replace(/[\[\]]/g, '') || '';
+                operation.details.index = object.getAttribute('Index')?.replace(/[\[\]]/g, '') || '';
+                operation.details.schema = object.getAttribute('Schema')?.replace(/[\[\]]/g, '') || 'dbo';
             }
         }
-        
-        // Check for other operation-specific elements
-        const merge = relOpElement.querySelector(':scope > Merge');
-        const hash = relOpElement.querySelector(':scope > Hash');
-        const nestedLoops = relOpElement.querySelector(':scope > NestedLoops');
-        const sort = relOpElement.querySelector(':scope > Sort');
-        const top = relOpElement.querySelector(':scope > Top');
         
         // Extract actual execution stats if present (for actual plans)
         const runTimeInfo = relOpElement.querySelector(':scope > RunTimeInformation');
@@ -2161,14 +2186,18 @@ function parseQueryPlan(xmlString) {
         }
         
         planData.operations.push(operation);
-        planData.totalCost += operation.estimatedCost;
         
         // Parse child operations recursively
-        // Children can be in different locations depending on the operation type
         const childRelOps = [];
         
+        // Check for operation-specific child locations
+        const nestedLoops = relOpElement.querySelector(':scope > NestedLoops');
+        const merge = relOpElement.querySelector(':scope > Merge');
+        const hash = relOpElement.querySelector(':scope > Hash');
+        const sort = relOpElement.querySelector(':scope > Sort');
+        const top = relOpElement.querySelector(':scope > Top');
+        
         if (nestedLoops) {
-            // NestedLoops has RelOp children directly
             childRelOps.push(...nestedLoops.querySelectorAll(':scope > RelOp'));
         } else if (merge) {
             childRelOps.push(...merge.querySelectorAll(':scope > RelOp'));
@@ -2188,11 +2217,16 @@ function parseQueryPlan(xmlString) {
             operation.children.push(childOp);
         });
         
+        // Calculate operator cost as subtree cost minus children costs
+        const childrenCost = operation.children.reduce((sum, child) => sum + child.estimatedSubtreeCost, 0);
+        operation.estimatedCost = Math.max(0, operation.estimatedSubtreeCost - childrenCost);
+        
         return operation;
     }
     
-    // Parse the entire operation tree
-    const rootOperation = parseOperation(rootRelOp, 0);
+    // Parse the entire operation tree starting from root RelOp
+    const rootOperation = parseOperation(rootRelOp, 1, selectNode);
+    selectNode.children.push(rootOperation);
     
     // Flatten the tree for hierarchical display (depth-first traversal)
     function flattenTree(operation, result = []) {
@@ -2201,10 +2235,11 @@ function parseQueryPlan(xmlString) {
         return result;
     }
     
-    planData.hierarchicalOperations = flattenTree(rootOperation);
+    planData.hierarchicalOperations = flattenTree(selectNode);
     
-    // Sort by cost for top operations
+    // Sort by cost for top operations (exclude SELECT node)
     planData.topOperations = [...planData.operations]
+        .filter(op => op.physicalOp !== 'SELECT')
         .sort((a, b) => b.estimatedCost - a.estimatedCost)
         .slice(0, 20);
     
