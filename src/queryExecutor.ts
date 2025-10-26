@@ -49,7 +49,7 @@ export class QueryExecutor {
                 const result = await request.query(queryText);
                 
                 // mssql library returns all recordsets in result.recordsets array
-                const allRecordsets: any[][] = result.recordsets || [];
+                const allRecordsets: any[][] = (result.recordsets || []) as any[][];
                 const totalRowsAffected: number[] = result.rowsAffected || [];
 
                 this.outputChannel.appendLine(`Query completed. Result sets: ${allRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);

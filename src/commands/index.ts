@@ -12,7 +12,8 @@ export function registerAllCommands(
     connectionProvider: ConnectionProvider,
     unifiedTreeProvider: UnifiedTreeProvider,
     queryExecutor: QueryExecutor,
-    outputChannel: vscode.OutputChannel
+    outputChannel: vscode.OutputChannel,
+    treeView?: vscode.TreeView<any>
 ): void {
     const refreshCommand = vscode.commands.registerCommand('mssqlManager.refresh', () => {
         outputChannel.appendLine('[Extension] Refreshing tree view');
@@ -23,7 +24,8 @@ export function registerAllCommands(
         context,
         connectionProvider,
         unifiedTreeProvider,
-        outputChannel
+        outputChannel,
+        treeView
     );
 
     const queryCommands = registerQueryCommands(

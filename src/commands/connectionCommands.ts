@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
-import { UnifiedTreeProvider } from '../unifiedTreeProvider';
+import { UnifiedTreeProvider, ConnectionNode } from '../unifiedTreeProvider';
 import { ServerGroupWebview } from '../serverGroupWebview';
 
 export function registerConnectionCommands(
     context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
     unifiedTreeProvider: UnifiedTreeProvider,
-    outputChannel: vscode.OutputChannel
+    outputChannel: vscode.OutputChannel,
+    treeView?: vscode.TreeView<any>
 ): vscode.Disposable[] {
     const connectCommand = vscode.commands.registerCommand('mssqlManager.connect', async () => {
         await connectionProvider.connect();
@@ -25,8 +26,22 @@ export function registerConnectionCommands(
     const connectToSavedCommand = vscode.commands.registerCommand('mssqlManager.connectToSaved', async (connectionItem?: any) => {
         try {
             if (connectionItem && connectionItem.connectionId) {
-                await connectionProvider.connectToSavedById(connectionItem.connectionId);
+                const connectionId = connectionItem.connectionId;
+                await connectionProvider.connectToSavedById(connectionId);
                 unifiedTreeProvider.refresh();
+                
+                // Expand the tree node after connection
+                if (treeView) {
+                    // Wait a bit for the refresh to complete
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Find the refreshed node by walking the tree
+                    const refreshedNode = await findConnectionNode(treeView, unifiedTreeProvider, connectionId);
+                    if (refreshedNode) {
+                        // Reveal and expand the connection node
+                        await treeView.reveal(refreshedNode, { select: true, focus: false, expand: true });
+                    }
+                }
             } else {
                 vscode.window.showErrorMessage('Invalid connection item');
             }
@@ -36,6 +51,36 @@ export function registerConnectionCommands(
             outputChannel.appendLine(`Connect to saved failed: ${errorMessage}`);
         }
     });
+    
+    // Helper function to find a connection node in the tree
+    async function findConnectionNode(
+        treeView: vscode.TreeView<any>,
+        provider: UnifiedTreeProvider,
+        connectionId: string
+    ): Promise<any> {
+        // Get root nodes
+        const rootNodes = await provider.getChildren();
+        
+        // Search through root nodes and their children
+        for (const node of rootNodes) {
+            // Check if this is the connection node we're looking for
+            if (node instanceof ConnectionNode && node.connectionId === connectionId) {
+                return node;
+            }
+            
+            // If it's a server group, check its children
+            if (node.collapsibleState !== vscode.TreeItemCollapsibleState.None) {
+                const children = await provider.getChildren(node);
+                for (const child of children) {
+                    if (child instanceof ConnectionNode && child.connectionId === connectionId) {
+                        return child;
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
 
     const editConnectionCommand = vscode.commands.registerCommand('mssqlManager.editConnection', async (connectionItem?: any) => {
         try {

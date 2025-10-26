@@ -44,8 +44,11 @@ export function activate(context: vscode.ExtensionContext) {
         unifiedTreeProvider.refresh();
     });
 
-    // Register tree data provider
-    vscode.window.registerTreeDataProvider('mssqlManager.explorer', unifiedTreeProvider);
+    // Register tree data provider and create tree view
+    const treeView = vscode.window.createTreeView('mssqlManager.explorer', {
+        treeDataProvider: unifiedTreeProvider
+    });
+    context.subscriptions.push(treeView);
 
     // Register file decoration provider
     context.subscriptions.push(
@@ -58,7 +61,8 @@ export function activate(context: vscode.ExtensionContext) {
         connectionProvider,
         unifiedTreeProvider,
         queryExecutor,
-        outputChannel
+        outputChannel,
+        treeView
     );
 
     // Add output channel and status bar to subscriptions

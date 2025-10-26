@@ -23,6 +23,56 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         return element;
     }
 
+    async getParent(element: TreeNode): Promise<TreeNode | undefined> {
+        // Root level nodes (ServerGroupNode and ungrouped ConnectionNode) have no parent
+        if (element instanceof ServerGroupNode) {
+            return undefined;
+        }
+        
+        // ConnectionNode might be inside a ServerGroupNode or at root level
+        if (element instanceof ConnectionNode) {
+            // Check if this connection belongs to a server group
+            const connections = await this.connectionProvider.getSavedConnectionsList();
+            const connection = connections.find(c => c.id === element.connectionId);
+            
+            if (connection?.serverGroupId) {
+                // Find the server group
+                const serverGroups = this.connectionProvider.getServerGroups();
+                const serverGroup = serverGroups.find(g => g.id === connection.serverGroupId);
+                
+                if (serverGroup) {
+                    const groupConnections = connections.filter(conn => conn.serverGroupId === serverGroup.id);
+                    return new ServerGroupNode(serverGroup, groupConnections.length);
+                }
+            }
+            
+            // Ungrouped connection has no parent
+            return undefined;
+        }
+        
+        // SchemaItemNode has a ConnectionNode as parent
+        if (element instanceof SchemaItemNode) {
+            if (element.connectionId) {
+                const connections = await this.connectionProvider.getSavedConnectionsList();
+                const connection = connections.find(c => c.id === element.connectionId);
+                
+                if (connection) {
+                    return new ConnectionNode(
+                        connection.name,
+                        connection.server,
+                        connection.database,
+                        connection.id,
+                        connection.authType || 'sql',
+                        this.connectionProvider.isConnectionActive(connection.id),
+                        this.connectionProvider.isConnectionPending(connection.id)
+                    );
+                }
+            }
+        }
+        
+        return undefined;
+    }
+
     provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
         if (uri.scheme === 'mssql-connection' && uri.fragment === 'active') {
             return new vscode.FileDecoration(
