@@ -2,10 +2,13 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { QueryExecutor } from '../queryExecutor';
+import { QueryHistoryManager } from '../queryHistory';
+import { QueryHistoryTreeProvider } from '../queryHistoryTreeProvider';
 import { registerConnectionCommands } from './connectionCommands';
 import { registerQueryCommands } from './queryCommands';
 import { registerTableCommands } from './tableCommands';
 import { registerStoredProcedureCommands } from './storedProcedureCommands';
+import { registerQueryHistoryCommands } from './queryHistoryCommands';
 
 export function registerAllCommands(
     context: vscode.ExtensionContext,
@@ -13,7 +16,9 @@ export function registerAllCommands(
     unifiedTreeProvider: UnifiedTreeProvider,
     queryExecutor: QueryExecutor,
     outputChannel: vscode.OutputChannel,
-    treeView?: vscode.TreeView<any>
+    treeView?: vscode.TreeView<any>,
+    historyManager?: QueryHistoryManager,
+    historyTreeProvider?: QueryHistoryTreeProvider
 ): void {
     const refreshCommand = vscode.commands.registerCommand('mssqlManager.refresh', () => {
         outputChannel.appendLine('[Extension] Refreshing tree view');
@@ -48,13 +53,28 @@ export function registerAllCommands(
         outputChannel
     );
 
-    context.subscriptions.push(
+    const allCommands = [
         refreshCommand,
         ...connectionCommands,
         ...queryCommands,
         ...tableCommands,
         ...storedProcedureCommands
-    );
+    ];
+
+    // Register query history commands if available
+    if (historyManager && historyTreeProvider) {
+        const historyCommands = registerQueryHistoryCommands(
+            context,
+            historyManager,
+            historyTreeProvider,
+            connectionProvider,
+            outputChannel,
+            unifiedTreeProvider
+        );
+        allCommands.push(...historyCommands);
+    }
+
+    context.subscriptions.push(...allCommands);
 
     outputChannel.appendLine('MS SQL Manager commands registered successfully');
 }

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as sql from 'mssql';
 import { ConnectionProvider } from './connectionProvider';
+import { QueryHistoryManager } from './queryHistory';
 
 export interface QueryResult {
     recordsets: any[][]; // Changed from single recordset to array of recordsets
@@ -14,7 +15,8 @@ export class QueryExecutor {
     
     constructor(
         private connectionProvider: ConnectionProvider,
-        private outputChannel: vscode.OutputChannel
+        private outputChannel: vscode.OutputChannel,
+        private historyManager?: QueryHistoryManager
     ) {}
 
     async executeQuery(queryText: string): Promise<QueryResult> {
@@ -73,6 +75,32 @@ export class QueryExecutor {
                     this.outputChannel.appendLine(`Query affected ${totalRowsAffected.reduce((a, b) => a + b, 0)} row(s)`);
                 } else {
                     this.outputChannel.appendLine(`Query completed successfully`);
+                }
+
+                // Add to query history
+                if (this.historyManager) {
+                    const activeConnectionInfo = this.connectionProvider.getActiveConnectionInfo();
+                    console.log('[QueryExecutor] Adding query to history, activeConnection:', activeConnectionInfo?.name);
+                    if (activeConnectionInfo) {
+                        // Calculate row counts for each result set
+                        const rowCounts = allRecordsets.map(recordset => recordset.length);
+                        
+                        this.historyManager.addEntry({
+                            query: queryText,
+                            connectionId: activeConnectionInfo.id,
+                            connectionName: activeConnectionInfo.name,
+                            database: activeConnectionInfo.database,
+                            server: activeConnectionInfo.server,
+                            resultSetCount: allRecordsets.length,
+                            rowCounts: rowCounts,
+                            duration: executionTime
+                        });
+                        console.log('[QueryExecutor] Query added to history successfully');
+                    } else {
+                        console.log('[QueryExecutor] No active connection info, skipping history');
+                    }
+                } else {
+                    console.log('[QueryExecutor] History manager not available');
                 }
 
                 return queryResult;

@@ -195,6 +195,26 @@
         "command": "mssqlManager.showStoredProcedureProperties",
         "title": "Properties",
         "icon": "$(info)"
+      },
+      {
+        "command": "mssqlManager.openQueryFromHistory",
+        "title": "Open Query from History",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "mssqlManager.clearQueryHistory",
+        "title": "Clear Query History",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mssqlManager.deleteQueryHistoryItem",
+        "title": "Delete History Item",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mssqlManager.refreshQueryHistory",
+        "title": "Refresh Query History",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
@@ -213,6 +233,12 @@
           "name": "Database Explorer",
           "when": "true",
           "icon": "resources/database-dark.svg"
+        },
+        {
+          "id": "mssqlManager.queryHistory",
+          "name": "Query History",
+          "when": "true",
+          "icon": "$(history)"
         }
       ]
     },
@@ -352,6 +378,16 @@
           "command": "mssqlManager.createServerGroup",
           "when": "view == mssqlManager.explorer",
           "group": "navigation@4"
+        },
+        {
+          "command": "mssqlManager.refreshQueryHistory",
+          "when": "view == mssqlManager.queryHistory",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mssqlManager.clearQueryHistory",
+          "when": "view == mssqlManager.queryHistory",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -449,6 +485,16 @@
           "command": "mssqlManager.showStoredProcedureProperties",
           "when": "view == mssqlManager.explorer && viewItem == procedure",
           "group": "5_properties@1"
+        },
+        {
+          "command": "mssqlManager.openQueryFromHistory",
+          "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.deleteQueryHistoryItem",
+          "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
+          "group": "inline@2"
         }
       ],
       "commandPalette": [
@@ -554,6 +600,18 @@
         },
         {
           "command": "mssqlManager.showStoredProcedureProperties",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.openQueryFromHistory",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.deleteQueryHistoryItem",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.refreshQueryHistory",
           "when": "false"
         }
       ]

@@ -436,6 +436,13 @@ export class ConnectionProvider {
         return this.pendingConnections.has(connectionId);
     }
 
+    getActiveConnectionInfo(): ConnectionConfig | null {
+        if (this.currentActiveId) {
+            return this.activeConfigs.get(this.currentActiveId) || null;
+        }
+        return null;
+    }
+
     async getCompleteConnectionConfig(config: ConnectionConfig): Promise<ConnectionConfig> {
         const completeConfig = { ...config };
         
