@@ -973,7 +973,7 @@ function initAgGridTable(rowData, container) {
     const tbody = container.querySelector('.ag-grid-tbody');
     console.log('[AG-GRID] Table element:', table, 'border-collapse:', table?.style.borderCollapse);
 
-    renderAgGridHeaders(columnDefs, sortConfig, activeFilters, container);
+    renderAgGridHeaders(columnDefs, sortConfig, activeFilters, container, filteredData);
     renderAgGridRows(columnDefs, filteredData, container, 0, ROW_HEIGHT, RENDER_CHUNK_SIZE);
     
     // Set up virtual scrolling
@@ -993,7 +993,7 @@ function initAgGridTable(rowData, container) {
     
     console.log('[AG-GRID] Virtual scrolling initialized with', filteredData.length, 'total rows, rendering', RENDER_CHUNK_SIZE, 'at a time');
 
-    function renderAgGridHeaders(colDefs, sortCfg, filters, containerEl) {
+    function renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, data) {
         console.log('[AG-GRID] renderAgGridHeaders called with', colDefs.length, 'columns');
         const thead = containerEl.querySelector('.ag-grid-thead');
         if (!thead) {
@@ -1074,6 +1074,18 @@ function initAgGridTable(rowData, container) {
                 e.stopPropagation();
                 highlightColumn(index, colDefs, containerEl);
             };
+            
+            // Add context menu for column header
+            headerTitle.oncontextmenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showColumnHeaderContextMenu(e, {
+                    table: containerEl.querySelector('.ag-grid-table'),
+                    columnIndex: index,
+                    columnDefs: colDefs,
+                    data: data
+                });
+            };
 
             headerContent.appendChild(headerTitle);
 
@@ -1150,7 +1162,7 @@ function initAgGridTable(rowData, container) {
             pinIcon.onclick = (e) => {
                 e.stopPropagation();
                 col.pinned = !col.pinned;
-                renderAgGridHeaders(colDefs, sortCfg, filters, containerEl);
+                renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
                 renderAgGridRows(colDefs, filteredData, containerEl);
             };
 
@@ -1412,6 +1424,17 @@ function initAgGridTable(rowData, container) {
                 tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
                 rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
             });
+            
+            // Add context menu for row number cell
+            rowNumTd.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showRowContextMenu(e, {
+                    table: containerEl.querySelector('.ag-grid-table'),
+                    rowIndex: rowIndex,
+                    columnDefs: colDefs,
+                    data: data
+                });
+            });
             tr.appendChild(rowNumTd);
 
             colDefs.forEach((col, colIndex) => {
@@ -1503,7 +1526,7 @@ function initAgGridTable(rowData, container) {
         if (viewport) viewport.scrollTop = 0;
         
         updateFilteredData(colDefs, sortCfg, filters, containerEl);
-        renderAgGridHeaders(colDefs, sortCfg, filters, containerEl);
+        renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
     }
 
     function showAgGridFilter(e, col, th, colDefs, sortCfg, filters, containerEl) {
@@ -1595,7 +1618,7 @@ function initAgGridTable(rowData, container) {
             if (viewport) viewport.scrollTop = 0;
             
             updateFilteredData(colDefs, sortCfg, filters, containerEl);
-            renderAgGridHeaders(colDefs, sortCfg, filters, containerEl);
+            renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
             popup.remove();
             currentFilterPopup = null;
         };
@@ -1615,7 +1638,7 @@ function initAgGridTable(rowData, container) {
             if (viewport) viewport.scrollTop = 0;
             
             updateFilteredData(colDefs, sortCfg, filters, containerEl);
-            renderAgGridHeaders(colDefs, sortCfg, filters, containerEl);
+            renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
             popup.remove();
             currentFilterPopup = null;
         };
@@ -1888,8 +1911,10 @@ window.addEventListener('resize', () => {
 // Context menu functionality
 let contextMenu = null;
 let contextMenuData = null;
+let rowContextMenu = null;
+let columnHeaderContextMenu = null;
 
-// Create context menu HTML
+// Create context menu HTML for table cells
 function createContextMenu() {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
@@ -1910,6 +1935,54 @@ function createContextMenu() {
             const action = item.dataset.action;
             handleContextMenuAction(action);
             hideContextMenu();
+        });
+    });
+    
+    return menu;
+}
+
+// Create context menu HTML for row number cells
+function createRowContextMenu() {
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.display = 'none';
+    menu.innerHTML = `
+        <div class="context-menu-item" data-action="copy-row">Copy Row</div>
+        <div class="context-menu-item" data-action="copy-row-header">Copy Row with Headers</div>
+    `;
+    document.body.appendChild(menu);
+    
+    // Add click handlers
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const action = item.dataset.action;
+            handleContextMenuAction(action);
+            hideRowContextMenu();
+        });
+    });
+    
+    return menu;
+}
+
+// Create context menu HTML for column headers
+function createColumnHeaderContextMenu() {
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.display = 'none';
+    menu.innerHTML = `
+        <div class="context-menu-item" data-action="copy-column">Copy Column</div>
+        <div class="context-menu-item" data-action="copy-column-header">Copy Column with Header</div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" data-action="copy-column-distinct">Copy Distinct Values</div>
+    `;
+    document.body.appendChild(menu);
+    
+    // Add click handlers
+    menu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const action = item.dataset.action;
+            handleContextMenuAction(action);
+            hideColumnHeaderContextMenu();
         });
     });
     
@@ -1943,6 +2016,68 @@ function showContextMenu(e, cellData) {
 function hideContextMenu() {
     if (contextMenu) {
         contextMenu.style.display = 'none';
+    }
+    contextMenuData = null;
+}
+
+function showRowContextMenu(e, cellData) {
+    e.preventDefault();
+    
+    if (!rowContextMenu) {
+        rowContextMenu = createRowContextMenu();
+    }
+    
+    contextMenuData = cellData;
+    
+    // Position menu at cursor
+    rowContextMenu.style.display = 'block';
+    rowContextMenu.style.left = e.pageX + 'px';
+    rowContextMenu.style.top = e.pageY + 'px';
+    
+    // Adjust if menu goes off screen
+    const rect = rowContextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+        rowContextMenu.style.left = (e.pageX - rect.width) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+        rowContextMenu.style.top = (e.pageY - rect.height) + 'px';
+    }
+}
+
+function hideRowContextMenu() {
+    if (rowContextMenu) {
+        rowContextMenu.style.display = 'none';
+    }
+    contextMenuData = null;
+}
+
+function showColumnHeaderContextMenu(e, cellData) {
+    e.preventDefault();
+    
+    if (!columnHeaderContextMenu) {
+        columnHeaderContextMenu = createColumnHeaderContextMenu();
+    }
+    
+    contextMenuData = cellData;
+    
+    // Position menu at cursor
+    columnHeaderContextMenu.style.display = 'block';
+    columnHeaderContextMenu.style.left = e.pageX + 'px';
+    columnHeaderContextMenu.style.top = e.pageY + 'px';
+    
+    // Adjust if menu goes off screen
+    const rect = columnHeaderContextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+        columnHeaderContextMenu.style.left = (e.pageX - rect.width) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+        columnHeaderContextMenu.style.top = (e.pageY - rect.height) + 'px';
+    }
+}
+
+function hideColumnHeaderContextMenu() {
+    if (columnHeaderContextMenu) {
+        columnHeaderContextMenu.style.display = 'none';
     }
     contextMenuData = null;
 }
@@ -1984,6 +2119,25 @@ function handleContextMenuAction(action) {
             }).join('\n');
             break;
             
+        case 'copy-column-header':
+            const colFieldWithHeader = columnDefs[columnIndex].field;
+            const colHeaderName = columnDefs[columnIndex].headerName;
+            const columnValues = data.map(row => {
+                const val = row[colFieldWithHeader];
+                return val === null ? 'NULL' : String(val);
+            }).join('\n');
+            textToCopy = colHeaderName + '\n' + columnValues;
+            break;
+            
+        case 'copy-column-distinct':
+            const colFieldDistinct = columnDefs[columnIndex].field;
+            const distinctValues = [...new Set(data.map(row => {
+                const val = row[colFieldDistinct];
+                return val === null ? 'NULL' : String(val);
+            }))].sort().join('\n');
+            textToCopy = distinctValues;
+            break;
+            
         case 'copy-table':
             const tableHeaders = columnDefs.map(col => col.headerName).join('\t');
             const tableRows = data.map(row => {
@@ -2009,10 +2163,20 @@ document.addEventListener('click', (e) => {
     if (contextMenu && !contextMenu.contains(e.target)) {
         hideContextMenu();
     }
+    if (rowContextMenu && !rowContextMenu.contains(e.target)) {
+        hideRowContextMenu();
+    }
+    if (columnHeaderContextMenu && !columnHeaderContextMenu.contains(e.target)) {
+        hideColumnHeaderContextMenu();
+    }
 });
 
 // Hide context menu on scroll
-document.addEventListener('scroll', hideContextMenu, true);
+document.addEventListener('scroll', () => {
+    hideContextMenu();
+    hideRowContextMenu();
+    hideColumnHeaderContextMenu();
+}, true);
 
 // Query Plan Display Functions
 function showQueryPlan(planXml, executionTime, messages, resultSets) {
