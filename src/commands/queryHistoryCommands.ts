@@ -118,10 +118,32 @@ export function registerQueryHistoryCommands(
         }
     );
 
+    const toggleQueryHistoryGroupingCommand = vscode.commands.registerCommand(
+        'mssqlManager.toggleQueryHistoryGrouping',
+        async () => {
+            const currentMode = historyTreeProvider.getGroupingMode();
+            
+            const options = [
+                { label: 'No Grouping', value: 'none' as const, description: currentMode === 'none' ? '✓ Currently selected' : '' },
+                { label: 'Group by Database', value: 'database' as const, description: currentMode === 'database' ? '✓ Currently selected' : '' }
+            ];
+
+            const selected = await vscode.window.showQuickPick(options, {
+                placeHolder: 'Select query history grouping mode'
+            });
+
+            if (selected) {
+                historyTreeProvider.setGroupingMode(selected.value);
+                outputChannel.appendLine(`[QueryHistory] Grouping mode changed to: ${selected.value}`);
+            }
+        }
+    );
+
     return [
         openQueryFromHistoryCommand,
         clearQueryHistoryCommand,
         deleteQueryHistoryItemCommand,
-        refreshQueryHistoryCommand
+        refreshQueryHistoryCommand,
+        toggleQueryHistoryGroupingCommand
     ];
 }

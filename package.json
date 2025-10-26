@@ -215,6 +215,11 @@
         "command": "mssqlManager.refreshQueryHistory",
         "title": "Refresh Query History",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.toggleQueryHistoryGrouping",
+        "title": "Toggle Query History Grouping",
+        "icon": "$(group-by-ref-type)"
       }
     ],
     "viewsContainers": {
@@ -385,9 +390,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "mssqlManager.clearQueryHistory",
+          "command": "mssqlManager.toggleQueryHistoryGrouping",
           "when": "view == mssqlManager.queryHistory",
           "group": "navigation@2"
+        },
+        {
+          "command": "mssqlManager.clearQueryHistory",
+          "when": "view == mssqlManager.queryHistory",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -612,6 +622,10 @@
         },
         {
           "command": "mssqlManager.refreshQueryHistory",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.toggleQueryHistoryGrouping",
           "when": "false"
         }
       ]

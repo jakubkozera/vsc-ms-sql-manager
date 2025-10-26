@@ -1,9 +1,13 @@
 import * as vscode from 'vscode';
 import { QueryHistoryManager, QueryHistoryEntry } from './queryHistory';
 
-export class QueryHistoryTreeProvider implements vscode.TreeDataProvider<QueryHistoryItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<QueryHistoryItem | undefined | null | void> = new vscode.EventEmitter<QueryHistoryItem | undefined | null | void>();
-    readonly onDidChangeTreeData: vscode.Event<QueryHistoryItem | undefined | null | void> = this._onDidChangeTreeData.event;
+type GroupingMode = 'none' | 'database';
+
+export class QueryHistoryTreeProvider implements vscode.TreeDataProvider<QueryHistoryItem | DatabaseGroupItem> {
+    private _onDidChangeTreeData: vscode.EventEmitter<QueryHistoryItem | DatabaseGroupItem | undefined | null | void> = new vscode.EventEmitter<QueryHistoryItem | DatabaseGroupItem | undefined | null | void>();
+    readonly onDidChangeTreeData: vscode.Event<QueryHistoryItem | DatabaseGroupItem | undefined | null | void> = this._onDidChangeTreeData.event;
+
+    private groupingMode: GroupingMode = 'none';
 
     constructor(
         private historyManager: QueryHistoryManager,
@@ -17,33 +21,100 @@ export class QueryHistoryTreeProvider implements vscode.TreeDataProvider<QueryHi
         });
     }
 
+    setGroupingMode(mode: GroupingMode): void {
+        console.log(`[QueryHistoryTreeProvider] Setting grouping mode to: ${mode}`);
+        this.groupingMode = mode;
+        this.refresh();
+    }
+
+    getGroupingMode(): GroupingMode {
+        return this.groupingMode;
+    }
+
     refresh(): void {
         console.log('[QueryHistoryTreeProvider] Refresh called');
         this._onDidChangeTreeData.fire();
     }
 
-    getTreeItem(element: QueryHistoryItem): vscode.TreeItem {
+    getTreeItem(element: QueryHistoryItem | DatabaseGroupItem): vscode.TreeItem {
         return element;
     }
 
-    async getChildren(element?: QueryHistoryItem): Promise<QueryHistoryItem[]> {
-        if (element) {
-            // No nested items for now
+    async getChildren(element?: QueryHistoryItem | DatabaseGroupItem): Promise<(QueryHistoryItem | DatabaseGroupItem)[]> {
+        if (element instanceof QueryHistoryItem) {
+            // Query items have no children
             return [];
         }
 
+        if (element instanceof DatabaseGroupItem) {
+            // Return queries for this database
+            const history = this.historyManager.getHistory();
+            const filteredHistory = history.filter(entry => 
+                `${entry.server}/${entry.database}` === element.databaseKey
+            );
+            const items = filteredHistory.map(entry => new QueryHistoryItem(entry));
+            console.log(`[QueryHistoryTreeProvider] Returning ${items.length} items for database: ${element.databaseKey}`);
+            return items;
+        }
+
+        // Root level
         try {
             const history = this.historyManager.getHistory();
-            console.log(`[QueryHistoryTreeProvider] getChildren called, history count: ${history.length}`);
+            console.log(`[QueryHistoryTreeProvider] getChildren called, history count: ${history.length}, grouping: ${this.groupingMode}`);
             
             if (history.length === 0) {
                 console.log('[QueryHistoryTreeProvider] No history entries to display');
                 return [];
             }
 
-            const items = history.map(entry => new QueryHistoryItem(entry));
-            console.log(`[QueryHistoryTreeProvider] Returning ${items.length} history items`);
-            return items;
+            if (this.groupingMode === 'database') {
+                // Group by database
+                const databaseGroups = new Map<string, QueryHistoryEntry[]>();
+                
+                for (const entry of history) {
+                    const key = `${entry.server}/${entry.database}`;
+                    if (!databaseGroups.has(key)) {
+                        databaseGroups.set(key, []);
+                    }
+                    databaseGroups.get(key)!.push(entry);
+                }
+
+                const items = Array.from(databaseGroups.entries()).map(([key, entries]) => 
+                    new DatabaseGroupItem(key, entries[0].server, entries[0].database, entries.length)
+                );
+                console.log(`[QueryHistoryTreeProvider] Returning ${items.length} database groups`);
+                return items;
+            } else {
+                // No grouping - flat list
+                const items = history.map(entry => new QueryHistoryItem(entry));
+                console.log(`[QueryHistoryTreeProvider] Returning ${items.length} history items`);
+                return items;
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`[QueryHistoryTreeProvider] Error loading history: ${error}`);
+            return [];
+        }
+    }
+}
+
+export class DatabaseGroupItem extends vscode.TreeItem {
+    constructor(
+        public readonly databaseKey: string,
+        public readonly server: string,
+        public readonly database: string,
+        public readonly queryCount: number
+    ) {
+        super(
+            `${database}`,
+            vscode.TreeItemCollapsibleState.Collapsed
+        );
+
+        this.description = `${queryCount} ${queryCount === 1 ? 'query' : 'queries'}`;
+        this.tooltip = `${server}/${database}\n${queryCount} ${queryCount === 1 ? 'query' : 'queries'}`;
+        this.contextValue = 'databaseGroup';
+        this.iconPath = new vscode.ThemeIcon('database');
+    }
+}
         } catch (error) {
             this.outputChannel.appendLine(`[QueryHistoryTreeProvider] Error loading history: ${error}`);
             return [];
