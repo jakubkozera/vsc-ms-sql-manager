@@ -77,6 +77,24 @@ body {
     background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--vscode-button-background, #0e639c);
+}
+
+.checkbox-label span {
+    color: var(--vscode-foreground);
+}
+
 .toolbar-separator {
     width: 1px;
     height: 24px;
@@ -365,4 +383,265 @@ th {
     display: table;
     width: 100%;
     table-layout: fixed;
+}
+
+/* Query Plan Visualization Styles */
+#queryPlanContent {
+    padding: 20px;
+    overflow: auto;
+    background-color: var(--vscode-editor-background);
+}
+
+.query-plan-svg {
+    width: 100%;
+    height: 600px;
+    background-color: var(--vscode-editor-background);
+}
+
+.plan-node {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.plan-node rect {
+    fill: var(--vscode-editor-lineHighlightBackground, #2a2d2e);
+    stroke: var(--vscode-panel-border, #3c3c3c);
+    stroke-width: 2px;
+    transition: all 0.2s;
+}
+
+.plan-node:hover rect {
+    stroke: var(--vscode-button-background, #0e639c);
+    fill: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.plan-node.selected rect {
+    stroke: var(--vscode-button-background, #0e639c);
+    fill: var(--vscode-list-activeSelectionBackground, #094771);
+    stroke-width: 3px;
+}
+
+.plan-node.high-cost rect {
+    stroke: var(--vscode-errorForeground, #f48771);
+}
+
+.plan-node text {
+    fill: var(--vscode-editor-foreground, #cccccc);
+    font-size: 12px;
+    font-family: var(--vscode-font-family);
+    pointer-events: none;
+}
+
+.plan-node .node-title {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.plan-node .node-cost {
+    font-size: 11px;
+    fill: var(--vscode-descriptionForeground, #999999);
+}
+
+.plan-node .node-cost.high {
+    fill: var(--vscode-errorForeground, #f48771);
+    font-weight: 600;
+}
+
+.plan-link {
+    fill: none;
+    stroke: var(--vscode-panel-border, #3c3c3c);
+    stroke-width: 2px;
+}
+
+.plan-tooltip {
+    position: absolute;
+    background-color: var(--vscode-editorHoverWidget-background, #252526);
+    border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+    border-radius: 4px;
+    padding: 12px;
+    pointer-events: none;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    max-width: 400px;
+    font-size: 12px;
+    color: var(--vscode-editorHoverWidget-foreground, #cccccc);
+}
+
+.plan-tooltip h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--vscode-editor-foreground, #cccccc);
+    border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+    padding-bottom: 6px;
+}
+
+.plan-tooltip-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+}
+
+.plan-tooltip-label {
+    font-weight: 600;
+    color: var(--vscode-descriptionForeground, #999999);
+}
+
+.plan-tooltip-value {
+    color: var(--vscode-editor-foreground, #cccccc);
+}
+
+.query-plan-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: fit-content;
+}
+
+.plan-connection {
+    width: 2px;
+    height: 40px;
+    background-color: var(--vscode-panel-border);
+    margin: 0 auto;
+}
+
+.plan-connection-horizontal {
+    height: 2px;
+    background-color: var(--vscode-panel-border);
+    flex: 1;
+}
+
+.plan-row {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 20px;
+}
+
+.plan-details {
+    margin-top: 20px;
+    padding: 16px;
+    background-color: var(--vscode-editor-lineHighlightBackground);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    width: 100%;
+    max-width: 800px;
+}
+
+.plan-details h3 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--vscode-editor-foreground);
+}
+
+.plan-details-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    font-size: 13px;
+}
+
+.plan-details-label {
+    font-weight: 600;
+    color: var(--vscode-descriptionForeground);
+}
+
+.plan-details-value {
+    color: var(--vscode-editor-foreground);
+}
+
+/* Plan Tree Table Styles */
+#planTreeContent {
+    padding: 12px;
+    overflow: auto;
+}
+
+.plan-tree-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.plan-tree-table th {
+    background-color: var(--vscode-sideBar-background);
+    border: 1px solid var(--vscode-panel-border);
+    padding: 8px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.plan-tree-table td {
+    border: 1px solid var(--vscode-panel-border);
+    padding: 8px;
+}
+
+.plan-tree-table tr:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.plan-tree-indent {
+    display: inline-block;
+}
+
+/* Top Operations Table Styles */
+#topOperationsContent {
+    padding: 12px;
+    overflow: auto;
+}
+
+.top-operations-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.top-operations-table th {
+    background-color: var(--vscode-sideBar-background);
+    border: 1px solid var(--vscode-panel-border);
+    padding: 8px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    cursor: pointer;
+    user-select: none;
+}
+
+.top-operations-table th:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.top-operations-table td {
+    border: 1px solid var(--vscode-panel-border);
+    padding: 8px;
+}
+
+.top-operations-table tr:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.sortable-header::after {
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.sortable-header.asc::after {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 4px solid currentColor;
+}
+
+.sortable-header.desc::after {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid currentColor;
 }

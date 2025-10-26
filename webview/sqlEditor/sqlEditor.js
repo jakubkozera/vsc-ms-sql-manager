@@ -10,6 +10,8 @@ let activeConnections = [];
 let currentConnectionId = null;
 let dbSchema = { tables: [], views: [], foreignKeys: [] };
 let validationTimeout = null;
+let currentQueryPlan = null;
+let actualPlanEnabled = false;
 
 // Initialize Monaco Editor
 require.config({ 
@@ -88,6 +90,14 @@ document.getElementById('connectButton').addEventListener('click', () => {
     vscode.postMessage({ type: 'manageConnections' });
 });
 
+document.getElementById('estimatedPlanButton').addEventListener('click', () => {
+    executeEstimatedPlan();
+});
+
+document.getElementById('actualPlanCheckbox').addEventListener('change', (e) => {
+    actualPlanEnabled = e.target.checked;
+});
+
 // Database selector
 document.getElementById('databaseSelector').addEventListener('change', (e) => {
     const connectionId = e.target.value;
@@ -109,13 +119,28 @@ document.querySelectorAll('.results-tab').forEach(tab => {
         // Show/hide appropriate container
         const resultsContent = document.getElementById('resultsContent');
         const messagesContent = document.getElementById('messagesContent');
+        const queryPlanContent = document.getElementById('queryPlanContent');
+        const planTreeContent = document.getElementById('planTreeContent');
+        const topOperationsContent = document.getElementById('topOperationsContent');
         
+        // Hide all
+        resultsContent.style.display = 'none';
+        messagesContent.style.display = 'none';
+        queryPlanContent.style.display = 'none';
+        planTreeContent.style.display = 'none';
+        topOperationsContent.style.display = 'none';
+        
+        // Show selected
         if (currentTab === 'results') {
             resultsContent.style.display = 'block';
-            messagesContent.style.display = 'none';
         } else if (currentTab === 'messages') {
-            resultsContent.style.display = 'none';
             messagesContent.style.display = 'block';
+        } else if (currentTab === 'queryPlan') {
+            queryPlanContent.style.display = 'block';
+        } else if (currentTab === 'planTree') {
+            planTreeContent.style.display = 'block';
+        } else if (currentTab === 'topOperations') {
+            topOperationsContent.style.display = 'block';
         }
     });
 });
@@ -174,6 +199,30 @@ function executeQuery() {
 
     vscode.postMessage({
         type: 'executeQuery',
+        query: queryText,
+        connectionId: connectionId,
+        includeActualPlan: actualPlanEnabled
+    });
+}
+
+function executeEstimatedPlan() {
+    if (!editor) return;
+
+    const selection = editor.getSelection();
+    let queryText;
+
+    // If there's a selection, execute only the selected text
+    if (selection && !selection.isEmpty()) {
+        queryText = editor.getModel().getValueInRange(selection);
+    } else {
+        queryText = editor.getValue();
+    }
+
+    const databaseSelector = document.getElementById('databaseSelector');
+    const connectionId = databaseSelector.value || null;
+
+    vscode.postMessage({
+        type: 'executeEstimatedPlan',
         query: queryText,
         connectionId: connectionId
     });
@@ -677,6 +726,10 @@ window.addEventListener('message', event => {
 
         case 'results':
             showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages);
+            break;
+
+        case 'queryPlan':
+            showQueryPlan(message.planXml, message.executionTime, message.messages, message.resultSets);
             break;
 
         case 'error':
@@ -1912,3 +1965,548 @@ document.addEventListener('click', (e) => {
 
 // Hide context menu on scroll
 document.addEventListener('scroll', hideContextMenu, true);
+
+// Query Plan Display Functions
+function showQueryPlan(planXml, executionTime, messages, resultSets) {
+    const executeButton = document.getElementById('executeButton');
+    const cancelButton = document.getElementById('cancelButton');
+    const statusLabel = document.getElementById('statusLabel');
+    const executionStatsEl = document.getElementById('executionStats');
+    const resizer = document.getElementById('resizer');
+    
+    // Enable buttons
+    executeButton.disabled = false;
+    cancelButton.disabled = true;
+    
+    // Parse the XML plan
+    const planData = parseQueryPlan(planXml);
+    currentQueryPlan = planData;
+    
+    // Show plan tabs
+    document.querySelectorAll('.results-tab').forEach(tab => {
+        if (tab.dataset.tab === 'queryPlan' || tab.dataset.tab === 'planTree' || tab.dataset.tab === 'topOperations') {
+            tab.style.display = 'block';
+        }
+    });
+    
+    // Update status
+    statusLabel.textContent = resultSets ? `Query completed with execution plan` : `Estimated execution plan generated`;
+    executionStatsEl.textContent = executionTime ? `${executionTime}ms` : '';
+    
+    resultsContainer.classList.add('visible');
+    resizer.classList.add('visible');
+    
+    // Show results panel if not visible
+    if (!resultsContainer.style.flex) {
+        resultsContainer.style.flex = '0 0 400px';
+    }
+    
+    // Display the plan in different views
+    displayQueryPlanGraphical(planData);
+    displayPlanTree(planData);
+    displayTopOperations(planData);
+    
+    // If we have result sets (actual plan), display them
+    if (resultSets && resultSets.length > 0) {
+        displayResults(resultSets);
+        displayMessages(messages);
+        
+        // Switch to results tab first
+        document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
+        currentTab = 'results';
+        document.getElementById('resultsContent').style.display = 'block';
+        document.getElementById('messagesContent').style.display = 'none';
+        document.getElementById('queryPlanContent').style.display = 'none';
+        document.getElementById('planTreeContent').style.display = 'none';
+        document.getElementById('topOperationsContent').style.display = 'none';
+    } else {
+        // For estimated plan, show XML in results
+        const resultsContent = document.getElementById('resultsContent');
+        resultsContent.innerHTML = `
+            <div style="padding: 12px;">
+                <h3 style="margin-top: 0; font-size: 14px;">ShowPlanXML</h3>
+                <pre style="background-color: var(--vscode-editor-background); padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; overflow: auto; font-family: 'Courier New', monospace; font-size: 12px;">${escapeHtml(planXml)}</pre>
+            </div>
+        `;
+        displayMessages(messages);
+        
+        // Switch to Query Plan tab
+        document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.results-tab[data-tab="queryPlan"]').classList.add('active');
+        currentTab = 'queryPlan';
+        document.getElementById('resultsContent').style.display = 'none';
+        document.getElementById('messagesContent').style.display = 'none';
+        document.getElementById('queryPlanContent').style.display = 'block';
+        document.getElementById('planTreeContent').style.display = 'none';
+        document.getElementById('topOperationsContent').style.display = 'none';
+    }
+}
+
+function parseQueryPlan(xmlString) {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
+    
+    const planData = {
+        operations: [],
+        hierarchicalOperations: [],
+        topOperations: [],
+        totalCost: 0
+    };
+    
+    // Find the root RelOp (usually under QueryPlan > RelOp)
+    const rootRelOp = xmlDoc.querySelector('QueryPlan > RelOp, StmtSimple > QueryPlan > RelOp');
+    
+    if (!rootRelOp) {
+        return planData;
+    }
+    
+    let operationId = 0;
+    
+    // Recursive function to parse operation tree
+    function parseOperation(relOpElement, level = 0, parent = null) {
+        const operation = {
+            id: operationId++,
+            level: level,
+            parent: parent,
+            physicalOp: relOpElement.getAttribute('PhysicalOp') || 'Unknown',
+            logicalOp: relOpElement.getAttribute('LogicalOp') || 'Unknown',
+            estimatedCost: parseFloat(relOpElement.getAttribute('EstimateOperatorCost') || '0'),
+            estimatedRows: parseFloat(relOpElement.getAttribute('EstimateRows') || '0'),
+            estimatedSubtreeCost: parseFloat(relOpElement.getAttribute('EstimatedTotalSubtreeCost') || '0'),
+            estimatedCPU: parseFloat(relOpElement.getAttribute('EstimateCPU') || '0'),
+            estimatedIO: parseFloat(relOpElement.getAttribute('EstimateIO') || '0'),
+            avgRowSize: parseInt(relOpElement.getAttribute('AvgRowSize') || '0'),
+            estimatedExecutions: parseFloat(relOpElement.getAttribute('EstimateRewinds') || '0') + parseFloat(relOpElement.getAttribute('EstimateRebinds') || '0') + 1,
+            actualRows: 0,
+            actualExecutions: 0,
+            children: [],
+            details: {}
+        };
+        
+        // Extract specific operation details
+        const indexScan = relOpElement.querySelector(':scope > IndexScan, :scope > TableScan, :scope > ClusteredIndexScan, :scope > NestedLoops > IndexScan, :scope > NestedLoops > ClusteredIndexScan');
+        if (indexScan) {
+            const object = indexScan.querySelector('Object');
+            if (object) {
+                operation.details.table = object.getAttribute('Table') || '';
+                operation.details.index = object.getAttribute('Index') || '';
+                operation.details.schema = object.getAttribute('Schema') || 'dbo';
+            }
+        }
+        
+        // Check for other operation-specific elements
+        const merge = relOpElement.querySelector(':scope > Merge');
+        const hash = relOpElement.querySelector(':scope > Hash');
+        const nestedLoops = relOpElement.querySelector(':scope > NestedLoops');
+        const sort = relOpElement.querySelector(':scope > Sort');
+        const top = relOpElement.querySelector(':scope > Top');
+        
+        // Extract actual execution stats if present (for actual plans)
+        const runTimeInfo = relOpElement.querySelector(':scope > RunTimeInformation');
+        if (runTimeInfo) {
+            const rowCount = runTimeInfo.querySelector('RunTimeCountersPerThread');
+            if (rowCount) {
+                operation.actualRows = parseInt(rowCount.getAttribute('ActualRows') || '0');
+                operation.actualExecutions = parseInt(rowCount.getAttribute('ActualExecutions') || '0');
+            }
+        }
+        
+        planData.operations.push(operation);
+        planData.totalCost += operation.estimatedCost;
+        
+        // Parse child operations recursively
+        // Children can be in different locations depending on the operation type
+        const childRelOps = [];
+        
+        if (nestedLoops) {
+            // NestedLoops has RelOp children directly
+            childRelOps.push(...nestedLoops.querySelectorAll(':scope > RelOp'));
+        } else if (merge) {
+            childRelOps.push(...merge.querySelectorAll(':scope > RelOp'));
+        } else if (hash) {
+            childRelOps.push(...hash.querySelectorAll(':scope > RelOp'));
+        } else if (sort) {
+            childRelOps.push(...sort.querySelectorAll(':scope > RelOp'));
+        } else if (top) {
+            childRelOps.push(...top.querySelectorAll(':scope > RelOp'));
+        } else {
+            // General case: look for direct RelOp children
+            childRelOps.push(...relOpElement.querySelectorAll(':scope > RelOp'));
+        }
+        
+        childRelOps.forEach(childRelOp => {
+            const childOp = parseOperation(childRelOp, level + 1, operation);
+            operation.children.push(childOp);
+        });
+        
+        return operation;
+    }
+    
+    // Parse the entire operation tree
+    const rootOperation = parseOperation(rootRelOp, 0);
+    
+    // Flatten the tree for hierarchical display (depth-first traversal)
+    function flattenTree(operation, result = []) {
+        result.push(operation);
+        operation.children.forEach(child => flattenTree(child, result));
+        return result;
+    }
+    
+    planData.hierarchicalOperations = flattenTree(rootOperation);
+    
+    // Sort by cost for top operations
+    planData.topOperations = [...planData.operations]
+        .sort((a, b) => b.estimatedCost - a.estimatedCost)
+        .slice(0, 20);
+    
+    return planData;
+}
+
+function displayQueryPlanGraphical(planData) {
+    const queryPlanContent = document.getElementById('queryPlanContent');
+    
+    if (!planData || !planData.hierarchicalOperations || planData.hierarchicalOperations.length === 0) {
+        queryPlanContent.innerHTML = '<div class="no-results">No query plan available</div>';
+        return;
+    }
+    
+    // Clear previous content
+    queryPlanContent.innerHTML = '';
+    
+    // Create SVG container
+    const width = queryPlanContent.offsetWidth || 1200;
+    const height = 600;
+    
+    const svg = d3.select(queryPlanContent)
+        .append('svg')
+        .attr('class', 'query-plan-svg')
+        .attr('width', width)
+        .attr('height', height)
+        .attr('viewBox', [0, 0, width, height]);
+    
+    const g = svg.append('g')
+        .attr('transform', 'translate(40, 40)');
+    
+    // Create D3 hierarchy from our data
+    const root = d3.hierarchy(convertToHierarchy(planData.hierarchicalOperations[0]), d => d.children);
+    
+    // Create tree layout (top to bottom)
+    const treeLayout = d3.tree()
+        .size([width - 80, height - 80])
+        .separation((a, b) => (a.parent === b.parent ? 1 : 1.2));
+    
+    treeLayout(root);
+    
+    // Create links (connections between nodes)
+    g.selectAll('.plan-link')
+        .data(root.links())
+        .join('path')
+        .attr('class', 'plan-link')
+        .attr('d', d3.linkVertical()
+            .x(d => d.x)
+            .y(d => d.y)
+        );
+    
+    // Create nodes
+    const nodes = g.selectAll('.plan-node')
+        .data(root.descendants())
+        .join('g')
+        .attr('class', d => {
+            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100) : 0;
+            return `plan-node ${costPercent > 10 ? 'high-cost' : ''}`;
+        })
+        .attr('transform', d => `translate(${d.x},${d.y})`)
+        .on('click', function(event, d) {
+            // Remove previous selection
+            g.selectAll('.plan-node').classed('selected', false);
+            // Select current node
+            d3.select(this).classed('selected', true);
+            // Hide tooltip on click
+            hideTooltip();
+        })
+        .on('mouseenter', function(event, d) {
+            showTooltip(event, d.data);
+        })
+        .on('mousemove', function(event, d) {
+            updateTooltipPosition(event);
+        })
+        .on('mouseleave', function(event, d) {
+            hideTooltip();
+        });
+    
+    // Add rectangles for nodes
+    nodes.append('rect')
+        .attr('x', -80)
+        .attr('y', -30)
+        .attr('width', 160)
+        .attr('height', 60)
+        .attr('rx', 4);
+    
+    // Add operation name
+    nodes.append('text')
+        .attr('class', 'node-title')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '-8')
+        .text(d => d.data.physicalOp);
+    
+    // Add cost percentage
+    nodes.append('text')
+        .attr('class', d => {
+            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100) : 0;
+            return `node-cost ${costPercent > 10 ? 'high' : ''}`;
+        })
+        .attr('text-anchor', 'middle')
+        .attr('dy', '8')
+        .text(d => {
+            const costPercent = planData.totalCost > 0 ? ((d.data.estimatedCost / planData.totalCost) * 100).toFixed(1) : 0;
+            return `Cost: ${costPercent}%`;
+        });
+    
+    // Add row count
+    nodes.append('text')
+        .attr('class', 'node-cost')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '22')
+        .text(d => `${d.data.estimatedRows.toLocaleString()} rows`);
+    
+    // Add zoom behavior
+    const zoom = d3.zoom()
+        .scaleExtent([0.3, 3])
+        .on('zoom', (event) => {
+            g.attr('transform', event.transform);
+        });
+    
+    svg.call(zoom);
+    
+    // Create tooltip element
+    let tooltip = d3.select('body').select('.plan-tooltip');
+    if (tooltip.empty()) {
+        tooltip = d3.select('body')
+            .append('div')
+            .attr('class', 'plan-tooltip')
+            .style('display', 'none');
+    }
+    
+    function showTooltip(event, operation) {
+        let html = `<h4>${operation.physicalOp}</h4>`;
+        html += '<div class="plan-tooltip-grid">';
+        
+        html += `<div class="plan-tooltip-label">Logical Op:</div><div class="plan-tooltip-value">${operation.logicalOp}</div>`;
+        html += `<div class="plan-tooltip-label">Est. Cost:</div><div class="plan-tooltip-value">${operation.estimatedCost.toFixed(4)}</div>`;
+        html += `<div class="plan-tooltip-label">Est. Subtree:</div><div class="plan-tooltip-value">${operation.estimatedSubtreeCost.toFixed(4)}</div>`;
+        html += `<div class="plan-tooltip-label">Est. Rows:</div><div class="plan-tooltip-value">${operation.estimatedRows.toLocaleString()}</div>`;
+        html += `<div class="plan-tooltip-label">Est. Executions:</div><div class="plan-tooltip-value">${operation.estimatedExecutions}</div>`;
+        html += `<div class="plan-tooltip-label">Est. CPU:</div><div class="plan-tooltip-value">${operation.estimatedCPU.toFixed(6)}</div>`;
+        html += `<div class="plan-tooltip-label">Est. I/O:</div><div class="plan-tooltip-value">${operation.estimatedIO.toFixed(6)}</div>`;
+        html += `<div class="plan-tooltip-label">Avg Row Size:</div><div class="plan-tooltip-value">${operation.avgRowSize} bytes</div>`;
+        
+        if (operation.actualRows > 0) {
+            html += `<div class="plan-tooltip-label">Actual Rows:</div><div class="plan-tooltip-value">${operation.actualRows.toLocaleString()}</div>`;
+            html += `<div class="plan-tooltip-label">Actual Executions:</div><div class="plan-tooltip-value">${operation.actualExecutions}</div>`;
+        }
+        
+        if (operation.details.table) {
+            html += `<div class="plan-tooltip-label">Object:</div><div class="plan-tooltip-value">${operation.details.schema}.${operation.details.table}</div>`;
+        }
+        if (operation.details.index) {
+            html += `<div class="plan-tooltip-label">Index:</div><div class="plan-tooltip-value">${operation.details.index}</div>`;
+        }
+        
+        html += '</div>';
+        
+        tooltip
+            .html(html)
+            .style('display', 'block');
+        
+        updateTooltipPosition(event);
+    }
+    
+    function updateTooltipPosition(event) {
+        const tooltipNode = tooltip.node();
+        const tooltipWidth = tooltipNode.offsetWidth;
+        const tooltipHeight = tooltipNode.offsetHeight;
+        
+        let left = event.pageX + 15;
+        let top = event.pageY - tooltipHeight / 2;
+        
+        // Keep tooltip on screen
+        if (left + tooltipWidth > window.innerWidth) {
+            left = event.pageX - tooltipWidth - 15;
+        }
+        if (top < 0) {
+            top = 10;
+        }
+        if (top + tooltipHeight > window.innerHeight) {
+            top = window.innerHeight - tooltipHeight - 10;
+        }
+        
+        tooltip
+            .style('left', left + 'px')
+            .style('top', top + 'px');
+    }
+    
+    function hideTooltip() {
+        tooltip.style('display', 'none');
+    }
+}
+
+// Helper function to convert flat hierarchical array to nested tree structure
+function convertToHierarchy(rootOp) {
+    if (!rootOp) return null;
+    
+    return {
+        ...rootOp,
+        children: rootOp.children && rootOp.children.length > 0 
+            ? rootOp.children.map(child => convertToHierarchy(child))
+            : undefined
+    };
+}
+
+function displayPlanTree(planData) {
+    const planTreeContent = document.getElementById('planTreeContent');
+    
+    if (!planData || !planData.hierarchicalOperations || planData.hierarchicalOperations.length === 0) {
+        planTreeContent.innerHTML = '<div class="no-results">No plan tree available</div>';
+        return;
+    }
+    
+    let html = '<table class="plan-tree-table">';
+    html += '<thead><tr>';
+    html += '<th>Operation</th>';
+    html += '<th>Estimated Cost %</th>';
+    html += '<th>Estimated Subtree Cost</th>';
+    html += '<th>Estimated Rows</th>';
+    html += '<th>Average Row Size</th>';
+    html += '<th>Estimated CPU Cost</th>';
+    html += '<th>Estimated I/O Cost</th>';
+    html += '</tr></thead>';
+    html += '<tbody>';
+    
+    planData.hierarchicalOperations.forEach((op) => {
+        const costPercent = planData.totalCost > 0 ? ((op.estimatedCost / planData.totalCost) * 100).toFixed(0) : 0;
+        const indentPixels = op.level * 24; // 24 pixels per level
+        
+        html += '<tr>';
+        html += `<td><span class="plan-tree-indent" style="display: inline-block; width: ${indentPixels}px;"></span>${op.physicalOp}</td>`;
+        html += `<td>${costPercent}%</td>`;
+        html += `<td>${op.estimatedSubtreeCost.toFixed(4)}</td>`;
+        html += `<td>${op.estimatedRows.toLocaleString()}</td>`;
+        html += `<td>${op.avgRowSize}</td>`;
+        html += `<td>${op.estimatedCPU.toFixed(6)}</td>`;
+        html += `<td>${op.estimatedIO.toFixed(6)}</td>`;
+        html += '</tr>';
+    });
+    
+    html += '</tbody></table>';
+    planTreeContent.innerHTML = html;
+}
+
+function displayOperationDetails(operation) {
+    const detailsPanel = document.getElementById('planDetailsPanel');
+    
+    let html = `<h3>Operation Details: ${operation.physicalOp}</h3>`;
+    html += '<div class="plan-details-grid">';
+    
+    html += `<div class="plan-details-label">Physical Operation:</div><div class="plan-details-value">${operation.physicalOp}</div>`;
+    html += `<div class="plan-details-label">Logical Operation:</div><div class="plan-details-value">${operation.logicalOp}</div>`;
+    html += `<div class="plan-details-label">Estimated Cost:</div><div class="plan-details-value">${operation.estimatedCost.toFixed(4)}</div>`;
+    html += `<div class="plan-details-label">Estimated Subtree Cost:</div><div class="plan-details-value">${operation.estimatedSubtreeCost.toFixed(4)}</div>`;
+    html += `<div class="plan-details-label">Estimated Rows:</div><div class="plan-details-value">${operation.estimatedRows.toLocaleString()}</div>`;
+    html += `<div class="plan-details-label">Estimated Executions:</div><div class="plan-details-value">${operation.estimatedExecutions}</div>`;
+    html += `<div class="plan-details-label">Estimated CPU Cost:</div><div class="plan-details-value">${operation.estimatedCPU.toFixed(6)}</div>`;
+    html += `<div class="plan-details-label">Estimated I/O Cost:</div><div class="plan-details-value">${operation.estimatedIO.toFixed(6)}</div>`;
+    html += `<div class="plan-details-label">Average Row Size:</div><div class="plan-details-value">${operation.avgRowSize} bytes</div>`;
+    
+    if (operation.actualRows > 0) {
+        html += `<div class="plan-details-label">Actual Rows:</div><div class="plan-details-value">${operation.actualRows.toLocaleString()}</div>`;
+        html += `<div class="plan-details-label">Actual Executions:</div><div class="plan-details-value">${operation.actualExecutions}</div>`;
+    }
+    
+    if (operation.details.table) {
+        html += `<div class="plan-details-label">Object:</div><div class="plan-details-value">${operation.details.schema}.${operation.details.table}</div>`;
+    }
+    if (operation.details.index) {
+        html += `<div class="plan-details-label">Index:</div><div class="plan-details-value">${operation.details.index}</div>`;
+    }
+    
+    html += '</div>';
+    
+    detailsPanel.innerHTML = html;
+    detailsPanel.style.display = 'block';
+}
+
+function displayTopOperations(planData) {
+    const topOperationsContent = document.getElementById('topOperationsContent');
+    
+    if (!planData || !planData.topOperations || planData.topOperations.length === 0) {
+        topOperationsContent.innerHTML = '<div class="no-results">No operations available</div>';
+        return;
+    }
+    
+    let html = '<table class="top-operations-table">';
+    html += '<thead><tr>';
+    html += '<th class="sortable-header" onclick="sortTopOperations(\'operation\')">Operation</th>';
+    html += '<th class="sortable-header" onclick="sortTopOperations(\'cost\')">Estimated Cost %</th>';
+    html += '<th class="sortable-header" onclick="sortTopOperations(\'subtreeCost\')">Estimated Subtree Cost</th>';
+    html += '<th class="sortable-header" onclick="sortTopOperations(\'rows\')">Estimated Rows</th>';
+    html += '<th class="sortable-header" onclick="sortTopOperations(\'executions\')">Estimated Executions</th>';
+    html += '<th class="sortable-header" onclick="sortTopOperations(\'cpu\')">Estimated CPU Cost</th>';
+    html += '<th class="sortable-header" onclick="sortTopOperations(\'io\')">Estimated I/O Cost</th>';
+    html += '<th>Object</th>';
+    html += '</tr></thead>';
+    html += '<tbody>';
+    
+    planData.topOperations.forEach(op => {
+        const costPercent = planData.totalCost > 0 ? ((op.estimatedCost / planData.totalCost) * 100).toFixed(1) : 0;
+        const objectName = op.details.table ? `${op.details.schema}.${op.details.table}` : '-';
+        
+        html += '<tr>';
+        html += `<td>${op.physicalOp}</td>`;
+        html += `<td>${costPercent}%</td>`;
+        html += `<td>${op.estimatedSubtreeCost.toFixed(4)}</td>`;
+        html += `<td>${op.estimatedRows.toLocaleString()}</td>`;
+        html += `<td>${op.estimatedExecutions}</td>`;
+        html += `<td>${op.estimatedCPU.toFixed(6)}</td>`;
+        html += `<td>${op.estimatedIO.toFixed(6)}</td>`;
+        html += `<td>${objectName}</td>`;
+        html += '</tr>';
+    });
+    
+    html += '</tbody></table>';
+    topOperationsContent.innerHTML = html;
+}
+
+function selectPlanNode(opId) {
+    // Remove previous selection
+    document.querySelectorAll('.plan-node.selected').forEach(node => {
+        node.classList.remove('selected');
+    });
+    
+    // Select new node
+    const node = document.querySelector(`.plan-node[data-op-id="${opId}"]`);
+    if (node) {
+        node.classList.add('selected');
+    }
+    
+    // Show details - find operation in hierarchicalOperations
+    let operation = null;
+    if (currentQueryPlan && currentQueryPlan.hierarchicalOperations) {
+        operation = currentQueryPlan.hierarchicalOperations.find(op => op.id === opId);
+    } else if (currentQueryPlan && currentQueryPlan.operations) {
+        operation = currentQueryPlan.operations.find(op => op.id === opId);
+    }
+    
+    if (operation) {
+        displayOperationDetails(operation);
+    }
+}
+
+// Make selectPlanNode available globally
+window.selectPlanNode = selectPlanNode;
+
+// Sorting function for top operations (simple implementation)
+window.sortTopOperations = function(column) {
+    // This is a placeholder - in a full implementation, you would re-sort and re-render
+    console.log('Sort by:', column);
+};

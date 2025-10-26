@@ -65,7 +65,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'executeQuery':
-                    await this.executeQuery(message.query, message.connectionId, webviewPanel.webview);
+                    await this.executeQuery(message.query, message.connectionId, webviewPanel.webview, message.includeActualPlan);
+                    break;
+
+                case 'executeEstimatedPlan':
+                    await this.executeEstimatedPlan(message.query, message.connectionId, webviewPanel.webview);
                     break;
 
                 case 'cancelQuery':
@@ -279,7 +283,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
-    private async executeQuery(query: string, connectionId: string | null, webview: vscode.Webview) {
+    private async executeQuery(query: string, connectionId: string | null, webview: vscode.Webview, includeActualPlan: boolean = false) {
         if (!query || query.trim().length === 0) {
             webview.postMessage({
                 type: 'error',
@@ -310,21 +314,45 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         try {
             const startTime = Date.now();
-            const result = await this.queryExecutor.executeQuery(query);
+            
+            // If actual plan is requested, enable statistics XML
+            let finalQuery = query;
+            if (includeActualPlan) {
+                finalQuery = `SET STATISTICS XML ON;\n${query}\nSET STATISTICS XML OFF;`;
+            }
+            
+            const result = await this.queryExecutor.executeQuery(finalQuery);
             const executionTime = Date.now() - startTime;
+
+            // Check if we have an execution plan in the result
+            let planXml = null;
+            let resultSets = result.recordsets || [];
+            
+            if (includeActualPlan && result.recordsets) {
+                // Look for the XML plan in the result sets
+                for (let i = 0; i < result.recordsets.length; i++) {
+                    const rs = result.recordsets[i];
+                    if (rs.length > 0 && rs[0]['Microsoft SQL Server 2005 XML Showplan']) {
+                        planXml = rs[0]['Microsoft SQL Server 2005 XML Showplan'];
+                        // Remove plan result set from results
+                        resultSets = result.recordsets.filter((_, index) => index !== i);
+                        break;
+                    }
+                }
+            }
 
             // Build informational messages
             const messages = [];
             
-            if (result.recordsets && result.recordsets.length > 0) {
-                const totalRows = result.recordsets.reduce((sum, rs) => sum + rs.length, 0);
+            if (resultSets.length > 0) {
+                const totalRows = resultSets.reduce((sum, rs) => sum + rs.length, 0);
                 messages.push({
                     type: 'info',
-                    text: `Query completed successfully. Returned ${result.recordsets.length} result set(s) with ${totalRows} total row(s).`
+                    text: `Query completed successfully. Returned ${resultSets.length} result set(s) with ${totalRows} total row(s).`
                 });
                 
                 // Add details for each result set
-                result.recordsets.forEach((rs, index) => {
+                resultSets.forEach((rs, index) => {
                     messages.push({
                         type: 'info',
                         text: `Result Set ${index + 1}: ${rs.length} row(s)`
@@ -347,19 +375,104 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 type: 'info',
                 text: `Execution time: ${executionTime}ms`
             });
-
-            webview.postMessage({
-                type: 'results',
-                resultSets: result.recordsets || [],
-                executionTime: executionTime,
-                rowsAffected: result.rowsAffected?.[0] || 0,
-                messages: messages
-            });
+            
+            if (planXml) {
+                // Send query plan with results
+                webview.postMessage({
+                    type: 'queryPlan',
+                    planXml: planXml,
+                    resultSets: resultSets,
+                    executionTime: executionTime,
+                    messages: messages
+                });
+            } else {
+                // Send regular results
+                webview.postMessage({
+                    type: 'results',
+                    resultSets: resultSets,
+                    executionTime: executionTime,
+                    rowsAffected: result.rowsAffected?.[0] || 0,
+                    messages: messages
+                });
+            }
         } catch (error: any) {
             webview.postMessage({
                 type: 'error',
                 error: error.message || 'Query execution failed',
                 messages: [{ type: 'error', text: error.message || 'Query execution failed' }]
+            });
+        }
+    }
+
+    private async executeEstimatedPlan(query: string, connectionId: string | null, webview: vscode.Webview) {
+        if (!query || query.trim().length === 0) {
+            webview.postMessage({
+                type: 'error',
+                error: 'Query is empty',
+                messages: [{ type: 'error', text: 'Query is empty' }]
+            });
+            return;
+        }
+
+        // Use provided connection or active connection
+        const config = connectionId
+            ? this.connectionProvider.getConnectionConfig(connectionId)
+            : this.connectionProvider.getCurrentConfig();
+        
+        if (!config) {
+            webview.postMessage({
+                type: 'error',
+                error: 'No active connection',
+                messages: [{ type: 'error', text: 'Please connect to a database first' }]
+            });
+            return;
+        }
+
+        // Notify webview that query is executing
+        webview.postMessage({
+            type: 'executing'
+        });
+
+        try {
+            const startTime = Date.now();
+            
+            // Enable SHOWPLAN_XML to get estimated plan without executing
+            const planQuery = `SET SHOWPLAN_XML ON;\n${query}\nSET SHOWPLAN_XML OFF;`;
+            
+            const result = await this.queryExecutor.executeQuery(planQuery);
+            const executionTime = Date.now() - startTime;
+
+            // Extract the XML plan from result
+            let planXml = null;
+            if (result.recordsets && result.recordsets.length > 0) {
+                const planResultSet = result.recordsets[0];
+                if (planResultSet.length > 0 && planResultSet[0]['Microsoft SQL Server 2005 XML Showplan']) {
+                    planXml = planResultSet[0]['Microsoft SQL Server 2005 XML Showplan'];
+                }
+            }
+            
+            if (planXml) {
+                webview.postMessage({
+                    type: 'queryPlan',
+                    planXml: planXml,
+                    executionTime: executionTime,
+                    messages: [
+                        { type: 'info', text: 'Estimated execution plan generated successfully.' },
+                        { type: 'info', text: `Generation time: ${executionTime}ms` }
+                    ]
+                });
+            } else {
+                webview.postMessage({
+                    type: 'error',
+                    error: 'Failed to retrieve execution plan',
+                    messages: [{ type: 'error', text: 'Failed to retrieve execution plan from server' }]
+                });
+            }
+        } catch (error: any) {
+            webview.postMessage({
+                type: 'error',
+                error: error.message || 'Plan generation failed',
+                messages: [{ type: 'error', text: error.message || 'Plan generation failed' }]
             });
         }
     }
