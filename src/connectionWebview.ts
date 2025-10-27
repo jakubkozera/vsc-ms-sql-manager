@@ -836,7 +836,22 @@ export class ConnectionWebview {
                 switch (lowerKey) {
                     case 'server':
                     case 'data source':
-                        config.server = value;
+                        // Handle tcp: prefix and port in data source
+                        let serverValue = value;
+                        
+                        // Remove tcp: prefix if present
+                        if (serverValue.toLowerCase().startsWith('tcp:')) {
+                            serverValue = serverValue.substring(4);
+                        }
+                        
+                        // Check if port is included in server string (e.g., server,1433)
+                        if (serverValue.includes(',')) {
+                            const [server, port] = serverValue.split(',');
+                            config.server = server.trim();
+                            config.port = port.trim();
+                        } else {
+                            config.server = serverValue;
+                        }
                         break;
                     case 'database':
                     case 'initial catalog':
@@ -844,7 +859,12 @@ export class ConnectionWebview {
                         break;
                     case 'user id':
                     case 'uid':
-                        config.username = value;
+                        // Strip @servername suffix if present (e.g., username@server -> username)
+                        let username = value;
+                        if (username.includes('@')) {
+                            username = username.split('@')[0];
+                        }
+                        config.username = username;
                         config.authType = 'sql';
                         break;
                     case 'password':
