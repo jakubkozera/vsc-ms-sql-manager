@@ -1579,7 +1579,8 @@ export class ConnectionNode extends TreeNode {
         this.isPending = isPending;
         this.description = `${server}/${database}`;
         this.tooltip = `Server: ${server}\nDatabase: ${database}\nAuth: ${authType}${isActive ? '\n(Active)' : isPending ? '\n(Connecting...)' : ''}`;
-        this.contextValue = 'connection';
+        // Set contextValue based on connection state
+        this.contextValue = isActive ? 'connectionActive' : 'connectionInactive';
         
         // Set icon based on connection state
         if (isPending) {
