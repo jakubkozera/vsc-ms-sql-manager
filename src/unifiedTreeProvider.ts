@@ -153,17 +153,18 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 // If this connection is active, show current schema
                 return await this.getSchemaChildren(element.connectionId, element.database);
             } else {
-                // Not active - auto-connect when user expands the node
-                try {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connecting to ${element.connectionId}...`);
-                    await this.connectionProvider.connectToSavedById(element.connectionId);
-                    this.refresh(); // Refresh to update the icon and state
-                    return await this.getSchemaChildren(element.connectionId, element.database);
-                } catch (error) {
+                // Not active - start auto-connect in background and return empty for now
+                // The connection process will trigger refresh when done
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Starting auto-connect to ${element.connectionId}...`);
+                
+                // Start connection in background (don't await)
+                this.connectionProvider.connectToSavedById(element.connectionId).catch(error => {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connect failed: ${error}`);
                     vscode.window.showErrorMessage(`Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    return [];
-                }
+                });
+                
+                // Return empty immediately - tree will refresh when connection completes
+                return [];
             }
         } else if (element instanceof SchemaItemNode) {
             // Handle schema expansion (tables, views, etc.)

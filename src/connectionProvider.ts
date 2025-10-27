@@ -123,10 +123,22 @@ export class ConnectionProvider {
     private async handleWebviewConnection(config: ConnectionConfig): Promise<void> {
         try {
             this.outputChannel.appendLine(`[ConnectionProvider] Handling webview connection: ${JSON.stringify({...config, password: '***'})}`);
+            
+            // Mark as pending and trigger UI update
+            this.pendingConnections.add(config.id);
+            this.notifyConnectionChanged();
+            
             await this.establishConnection(config);
             await this.saveConnection(config);
+            
+            // Remove from pending
+            this.pendingConnections.delete(config.id);
             this.notifyConnectionChanged();
         } catch (error) {
+            // Remove from pending on error
+            this.pendingConnections.delete(config.id);
+            this.notifyConnectionChanged();
+            
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
             vscode.window.showErrorMessage(`Failed to connect: ${errorMessage}`);
