@@ -9,14 +9,53 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     private _onDidChangeFileDecorations: vscode.EventEmitter<vscode.Uri | vscode.Uri[]> = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
     readonly onDidChangeFileDecorations: vscode.Event<vscode.Uri | vscode.Uri[]> = this._onDidChangeFileDecorations.event;
 
+    private treeView?: vscode.TreeView<TreeNode>;
+
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel
     ) {}
 
+    setTreeView(treeView: vscode.TreeView<TreeNode>): void {
+        this.treeView = treeView;
+    }
+
     refresh(): void {
         this._onDidChangeTreeData.fire();
         this._onDidChangeFileDecorations.fire(undefined as any);
+    }
+
+    async collapseConnection(connectionId: string): Promise<void> {
+        if (!this.treeView) {
+            return;
+        }
+
+        try {
+            // Get root nodes
+            const rootNodes = await this.getChildren();
+            
+            // Search through root nodes and their children
+            for (const node of rootNodes) {
+                // Check if this is the connection node we're looking for
+                if (node instanceof ConnectionNode && node.connectionId === connectionId) {
+                    await this.treeView.reveal(node, { select: false, focus: false, expand: false });
+                    return;
+                }
+                
+                // If it's a server group, check its children
+                if (node.collapsibleState !== vscode.TreeItemCollapsibleState.None) {
+                    const children = await this.getChildren(node);
+                    for (const child of children) {
+                        if (child instanceof ConnectionNode && child.connectionId === connectionId) {
+                            await this.treeView.reveal(child, { select: false, focus: false, expand: false });
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error collapsing connection: ${error}`);
+        }
     }
 
     getTreeItem(element: TreeNode): vscode.TreeItem {
@@ -148,22 +187,15 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 return [];
             }
         } else if (element instanceof ConnectionNode) {
-            // Show schema for this specific connection
+            // Show schema for this specific connection only if already connected
             if (this.connectionProvider.isConnectionActive(element.connectionId)) {
                 // If this connection is active, show current schema
                 return await this.getSchemaChildren(element.connectionId, element.database);
             } else {
-                // Not active - auto-connect when user expands the node
-                try {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connecting to ${element.connectionId}...`);
-                    await this.connectionProvider.connectToSavedById(element.connectionId);
-                    this.refresh(); // Refresh to update the icon and state
-                    return await this.getSchemaChildren(element.connectionId, element.database);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connect failed: ${error}`);
-                    vscode.window.showErrorMessage(`Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    return [];
-                }
+                // Not active - don't auto-connect, return empty to prevent expansion
+                // User must explicitly click to connect
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Connection ${element.connectionId} not active, returning empty children`);
+                return [];
             }
         } else if (element instanceof SchemaItemNode) {
             // Handle schema expansion (tables, views, etc.)
@@ -1565,10 +1597,9 @@ export class ConnectionNode extends TreeNode {
         public readonly isActive: boolean,
         isPending: boolean = false
     ) {
-        // Determine collapsible state based on active status
-        const collapsibleState = isActive 
-            ? vscode.TreeItemCollapsibleState.Expanded 
-            : vscode.TreeItemCollapsibleState.Collapsed;
+        // Determine collapsible state - always Collapsed to prevent auto-expand
+        // Only when explicitly connected will it be Expanded
+        const collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
             
         super(
             isPending ? `${name} (Connecting...)` : name, 

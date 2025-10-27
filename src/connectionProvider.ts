@@ -341,6 +341,12 @@ export class ConnectionProvider {
             this.outputChannel.appendLine('Disconnected from all SQL Server connections');
             vscode.window.showInformationMessage('Disconnected from all SQL Server connections');
         }
+        
+        // Notify listeners about connection change
+        if (this.onConnectionChanged) {
+            this.outputChannel.appendLine('[ConnectionProvider] Triggering connection change callback from disconnect');
+            this.onConnectionChanged();
+        }
     }
 
     getConnection(connectionId?: string): sql.ConnectionPool | null {

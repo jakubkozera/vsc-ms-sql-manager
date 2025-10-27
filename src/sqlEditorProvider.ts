@@ -5,6 +5,7 @@ import { ConnectionProvider } from './connectionProvider';
 
 export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'mssqlManager.sqlEditor';
+    private disposedWebviews: Set<vscode.Webview> = new Set();
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -95,11 +96,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         // Clean up
         webviewPanel.onDidDispose(() => {
             changeDocumentSubscription.dispose();
+            this.disposedWebviews.add(webviewPanel.webview);
         });
 
         // Listen for connection changes
         this.connectionProvider.setConnectionChangeCallback(() => {
-            this.updateConnectionsList(webviewPanel.webview);
+            // Only update if webview is not disposed
+            if (!this.disposedWebviews.has(webviewPanel.webview)) {
+                this.updateConnectionsList(webviewPanel.webview);
+            }
         });
     }
 
@@ -130,6 +135,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     private updateConnectionsList(webview: vscode.Webview) {
+        // Don't send messages to disposed webviews
+        if (this.disposedWebviews.has(webview)) {
+            return;
+        }
+        
         const connections = this.connectionProvider.getAllActiveConnections();
         const activeConnectionId = this.connectionProvider.getCurrentConfig()?.id || null;
 
@@ -150,6 +160,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     private async sendSchemaUpdate(webview: vscode.Webview, connectionId?: string) {
+        // Don't send messages to disposed webviews
+        if (this.disposedWebviews.has(webview)) {
+            return;
+        }
+        
         console.log('[SCHEMA] sendSchemaUpdate called with connectionId:', connectionId);
         
         const config = connectionId 
