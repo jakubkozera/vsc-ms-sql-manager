@@ -13,6 +13,71 @@ let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
 
+// Helper function to check if string is valid JSON
+function isValidJSON(str) {
+    if (typeof str !== 'string' || !str.trim()) return false;
+    const trimmed = str.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+            JSON.parse(trimmed);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+    return false;
+}
+
+// Helper function to check if string is valid XML
+function isValidXML(str) {
+    if (typeof str !== 'string' || !str.trim()) return false;
+    const trimmed = str.trim();
+    if (trimmed.startsWith('<') && trimmed.endsWith('>')) {
+        try {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(trimmed, 'text/xml');
+            const parseError = xmlDoc.querySelector('parsererror');
+            return !parseError;
+        } catch (e) {
+            return false;
+        }
+    }
+    return false;
+}
+
+// Helper function to format JSON
+function formatJSON(str) {
+    try {
+        const parsed = JSON.parse(str.trim());
+        return JSON.stringify(parsed, null, 2);
+    } catch (e) {
+        return str;
+    }
+}
+
+// Helper function to format XML
+function formatXML(str) {
+    try {
+        const xmlDoc = new DOMParser().parseFromString(str.trim(), 'text/xml');
+        const serializer = new XMLSerializer();
+        const formatted = serializer.serializeToString(xmlDoc);
+        // Add basic indentation
+        return formatted.replace(/(>)(<)(\/?)/g, '$1\n$2$3');
+    } catch (e) {
+        return str;
+    }
+}
+
+// Function to open content in new editor
+function openInNewEditor(content, language) {
+    vscode.postMessage({
+        type: 'openInNewEditor',
+        content: content,
+        language: language
+    });
+}
+
 // Global selection state for all tables in results
 let globalSelection = {
     type: null, // 'row', 'column', or 'cell'
@@ -1637,7 +1702,40 @@ function initAgGridTable(rowData, container) {
                     td.textContent = typeof value === 'number' ? value.toLocaleString() : value;
                     td.style.textAlign = 'right';
                 } else {
-                    td.textContent = String(value);
+                    const strValue = String(value);
+                    td.textContent = strValue;
+                    
+                    // Check if content is valid JSON or XML
+                    const isJSON = isValidJSON(strValue);
+                    const isXML = !isJSON && isValidXML(strValue);
+                    
+                    if (isJSON || isXML) {
+                        // Make it clickable
+                        td.classList.add('clickable-cell');
+                        td.style.cursor = 'pointer';
+                        td.style.color = 'var(--vscode-textLink-foreground, #3794ff)';
+                        
+                        // Add hover effect
+                        td.addEventListener('mouseenter', function() {
+                            this.style.textDecoration = 'underline';
+                        });
+                        td.addEventListener('mouseleave', function() {
+                            this.style.textDecoration = 'none';
+                        });
+                        
+                        // Add click handler to open in new editor
+                        const contentType = isJSON ? 'json' : 'xml';
+                        td.addEventListener('click', function(e) {
+                            // Prevent context menu or selection behavior
+                            e.stopPropagation();
+                            
+                            const formatted = isJSON ? formatJSON(strValue) : formatXML(strValue);
+                            openInNewEditor(formatted, contentType);
+                        });
+                        
+                        // Update title to indicate it's clickable
+                        td.title = `Click to open ${contentType.toUpperCase()} in new editor\n\n${strValue.substring(0, 200)}${strValue.length > 200 ? '...' : ''}`;
+                    }
                 }
                 
                 // Add context menu handler

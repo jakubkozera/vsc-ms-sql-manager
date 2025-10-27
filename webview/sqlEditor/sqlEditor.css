@@ -391,6 +391,16 @@ th {
     margin: 4px 0;
 }
 
+/* Clickable cell styles for JSON/XML content */
+.clickable-cell {
+    cursor: pointer !important;
+    color: var(--vscode-textLink-foreground, #3794ff) !important;
+}
+
+.clickable-cell:hover {
+    text-decoration: underline !important;
+}
+
 /* AG Grid Virtual Scrolling Support */
 .ag-grid-viewport {
     overflow: auto !important;
@@ -449,9 +459,7 @@ th {
     fill: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
-.plan-node.selected rect {
-    /* Selection is now handled by separate outline element */
-}
+/* Selection is now handled by separate outline element */
 
 .plan-node.high-cost rect {
     stroke: var(--vscode-errorForeground, #f48771);

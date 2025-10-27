@@ -90,6 +90,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'getSchema':
                     await this.sendSchemaUpdate(webviewPanel.webview, message.connectionId);
                     break;
+
+                case 'openInNewEditor':
+                    await this.openContentInNewEditor(message.content, message.language);
+                    break;
             }
         });
 
@@ -490,6 +494,24 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 error: error.message || 'Plan generation failed',
                 messages: [{ type: 'error', text: error.message || 'Plan generation failed' }]
             });
+        }
+    }
+
+    private async openContentInNewEditor(content: string, language: string) {
+        try {
+            // Create a new untitled document with the specified language
+            const doc = await vscode.workspace.openTextDocument({
+                content: content,
+                language: language
+            });
+
+            // Show the document in a new editor
+            await vscode.window.showTextDocument(doc, {
+                viewColumn: vscode.ViewColumn.Beside,
+                preview: false
+            });
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to open content in editor: ${error.message}`);
         }
     }
 }
