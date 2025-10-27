@@ -17,12 +17,11 @@ let actualPlanEnabled = false;
 let globalSelection = {
     type: null, // 'row', 'column', or 'cell'
     tableContainer: null, // reference to the specific table container
-    rowIndex: null,
-    columnIndex: null,
+    selections: [], // Array of selected items: {rowIndex, columnIndex, cellValue}
     columnDef: null,
     data: null,
     columnDefs: null,
-    cellValue: null
+    lastClickedIndex: null // Last clicked row/column index for Shift selection
 };
 
 // Initialize Monaco Editor
@@ -1087,7 +1086,7 @@ function initAgGridTable(rowData, container) {
 
             headerTitle.onclick = (e) => {
                 e.stopPropagation();
-                highlightColumn(index, colDefs, containerEl, filteredData);
+                highlightColumn(index, colDefs, containerEl, filteredData, e);
             };
             
             // Add context menu for column header
@@ -1270,41 +1269,101 @@ function initAgGridTable(rowData, container) {
     }
 
     // Column highlighting functionality
-    function highlightColumn(colIndex, colDefs, containerEl, filteredData) {
-        // Check if this column is already selected
-        const isAlreadySelected = globalSelection.type === 'column' && 
-            globalSelection.tableContainer === containerEl &&
-            globalSelection.columnIndex === colIndex;
+    function highlightColumn(colIndex, colDefs, containerEl, filteredData, event) {
+        const ctrlPressed = event?.ctrlKey || event?.metaKey;
+        const shiftPressed = event?.shiftKey;
         
-        if (isAlreadySelected) {
-            // Unselect - clear all selections
+        // Check if same table
+        const sameTable = globalSelection.tableContainer === containerEl;
+        const sameType = globalSelection.type === 'column';
+        
+        if (shiftPressed && sameTable && sameType && globalSelection.lastClickedIndex !== null) {
+            // Shift: select range from last clicked to current
+            const start = Math.min(globalSelection.lastClickedIndex, colIndex);
+            const end = Math.max(globalSelection.lastClickedIndex, colIndex);
+            
             clearAllSelections();
-            globalSelection = {
-                type: null,
-                tableContainer: null,
-                rowIndex: null,
-                columnIndex: null,
-                columnDef: null,
-                data: null,
-                columnDefs: null,
-                cellValue: null
-            };
+            globalSelection.selections = [];
+            
+            for (let i = start; i <= end; i++) {
+                globalSelection.selections.push({ columnIndex: i });
+                applyColumnHighlightGlobal(containerEl, i);
+            }
+            
+            globalSelection.type = 'column';
+            globalSelection.tableContainer = containerEl;
+            globalSelection.data = filteredData;
+            globalSelection.columnDefs = colDefs;
+        } else if (ctrlPressed && sameTable && sameType) {
+            // Ctrl: toggle individual selection
+            const existingIndex = globalSelection.selections.findIndex(s => s.columnIndex === colIndex);
+            
+            if (existingIndex >= 0) {
+                // Remove from selection
+                globalSelection.selections.splice(existingIndex, 1);
+                
+                if (globalSelection.selections.length === 0) {
+                    // No more selections
+                    clearAllSelections();
+                    globalSelection = {
+                        type: null,
+                        tableContainer: null,
+                        selections: [],
+                        columnDef: null,
+                        data: null,
+                        columnDefs: null,
+                        lastClickedIndex: null
+                    };
+                } else {
+                    // Reapply all selections
+                    clearAllSelections();
+                    globalSelection.selections.forEach(s => {
+                        applyColumnHighlightGlobal(containerEl, s.columnIndex);
+                    });
+                }
+            } else {
+                // Add to selection
+                globalSelection.selections.push({ columnIndex: colIndex });
+                applyColumnHighlightGlobal(containerEl, colIndex);
+            }
+            
+            globalSelection.lastClickedIndex = colIndex;
         } else {
-            // Clear all selections across all tables
-            clearAllSelections();
+            // Normal click: single selection
+            const isAlreadySelected = sameTable && sameType && 
+                globalSelection.selections.length === 1 && 
+                globalSelection.selections[0].columnIndex === colIndex;
             
-            // Set global selection state
-            globalSelection = {
-                type: 'column',
-                tableContainer: containerEl,
-                rowIndex: null,
-                columnIndex: colIndex,
-                columnDef: colDefs[colIndex],
-                data: filteredData
-            };
-            
-            // Apply highlighting
-            applyColumnHighlightGlobal(containerEl, colIndex);
+            if (isAlreadySelected) {
+                // Unselect - clear all selections
+                clearAllSelections();
+                globalSelection = {
+                    type: null,
+                    tableContainer: null,
+                    selections: [],
+                    columnDef: null,
+                    data: null,
+                    columnDefs: null,
+                    lastClickedIndex: null
+                };
+            } else {
+                // Clear all selections across all tables
+                clearAllSelections();
+                
+                // Set global selection state
+                globalSelection = {
+                    type: 'column',
+                    tableContainer: containerEl,
+                    selections: [{ columnIndex: colIndex }],
+                    columnDef: colDefs[colIndex],
+                    data: filteredData,
+                    columnDefs: colDefs,
+                    lastClickedIndex: colIndex
+                };
+                
+                // Apply highlighting
+                applyColumnHighlightGlobal(containerEl, colIndex);
+            }
         }
         
         // Update aggregation stats
@@ -1447,43 +1506,100 @@ function initAgGridTable(rowData, container) {
                     this.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
                 }
             });
-            rowNumTd.addEventListener('click', function() {
-                // Check if this row is already selected
-                const isAlreadySelected = globalSelection.type === 'row' && 
-                    globalSelection.tableContainer === containerEl &&
-                    globalSelection.rowIndex === rowIndex;
+            rowNumTd.addEventListener('click', function(event) {
+                const ctrlPressed = event.ctrlKey || event.metaKey;
+                const shiftPressed = event.shiftKey;
                 
-                if (isAlreadySelected) {
-                    // Unselect - clear all selections
+                // Check if same table
+                const sameTable = globalSelection.tableContainer === containerEl;
+                const sameType = globalSelection.type === 'row';
+                
+                if (shiftPressed && sameTable && sameType && globalSelection.lastClickedIndex !== null) {
+                    // Shift: select range from last clicked to current
+                    const start = Math.min(globalSelection.lastClickedIndex, rowIndex);
+                    const end = Math.max(globalSelection.lastClickedIndex, rowIndex);
+                    
                     clearAllSelections();
-                    globalSelection = {
-                        type: null,
-                        tableContainer: null,
-                        rowIndex: null,
-                        columnIndex: null,
-                        columnDef: null,
-                        data: null,
-                        columnDefs: null,
-                        cellValue: null
-                    };
+                    globalSelection.selections = [];
+                    
+                    for (let i = start; i <= end; i++) {
+                        globalSelection.selections.push({ rowIndex: i });
+                        applyRowHighlightGlobal(containerEl, i);
+                    }
+                    
+                    globalSelection.type = 'row';
+                    globalSelection.tableContainer = containerEl;
+                    globalSelection.data = data;
+                    globalSelection.columnDefs = colDefs;
+                } else if (ctrlPressed && sameTable && sameType) {
+                    // Ctrl: toggle individual selection
+                    const existingIndex = globalSelection.selections.findIndex(s => s.rowIndex === rowIndex);
+                    
+                    if (existingIndex >= 0) {
+                        // Remove from selection
+                        globalSelection.selections.splice(existingIndex, 1);
+                        
+                        if (globalSelection.selections.length === 0) {
+                            // No more selections
+                            clearAllSelections();
+                            globalSelection = {
+                                type: null,
+                                tableContainer: null,
+                                selections: [],
+                                columnDef: null,
+                                data: null,
+                                columnDefs: null,
+                                lastClickedIndex: null
+                            };
+                        } else {
+                            // Reapply all selections
+                            clearAllSelections();
+                            globalSelection.selections.forEach(s => {
+                                applyRowHighlightGlobal(containerEl, s.rowIndex);
+                            });
+                        }
+                    } else {
+                        // Add to selection
+                        globalSelection.selections.push({ rowIndex: rowIndex });
+                        applyRowHighlightGlobal(containerEl, rowIndex);
+                    }
+                    
+                    globalSelection.lastClickedIndex = rowIndex;
                 } else {
-                    // Clear all selections across all tables
-                    clearAllSelections();
+                    // Normal click: single selection
+                    const isAlreadySelected = sameTable && sameType && 
+                        globalSelection.selections.length === 1 && 
+                        globalSelection.selections[0].rowIndex === rowIndex;
                     
-                    // Set global selection state
-                    globalSelection = {
-                        type: 'row',
-                        tableContainer: containerEl,
-                        rowIndex: rowIndex,
-                        columnIndex: null,
-                        data: data,
-                        columnDefs: colDefs
-                    };
-                    
-                    // Apply highlighting
-                    tr.classList.add('selected');
-                    tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-                    rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                    if (isAlreadySelected) {
+                        // Unselect - clear all selections
+                        clearAllSelections();
+                        globalSelection = {
+                            type: null,
+                            tableContainer: null,
+                            selections: [],
+                            columnDef: null,
+                            data: null,
+                            columnDefs: null,
+                            lastClickedIndex: null
+                        };
+                    } else {
+                        // Clear all selections across all tables
+                        clearAllSelections();
+                        
+                        // Set global selection state
+                        globalSelection = {
+                            type: 'row',
+                            tableContainer: containerEl,
+                            selections: [{ rowIndex: rowIndex }],
+                            data: data,
+                            columnDefs: colDefs,
+                            lastClickedIndex: rowIndex
+                        };
+                        
+                        // Apply highlighting
+                        applyRowHighlightGlobal(containerEl, rowIndex);
+                    }
                 }
                 
                 // Update aggregation stats
@@ -1556,44 +1672,120 @@ function initAgGridTable(rowData, container) {
                 
                 // Add click handler for cell selection
                 td.addEventListener('click', (e) => {
-                    // Check if this cell is already selected
-                    const isAlreadySelected = globalSelection.type === 'cell' && 
-                        globalSelection.tableContainer === containerEl &&
-                        globalSelection.rowIndex === rowIndex && 
-                        globalSelection.columnIndex === colIndex;
+                    const ctrlPressed = e.ctrlKey || e.metaKey;
+                    const shiftPressed = e.shiftKey;
                     
-                    if (isAlreadySelected) {
-                        // Unselect - clear all selections
+                    // Check if same table
+                    const sameTable = globalSelection.tableContainer === containerEl;
+                    const sameType = globalSelection.type === 'cell';
+                    
+                    if (shiftPressed && sameTable && sameType && globalSelection.lastClickedIndex !== null) {
+                        // Shift: select rectangular range from last clicked to current
+                        const lastSel = globalSelection.lastClickedIndex;
+                        const startRow = Math.min(lastSel.rowIndex, rowIndex);
+                        const endRow = Math.max(lastSel.rowIndex, rowIndex);
+                        const startCol = Math.min(lastSel.columnIndex, colIndex);
+                        const endCol = Math.max(lastSel.columnIndex, colIndex);
+                        
                         clearAllSelections();
-                        globalSelection = {
-                            type: null,
-                            tableContainer: null,
-                            rowIndex: null,
-                            columnIndex: null,
-                            columnDef: null,
-                            data: null,
-                            columnDefs: null,
-                            cellValue: null
-                        };
+                        globalSelection.selections = [];
+                        
+                        for (let r = startRow; r <= endRow; r++) {
+                            for (let c = startCol; c <= endCol; c++) {
+                                globalSelection.selections.push({ 
+                                    rowIndex: r, 
+                                    columnIndex: c,
+                                    cellValue: data[r][colDefs[c].field]
+                                });
+                                applyCellHighlightGlobal(containerEl, r, c);
+                            }
+                        }
+                        
+                        globalSelection.type = 'cell';
+                        globalSelection.tableContainer = containerEl;
+                        globalSelection.data = data;
+                        globalSelection.columnDefs = colDefs;
+                    } else if (ctrlPressed && sameTable && sameType) {
+                        // Ctrl: toggle individual cell
+                        const existingIndex = globalSelection.selections.findIndex(
+                            s => s.rowIndex === rowIndex && s.columnIndex === colIndex
+                        );
+                        
+                        if (existingIndex >= 0) {
+                            // Remove from selection
+                            globalSelection.selections.splice(existingIndex, 1);
+                            
+                            if (globalSelection.selections.length === 0) {
+                                // No more selections
+                                clearAllSelections();
+                                globalSelection = {
+                                    type: null,
+                                    tableContainer: null,
+                                    selections: [],
+                                    columnDef: null,
+                                    data: null,
+                                    columnDefs: null,
+                                    lastClickedIndex: null
+                                };
+                            } else {
+                                // Reapply all selections
+                                clearAllSelections();
+                                globalSelection.selections.forEach(s => {
+                                    applyCellHighlightGlobal(containerEl, s.rowIndex, s.columnIndex);
+                                });
+                            }
+                        } else {
+                            // Add to selection
+                            globalSelection.selections.push({ 
+                                rowIndex: rowIndex, 
+                                columnIndex: colIndex,
+                                cellValue: row[col.field]
+                            });
+                            applyCellHighlightGlobal(containerEl, rowIndex, colIndex);
+                        }
+                        
+                        globalSelection.lastClickedIndex = { rowIndex, columnIndex };
                     } else {
-                        // Clear all selections across all tables
-                        clearAllSelections();
+                        // Normal click: single selection
+                        const isAlreadySelected = sameTable && sameType && 
+                            globalSelection.selections.length === 1 && 
+                            globalSelection.selections[0].rowIndex === rowIndex &&
+                            globalSelection.selections[0].columnIndex === colIndex;
                         
-                        // Set global selection state
-                        globalSelection = {
-                            type: 'cell',
-                            tableContainer: containerEl,
-                            rowIndex: rowIndex,
-                            columnIndex: colIndex,
-                            columnDef: colDefs[colIndex],
-                            data: data,
-                            columnDefs: colDefs,
-                            cellValue: row[col.field]
-                        };
-                        
-                        // Apply highlighting
-                        td.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-                        td.classList.add('selected-cell');
+                        if (isAlreadySelected) {
+                            // Unselect - clear all selections
+                            clearAllSelections();
+                            globalSelection = {
+                                type: null,
+                                tableContainer: null,
+                                selections: [],
+                                columnDef: null,
+                                data: null,
+                                columnDefs: null,
+                                lastClickedIndex: null
+                            };
+                        } else {
+                            // Clear all selections across all tables
+                            clearAllSelections();
+                            
+                            // Set global selection state
+                            globalSelection = {
+                                type: 'cell',
+                                tableContainer: containerEl,
+                                selections: [{ 
+                                    rowIndex: rowIndex, 
+                                    columnIndex: colIndex,
+                                    cellValue: row[col.field]
+                                }],
+                                columnDef: colDefs[colIndex],
+                                data: data,
+                                columnDefs: colDefs,
+                                lastClickedIndex: { rowIndex, columnIndex }
+                            };
+                            
+                            // Apply highlighting
+                            applyCellHighlightGlobal(containerEl, rowIndex, colIndex);
+                        }
                     }
                     
                     // Update aggregation stats
@@ -2031,16 +2223,37 @@ let rowContextMenu = null;
 let columnHeaderContextMenu = null;
 
 // Create context menu HTML for table cells
-function createContextMenu() {
+function createContextMenu(cellData) {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.style.display = 'none';
+    
+    // Determine labels based on selection
+    const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
+    const selectionCount = globalSelection.selections ? globalSelection.selections.length : 0;
+    
+    let cellLabel = 'Copy Cell';
+    let rowLabel = 'Copy Row';
+    let rowHeaderLabel = 'Copy Row with Headers';
+    let columnLabel = 'Copy Column';
+    
+    if (hasMultipleSelections) {
+        if (globalSelection.type === 'cell') {
+            cellLabel = `Copy ${selectionCount} Cells`;
+        } else if (globalSelection.type === 'row') {
+            rowLabel = `Copy ${selectionCount} Rows`;
+            rowHeaderLabel = `Copy ${selectionCount} Rows with Headers`;
+        } else if (globalSelection.type === 'column') {
+            columnLabel = `Copy ${selectionCount} Columns`;
+        }
+    }
+    
     menu.innerHTML = `
-        <div class="context-menu-item" data-action="copy-cell">Copy Cell</div>
-        <div class="context-menu-item" data-action="copy-row">Copy Row</div>
-        <div class="context-menu-item" data-action="copy-row-header">Copy Row with Headers</div>
+        <div class="context-menu-item" data-action="copy-cell">${cellLabel}</div>
+        <div class="context-menu-item" data-action="copy-row">${rowLabel}</div>
+        <div class="context-menu-item" data-action="copy-row-header">${rowHeaderLabel}</div>
         <div class="context-menu-separator"></div>
-        <div class="context-menu-item" data-action="copy-column">Copy Column</div>
+        <div class="context-menu-item" data-action="copy-column">${columnLabel}</div>
         <div class="context-menu-item" data-action="copy-table">Copy Table</div>
     `;
     document.body.appendChild(menu);
@@ -2068,9 +2281,22 @@ function createRowContextMenu() {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.style.display = 'none';
+    
+    // Determine labels based on selection
+    const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
+    const selectionCount = globalSelection.selections ? globalSelection.selections.length : 0;
+    
+    let rowLabel = 'Copy Row';
+    let rowHeaderLabel = 'Copy Row with Headers';
+    
+    if (hasMultipleSelections && globalSelection.type === 'row') {
+        rowLabel = `Copy ${selectionCount} Rows`;
+        rowHeaderLabel = `Copy ${selectionCount} Rows with Headers`;
+    }
+    
     menu.innerHTML = `
-        <div class="context-menu-item" data-action="copy-row">Copy Row</div>
-        <div class="context-menu-item" data-action="copy-row-header">Copy Row with Headers</div>
+        <div class="context-menu-item" data-action="copy-row">${rowLabel}</div>
+        <div class="context-menu-item" data-action="copy-row-header">${rowHeaderLabel}</div>
     `;
     document.body.appendChild(menu);
     
@@ -2097,11 +2323,25 @@ function createColumnHeaderContextMenu() {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.style.display = 'none';
+    
+    // Determine labels based on selection
+    const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
+    const selectionCount = globalSelection.selections ? globalSelection.selections.length : 0;
+    
+    let columnLabel = 'Copy Column';
+    let columnHeaderLabel = 'Copy Column with Header';
+    let distinctLabel = 'Copy Distinct Values';
+    
+    if (hasMultipleSelections && globalSelection.type === 'column') {
+        columnLabel = `Copy ${selectionCount} Columns`;
+        columnHeaderLabel = `Copy ${selectionCount} Columns with Headers`;
+    }
+    
     menu.innerHTML = `
-        <div class="context-menu-item" data-action="copy-column">Copy Column</div>
-        <div class="context-menu-item" data-action="copy-column-header">Copy Column with Header</div>
+        <div class="context-menu-item" data-action="copy-column">${columnLabel}</div>
+        <div class="context-menu-item" data-action="copy-column-header">${columnHeaderLabel}</div>
         <div class="context-menu-separator"></div>
-        <div class="context-menu-item" data-action="copy-column-distinct">Copy Distinct Values</div>
+        <div class="context-menu-item" data-action="copy-column-distinct">${distinctLabel}</div>
     `;
     document.body.appendChild(menu);
     
@@ -2126,10 +2366,12 @@ function createColumnHeaderContextMenu() {
 function showContextMenu(e, cellData) {
     e.preventDefault();
     
-    if (!contextMenu) {
-        contextMenu = createContextMenu();
+    // Remove existing menu to recreate with updated labels
+    if (contextMenu) {
+        contextMenu.remove();
     }
     
+    contextMenu = createContextMenu(cellData);
     contextMenuData = cellData;
     
     // Position menu at cursor
@@ -2157,10 +2399,12 @@ function hideContextMenu() {
 function showRowContextMenu(e, cellData) {
     e.preventDefault();
     
-    if (!rowContextMenu) {
-        rowContextMenu = createRowContextMenu();
+    // Remove existing menu to recreate with updated labels
+    if (rowContextMenu) {
+        rowContextMenu.remove();
     }
     
+    rowContextMenu = createRowContextMenu();
     contextMenuData = cellData;
     
     // Position menu at cursor
@@ -2188,10 +2432,12 @@ function hideRowContextMenu() {
 function showColumnHeaderContextMenu(e, cellData) {
     e.preventDefault();
     
-    if (!columnHeaderContextMenu) {
-        columnHeaderContextMenu = createColumnHeaderContextMenu();
+    // Remove existing menu to recreate with updated labels
+    if (columnHeaderContextMenu) {
+        columnHeaderContextMenu.remove();
     }
     
+    columnHeaderContextMenu = createColumnHeaderContextMenu();
     contextMenuData = cellData;
     
     // Position menu at cursor
@@ -2222,45 +2468,113 @@ function handleContextMenuAction(action) {
     const { table, rowIndex, columnIndex, columnDefs, data } = contextMenuData;
     let textToCopy = '';
     
+    // Check if we have multiple selections
+    const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
+    
     switch (action) {
         case 'copy-cell':
-            const cellValue = data[rowIndex][columnDefs[columnIndex].field];
-            textToCopy = cellValue === null ? 'NULL' : String(cellValue);
+            if (hasMultipleSelections && globalSelection.type === 'cell') {
+                // Copy all selected cells (tab-separated on same row, newline for different rows)
+                const cellsByRow = {};
+                globalSelection.selections.forEach(sel => {
+                    if (!cellsByRow[sel.rowIndex]) cellsByRow[sel.rowIndex] = [];
+                    cellsByRow[sel.rowIndex].push({ col: sel.columnIndex, val: sel.cellValue });
+                });
+                
+                textToCopy = Object.keys(cellsByRow).sort((a, b) => a - b).map(rowIdx => {
+                    return cellsByRow[rowIdx].sort((a, b) => a.col - b.col).map(cell => {
+                        return cell.val === null ? 'NULL' : String(cell.val);
+                    }).join('\t');
+                }).join('\n');
+            } else {
+                const cellValue = data[rowIndex][columnDefs[columnIndex].field];
+                textToCopy = cellValue === null ? 'NULL' : String(cellValue);
+            }
             break;
             
         case 'copy-row':
-            const row = data[rowIndex];
-            textToCopy = columnDefs.map(col => {
-                const val = row[col.field];
-                return val === null ? 'NULL' : String(val);
-            }).join('\t');
+            if (hasMultipleSelections && globalSelection.type === 'row') {
+                // Copy all selected rows
+                textToCopy = globalSelection.selections.map(sel => {
+                    const row = data[sel.rowIndex];
+                    return columnDefs.map(col => {
+                        const val = row[col.field];
+                        return val === null ? 'NULL' : String(val);
+                    }).join('\t');
+                }).join('\n');
+            } else {
+                const row = data[rowIndex];
+                textToCopy = columnDefs.map(col => {
+                    const val = row[col.field];
+                    return val === null ? 'NULL' : String(val);
+                }).join('\t');
+            }
             break;
             
         case 'copy-row-header':
             const headers = columnDefs.map(col => col.headerName).join('\t');
-            const rowData = columnDefs.map(col => {
-                const val = data[rowIndex][col.field];
-                return val === null ? 'NULL' : String(val);
-            }).join('\t');
-            textToCopy = headers + '\n' + rowData;
+            if (hasMultipleSelections && globalSelection.type === 'row') {
+                // Copy all selected rows with header
+                const rowsData = globalSelection.selections.map(sel => {
+                    const row = data[sel.rowIndex];
+                    return columnDefs.map(col => {
+                        const val = row[col.field];
+                        return val === null ? 'NULL' : String(val);
+                    }).join('\t');
+                }).join('\n');
+                textToCopy = headers + '\n' + rowsData;
+            } else {
+                const rowData = columnDefs.map(col => {
+                    const val = data[rowIndex][col.field];
+                    return val === null ? 'NULL' : String(val);
+                }).join('\t');
+                textToCopy = headers + '\n' + rowData;
+            }
             break;
             
         case 'copy-column':
-            const colField = columnDefs[columnIndex].field;
-            textToCopy = data.map(row => {
-                const val = row[colField];
-                return val === null ? 'NULL' : String(val);
-            }).join('\n');
+            if (hasMultipleSelections && globalSelection.type === 'column') {
+                // Copy all selected columns (tab-separated)
+                const columnValues = data.map(row => {
+                    return globalSelection.selections.map(sel => {
+                        const colField = columnDefs[sel.columnIndex].field;
+                        const val = row[colField];
+                        return val === null ? 'NULL' : String(val);
+                    }).join('\t');
+                }).join('\n');
+                textToCopy = columnValues;
+            } else {
+                const colField = columnDefs[columnIndex].field;
+                textToCopy = data.map(row => {
+                    const val = row[colField];
+                    return val === null ? 'NULL' : String(val);
+                }).join('\n');
+            }
             break;
             
         case 'copy-column-header':
-            const colFieldWithHeader = columnDefs[columnIndex].field;
-            const colHeaderName = columnDefs[columnIndex].headerName;
-            const columnValues = data.map(row => {
-                const val = row[colFieldWithHeader];
-                return val === null ? 'NULL' : String(val);
-            }).join('\n');
-            textToCopy = colHeaderName + '\n' + columnValues;
+            if (hasMultipleSelections && globalSelection.type === 'column') {
+                // Copy all selected columns with headers
+                const colHeaders = globalSelection.selections.map(sel => {
+                    return columnDefs[sel.columnIndex].headerName;
+                }).join('\t');
+                const columnValues = data.map(row => {
+                    return globalSelection.selections.map(sel => {
+                        const colField = columnDefs[sel.columnIndex].field;
+                        const val = row[colField];
+                        return val === null ? 'NULL' : String(val);
+                    }).join('\t');
+                }).join('\n');
+                textToCopy = colHeaders + '\n' + columnValues;
+            } else {
+                const colFieldWithHeader = columnDefs[columnIndex].field;
+                const colHeaderName = columnDefs[columnIndex].headerName;
+                const columnValues = data.map(row => {
+                    const val = row[colFieldWithHeader];
+                    return val === null ? 'NULL' : String(val);
+                }).join('\n');
+                textToCopy = colHeaderName + '\n' + columnValues;
+            }
             break;
             
         case 'copy-column-distinct':
@@ -2327,17 +2641,19 @@ function clearAllSelections() {
 }
 
 function reapplySelection() {
-    if (!globalSelection.type || !globalSelection.tableContainer) {
+    if (!globalSelection.type || !globalSelection.tableContainer || !globalSelection.selections.length) {
         return;
     }
     
-    if (globalSelection.type === 'column' && globalSelection.columnIndex !== null) {
-        applyColumnHighlightGlobal(globalSelection.tableContainer, globalSelection.columnIndex);
-    } else if (globalSelection.type === 'row' && globalSelection.rowIndex !== null) {
-        applyRowHighlightGlobal(globalSelection.tableContainer, globalSelection.rowIndex);
-    } else if (globalSelection.type === 'cell' && globalSelection.rowIndex !== null && globalSelection.columnIndex !== null) {
-        applyCellHighlightGlobal(globalSelection.tableContainer, globalSelection.rowIndex, globalSelection.columnIndex);
-    }
+    globalSelection.selections.forEach(sel => {
+        if (globalSelection.type === 'column' && sel.columnIndex !== undefined) {
+            applyColumnHighlightGlobal(globalSelection.tableContainer, sel.columnIndex);
+        } else if (globalSelection.type === 'row' && sel.rowIndex !== undefined) {
+            applyRowHighlightGlobal(globalSelection.tableContainer, sel.rowIndex);
+        } else if (globalSelection.type === 'cell' && sel.rowIndex !== undefined && sel.columnIndex !== undefined) {
+            applyCellHighlightGlobal(globalSelection.tableContainer, sel.rowIndex, sel.columnIndex);
+        }
+    });
 }
 
 function applyColumnHighlightGlobal(containerEl, colIndex) {
@@ -2397,7 +2713,7 @@ function updateAggregationStats() {
     // Get the base stats text (everything before the separator)
     const baseText = executionStatsEl.textContent.split('|').slice(0, 3).join('|').trim();
     
-    if (!globalSelection.type || !globalSelection.data) {
+    if (!globalSelection.type || !globalSelection.data || !globalSelection.selections.length) {
         // No selection - show only base stats
         executionStatsEl.textContent = baseText;
         return;
@@ -2405,11 +2721,21 @@ function updateAggregationStats() {
     
     let statsText = '';
     
-    if (globalSelection.type === 'column' && globalSelection.columnDef) {
-        // Calculate column statistics
-        const colField = globalSelection.columnDef.field;
-        const colType = globalSelection.columnDef.type;
-        const values = globalSelection.data.map(row => row[colField]);
+    // Show number of selected items
+    statsText += ` | ${globalSelection.selections.length} Selected`;
+    
+    if (globalSelection.type === 'column' && globalSelection.selections.length > 0) {
+        // Calculate column statistics - aggregate all selected columns
+        let allValues = [];
+        globalSelection.selections.forEach(sel => {
+            const colDef = globalSelection.columnDefs[sel.columnIndex];
+            const values = globalSelection.data.map(row => row[colDef.field]);
+            allValues = allValues.concat(values);
+        });
+        
+        const colField = globalSelection.columnDefs[globalSelection.selections[0].columnIndex].field;
+        const colType = globalSelection.columnDefs[globalSelection.selections[0].columnIndex].type;
+        const values = allValues;
         
         // Count nulls
         const nullCount = values.filter(v => v === null || v === undefined).length;
@@ -2482,10 +2808,12 @@ function updateAggregationStats() {
             }
         }
         
-    } else if (globalSelection.type === 'cell' && globalSelection.cellValue !== undefined) {
-        // Show cell value
-        const value = globalSelection.cellValue;
-        const colType = globalSelection.columnDef ? globalSelection.columnDef.type : 'string';
+    } else if (globalSelection.type === 'cell' && globalSelection.selections.length > 0) {
+        // Show cell values - if multiple, show aggregated stats
+        if (globalSelection.selections.length === 1) {
+            // Single cell - show value
+            const value = globalSelection.selections[0].cellValue;
+            const colType = globalSelection.columnDef ? globalSelection.columnDef.type : 'string';
         
         if (value === null || value === undefined) {
             statsText += ` | Value: NULL`;
@@ -2505,29 +2833,55 @@ function updateAggregationStats() {
             } else if (colType === 'date') {
                 statsText += ` (Date)`;
             } else if (colType === 'string') {
-                statsText += ` | Length: ${String(value).length}`;
+                    statsText += ` | Length: ${String(value).length}`;
+                }
             }
-        }
-        
-    } else if (globalSelection.type === 'row' && globalSelection.columnDefs) {
-        // Calculate row statistics
-        const row = globalSelection.data[globalSelection.rowIndex];
-        if (row) {
-            const fields = globalSelection.columnDefs.map(col => col.field);
-            const values = fields.map(field => row[field]);
-            
-            // Count nulls
+        } else {
+            // Multiple cells - show aggregated stats
+            const values = globalSelection.selections.map(s => s.cellValue);
             const nullCount = values.filter(v => v === null || v === undefined).length;
-            const nonNullCount = values.length - nullCount;
+            const distinctCount = new Set(values.filter(v => v !== null && v !== undefined)).size;
             
-            statsText += ` | ${nonNullCount} Values | ${nullCount} Nulls`;
+            statsText += ` | ${nullCount} Nulls | ${distinctCount} Distinct`;
             
-            // Count numeric values and calculate sum if any
+            // Check if all numeric
             const numericValues = values.filter(v => v !== null && v !== undefined && typeof v === 'number');
             if (numericValues.length > 0) {
                 const sum = numericValues.reduce((a, b) => a + b, 0);
                 const avg = sum / numericValues.length;
-                statsText += ` | ${numericValues.length} Numeric | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)}`;
+                const min = Math.min(...numericValues);
+                const max = Math.max(...numericValues);
+                statsText += ` | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min} | MAX: ${max}`;
+            }
+        }
+        
+    } else if (globalSelection.type === 'row' && globalSelection.columnDefs) {
+        // Calculate row statistics - aggregate all selected rows
+        let allValues = [];
+        globalSelection.selections.forEach(sel => {
+            const row = globalSelection.data[sel.rowIndex];
+            if (row) {
+                const fields = globalSelection.columnDefs.map(col => col.field);
+                const values = fields.map(field => row[field]);
+                allValues = allValues.concat(values);
+            }
+        });
+        
+        if (allValues.length > 0) {
+            // Count nulls
+            const nullCount = allValues.filter(v => v === null || v === undefined).length;
+            const nonNullCount = allValues.length - nullCount;
+            
+            statsText += ` | ${nonNullCount} Values | ${nullCount} Nulls`;
+            
+            // Count numeric values and calculate sum if any
+            const numericValues = allValues.filter(v => v !== null && v !== undefined && typeof v === 'number');
+            if (numericValues.length > 0) {
+                const sum = numericValues.reduce((a, b) => a + b, 0);
+                const avg = sum / numericValues.length;
+                const min = Math.min(...numericValues);
+                const max = Math.max(...numericValues);
+                statsText += ` | ${numericValues.length} Numeric | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min} | MAX: ${max}`;
             }
         }
     }
