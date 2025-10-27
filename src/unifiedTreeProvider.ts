@@ -2,12 +2,16 @@ import * as vscode from 'vscode';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
 import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon, createFunctionIcon, createTriggerIcon, createTypeIcon, createSequenceIcon, createSynonymIcon, createAssemblyIcon } from './serverGroupIcon';
 
-export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.FileDecorationProvider {
+export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.FileDecorationProvider, vscode.TreeDragAndDropController<TreeNode> {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = new vscode.EventEmitter<TreeNode | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<TreeNode | undefined | null | void> = this._onDidChangeTreeData.event;
 
     private _onDidChangeFileDecorations: vscode.EventEmitter<vscode.Uri | vscode.Uri[]> = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
     readonly onDidChangeFileDecorations: vscode.Event<vscode.Uri | vscode.Uri[]> = this._onDidChangeFileDecorations.event;
+
+    // Drag and drop support
+    readonly dropMimeTypes = ['application/vnd.code.tree.mssqlmanagerexplorer'];
+    readonly dragMimeTypes = ['application/vnd.code.tree.mssqlmanagerexplorer'];
 
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -17,6 +21,68 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     refresh(): void {
         this._onDidChangeTreeData.fire();
         this._onDidChangeFileDecorations.fire(undefined as any);
+    }
+
+    // Drag and drop implementation
+    public async handleDrag(source: TreeNode[], dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+        // Only allow dragging ConnectionNode items
+        const connectionNodes = source.filter(node => node instanceof ConnectionNode) as ConnectionNode[];
+        if (connectionNodes.length === 0) {
+            return;
+        }
+
+        // Store connection IDs in data transfer
+        const connectionIds = connectionNodes.map(node => node.connectionId);
+        dataTransfer.set(
+            'application/vnd.code.tree.mssqlmanagerexplorer',
+            new vscode.DataTransferItem(connectionIds)
+        );
+    }
+
+    public async handleDrop(target: TreeNode | undefined, dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+        // Get dragged connection IDs
+        const transferItem = dataTransfer.get('application/vnd.code.tree.mssqlmanagerexplorer');
+        if (!transferItem) {
+            return;
+        }
+
+        const connectionIds = transferItem.value as string[];
+        if (!connectionIds || connectionIds.length === 0) {
+            return;
+        }
+
+        try {
+            // Determine target server group ID
+            let targetServerGroupId: string | undefined;
+
+            if (target instanceof ServerGroupNode) {
+                // Dropped on a server group - assign to that group
+                targetServerGroupId = target.group.id;
+            } else if (target instanceof ConnectionNode) {
+                // Dropped on a connection - get its parent group
+                const connections = await this.connectionProvider.getSavedConnectionsList();
+                const targetConnection = connections.find(c => c.id === target.connectionId);
+                targetServerGroupId = targetConnection?.serverGroupId;
+            } else {
+                // Dropped on root level - unassign from group
+                targetServerGroupId = undefined;
+            }
+
+            // Move each connection to target group
+            for (const connectionId of connectionIds) {
+                await this.connectionProvider.moveConnectionToGroup(connectionId, targetServerGroupId);
+            }
+
+            // Refresh tree
+            this.refresh();
+
+            vscode.window.showInformationMessage(
+                `Moved ${connectionIds.length} connection(s) ${targetServerGroupId ? 'to group' : 'to root level'}`
+            );
+        } catch (error) {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error during drop: ${error}`);
+            vscode.window.showErrorMessage(`Failed to move connection: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
     }
 
     getTreeItem(element: TreeNode): vscode.TreeItem {

@@ -55,9 +55,10 @@ export function activate(context: vscode.ExtensionContext) {
         unifiedTreeProvider.refresh();
     });
 
-    // Register tree data provider and create tree view
+    // Register tree data provider and create tree view with drag and drop support
     const treeView = vscode.window.createTreeView('mssqlManager.explorer', {
-        treeDataProvider: unifiedTreeProvider
+        treeDataProvider: unifiedTreeProvider,
+        dragAndDropController: unifiedTreeProvider
     });
     context.subscriptions.push(treeView);
 

@@ -631,4 +631,34 @@ export class ConnectionProvider {
         
         await this.connectToSaved(connection);
     }
+
+    async moveConnectionToGroup(connectionId: string, targetServerGroupId: string | undefined): Promise<void> {
+        const savedConnections = this.getSavedConnections();
+        const connection = savedConnections.find(conn => conn.id === connectionId);
+        
+        if (!connection) {
+            throw new Error('Connection not found');
+        }
+
+        // Update the connection's server group
+        if (targetServerGroupId) {
+            // Verify that the target group exists
+            const groups = this.getServerGroups();
+            const targetGroup = groups.find(g => g.id === targetServerGroupId);
+            if (!targetGroup) {
+                throw new Error('Target server group not found');
+            }
+            connection.serverGroupId = targetServerGroupId;
+        } else {
+            // Remove from group (move to root)
+            delete connection.serverGroupId;
+        }
+
+        // Save the updated connections
+        await this.context.globalState.update('mssqlManager.connections', savedConnections);
+        
+        this.outputChannel.appendLine(
+            `[ConnectionProvider] Moved connection ${connection.name} to ${targetServerGroupId ? 'group ' + targetServerGroupId : 'root level'}`
+        );
+    }
 }

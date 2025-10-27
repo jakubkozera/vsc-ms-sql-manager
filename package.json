@@ -242,7 +242,8 @@
           "id": "mssqlManager.explorer",
           "name": "Database Explorer",
           "when": "true",
-          "icon": "resources/database-dark.svg"
+          "icon": "resources/database-dark.svg",
+          "visibility": "visible"
         },
         {
           "id": "mssqlManager.queryHistory",
