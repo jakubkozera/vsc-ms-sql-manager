@@ -241,16 +241,50 @@ th {
     position: sticky !important;
     top: 0 !important;
     background-color: var(--vscode-sideBar-background) !important;
-    z-index: 10 !important;
+    z-index: 10;
     box-shadow: 0 1px 0 0 var(--vscode-panel-border) !important;
 }
 
+/* Row number header and cell - sticky both vertically and horizontally */
+.ag-grid-row-number-header,
+.ag-grid-row-number-cell {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    left: 0 !important;
+    background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526) !important;
+    border-right: 2px solid var(--vscode-panel-border, #3c3c3c) !important;
+    text-align: center;
+    font-weight: 600;
+    user-select: none;
+}
+
 .ag-grid-row-number-header {
-    z-index: 20 !important;
+    top: 0 !important;
+    z-index: 100 !important;
+}
+
+.ag-grid-row-number-cell {
+    z-index: 50 !important;
+    background-color: var(--vscode-editor-background, #1e1e1e) !important;
+}
+
+/* Pinned column headers and cells - sticky both vertically and horizontally */
+.ag-grid-pinned-header,
+.ag-grid-pinned-cell {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526) !important;
 }
 
 .ag-grid-pinned-header {
-    z-index: 19 !important;
+    top: 0 !important;
+    z-index: 90 !important;
+    background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526) !important;
+}
+
+.ag-grid-pinned-cell {
+    z-index: 40 !important;
+    background-color: var(--vscode-editor-background, #1e1e1e) !important;
 }
 
 .null-value {

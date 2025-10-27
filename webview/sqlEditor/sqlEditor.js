@@ -1021,23 +1021,15 @@ function initAgGridTable(rowData, container) {
         const rowNumTh = document.createElement('th');
         rowNumTh.className = 'ag-grid-row-number-header';
         rowNumTh.textContent = '#';
-        rowNumTh.style.cssText = `
-            width: 50px;
-            min-width: 50px;
-            max-width: 50px;
-            position: sticky;
-            left: 0;
-            background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526);
-            border-right: 2px solid var(--vscode-panel-border, #3c3c3c);
-            text-align: center;
-            font-weight: 600;
-            user-select: none;
-            z-index: 20;
-            top: 0;
-            border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
-            padding: 8px;
-        `;
-        console.log('[AG-GRID] Row number header z-index:', rowNumTh.style.zIndex, 'position:', rowNumTh.style.position, 'top:', rowNumTh.style.top);
+        
+        // Set styles individually to avoid cssText issues
+        rowNumTh.style.width = '50px';
+        rowNumTh.style.minWidth = '50px';
+        rowNumTh.style.maxWidth = '50px';
+        rowNumTh.style.borderBottom = '1px solid var(--vscode-panel-border, #3c3c3c)';
+        rowNumTh.style.padding = '8px';
+        
+        console.log('[AG-GRID] Row number header created with class:', rowNumTh.className);
         tr.appendChild(rowNumTh);
         
         const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
@@ -1048,25 +1040,24 @@ function initAgGridTable(rowData, container) {
 
         colDefs.forEach((col, index) => {
             const th = document.createElement('th');
-            th.style.cssText = `
-                width: ${col.width}px;
-                min-width: ${col.width}px;
-                max-width: ${col.width}px;
-                background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526);
-                border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
-                border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
-                padding: 8px;
-                text-align: left;
-                font-weight: 600;
-                position: sticky;
-                top: 0;
-                z-index: ${col.pinned ? 19 : 10};
-                user-select: none;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            `;
-            console.log(`[AG-GRID] Header for column "${col.headerName}" - position: sticky, top: 0, z-index: ${col.pinned ? 19 : 10}, pinned: ${col.pinned}`);
+            
+            // Base styles - set individually to avoid cssText overriding
+            th.style.width = col.width + 'px';
+            th.style.minWidth = col.width + 'px';
+            th.style.maxWidth = col.width + 'px';
+            th.style.backgroundColor = 'var(--vscode-editorGroupHeader-tabsBackground, #252526)';
+            th.style.borderBottom = '1px solid var(--vscode-panel-border, #3c3c3c)';
+            th.style.borderRight = '1px solid var(--vscode-panel-border, #3c3c3c)';
+            th.style.padding = '8px';
+            th.style.textAlign = 'left';
+            th.style.fontWeight = '600';
+            th.style.userSelect = 'none';
+            th.style.whiteSpace = 'nowrap';
+            th.style.overflow = 'hidden';
+            th.style.textOverflow = 'ellipsis';
+            
+            // Don't set position, top, or z-index inline - let CSS classes handle it
+            console.log(`[AG-GRID] Header for column "${col.headerName}" - pinned: ${col.pinned}`);
             
             if (col.pinned) {
                 const leftOffset = calculatePinnedOffset(colDefs, index);
@@ -1474,28 +1465,21 @@ function initAgGridTable(rowData, container) {
             const rowNumTd = document.createElement('td');
             rowNumTd.className = 'ag-grid-row-number-cell';
             rowNumTd.textContent = rowIndex + 1;
-            rowNumTd.style.cssText = `
-                width: 50px;
-                min-width: 50px;
-                max-width: 50px;
-                position: sticky;
-                left: 0;
-                background-color: var(--vscode-editor-background, #1e1e1e);
-                border-right: 2px solid var(--vscode-panel-border, #3c3c3c);
-                text-align: center;
-                font-weight: 600;
-                user-select: none;
-                z-index: 6;
-                cursor: pointer;
-                padding: 0 8px;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                height: ${rowHeight}px;
-                line-height: ${rowHeight}px;
-                display: table-cell;
-                vertical-align: middle;
-            `;
+            
+            // Set styles individually to avoid cssText overriding class styles
+            rowNumTd.style.width = '50px';
+            rowNumTd.style.minWidth = '50px';
+            rowNumTd.style.maxWidth = '50px';
+            rowNumTd.style.cursor = 'pointer';
+            rowNumTd.style.padding = '0 8px';
+            rowNumTd.style.whiteSpace = 'nowrap';
+            rowNumTd.style.overflow = 'hidden';
+            rowNumTd.style.textOverflow = 'ellipsis';
+            rowNumTd.style.height = rowHeight + 'px';
+            rowNumTd.style.lineHeight = rowHeight + 'px';
+            rowNumTd.style.display = 'table-cell';
+            rowNumTd.style.verticalAlign = 'middle';
+            
             rowNumTd.addEventListener('mouseenter', function() {
                 if (!tr.classList.contains('selected')) {
                     this.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
@@ -1620,27 +1604,24 @@ function initAgGridTable(rowData, container) {
 
             colDefs.forEach((col, colIndex) => {
                 const td = document.createElement('td');
-                td.style.cssText = `
-                    width: ${col.width}px;
-                    min-width: ${col.width}px;
-                    max-width: ${col.width}px;
-                    border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
-                    padding: 0 8px;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    height: ${rowHeight}px;
-                    line-height: ${rowHeight}px;
-                    display: table-cell;
-                    vertical-align: middle;
-                `;
+                
+                // Base styles
+                td.style.width = col.width + 'px';
+                td.style.minWidth = col.width + 'px';
+                td.style.maxWidth = col.width + 'px';
+                td.style.borderRight = '1px solid var(--vscode-panel-border, #3c3c3c)';
+                td.style.padding = '0 8px';
+                td.style.whiteSpace = 'nowrap';
+                td.style.overflow = 'hidden';
+                td.style.textOverflow = 'ellipsis';
+                td.style.height = rowHeight + 'px';
+                td.style.lineHeight = rowHeight + 'px';
+                td.style.display = 'table-cell';
+                td.style.verticalAlign = 'middle';
                 
                 if (col.pinned) {
                     const leftOffset = calculatePinnedOffset(colDefs, colIndex);
-                    td.style.position = 'sticky';
                     td.style.left = leftOffset + 'px';
-                    td.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
-                    td.style.zIndex = '5';
                     td.classList.add('ag-grid-pinned-cell');
                 }
                 
