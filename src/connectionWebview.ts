@@ -360,26 +360,69 @@ export class ConnectionWebview {
         }
 
         .message {
-            padding: 12px;
-            border-radius: 4px;
-            margin-top: 15px;
-            font-weight: 500;
+            padding: 14px 16px;
+            border-radius: 6px;
+            margin-top: 20px;
+            font-weight: 400;
             min-height: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            border-left: 4px solid transparent;
+            animation: slideIn 0.3s ease-out;
+            line-height: 1.5;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message::before {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            background-size: contain;
+            background-repeat: no-repeat;
         }
 
         .message.success {
-            background-color: var(--vscode-testing-iconPassed);
-            color: var(--vscode-button-foreground);
+            background-color: rgba(22, 163, 74, 0.15);
+            color: var(--vscode-foreground);
+            border-left-color: #16a34a;
+        }
+
+        .message.success::before {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%2316a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>');
         }
 
         .message.error {
-            background-color: var(--vscode-errorForeground);
-            color: var(--vscode-button-foreground);
+            background-color: rgba(239, 68, 68, 0.15);
+            color: var(--vscode-foreground);
+            border-left-color: #ef4444;
+        }
+
+        .message.error::before {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>');
         }
 
         .message.info {
-            background-color: var(--vscode-charts-blue);
-            color: var(--vscode-button-foreground);
+            background-color: rgba(59, 130, 246, 0.15);
+            color: var(--vscode-foreground);
+            border-left-color: #3b82f6;
+        }
+
+        .message.info::before {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%233b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>');
         }
 
         .message.hidden {
@@ -388,13 +431,13 @@ export class ConnectionWebview {
 
         .spinner {
             display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid var(--vscode-progressBar-background);
-            border-top: 2px solid var(--vscode-button-foreground);
+            width: 18px;
+            height: 18px;
+            border: 2.5px solid rgba(59, 130, 246, 0.3);
+            border-top-color: #3b82f6;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 8px;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
         }
 
         @keyframes spin {
@@ -947,7 +990,15 @@ export class ConnectionWebview {
 
         function showMessage(type, text) {
             messageDiv.className = 'message ' + type;
-            messageDiv.innerHTML = text;
+            
+            // Check if text includes spinner
+            if (text.includes('<span class="spinner"></span>')) {
+                // For loading messages, use custom HTML structure
+                const textContent = text.replace('<span class="spinner"></span>', '').trim();
+                messageDiv.innerHTML = \`<span class="spinner"></span><span>\${textContent}</span>\`;
+            } else {
+                messageDiv.innerHTML = \`<span>\${text}</span>\`;
+            }
         }
 
         // Initialize form
