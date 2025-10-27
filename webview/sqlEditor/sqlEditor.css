@@ -293,8 +293,8 @@ th {
 }
 
 .result-set-container {
-    margin-bottom: 8px;
-    height: calc(100% - 8px);
+    margin-bottom: 0px;
+    height: auto;
     display: flex;
     flex-direction: column;
 }
@@ -363,8 +363,8 @@ th {
     position: relative !important;
     width: 100% !important;
     height: 100% !important;
-    min-height: 400px;
-    max-height: 600px;
+    min-height: 300px;
+    max-height: 400px;
 }
 
 .ag-grid-table {

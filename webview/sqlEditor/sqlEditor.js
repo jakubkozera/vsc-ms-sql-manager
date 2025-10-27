@@ -1087,7 +1087,7 @@ function initAgGridTable(rowData, container) {
 
             headerTitle.onclick = (e) => {
                 e.stopPropagation();
-                highlightColumn(index, colDefs, containerEl);
+                highlightColumn(index, colDefs, containerEl, filteredData);
             };
             
             // Add context menu for column header
@@ -1270,22 +1270,42 @@ function initAgGridTable(rowData, container) {
     }
 
     // Column highlighting functionality
-    function highlightColumn(colIndex, colDefs, containerEl) {
-        // Clear all selections across all tables
-        clearAllSelections();
+    function highlightColumn(colIndex, colDefs, containerEl, filteredData) {
+        // Check if this column is already selected
+        const isAlreadySelected = globalSelection.type === 'column' && 
+            globalSelection.tableContainer === containerEl &&
+            globalSelection.columnIndex === colIndex;
         
-        // Set global selection state
-        globalSelection = {
-            type: 'column',
-            tableContainer: containerEl,
-            rowIndex: null,
-            columnIndex: colIndex,
-            columnDef: colDefs[colIndex],
-            data: filteredData
-        };
-        
-        // Apply highlighting
-        applyColumnHighlightGlobal(containerEl, colIndex);
+        if (isAlreadySelected) {
+            // Unselect - clear all selections
+            clearAllSelections();
+            globalSelection = {
+                type: null,
+                tableContainer: null,
+                rowIndex: null,
+                columnIndex: null,
+                columnDef: null,
+                data: null,
+                columnDefs: null,
+                cellValue: null
+            };
+        } else {
+            // Clear all selections across all tables
+            clearAllSelections();
+            
+            // Set global selection state
+            globalSelection = {
+                type: 'column',
+                tableContainer: containerEl,
+                rowIndex: null,
+                columnIndex: colIndex,
+                columnDef: colDefs[colIndex],
+                data: filteredData
+            };
+            
+            // Apply highlighting
+            applyColumnHighlightGlobal(containerEl, colIndex);
+        }
         
         // Update aggregation stats
         updateAggregationStats();
@@ -1428,23 +1448,43 @@ function initAgGridTable(rowData, container) {
                 }
             });
             rowNumTd.addEventListener('click', function() {
-                // Clear all selections across all tables
-                clearAllSelections();
+                // Check if this row is already selected
+                const isAlreadySelected = globalSelection.type === 'row' && 
+                    globalSelection.tableContainer === containerEl &&
+                    globalSelection.rowIndex === rowIndex;
                 
-                // Set global selection state
-                globalSelection = {
-                    type: 'row',
-                    tableContainer: containerEl,
-                    rowIndex: rowIndex,
-                    columnIndex: null,
-                    data: data,
-                    columnDefs: colDefs
-                };
-                
-                // Apply highlighting
-                tr.classList.add('selected');
-                tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-                rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                if (isAlreadySelected) {
+                    // Unselect - clear all selections
+                    clearAllSelections();
+                    globalSelection = {
+                        type: null,
+                        tableContainer: null,
+                        rowIndex: null,
+                        columnIndex: null,
+                        columnDef: null,
+                        data: null,
+                        columnDefs: null,
+                        cellValue: null
+                    };
+                } else {
+                    // Clear all selections across all tables
+                    clearAllSelections();
+                    
+                    // Set global selection state
+                    globalSelection = {
+                        type: 'row',
+                        tableContainer: containerEl,
+                        rowIndex: rowIndex,
+                        columnIndex: null,
+                        data: data,
+                        columnDefs: colDefs
+                    };
+                    
+                    // Apply highlighting
+                    tr.classList.add('selected');
+                    tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                    rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                }
                 
                 // Update aggregation stats
                 updateAggregationStats();
@@ -1516,24 +1556,45 @@ function initAgGridTable(rowData, container) {
                 
                 // Add click handler for cell selection
                 td.addEventListener('click', (e) => {
-                    // Clear all selections across all tables
-                    clearAllSelections();
+                    // Check if this cell is already selected
+                    const isAlreadySelected = globalSelection.type === 'cell' && 
+                        globalSelection.tableContainer === containerEl &&
+                        globalSelection.rowIndex === rowIndex && 
+                        globalSelection.columnIndex === colIndex;
                     
-                    // Set global selection state
-                    globalSelection = {
-                        type: 'cell',
-                        tableContainer: containerEl,
-                        rowIndex: rowIndex,
-                        columnIndex: colIndex,
-                        columnDef: colDefs[colIndex],
-                        data: data,
-                        columnDefs: colDefs,
-                        cellValue: row[col.field]
-                    };
-                    
-                    // Apply highlighting
-                    td.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-                    td.classList.add('selected-cell');
+                    if (isAlreadySelected) {
+                        // Unselect - clear all selections
+                        clearAllSelections();
+                        globalSelection = {
+                            type: null,
+                            tableContainer: null,
+                            rowIndex: null,
+                            columnIndex: null,
+                            columnDef: null,
+                            data: null,
+                            columnDefs: null,
+                            cellValue: null
+                        };
+                    } else {
+                        // Clear all selections across all tables
+                        clearAllSelections();
+                        
+                        // Set global selection state
+                        globalSelection = {
+                            type: 'cell',
+                            tableContainer: containerEl,
+                            rowIndex: rowIndex,
+                            columnIndex: colIndex,
+                            columnDef: colDefs[colIndex],
+                            data: data,
+                            columnDefs: colDefs,
+                            cellValue: row[col.field]
+                        };
+                        
+                        // Apply highlighting
+                        td.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                        td.classList.add('selected-cell');
+                    }
                     
                     // Update aggregation stats
                     updateAggregationStats();
