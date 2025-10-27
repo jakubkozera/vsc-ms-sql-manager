@@ -60,9 +60,6 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: unifiedTreeProvider
     });
     context.subscriptions.push(treeView);
-    
-    // Set tree view reference in provider for collapse operations
-    unifiedTreeProvider.setTreeView(treeView);
 
     // Register query history tree view
     const historyTreeView = vscode.window.createTreeView('mssqlManager.queryHistory', {

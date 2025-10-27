@@ -15,16 +15,7 @@ export function registerConnectionCommands(
     });
 
     const disconnectCommand = vscode.commands.registerCommand('mssqlManager.disconnect', async () => {
-        // Get all active connections before disconnecting
-        const activeConnections = connectionProvider.getAllActiveConnections();
-        
         await connectionProvider.disconnect();
-        
-        // Collapse all previously active connections
-        for (const conn of activeConnections) {
-            await unifiedTreeProvider.collapseConnection(conn.id);
-        }
-        
         unifiedTreeProvider.refresh();
     });
 
@@ -135,9 +126,6 @@ export function registerConnectionCommands(
             if (connectionItem && connectionItem.connectionId) {
                 const connectionId = connectionItem.connectionId;
                 await connectionProvider.disconnect(connectionId);
-                
-                // Collapse the disconnected node
-                await unifiedTreeProvider.collapseConnection(connectionId);
                 
                 const connectionName = connectionItem.name || connectionItem.label || 'Connection';
                 vscode.window.showInformationMessage(`Disconnected from "${connectionName}"`);
