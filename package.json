@@ -220,6 +220,11 @@
         "command": "mssqlManager.toggleQueryHistoryGrouping",
         "title": "Toggle Query History Grouping",
         "icon": "$(group-by-ref-type)"
+      },
+      {
+        "command": "mssqlManager.newQuery",
+        "title": "New Query",
+        "icon": "$(new-file)"
       }
     ],
     "viewsContainers": {
@@ -432,14 +437,19 @@
           "group": "inline@4"
         },
         {
+          "command": "mssqlManager.newQuery",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "group": "1_connection@1"
+        },
+        {
           "command": "mssqlManager.connectToSaved",
           "when": "view == mssqlManager.explorer && viewItem == connectionInactive",
-          "group": "1_connection@1"
+          "group": "1_connection@2"
         },
         {
           "command": "mssqlManager.disconnectConnection",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
-          "group": "1_connection@1"
+          "group": "1_connection@2"
         },
         {
           "command": "mssqlManager.editConnection",

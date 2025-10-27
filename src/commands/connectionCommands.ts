@@ -190,6 +190,65 @@ export function registerConnectionCommands(
         vscode.window.showInformationMessage(`Found ${connections.length} saved connections. Check output channel for details.`);
     });
 
+    const newQueryCommand = vscode.commands.registerCommand('mssqlManager.newQuery', async (connectionItem?: any) => {
+        try {
+            if (!connectionItem || !connectionItem.connectionId) {
+                vscode.window.showErrorMessage('Invalid connection item');
+                return;
+            }
+
+            const connectionId = connectionItem.connectionId;
+            const isActive = connectionProvider.isConnectionActive(connectionId);
+
+            // Connect if not active
+            if (!isActive) {
+                outputChannel.appendLine(`[New Query] Connecting to ${connectionId}...`);
+                await connectionProvider.connectToSavedById(connectionId);
+                unifiedTreeProvider.refresh();
+            }
+
+            // Get extension storage path
+            const storagePath = context.globalStorageUri.fsPath;
+            const fs = await import('fs');
+            const path = await import('path');
+
+            // Ensure storage directory exists
+            if (!fs.existsSync(storagePath)) {
+                fs.mkdirSync(storagePath, { recursive: true });
+            }
+
+            // Find next available query filename
+            let queryNumber = 0;
+            let queryFileName = 'query.sql';
+            let queryFilePath = path.join(storagePath, queryFileName);
+
+            while (fs.existsSync(queryFilePath)) {
+                queryNumber++;
+                queryFileName = `query (${queryNumber}).sql`;
+                queryFilePath = path.join(storagePath, queryFileName);
+            }
+
+            // Create empty query content
+            const initialContent = '';
+            
+            // Write the content to the file
+            const uri = vscode.Uri.file(queryFilePath);
+            await vscode.workspace.fs.writeFile(uri, Buffer.from(initialContent, 'utf8'));
+
+            outputChannel.appendLine(`[New Query] Created file: ${queryFilePath}`);
+
+            // Open the file with the custom SQL editor
+            await vscode.commands.executeCommand('vscode.openWith', uri, 'mssqlManager.sqlEditor');
+
+            outputChannel.appendLine(`[New Query] Opened query file in SQL Editor`);
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to create new query: ${errorMessage}`);
+            outputChannel.appendLine(`New query failed: ${errorMessage}`);
+        }
+    });
+
     return [
         connectCommand,
         disconnectCommand,
@@ -200,6 +259,7 @@ export function registerConnectionCommands(
         disconnectConnectionCommand,
         createServerGroupCommand,
         editServerGroupCommand,
-        debugConnectionsCommand
+        debugConnectionsCommand,
+        newQueryCommand
     ];
 }
