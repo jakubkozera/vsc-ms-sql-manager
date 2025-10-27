@@ -28,7 +28,7 @@ export class ConnectionProvider {
     private activeConnections: Map<string, sql.ConnectionPool> = new Map();
     private activeConfigs: Map<string, ConnectionConfig> = new Map();
     private currentActiveId: string | null = null;
-    private onConnectionChanged: (() => void) | null = null;
+    private onConnectionChangedCallbacks: Array<() => void> = [];
     private pendingConnections: Set<string> = new Set();
 
     constructor(
@@ -37,9 +37,20 @@ export class ConnectionProvider {
         private statusBarItem: vscode.StatusBarItem
     ) {}
 
-    setConnectionChangeCallback(callback: () => void): void {
-        this.outputChannel.appendLine('[ConnectionProvider] Setting connection change callback');
-        this.onConnectionChanged = callback;
+    addConnectionChangeCallback(callback: () => void): void {
+        this.outputChannel.appendLine('[ConnectionProvider] Adding connection change callback');
+        this.onConnectionChangedCallbacks.push(callback);
+    }
+
+    private notifyConnectionChanged(): void {
+        this.outputChannel.appendLine(`[ConnectionProvider] Notifying ${this.onConnectionChangedCallbacks.length} connection change callbacks`);
+        for (const callback of this.onConnectionChangedCallbacks) {
+            try {
+                callback();
+            } catch (error) {
+                this.outputChannel.appendLine(`[ConnectionProvider] Error in connection change callback: ${error}`);
+            }
+        }
     }
 
     // Server Groups management
@@ -114,10 +125,7 @@ export class ConnectionProvider {
             this.outputChannel.appendLine(`[ConnectionProvider] Handling webview connection: ${JSON.stringify({...config, password: '***'})}`);
             await this.establishConnection(config);
             await this.saveConnection(config);
-            if (this.onConnectionChanged) {
-                this.outputChannel.appendLine('[ConnectionProvider] Triggering connection change callback from connect');
-                this.onConnectionChanged();
-            }
+            this.notifyConnectionChanged();
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
@@ -178,10 +186,7 @@ export class ConnectionProvider {
         try {
             // Mark as pending and trigger UI update
             this.pendingConnections.add(config.id);
-            if (this.onConnectionChanged) {
-                this.outputChannel.appendLine('[ConnectionProvider] Triggering connection change callback - pending state');
-                this.onConnectionChanged();
-            }
+            this.notifyConnectionChanged();
             
             // Get complete config with sensitive data from secure storage
             const completeConfig = await this.getCompleteConnectionConfig(config);
@@ -195,9 +200,7 @@ export class ConnectionProvider {
                 });
                 if (!password) {
                     this.pendingConnections.delete(config.id);
-                    if (this.onConnectionChanged) {
-                        this.onConnectionChanged();
-                    }
+                    this.notifyConnectionChanged();
                     return;
                 }
                 completeConfig.password = password;
@@ -210,16 +213,11 @@ export class ConnectionProvider {
             // Remove from pending
             this.pendingConnections.delete(config.id);
             
-            if (this.onConnectionChanged) {
-                this.outputChannel.appendLine('[ConnectionProvider] Triggering connection change callback from manageConnections');
-                this.onConnectionChanged();
-            }
+            this.notifyConnectionChanged();
         } catch (error) {
             // Remove from pending on error
             this.pendingConnections.delete(config.id);
-            if (this.onConnectionChanged) {
-                this.onConnectionChanged();
-            }
+            this.notifyConnectionChanged();
             
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
@@ -343,10 +341,7 @@ export class ConnectionProvider {
         }
         
         // Notify listeners about connection change
-        if (this.onConnectionChanged) {
-            this.outputChannel.appendLine('[ConnectionProvider] Triggering connection change callback from disconnect');
-            this.onConnectionChanged();
-        }
+        this.notifyConnectionChanged();
     }
 
     getConnection(connectionId?: string): sql.ConnectionPool | null {
@@ -391,6 +386,10 @@ export class ConnectionProvider {
             if (config) {
                 this.updateStatusBar(config);
             }
+            
+            // Notify listeners about connection change
+            this.notifyConnectionChanged();
+            
             return true;
         }
         return false;

@@ -50,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     // Set up connection change callback
-    connectionProvider.setConnectionChangeCallback(() => {
+    connectionProvider.addConnectionChangeCallback(() => {
         outputChannel.appendLine('[Extension] Connection changed, refreshing tree view');
         unifiedTreeProvider.refresh();
     });

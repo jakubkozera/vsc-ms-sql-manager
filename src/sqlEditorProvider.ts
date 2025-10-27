@@ -100,7 +100,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         });
 
         // Listen for connection changes
-        this.connectionProvider.setConnectionChangeCallback(() => {
+        this.connectionProvider.addConnectionChangeCallback(() => {
             // Only update if webview is not disposed
             if (!this.disposedWebviews.has(webviewPanel.webview)) {
                 this.updateConnectionsList(webviewPanel.webview);
