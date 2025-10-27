@@ -15,10 +15,14 @@ let actualPlanEnabled = false;
 
 // Global selection state for all tables in results
 let globalSelection = {
-    type: null, // 'row' or 'column'
+    type: null, // 'row', 'column', or 'cell'
     tableContainer: null, // reference to the specific table container
     rowIndex: null,
-    columnIndex: null
+    columnIndex: null,
+    columnDef: null,
+    data: null,
+    columnDefs: null,
+    cellValue: null
 };
 
 // Initialize Monaco Editor
@@ -821,6 +825,9 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
 
     // Update execution stats in compact format
     executionStatsEl.textContent = `${resultSets.length} result set(s) | ${totalRows} rows | ${executionTime}ms`;
+    
+    // Update aggregation stats (initially empty)
+    updateAggregationStats();
 
     // Show/hide plan tabs based on whether we have a plan
     if (planXml) {
@@ -1272,11 +1279,16 @@ function initAgGridTable(rowData, container) {
             type: 'column',
             tableContainer: containerEl,
             rowIndex: null,
-            columnIndex: colIndex
+            columnIndex: colIndex,
+            columnDef: colDefs[colIndex],
+            data: filteredData
         };
         
         // Apply highlighting
         applyColumnHighlightGlobal(containerEl, colIndex);
+        
+        // Update aggregation stats
+        updateAggregationStats();
     }
 
     // Column resizing functionality
@@ -1424,13 +1436,18 @@ function initAgGridTable(rowData, container) {
                     type: 'row',
                     tableContainer: containerEl,
                     rowIndex: rowIndex,
-                    columnIndex: null
+                    columnIndex: null,
+                    data: data,
+                    columnDefs: colDefs
                 };
                 
                 // Apply highlighting
                 tr.classList.add('selected');
                 tr.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
                 rowNumTd.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                
+                // Update aggregation stats
+                updateAggregationStats();
             });
             
             // Add context menu for row number cell
@@ -1495,6 +1512,31 @@ function initAgGridTable(rowData, container) {
                         columnDefs: colDefs,
                         data: data
                     });
+                });
+                
+                // Add click handler for cell selection
+                td.addEventListener('click', (e) => {
+                    // Clear all selections across all tables
+                    clearAllSelections();
+                    
+                    // Set global selection state
+                    globalSelection = {
+                        type: 'cell',
+                        tableContainer: containerEl,
+                        rowIndex: rowIndex,
+                        columnIndex: colIndex,
+                        columnDef: colDefs[colIndex],
+                        data: data,
+                        columnDefs: colDefs,
+                        cellValue: row[col.field]
+                    };
+                    
+                    // Apply highlighting
+                    td.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                    td.classList.add('selected-cell');
+                    
+                    // Update aggregation stats
+                    updateAggregationStats();
                 });
 
                 tr.appendChild(td);
@@ -2201,6 +2243,7 @@ function clearAllSelections() {
             if (!cell.classList.contains('ag-grid-row-number-cell') && 
                 !cell.classList.contains('ag-grid-row-number-header')) {
                 cell.style.backgroundColor = '';
+                cell.classList.remove('selected-cell');
             }
         });
         
@@ -2217,6 +2260,9 @@ function clearAllSelections() {
             cell.style.backgroundColor = 'var(--vscode-editor-background, #1e1e1e)';
         });
     });
+    
+    // Clear aggregation stats
+    updateAggregationStats();
 }
 
 function reapplySelection() {
@@ -2228,6 +2274,8 @@ function reapplySelection() {
         applyColumnHighlightGlobal(globalSelection.tableContainer, globalSelection.columnIndex);
     } else if (globalSelection.type === 'row' && globalSelection.rowIndex !== null) {
         applyRowHighlightGlobal(globalSelection.tableContainer, globalSelection.rowIndex);
+    } else if (globalSelection.type === 'cell' && globalSelection.rowIndex !== null && globalSelection.columnIndex !== null) {
+        applyCellHighlightGlobal(globalSelection.tableContainer, globalSelection.rowIndex, globalSelection.columnIndex);
     }
 }
 
@@ -2260,6 +2308,170 @@ function applyRowHighlightGlobal(containerEl, rowIndex) {
             rowNumCell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
         }
     }
+}
+
+function applyCellHighlightGlobal(containerEl, rowIndex, colIndex) {
+    const table = containerEl.querySelector('.ag-grid-table');
+    if (!table) return;
+    
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    
+    // Find the row by data attribute
+    const targetRow = tbody.querySelector(`tr[data-row-index="${rowIndex}"]`);
+    if (targetRow) {
+        // Find the cell (colIndex + 2 because row number is column 1, and nth-child is 1-indexed)
+        const targetCell = targetRow.querySelector(`td:nth-child(${colIndex + 2})`);
+        if (targetCell) {
+            targetCell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+            targetCell.classList.add('selected-cell');
+        }
+    }
+}
+
+function updateAggregationStats() {
+    const executionStatsEl = document.getElementById('executionStats');
+    if (!executionStatsEl) return;
+    
+    // Get the base stats text (everything before the separator)
+    const baseText = executionStatsEl.textContent.split('|').slice(0, 3).join('|').trim();
+    
+    if (!globalSelection.type || !globalSelection.data) {
+        // No selection - show only base stats
+        executionStatsEl.textContent = baseText;
+        return;
+    }
+    
+    let statsText = '';
+    
+    if (globalSelection.type === 'column' && globalSelection.columnDef) {
+        // Calculate column statistics
+        const colField = globalSelection.columnDef.field;
+        const colType = globalSelection.columnDef.type;
+        const values = globalSelection.data.map(row => row[colField]);
+        
+        // Count nulls
+        const nullCount = values.filter(v => v === null || v === undefined).length;
+        
+        // Get distinct values
+        const distinctValues = new Set(values.filter(v => v !== null && v !== undefined));
+        const distinctCount = distinctValues.size;
+        
+        statsText += ` | ${nullCount} Nulls | ${distinctCount} Distinct`;
+        
+        // For numeric columns: SUM, AVG, MIN, MAX
+        if (colType === 'number') {
+            const numericValues = values.filter(v => v !== null && v !== undefined && typeof v === 'number');
+            if (numericValues.length > 0) {
+                const sum = numericValues.reduce((a, b) => a + b, 0);
+                const avg = sum / numericValues.length;
+                const min = Math.min(...numericValues);
+                const max = Math.max(...numericValues);
+                
+                statsText += ` | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min.toLocaleString()} | MAX: ${max.toLocaleString()}`;
+            }
+        }
+        
+        // For boolean columns: TRUE/FALSE counts
+        if (colType === 'boolean') {
+            const trueCount = values.filter(v => v === true).length;
+            const falseCount = values.filter(v => v === false).length;
+            statsText += ` | ${trueCount} TRUE | ${falseCount} FALSE`;
+        }
+        
+        // For date columns: MIN/MAX dates
+        if (colType === 'date') {
+            const dateValues = values.filter(v => v !== null && v !== undefined);
+            if (dateValues.length > 0) {
+                // Parse dates and find min/max
+                const parsedDates = dateValues.map(v => {
+                    const d = v instanceof Date ? v : new Date(v);
+                    return isNaN(d.getTime()) ? null : d;
+                }).filter(d => d !== null);
+                
+                if (parsedDates.length > 0) {
+                    const minDate = new Date(Math.min(...parsedDates.map(d => d.getTime())));
+                    const maxDate = new Date(Math.max(...parsedDates.map(d => d.getTime())));
+                    
+                    // Format dates
+                    const formatDate = (d) => {
+                        const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0;
+                        if (hasTime) {
+                            return d.toLocaleString();
+                        } else {
+                            return d.toLocaleDateString();
+                        }
+                    };
+                    
+                    statsText += ` | MIN: ${formatDate(minDate)} | MAX: ${formatDate(maxDate)}`;
+                }
+            }
+        }
+        
+        // For string columns: MIN/MAX length
+        if (colType === 'string') {
+            const stringValues = values.filter(v => v !== null && v !== undefined).map(v => String(v));
+            if (stringValues.length > 0) {
+                const lengths = stringValues.map(s => s.length);
+                const minLen = Math.min(...lengths);
+                const maxLen = Math.max(...lengths);
+                const avgLen = (lengths.reduce((a, b) => a + b, 0) / lengths.length).toFixed(1);
+                
+                statsText += ` | Len: MIN ${minLen}, AVG ${avgLen}, MAX ${maxLen}`;
+            }
+        }
+        
+    } else if (globalSelection.type === 'cell' && globalSelection.cellValue !== undefined) {
+        // Show cell value
+        const value = globalSelection.cellValue;
+        const colType = globalSelection.columnDef ? globalSelection.columnDef.type : 'string';
+        
+        if (value === null || value === undefined) {
+            statsText += ` | Value: NULL`;
+        } else {
+            let displayValue = String(value);
+            if (displayValue.length > 50) {
+                displayValue = displayValue.substring(0, 47) + '...';
+            }
+            
+            statsText += ` | Value: ${displayValue}`;
+            
+            // Show additional info based on type
+            if (colType === 'number') {
+                statsText += ` (Numeric)`;
+            } else if (colType === 'boolean') {
+                statsText += ` (Boolean)`;
+            } else if (colType === 'date') {
+                statsText += ` (Date)`;
+            } else if (colType === 'string') {
+                statsText += ` | Length: ${String(value).length}`;
+            }
+        }
+        
+    } else if (globalSelection.type === 'row' && globalSelection.columnDefs) {
+        // Calculate row statistics
+        const row = globalSelection.data[globalSelection.rowIndex];
+        if (row) {
+            const fields = globalSelection.columnDefs.map(col => col.field);
+            const values = fields.map(field => row[field]);
+            
+            // Count nulls
+            const nullCount = values.filter(v => v === null || v === undefined).length;
+            const nonNullCount = values.length - nullCount;
+            
+            statsText += ` | ${nonNullCount} Values | ${nullCount} Nulls`;
+            
+            // Count numeric values and calculate sum if any
+            const numericValues = values.filter(v => v !== null && v !== undefined && typeof v === 'number');
+            if (numericValues.length > 0) {
+                const sum = numericValues.reduce((a, b) => a + b, 0);
+                const avg = sum / numericValues.length;
+                statsText += ` | ${numericValues.length} Numeric | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)}`;
+            }
+        }
+    }
+    
+    executionStatsEl.textContent = baseText + statsText;
 }
 
 // Hide context menu when clicking elsewhere

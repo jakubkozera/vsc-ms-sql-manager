@@ -293,8 +293,8 @@ th {
 }
 
 .result-set-container {
-    margin-bottom: 20px;
-    height: calc(100% - 20px);
+    margin-bottom: 8px;
+    height: calc(100% - 8px);
     display: flex;
     flex-direction: column;
 }
