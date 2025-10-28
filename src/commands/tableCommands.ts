@@ -22,10 +22,45 @@ export function registerTableCommands(
                 return;
             }
 
+            if (!connection.connected) {
+                vscode.window.showErrorMessage('Connection is not active. Please connect to the database first.');
+                return;
+            }
+
             const tableName = tableNode.label as string;
-            const query = `SELECT TOP 1000 * FROM ${tableName};`;
+            const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
             
-            await openSqlInCustomEditor(query, `select_top_1000_${tableName.replace('.', '_')}.sql`, context);
+            // Get table columns to build explicit SELECT query
+            let query: string;
+            try {
+                const columnsQuery = `
+                    SELECT c.name AS COLUMN_NAME
+                    FROM sys.columns c
+                    WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
+                    ORDER BY c.column_id
+                `;
+                
+                const columnsResult = await connection.request().query(columnsQuery);
+                
+                if (columnsResult.recordset && columnsResult.recordset.length > 0) {
+                    const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
+                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}]`;
+                } else {
+                    // Fallback to * if we can't get columns
+                    query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}]`;
+                }
+            } catch (error) {
+                // Fallback to * if column query fails
+                outputChannel.appendLine(`Failed to get columns for ${tableName}, using *: ${error}`);
+                query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}]`;
+            }
+            
+            // Set the preferred database context and open in SQL editor
+            if (tableNode.database) {
+                connectionProvider.setNextEditorPreferredDatabase(tableNode.connectionId, tableNode.database);
+            }
+            
+            await openSqlInCustomEditor(query, `select_top_1000_${table}.sql`, context);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate SELECT query: ${errorMessage}`);

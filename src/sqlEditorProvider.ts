@@ -62,6 +62,17 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
                     // Send initial connections list
                     this.updateConnectionsList(webviewPanel.webview);
+                    
+                    // Auto-execute query if it's a SELECT statement and we have a database context
+                    const content = document.getText().trim();
+                    if (preferredDb && content && content.toLowerCase().startsWith('select')) {
+                        // Small delay to ensure webview is fully initialized
+                        setTimeout(() => {
+                            webviewPanel.webview.postMessage({
+                                type: 'autoExecuteQuery'
+                            });
+                        }, 50);
+                    }
                     break;
 
                 case 'documentChanged':

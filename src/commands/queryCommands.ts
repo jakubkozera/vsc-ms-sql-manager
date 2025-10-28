@@ -69,7 +69,44 @@ export function registerQueryCommands(
                 schemaName = item.schema || 'dbo';
             }
             
-            const query = `SELECT TOP 100 *\nFROM [${schemaName}].[${tableName}]`;
+            // Get table columns to build explicit SELECT query
+            let query: string;
+            
+            // Check if we have an active connection and try to get columns
+            const connection = connectionProvider.getConnection(item.connectionId) || connectionProvider.getConnection();
+            if (connection && connection.connected) {
+                try {
+                    const columnsQuery = `
+                        SELECT c.name AS COLUMN_NAME
+                        FROM sys.columns c
+                        WHERE c.object_id = OBJECT_ID('[${schemaName}].[${tableName}]')
+                        ORDER BY c.column_id
+                    `;
+                    
+                    const columnsResult = await connection.request().query(columnsQuery);
+                    
+                    if (columnsResult.recordset && columnsResult.recordset.length > 0) {
+                        const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
+                        query = `SELECT TOP (1000) ${columns}\n  FROM [${schemaName}].[${tableName}]`;
+                    } else {
+                        // Fallback to * if we can't get columns
+                        query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}]`;
+                    }
+                } catch (error) {
+                    // Fallback to * if column query fails
+                    outputChannel.appendLine(`Failed to get columns for ${fullLabel}, using *: ${error}`);
+                    query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}]`;
+                }
+            } else {
+                // No connection available or not connected, use basic query
+                outputChannel.appendLine(`No active connection available for ${fullLabel}, using basic query`);
+                query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}]`;
+            }
+            
+            // Set the preferred database context if available
+            if (item.database && item.connectionId) {
+                connectionProvider.setNextEditorPreferredDatabase(item.connectionId, item.database);
+            }
             
             await openSqlInCustomEditor(query, `select_${tableName}.sql`, context);
         }

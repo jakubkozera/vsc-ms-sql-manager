@@ -1016,6 +1016,19 @@ window.addEventListener('message', event => {
         case 'error':
             showError(message.error, message.messages);
             break;
+
+        case 'autoExecuteQuery':
+            // Auto-execute the query if conditions are met
+            if (editor && currentConnectionId) {
+                const content = editor.getValue().trim();
+                if (content && content.toLowerCase().startsWith('select')) {
+                    // Small delay to ensure the webview is fully initialized
+                    setTimeout(() => {
+                        executeQuery();
+                    }, 50);
+                }
+            }
+            break;
     }
 });
 
