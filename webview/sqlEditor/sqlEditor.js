@@ -13,46 +13,6 @@ let dbSchema = { tables: [], views: [], foreignKeys: [] };
 let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
-let connectionTooltip = null;
-
-// Initialize tooltip
-function initializeTooltip() {
-    if (!connectionTooltip) {
-        connectionTooltip = document.createElement('div');
-        connectionTooltip.className = 'connection-tooltip';
-        document.body.appendChild(connectionTooltip);
-    }
-}
-
-// Show tooltip for connection
-function showConnectionTooltip(connection, targetElement) {
-    if (!connectionTooltip) initializeTooltip();
-    
-    const details = [];
-    details.push(`<div class="tooltip-row"><span class="tooltip-label">Server:</span><span class="tooltip-value">${connection.server}</span></div>`);
-    if (connection.connectionType === 'database') {
-        details.push(`<div class="tooltip-row"><span class="tooltip-label">Database:</span><span class="tooltip-value">${connection.database}</span></div>`);
-    }
-    details.push(`<div class="tooltip-row"><span class="tooltip-label">Type:</span><span class="tooltip-value">${connection.connectionType === 'server' ? 'Server Connection' : 'Database Connection'}</span></div>`);
-    details.push(`<div class="tooltip-row"><span class="tooltip-label">Auth:</span><span class="tooltip-value">${connection.authType}</span></div>`);
-    
-    connectionTooltip.innerHTML = details.join('');
-    
-    // Position tooltip
-    const rect = targetElement.getBoundingClientRect();
-    connectionTooltip.style.left = rect.left + 'px';
-    connectionTooltip.style.bottom = (window.innerHeight - rect.top + 5) + 'px';
-    connectionTooltip.style.top = 'auto';
-    
-    connectionTooltip.classList.add('visible');
-}
-
-// Hide tooltip
-function hideConnectionTooltip() {
-    if (connectionTooltip) {
-        connectionTooltip.classList.remove('visible');
-    }
-}
 
 // Helper function to check if string is valid JSON
 function isValidJSON(str) {
@@ -215,9 +175,143 @@ document.getElementById('actualPlanCheckbox').addEventListener('change', (e) => 
     actualPlanEnabled = e.target.checked;
 });
 
-// Connection selector
-document.getElementById('connectionSelector').addEventListener('change', (e) => {
-    const connectionId = e.target.value;
+// Custom Dropdown Class for Connection and Database Selectors
+class CustomDropdown {
+    constructor(containerId, onSelect) {
+        this.container = document.getElementById(containerId);
+        this.trigger = this.container.querySelector('.dropdown-trigger');
+        this.menu = this.container.querySelector('.dropdown-menu');
+        this.onSelect = onSelect;
+        this.selectedValue = null;
+
+        this.init();
+    }
+
+    init() {
+        // Toggle dropdown on trigger click
+        this.trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggle();
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!this.container.contains(e.target)) {
+                this.close();
+            }
+        });
+
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.close();
+            }
+        });
+    }
+
+    toggle() {
+        const isOpen = this.menu.classList.contains('open');
+
+        // Close all other dropdowns
+        document.querySelectorAll('.dropdown-menu.open').forEach(menu => {
+            menu.classList.remove('open');
+        });
+        document.querySelectorAll('.dropdown-trigger.open').forEach(trigger => {
+            trigger.classList.remove('open');
+        });
+
+        if (!isOpen) {
+            this.open();
+        } else {
+            this.close();
+        }
+    }
+
+    open() {
+        this.menu.classList.add('open');
+        this.trigger.classList.add('open');
+    }
+
+    close() {
+        this.menu.classList.remove('open');
+        this.trigger.classList.remove('open');
+    }
+
+    setItems(items) {
+        // items should be array of {value, text, selected}
+        this.menu.innerHTML = '';
+        
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'dropdown-item';
+            div.textContent = item.text;
+            div.dataset.value = item.value;
+            
+            if (item.selected) {
+                div.classList.add('selected');
+                this.trigger.textContent = item.text;
+                this.selectedValue = item.value;
+            }
+            
+            div.addEventListener('click', () => {
+                this.selectItem(item.value, item.text);
+            });
+            
+            this.menu.appendChild(div);
+        });
+    }
+
+    selectItem(value, text) {
+        // Remove selected class from all items
+        this.menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
+
+        // Add selected class to clicked item
+        const selectedItem = this.menu.querySelector(`[data-value="${value}"]`);
+        if (selectedItem) {
+            selectedItem.classList.add('selected');
+        }
+
+        // Update trigger text
+        this.trigger.textContent = text;
+        this.selectedValue = value;
+
+        // Close dropdown
+        this.close();
+
+        // Call the callback
+        if (this.onSelect) {
+            this.onSelect(value);
+        }
+    }
+
+    setValue(value, text) {
+        this.trigger.textContent = text;
+        this.selectedValue = value;
+        
+        // Update selected state in menu
+        this.menu.querySelectorAll('.dropdown-item').forEach(i => {
+            i.classList.remove('selected');
+            if (i.dataset.value === value) {
+                i.classList.add('selected');
+            }
+        });
+    }
+
+    setDisabled(disabled) {
+        this.trigger.disabled = disabled;
+    }
+
+    show() {
+        this.container.style.display = 'inline-block';
+    }
+
+    hide() {
+        this.container.style.display = 'none';
+    }
+}
+
+// Initialize custom dropdowns
+const connectionDropdown = new CustomDropdown('connection-dropdown', (connectionId) => {
     currentConnectionId = connectionId;
     
     if (connectionId) {
@@ -227,7 +321,7 @@ document.getElementById('connectionSelector').addEventListener('change', (e) => 
         if (connection && connection.connectionType === 'server') {
             // Show database selector and request database list
             document.getElementById('databaseLabel').style.display = 'inline';
-            document.getElementById('databaseSelector').style.display = 'inline';
+            databaseDropdown.show();
             
             vscode.postMessage({
                 type: 'switchConnection',
@@ -236,7 +330,7 @@ document.getElementById('connectionSelector').addEventListener('change', (e) => 
         } else {
             // Hide database selector for direct database connections
             document.getElementById('databaseLabel').style.display = 'none';
-            document.getElementById('databaseSelector').style.display = 'none';
+            databaseDropdown.hide();
             currentDatabaseName = null;
             
             vscode.postMessage({
@@ -246,28 +340,11 @@ document.getElementById('connectionSelector').addEventListener('change', (e) => 
         }
     } else {
         document.getElementById('databaseLabel').style.display = 'none';
-        document.getElementById('databaseSelector').style.display = 'none';
+        databaseDropdown.hide();
     }
 });
 
-// Add hover events for tooltip
-const connectionSelector = document.getElementById('connectionSelector');
-connectionSelector.addEventListener('mouseenter', () => {
-    if (currentConnectionId) {
-        const connection = activeConnections.find(c => c.id === currentConnectionId);
-        if (connection) {
-            showConnectionTooltip(connection, connectionSelector);
-        }
-    }
-});
-
-connectionSelector.addEventListener('mouseleave', () => {
-    hideConnectionTooltip();
-});
-
-// Database selector
-document.getElementById('databaseSelector').addEventListener('change', (e) => {
-    const databaseName = e.target.value;
+const databaseDropdown = new CustomDropdown('database-dropdown', (databaseName) => {
     currentDatabaseName = databaseName;
     
     if (currentConnectionId && databaseName) {
@@ -924,40 +1001,35 @@ function updateConnectionsList(connections, selectedConnectionId, selectedDataba
     currentConnectionId = selectedConnectionId;
     currentDatabaseName = selectedDatabase;
 
-    const connectionSelector = document.getElementById('connectionSelector');
-    const databaseSelector = document.getElementById('databaseSelector');
     const databaseLabel = document.getElementById('databaseLabel');
     
-    connectionSelector.innerHTML = '';
-
     if (!connections || connections.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'Not Connected';
-        connectionSelector.appendChild(option);
-        connectionSelector.disabled = true;
-        databaseSelector.style.display = 'none';
+        connectionDropdown.setItems([{
+            value: '',
+            text: 'Not Connected',
+            selected: true
+        }]);
+        connectionDropdown.setDisabled(true);
+        databaseDropdown.hide();
         databaseLabel.style.display = 'none';
         return;
     }
 
-    connectionSelector.disabled = false;
-    connections.forEach(conn => {
-        const option = document.createElement('option');
-        option.value = conn.id;
-        option.textContent = conn.name;
-        
-        if (selectedConnectionId && conn.id === selectedConnectionId) {
-            option.selected = true;
-        }
-        connectionSelector.appendChild(option);
-    });
+    connectionDropdown.setDisabled(false);
+    
+    const items = connections.map(conn => ({
+        value: conn.id,
+        text: conn.name,
+        selected: selectedConnectionId && conn.id === selectedConnectionId
+    }));
+    
+    connectionDropdown.setItems(items);
     
     // Handle database selector visibility
     const selectedConnection = connections.find(c => c.id === selectedConnectionId);
     if (selectedConnection && selectedConnection.connectionType === 'server') {
         databaseLabel.style.display = 'inline';
-        databaseSelector.style.display = 'inline';
+        databaseDropdown.show();
         // Request databases list from extension - pass current database selection
         vscode.postMessage({
             type: 'getDatabases',
@@ -966,7 +1038,7 @@ function updateConnectionsList(connections, selectedConnectionId, selectedDataba
         });
     } else {
         databaseLabel.style.display = 'none';
-        databaseSelector.style.display = 'none';
+        databaseDropdown.hide();
         
         // Request schema for direct database connection
         if (selectedConnectionId) {
@@ -979,29 +1051,25 @@ function updateConnectionsList(connections, selectedConnectionId, selectedDataba
 }
 
 function updateDatabasesList(databases, selectedDatabase) {
-    const databaseSelector = document.getElementById('databaseSelector');
-    databaseSelector.innerHTML = '';
-    
     if (!databases || databases.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'No databases available';
-        databaseSelector.appendChild(option);
-        databaseSelector.disabled = true;
+        databaseDropdown.setItems([{
+            value: '',
+            text: 'No databases available',
+            selected: true
+        }]);
+        databaseDropdown.setDisabled(true);
         return;
     }
     
-    databaseSelector.disabled = false;
-    databases.forEach(dbName => {
-        const option = document.createElement('option');
-        option.value = dbName;
-        option.textContent = dbName;
-        
-        if (selectedDatabase && dbName === selectedDatabase) {
-            option.selected = true;
-        }
-        databaseSelector.appendChild(option);
-    });
+    databaseDropdown.setDisabled(false);
+    
+    const items = databases.map(dbName => ({
+        value: dbName,
+        text: dbName,
+        selected: selectedDatabase && dbName === selectedDatabase
+    }));
+    
+    databaseDropdown.setItems(items);
     
     // If a database is selected, request its schema
     if (selectedDatabase && currentConnectionId) {

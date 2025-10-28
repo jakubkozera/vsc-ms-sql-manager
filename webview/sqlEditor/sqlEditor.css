@@ -102,65 +102,123 @@ body {
     margin: 0 4px;
 }
 
-.connection-selector,
-.database-selector {
-    background-color: var(--vscode-dropdown-background);
-    color: var(--vscode-dropdown-foreground);
-    border: 1px solid var(--vscode-dropdown-border);
-    padding: 4px 8px;
-    border-radius: 2px;
-    font-family: var(--vscode-font-family);
-    font-size: 13px;
-    cursor: pointer;
-    min-width: 200px;
-    position: relative;
-}
-
-.connection-selector-wrapper {
+/* Custom Dropdown Styles */
+.custom-dropdown {
     position: relative;
     display: inline-block;
 }
 
-.connection-tooltip {
-    position: absolute;
-    background-color: var(--vscode-editorHoverWidget-background);
-    color: var(--vscode-editorHoverWidget-foreground);
-    border: 1px solid var(--vscode-editorHoverWidget-border);
-    padding: 8px 12px;
-    border-radius: 3px;
-    font-size: 12px;
-    line-height: 1.5;
-    z-index: 1000;
+.dropdown-trigger {
+    background: transparent;
+    border: none;
+    color: var(--vscode-input-foreground);
+    cursor: pointer;
+    padding: 4px 24px 4px 8px;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 600;
+    position: relative;
+    border-radius: 2px;
+    transition: background-color 0.1s;
     white-space: nowrap;
+    min-width: 80px;
+    max-width: 300px;
+    text-align: left;
+    display: inline-block;
+}
+
+.dropdown-trigger:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.dropdown-trigger:focus {
+    outline: none;
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.dropdown-trigger::after {
+    content: '';
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%23cccccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6" /></svg>');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
     pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.2s;
-    bottom: 100%;
+    transition: transform 0.2s ease;
+    opacity: 0.8;
+}
+
+.dropdown-trigger.open::after {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 2px);
     left: 0;
-    margin-bottom: 5px;
+    background-color: var(--vscode-dropdown-background);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 3px;
+    min-width: 100%;
+    max-width: 400px;
+    width: max-content;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transform: translateY(-5px);
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.connection-tooltip.visible {
+.dropdown-menu.open {
     opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
-.connection-tooltip .tooltip-row {
-    display: flex;
-    gap: 8px;
+.dropdown-item {
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--vscode-foreground);
+    transition: background-color 0.1s;
+    white-space: nowrap;
 }
 
-.connection-tooltip .tooltip-label {
-    color: var(--vscode-descriptionForeground);
-    font-weight: 500;
+.dropdown-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
 }
 
-.connection-tooltip .tooltip-value {
-    color: var(--vscode-editorHoverWidget-foreground);
+.dropdown-item.selected {
+    background-color: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
 }
 
-.connection-selector:disabled,
-.database-selector:disabled {
+/* Custom scrollbar for dropdown */
+.dropdown-menu::-webkit-scrollbar {
+    width: 10px;
+}
+
+.dropdown-menu::-webkit-scrollbar-track {
+    background: var(--vscode-dropdown-background);
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 5px;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+
+.dropdown-trigger:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
