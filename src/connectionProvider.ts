@@ -14,6 +14,7 @@ export interface ConnectionConfig {
     server: string;
     database: string;
     authType: 'sql' | 'windows' | 'azure';
+    connectionType: 'database' | 'server'; // New field: database = specific DB, server = master DB for server-level operations
     username?: string;
     password?: string;
     port?: number;
@@ -26,6 +27,8 @@ export interface ConnectionConfig {
 
 export class ConnectionProvider {
     private activeConnections: Map<string, sql.ConnectionPool> = new Map();
+    // Additional per-parent-connection per-database pools (keyed by `${connectionId}::${database}`)
+    private dbPools: Map<string, sql.ConnectionPool> = new Map();
     private activeConfigs: Map<string, ConnectionConfig> = new Map();
     private currentActiveId: string | null = null;
     private onConnectionChangedCallbacks: Array<() => void> = [];
@@ -265,17 +268,15 @@ export class ConnectionProvider {
                     connectionString: config.connectionString
                 };
             } else {
-                // Build config from individual properties
-                sqlConfig = {
-                    server: config.server,
-                    database: config.database,
-                    options: {
-                        encrypt: config.encrypt || true,
-                        trustServerCertificate: config.trustServerCertificate || true
-                    }
-                };
-
-                if (config.authType === 'sql') {
+            // Build config from individual properties
+            sqlConfig = {
+                server: config.server,
+                database: config.connectionType === 'server' ? 'master' : config.database,
+                options: {
+                    encrypt: config.encrypt || true,
+                    trustServerCertificate: config.trustServerCertificate || true
+                }
+            };                if (config.authType === 'sql') {
                     sqlConfig.user = config.username;
                     sqlConfig.password = config.password;
                 } else if (config.authType === 'windows') {
@@ -306,6 +307,58 @@ export class ConnectionProvider {
         });
     }
 
+    // Create or return an existing connection pool scoped to a specific database for a given connectionId
+    async createDbPool(connectionId: string, database: string): Promise<sql.ConnectionPool> {
+        const key = `${connectionId}::${database}`;
+        const existing = this.dbPools.get(key);
+        if (existing && existing.connected) {
+            return existing;
+        }
+
+        // Get base connection config
+        const baseConfig = this.activeConfigs.get(connectionId);
+        if (!baseConfig) {
+            throw new Error(`No base connection config found for ${connectionId}`);
+        }
+
+        // Build sqlConfig cloned from base but with requested database
+        let sqlConfig: any;
+        if (baseConfig.useConnectionString && baseConfig.connectionString) {
+            // If using connection string, replace the Database/Initial Catalog value if present
+            sqlConfig = { connectionString: baseConfig.connectionString.replace(/(Initial Catalog|Database)=[^;]+/i, `$1=${database}`) };
+        } else {
+            sqlConfig = {
+                server: baseConfig.server,
+                database: database,
+                options: {
+                    encrypt: baseConfig.encrypt || true,
+                    trustServerCertificate: baseConfig.trustServerCertificate || true
+                }
+            };
+
+            if (baseConfig.authType === 'sql') {
+                sqlConfig.user = baseConfig.username;
+                sqlConfig.password = baseConfig.password;
+            } else if (baseConfig.authType === 'windows') {
+                sqlConfig.options!.trustedConnection = true;
+            }
+
+            if (baseConfig.port) {
+                sqlConfig.port = baseConfig.port;
+            }
+        }
+
+        const pool = new sql.ConnectionPool(sqlConfig);
+        await pool.connect();
+
+        // Test with a simple query
+        await pool.request().query('SELECT 1 as test');
+
+        this.dbPools.set(key, pool);
+        this.outputChannel.appendLine(`[ConnectionProvider] Created DB pool for ${connectionId} -> ${database}`);
+        return pool;
+    }
+
     async disconnect(connectionId?: string): Promise<void> {
         if (connectionId) {
             // Disconnect specific connection
@@ -315,6 +368,26 @@ export class ConnectionProvider {
                     await connection.close();
                     this.activeConnections.delete(connectionId);
                     this.activeConfigs.delete(connectionId);
+
+                    // Close any DB pools created for this connection
+                    const keysToRemove: string[] = [];
+                    for (const key of this.dbPools.keys()) {
+                        if (key.startsWith(`${connectionId}::`)) {
+                            const pool = this.dbPools.get(key);
+                            if (pool) {
+                                try {
+                                    await pool.close();
+                                } catch (err) {
+                                    this.outputChannel.appendLine(`[ConnectionProvider] Error closing db pool ${key}: ${err}`);
+                                }
+                            }
+                            keysToRemove.push(key);
+                        }
+                    }
+
+                    for (const k of keysToRemove) {
+                        this.dbPools.delete(k);
+                    }
                     
                     if (this.currentActiveId === connectionId) {
                         // Find another active connection to make current
@@ -432,9 +505,16 @@ export class ConnectionProvider {
     private getSavedConnections(): ConnectionConfig[] {
         // Use extension context global state for persistence
         const connections = this.context.globalState.get<ConnectionConfig[]>('mssqlManager.connections', []);
-        this.outputChannel.appendLine(`[ConnectionProvider] Loaded ${connections.length} saved connections`);
-        this.outputChannel.appendLine(`[ConnectionProvider] Connections with groups: ${JSON.stringify(connections.map(c => ({id: c.id, name: c.name, serverGroupId: c.serverGroupId})))}`);
-        return connections;
+        
+        // Ensure all connections have connectionType field (backward compatibility)
+        const updatedConnections = connections.map(conn => ({
+            ...conn,
+            connectionType: conn.connectionType || 'database' // Default to 'database' for existing connections
+        }));
+        
+        this.outputChannel.appendLine(`[ConnectionProvider] Loaded ${updatedConnections.length} saved connections`);
+        this.outputChannel.appendLine(`[ConnectionProvider] Connections with groups: ${JSON.stringify(updatedConnections.map(c => ({id: c.id, name: c.name, serverGroupId: c.serverGroupId, connectionType: c.connectionType})))}`);
+        return updatedConnections;
     }
 
     async getSavedConnectionsList(): Promise<ConnectionConfig[]> {
@@ -538,6 +618,14 @@ export class ConnectionProvider {
         delete publicConfig.password;
         delete publicConfig.username;
         delete publicConfig.connectionString;
+        
+        // Ensure connectionType is set. If database is empty, treat as server connection.
+        if (!publicConfig.connectionType) {
+            publicConfig.connectionType = (publicConfig.database && publicConfig.database.trim() !== '') ? 'database' : 'server';
+        } else if (publicConfig.connectionType === 'database' && (!publicConfig.database || publicConfig.database.trim() === '')) {
+            // If UI provided 'database' but database is empty, convert to server
+            publicConfig.connectionType = 'server';
+        }
         
         this.outputChannel.appendLine(`[ConnectionProvider] Public config to save: ${JSON.stringify(publicConfig)}`);
         

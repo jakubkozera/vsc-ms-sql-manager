@@ -130,7 +130,7 @@ export class ConnectionWebview {
                 // Build config from individual properties
                 sqlConfig = {
                     server: config.server,
-                    database: config.database || 'master',
+                    database: config.connectionType === 'server' ? 'master' : (config.database || 'master'),
                     options: {
                         encrypt: config.encrypt !== false,
                         trustServerCertificate: config.trustServerCertificate !== false
@@ -182,6 +182,7 @@ export class ConnectionWebview {
                 server: config.server || '',
                 database: config.database || 'master',
                 authType: config.authType || 'sql',
+                connectionType: config.connectionType || 'database',
                 username: config.authType === 'sql' ? config.username : undefined,
                 password: config.authType === 'sql' ? config.password : undefined,
                 port: config.port ? parseInt(config.port) : undefined,
@@ -556,6 +557,15 @@ export class ConnectionWebview {
                 <div class="help-text">Optional: Organize connections into groups</div>
             </div>
 
+            <div class="form-group hidden" id="connectionTypeGroup">
+                <label for="connectionType">Connection Type *</label>
+                <select id="connectionType" required>
+                    <option value="database">Database Connection</option>
+                    <option value="server">Server Connection</option>
+                </select>
+                <div class="help-text">Database: Connect to specific database. Server: Connect to server for database management</div>
+            </div>
+
             <div class="form-toggle">
                 <div class="checkbox-group">
                     <input type="checkbox" id="useConnectionString">
@@ -658,6 +668,8 @@ export class ConnectionWebview {
         // Form elements
         const form = document.getElementById('connectionForm');
         const authTypeSelect = document.getElementById('authType');
+        const connectionTypeSelect = document.getElementById('connectionType');
+        const connectionTypeGroup = document.getElementById('connectionTypeGroup');
         const sqlAuthFields = document.getElementById('sqlAuthFields');
         const useConnectionStringCheckbox = document.getElementById('useConnectionString');
         const connectionStringSection = document.getElementById('connectionStringSection');
@@ -671,6 +683,7 @@ export class ConnectionWebview {
         const passwordToggle = document.getElementById('passwordToggle');
         const eyeIcon = document.getElementById('eyeIcon');
         const eyeOffIcon = document.getElementById('eyeOffIcon');
+        const databaseField = document.getElementById('database');
 
         // Toggle password visibility
         passwordToggle.addEventListener('click', function() {
@@ -741,6 +754,21 @@ export class ConnectionWebview {
                 sqlAuthFields.classList.add('hidden');
                 document.getElementById('username').required = false;
                 document.getElementById('password').required = false;
+            }
+        });
+
+        // Connection type is now hidden in the UI. We treat an empty database field
+        // as indicating a server-level connection. If a database is provided, it's a database connection.
+        // Keep the old event handler behavior in case the field is programmatically set.
+        connectionTypeSelect.addEventListener('change', function() {
+            const connectionType = this.value;
+            if (connectionType === 'server') {
+                databaseField.value = 'master';
+                databaseField.placeholder = 'master (recommended for server connections)';
+                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database (master recommended for server management)';
+            } else {
+                databaseField.placeholder = 'master';
+                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database to connect to';
             }
         });
 
@@ -935,14 +963,19 @@ export class ConnectionWebview {
             
             console.log('[ConnectionWebview] Form data - serverGroup value:', serverGroupValue);
             
+            // If database field is empty, interpret that as a server connection
+            const rawDatabase = document.getElementById('database').value.trim();
+            const inferredConnectionType = rawDatabase === '' ? 'server' : 'database';
+
             const formData = {
                 id: form.dataset.connectionId,
                 name: document.getElementById('connectionName').value.trim(),
                 serverGroupId: serverGroupValue || undefined,
+                connectionType: inferredConnectionType,
                 useConnectionString: useConnectionString,
                 connectionString: useConnectionString ? document.getElementById('connectionString').value.trim() : null,
                 server: document.getElementById('server').value.trim(),
-                database: document.getElementById('database').value.trim() || 'master',
+                database: rawDatabase || (inferredConnectionType === 'server' ? 'master' : 'master'),
                 port: document.getElementById('port').value || null,
                 authType: document.getElementById('authType').value,
                 username: document.getElementById('username').value.trim() || null,
@@ -961,6 +994,8 @@ export class ConnectionWebview {
                 form.dataset.connectionId = config.id;
                 document.getElementById('connectionName').value = config.name || '';
                 document.getElementById('serverGroup').value = config.serverGroupId || '';
+                // Keep connectionType hidden, but set its value for backward compatibility
+                document.getElementById('connectionType').value = config.connectionType || (config.database ? 'database' : 'server');
                 
                 console.log('[ConnectionWebview] Set serverGroup value to:', config.serverGroupId);
                 
@@ -970,7 +1005,8 @@ export class ConnectionWebview {
                 } else {
                     document.getElementById('useConnectionString').checked = false;
                     document.getElementById('server').value = config.server || '';
-                    document.getElementById('database').value = config.database || 'master';
+                        // If the saved connection has an empty database it represents a server connection
+                        document.getElementById('database').value = config.database || (config.connectionType === 'server' ? '' : 'master');
                     document.getElementById('port').value = config.port || '';
                     document.getElementById('authType').value = config.authType || 'sql';
                     document.getElementById('username').value = config.username || '';
@@ -982,6 +1018,7 @@ export class ConnectionWebview {
                 // Trigger events to update UI
                 useConnectionStringCheckbox.dispatchEvent(new Event('change'));
                 authTypeSelect.dispatchEvent(new Event('change'));
+                connectionTypeSelect.dispatchEvent(new Event('change'));
             }
         }
 
@@ -1024,6 +1061,7 @@ export class ConnectionWebview {
         // Initialize form
         authTypeSelect.dispatchEvent(new Event('change'));
         useConnectionStringCheckbox.dispatchEvent(new Event('change'));
+        connectionTypeSelect.dispatchEvent(new Event('change'));
     </script>
 </body>
 </html>`;
