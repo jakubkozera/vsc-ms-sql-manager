@@ -1045,7 +1045,6 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
-    const executionStatsEl = document.getElementById('executionStats');
     
     lastResults = resultSets;
     lastMessages = messages || [];
@@ -1056,9 +1055,6 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     const totalRows = resultSets.reduce((sum, rs) => sum + rs.length, 0);
     statusLabel.textContent = `Query completed (${resultSets.length} result set(s), ${totalRows} rows)`;
 
-    // Update execution stats in compact format
-    executionStatsEl.textContent = `${resultSets.length} result set(s) | ${totalRows} rows | ${executionTime}ms`;
-    
     // Update aggregation stats (initially empty)
     updateAggregationStats();
 
@@ -2258,7 +2254,6 @@ function showError(error, messages) {
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
-    const executionStatsEl = document.getElementById('executionStats');
     const resizer = document.getElementById('resizer');
     
     lastResults = [];
@@ -2269,7 +2264,6 @@ function showError(error, messages) {
     
     const isCancelled = error.includes('cancel');
     statusLabel.textContent = isCancelled ? 'Query cancelled' : 'Query failed';
-    executionStatsEl.textContent = '';
 
     resultsContainer.classList.add('visible');
     resizer.classList.add('visible');
@@ -2955,186 +2949,9 @@ function applyCellHighlightGlobal(containerEl, rowIndex, colIndex) {
 }
 
 function updateAggregationStats() {
-    const executionStatsEl = document.getElementById('executionStats');
-    if (!executionStatsEl) return;
-    
-    // Get the base stats text (everything before the separator)
-    const baseText = executionStatsEl.textContent.split('|').slice(0, 3).join('|').trim();
-    
-    if (!globalSelection.type || !globalSelection.data || !globalSelection.selections.length) {
-        // No selection - show only base stats
-        executionStatsEl.textContent = baseText;
-        return;
-    }
-    
-    let statsText = '';
-    
-    // Show number of selected items
-    statsText += ` | ${globalSelection.selections.length} Selected`;
-    
-    if (globalSelection.type === 'column' && globalSelection.selections.length > 0) {
-        // Calculate column statistics - aggregate all selected columns
-        let allValues = [];
-        globalSelection.selections.forEach(sel => {
-            const colDef = globalSelection.columnDefs[sel.columnIndex];
-            const values = globalSelection.data.map(row => row[colDef.field]);
-            allValues = allValues.concat(values);
-        });
-        
-        const colField = globalSelection.columnDefs[globalSelection.selections[0].columnIndex].field;
-        const colType = globalSelection.columnDefs[globalSelection.selections[0].columnIndex].type;
-        const values = allValues;
-        
-        // Count nulls
-        const nullCount = values.filter(v => v === null || v === undefined).length;
-        
-        // Get distinct values
-        const distinctValues = new Set(values.filter(v => v !== null && v !== undefined));
-        const distinctCount = distinctValues.size;
-        
-        statsText += ` | ${nullCount} Nulls | ${distinctCount} Distinct`;
-        
-        // For numeric columns: SUM, AVG, MIN, MAX
-        if (colType === 'number') {
-            const numericValues = values.filter(v => v !== null && v !== undefined && typeof v === 'number');
-            if (numericValues.length > 0) {
-                const sum = numericValues.reduce((a, b) => a + b, 0);
-                const avg = sum / numericValues.length;
-                const min = Math.min(...numericValues);
-                const max = Math.max(...numericValues);
-                
-                statsText += ` | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min.toLocaleString()} | MAX: ${max.toLocaleString()}`;
-            }
-        }
-        
-        // For boolean columns: TRUE/FALSE counts
-        if (colType === 'boolean') {
-            const trueCount = values.filter(v => v === true).length;
-            const falseCount = values.filter(v => v === false).length;
-            statsText += ` | ${trueCount} TRUE | ${falseCount} FALSE`;
-        }
-        
-        // For date columns: MIN/MAX dates
-        if (colType === 'date') {
-            const dateValues = values.filter(v => v !== null && v !== undefined);
-            if (dateValues.length > 0) {
-                // Parse dates and find min/max
-                const parsedDates = dateValues.map(v => {
-                    const d = v instanceof Date ? v : new Date(v);
-                    return isNaN(d.getTime()) ? null : d;
-                }).filter(d => d !== null);
-                
-                if (parsedDates.length > 0) {
-                    const minDate = new Date(Math.min(...parsedDates.map(d => d.getTime())));
-                    const maxDate = new Date(Math.max(...parsedDates.map(d => d.getTime())));
-                    
-                    // Format dates
-                    const formatDate = (d) => {
-                        const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0;
-                        if (hasTime) {
-                            return d.toLocaleString();
-                        } else {
-                            return d.toLocaleDateString();
-                        }
-                    };
-                    
-                    statsText += ` | MIN: ${formatDate(minDate)} | MAX: ${formatDate(maxDate)}`;
-                }
-            }
-        }
-        
-        // For string columns: MIN/MAX length
-        if (colType === 'string') {
-            const stringValues = values.filter(v => v !== null && v !== undefined).map(v => String(v));
-            if (stringValues.length > 0) {
-                const lengths = stringValues.map(s => s.length);
-                const minLen = Math.min(...lengths);
-                const maxLen = Math.max(...lengths);
-                const avgLen = (lengths.reduce((a, b) => a + b, 0) / lengths.length).toFixed(1);
-                
-                statsText += ` | Len: MIN ${minLen}, AVG ${avgLen}, MAX ${maxLen}`;
-            }
-        }
-        
-    } else if (globalSelection.type === 'cell' && globalSelection.selections.length > 0) {
-        // Show cell values - if multiple, show aggregated stats
-        if (globalSelection.selections.length === 1) {
-            // Single cell - show value
-            const value = globalSelection.selections[0].cellValue;
-            const colType = globalSelection.columnDef ? globalSelection.columnDef.type : 'string';
-        
-        if (value === null || value === undefined) {
-            statsText += ` | Value: NULL`;
-        } else {
-            let displayValue = String(value);
-            if (displayValue.length > 50) {
-                displayValue = displayValue.substring(0, 47) + '...';
-            }
-            
-            statsText += ` | Value: ${displayValue}`;
-            
-            // Show additional info based on type
-            if (colType === 'number') {
-                statsText += ` (Numeric)`;
-            } else if (colType === 'boolean') {
-                statsText += ` (Boolean)`;
-            } else if (colType === 'date') {
-                statsText += ` (Date)`;
-            } else if (colType === 'string') {
-                    statsText += ` | Length: ${String(value).length}`;
-                }
-            }
-        } else {
-            // Multiple cells - show aggregated stats
-            const values = globalSelection.selections.map(s => s.cellValue);
-            const nullCount = values.filter(v => v === null || v === undefined).length;
-            const distinctCount = new Set(values.filter(v => v !== null && v !== undefined)).size;
-            
-            statsText += ` | ${nullCount} Nulls | ${distinctCount} Distinct`;
-            
-            // Check if all numeric
-            const numericValues = values.filter(v => v !== null && v !== undefined && typeof v === 'number');
-            if (numericValues.length > 0) {
-                const sum = numericValues.reduce((a, b) => a + b, 0);
-                const avg = sum / numericValues.length;
-                const min = Math.min(...numericValues);
-                const max = Math.max(...numericValues);
-                statsText += ` | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min} | MAX: ${max}`;
-            }
-        }
-        
-    } else if (globalSelection.type === 'row' && globalSelection.columnDefs) {
-        // Calculate row statistics - aggregate all selected rows
-        let allValues = [];
-        globalSelection.selections.forEach(sel => {
-            const row = globalSelection.data[sel.rowIndex];
-            if (row) {
-                const fields = globalSelection.columnDefs.map(col => col.field);
-                const values = fields.map(field => row[field]);
-                allValues = allValues.concat(values);
-            }
-        });
-        
-        if (allValues.length > 0) {
-            // Count nulls
-            const nullCount = allValues.filter(v => v === null || v === undefined).length;
-            const nonNullCount = allValues.length - nullCount;
-            
-            statsText += ` | ${nonNullCount} Values | ${nullCount} Nulls`;
-            
-            // Count numeric values and calculate sum if any
-            const numericValues = allValues.filter(v => v !== null && v !== undefined && typeof v === 'number');
-            if (numericValues.length > 0) {
-                const sum = numericValues.reduce((a, b) => a + b, 0);
-                const avg = sum / numericValues.length;
-                const min = Math.min(...numericValues);
-                const max = Math.max(...numericValues);
-                statsText += ` | ${numericValues.length} Numeric | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min} | MAX: ${max}`;
-            }
-        }
-    }
-    
-    executionStatsEl.textContent = baseText + statsText;
+    // This function is now a no-op since we removed the execution stats display
+    // Aggregation stats could be shown elsewhere if needed in the future
+    return;
 }
 
 // Hide context menu when clicking elsewhere
@@ -3162,7 +2979,6 @@ function showQueryPlan(planXml, executionTime, messages, resultSets) {
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
-    const executionStatsEl = document.getElementById('executionStats');
     const resizer = document.getElementById('resizer');
     
     // Enable buttons
@@ -3182,7 +2998,6 @@ function showQueryPlan(planXml, executionTime, messages, resultSets) {
     
     // Update status
     statusLabel.textContent = resultSets ? `Query completed with execution plan` : `Estimated execution plan generated`;
-    executionStatsEl.textContent = executionTime ? `${executionTime}ms` : '';
     
     resultsContainer.classList.add('visible');
     resizer.classList.add('visible');

@@ -21,6 +21,10 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13 -8z" /></svg>
                 Run
             </button>
+            <label class="checkbox-label" title="Include Actual Execution Plan">
+                <input type="checkbox" id="actualPlanCheckbox">
+                <span>with execution plan</span>
+            </label>
             <button class="toolbar-button secondary" id="cancelButton" disabled title="Cancel Query">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /></svg>
                 Cancel
@@ -38,7 +42,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5z" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5z" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" /></svg>
                 Connect
             </button>
-            <button class="toolbar-button secondary" id="estimatedPlanButton" title="Display Estimated Execution Plan">
+            <button class="toolbar-button secondary" id="estimatedPlanButton" title="Display Estimated Execution Plan" style="display: none;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 16l6 -7l5 5l5 -6" />
                     <path d="M15 14m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
@@ -48,12 +52,6 @@
                 </svg>
                 Estimated Plan
             </button>
-            <label class="checkbox-label" title="Include Actual Execution Plan">
-                <input type="checkbox" id="actualPlanCheckbox">
-                <span>Enable actual plan</span>
-            </label>
-            <div class="toolbar-separator"></div>
-            <span id="statusLabel">Ready</span>
         </div>
         
         <div id="editorContainer">
@@ -69,7 +67,6 @@
                 <button class="results-tab" data-tab="queryPlan" style="display: none;">Query Plan</button>
                 <button class="results-tab" data-tab="planTree" style="display: none;">Plan Tree</button>
                 <button class="results-tab" data-tab="topOperations" style="display: none;">Top Operations</button>
-                <span id="executionStats"></span>
             </div>
             <div id="resultsContent" class="tab-content"></div>
             <div id="messagesContent" class="tab-content" style="display: none;"></div>
