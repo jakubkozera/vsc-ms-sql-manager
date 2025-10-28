@@ -52,6 +52,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         content: document.getText()
                     });
 
+                    // Check if there's a preferred database for this new editor
+                    const preferredDb = this.connectionProvider.getAndClearNextEditorPreferredDatabase();
+                    if (preferredDb) {
+                        // Set the preferred connection+database for this webview
+                        const compositeId = `${preferredDb.connectionId}::${preferredDb.database}`;
+                        this.webviewSelectedConnection.set(webviewPanel.webview, compositeId);
+                    }
+
                     // Send initial connections list
                     this.updateConnectionsList(webviewPanel.webview);
                     break;
@@ -102,7 +110,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
                 case 'getDatabases':
                     // Send list of databases for a server connection
-                    await this.sendDatabasesList(webviewPanel.webview, message.connectionId);
+                    await this.sendDatabasesList(webviewPanel.webview, message.connectionId, message.selectedDatabase);
                     break;
 
                 case 'getSchema':
@@ -193,8 +201,6 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             currentConnectionIdToSend = preserved;
         }
 
-        this.outputChannel.appendLine(`[SqlEditorProvider] Sending connectionsUpdate. active:${activeConnectionId} preserved:${preserved} using:${currentConnectionIdToSend}`);
-
         webview.postMessage({
             type: 'connectionsUpdate',
             connections,
@@ -218,8 +224,6 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             return;
         }
 
-        this.outputChannel.appendLine(`[SqlEditorProvider] sendDatabasesList for connection ${connectionId}`);
-
         try {
             const pool = this.connectionProvider.getConnection(connectionId);
             if (!pool) {
@@ -235,7 +239,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const dbsResult = await pool.request().query(`SELECT name FROM sys.databases WHERE state = 0 ORDER BY name`);
             const databases = dbsResult.recordset.map((row: any) => row.name);
 
-            // Default to 'master' if no database is selected
+            // Use selectedDatabase if provided, otherwise default to 'master'
             const currentDb = selectedDatabase || 'master';
 
             this.outputChannel.appendLine(`[SqlEditorProvider] Sending ${databases.length} databases, selected: ${currentDb}`);

@@ -225,6 +225,11 @@
         "command": "mssqlManager.newQuery",
         "title": "New Query",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "mssqlManager.newQueryOnDatabase",
+        "title": "New Query",
+        "icon": "$(new-file)"
       }
     ],
     "viewsContainers": {
@@ -493,6 +498,11 @@
           "group": "1_connection@1"
         },
         {
+          "command": "mssqlManager.newQueryOnDatabase",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@1"
+        },
+        {
           "command": "mssqlManager.connectToSaved",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionInactive",
           "group": "1_connection@2"
@@ -702,6 +712,10 @@
         },
         {
           "command": "mssqlManager.toggleQueryHistoryGrouping",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.newQueryOnDatabase",
           "when": "false"
         }
       ]

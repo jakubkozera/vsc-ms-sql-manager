@@ -33,6 +33,8 @@ export class ConnectionProvider {
     private currentActiveId: string | null = null;
     private onConnectionChangedCallbacks: Array<() => void> = [];
     private pendingConnections: Set<string> = new Set();
+    // Preferred database for next editor (temporary, cleared after use)
+    private nextEditorPreferredDatabase: { connectionId: string; database: string } | null = null;
 
     constructor(
         private context: vscode.ExtensionContext,
@@ -478,6 +480,16 @@ export class ConnectionProvider {
             return true;
         }
         return false;
+    }
+
+    setNextEditorPreferredDatabase(connectionId: string, database: string): void {
+        this.nextEditorPreferredDatabase = { connectionId, database };
+    }
+
+    getAndClearNextEditorPreferredDatabase(): { connectionId: string; database: string } | null {
+        const result = this.nextEditorPreferredDatabase;
+        this.nextEditorPreferredDatabase = null;
+        return result;
     }
 
     isConnected(connectionId?: string): boolean {

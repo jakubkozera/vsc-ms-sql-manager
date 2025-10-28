@@ -75,5 +75,42 @@ export function registerQueryCommands(
         }
     });
 
-    return [executeQueryCommand, generateSelectCommand];
+    const newQueryOnDatabaseCommand = vscode.commands.registerCommand('mssqlManager.newQueryOnDatabase', async (item: any) => {
+        if (item && item.database && item.connectionId) {
+            outputChannel.appendLine(`[QueryCommands] Opening new query for database: ${item.database}, connection: ${item.connectionId}`);
+            
+            try {
+                // Check if connection is active, if not - connect
+                if (!connectionProvider.isConnectionActive(item.connectionId)) {
+                    outputChannel.appendLine(`[QueryCommands] Connection not active, connecting...`);
+                    await vscode.window.withProgress({
+                        location: vscode.ProgressLocation.Notification,
+                        title: `Connecting to server...`,
+                        cancellable: false
+                    }, async () => {
+                        await connectionProvider.connectToSavedById(item.connectionId);
+                    });
+                }
+                
+                // Set this connection as active
+                connectionProvider.setActiveConnection(item.connectionId);
+                
+                // Set the preferred database for the next editor that opens
+                connectionProvider.setNextEditorPreferredDatabase(item.connectionId, item.database);
+                
+                // Open empty SQL editor (no comment, completely empty)
+                const query = ``;
+                await openSqlInCustomEditor(query, `query_${item.database}.sql`, context);
+                
+                outputChannel.appendLine(`[QueryCommands] Opened new query for database: ${item.database}`);
+                
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                vscode.window.showErrorMessage(`Failed to open query: ${errorMessage}`);
+                outputChannel.appendLine(`[QueryCommands] Error opening query: ${errorMessage}`);
+            }
+        }
+    });
+
+    return [executeQueryCommand, generateSelectCommand, newQueryOnDatabaseCommand];
 }

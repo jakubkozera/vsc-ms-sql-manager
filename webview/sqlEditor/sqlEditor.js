@@ -958,10 +958,11 @@ function updateConnectionsList(connections, selectedConnectionId, selectedDataba
     if (selectedConnection && selectedConnection.connectionType === 'server') {
         databaseLabel.style.display = 'inline';
         databaseSelector.style.display = 'inline';
-        // Request databases list from extension
+        // Request databases list from extension - pass current database selection
         vscode.postMessage({
             type: 'getDatabases',
-            connectionId: selectedConnectionId
+            connectionId: selectedConnectionId,
+            selectedDatabase: currentDatabaseName
         });
     } else {
         databaseLabel.style.display = 'none';
