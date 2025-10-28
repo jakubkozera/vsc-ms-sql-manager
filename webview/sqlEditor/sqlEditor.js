@@ -1513,9 +1513,34 @@ function initAgGridTable(rowData, container, isSingleResultSet = false) {
             `;
             pinIcon.onclick = (e) => {
                 e.stopPropagation();
-                col.pinned = !col.pinned;
-                renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
-                renderAgGridRows(colDefs, filteredData, containerEl);
+                // Preserve current vertical scroll position so user doesn't jump to top
+                try {
+                    const prevScrollTop = viewport.scrollTop;
+                    const prevStartRow = Math.floor(prevScrollTop / ROW_HEIGHT);
+
+                    // Toggle pinned state
+                    col.pinned = !col.pinned;
+
+                    // Re-render headers first (pinned classes may change layout)
+                    renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
+
+                    // Re-render rows keeping the user's current view
+                    currentStartRow = Math.max(0, Math.min(prevStartRow, Math.max(0, filteredData.length - RENDER_CHUNK_SIZE)));
+                    renderAgGridRows(colDefs, filteredData, containerEl, currentStartRow, ROW_HEIGHT, RENDER_CHUNK_SIZE);
+
+                    // Restore exact scroll position (in case row heights/layout changed slightly)
+                    // Use requestAnimationFrame to ensure DOM was updated
+                    requestAnimationFrame(() => {
+                        viewport.scrollTop = prevScrollTop;
+                    });
+                } catch (err) {
+                    // Fallback to safe behavior: render from top
+                    col.pinned = !col.pinned;
+                    currentStartRow = 0;
+                    viewport.scrollTop = 0;
+                    renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
+                    renderAgGridRows(colDefs, filteredData, containerEl, 0, ROW_HEIGHT, RENDER_CHUNK_SIZE);
+                }
             };
             
             pinIcon.oncontextmenu = (e) => {
