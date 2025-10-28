@@ -102,6 +102,7 @@ body {
     margin: 0 4px;
 }
 
+.connection-selector,
 .database-selector {
     background-color: var(--vscode-dropdown-background);
     color: var(--vscode-dropdown-foreground);
@@ -112,8 +113,53 @@ body {
     font-size: 13px;
     cursor: pointer;
     min-width: 200px;
+    position: relative;
 }
 
+.connection-selector-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.connection-tooltip {
+    position: absolute;
+    background-color: var(--vscode-editorHoverWidget-background);
+    color: var(--vscode-editorHoverWidget-foreground);
+    border: 1px solid var(--vscode-editorHoverWidget-border);
+    padding: 8px 12px;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1.5;
+    z-index: 1000;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 5px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.connection-tooltip.visible {
+    opacity: 1;
+}
+
+.connection-tooltip .tooltip-row {
+    display: flex;
+    gap: 8px;
+}
+
+.connection-tooltip .tooltip-label {
+    color: var(--vscode-descriptionForeground);
+    font-weight: 500;
+}
+
+.connection-tooltip .tooltip-value {
+    color: var(--vscode-editorHoverWidget-foreground);
+}
+
+.connection-selector:disabled,
 .database-selector:disabled {
     opacity: 0.5;
     cursor: not-allowed;

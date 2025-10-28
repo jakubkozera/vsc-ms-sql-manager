@@ -115,7 +115,7 @@ export class ConnectionProvider {
     }
 
     async connectWithWebview(): Promise<void> {
-        const { ConnectionWebview } = await import('./connectionWebview.js');
+        const { ConnectionWebview } = await import('./connectionWebview');
         const connectionWebview = new ConnectionWebview(this.context, (config: any) => {
             this.handleWebviewConnection(config);
         });
@@ -701,7 +701,7 @@ export class ConnectionProvider {
         const completeConfig = await this.getCompleteConnectionConfig(connection);
         
         // Open webview with existing config for editing
-        const { ConnectionWebview } = await import('./connectionWebview.js');
+        const { ConnectionWebview } = await import('./connectionWebview');
         const connectionWebview = new ConnectionWebview(this.context, (config: any) => {
             this.handleWebviewConnection(config);
         });

@@ -8,10 +8,51 @@ let lastMessages = [];
 let isResizing = false;
 let activeConnections = [];
 let currentConnectionId = null;
+let currentDatabaseName = null;
 let dbSchema = { tables: [], views: [], foreignKeys: [] };
 let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
+let connectionTooltip = null;
+
+// Initialize tooltip
+function initializeTooltip() {
+    if (!connectionTooltip) {
+        connectionTooltip = document.createElement('div');
+        connectionTooltip.className = 'connection-tooltip';
+        document.body.appendChild(connectionTooltip);
+    }
+}
+
+// Show tooltip for connection
+function showConnectionTooltip(connection, targetElement) {
+    if (!connectionTooltip) initializeTooltip();
+    
+    const details = [];
+    details.push(`<div class="tooltip-row"><span class="tooltip-label">Server:</span><span class="tooltip-value">${connection.server}</span></div>`);
+    if (connection.connectionType === 'database') {
+        details.push(`<div class="tooltip-row"><span class="tooltip-label">Database:</span><span class="tooltip-value">${connection.database}</span></div>`);
+    }
+    details.push(`<div class="tooltip-row"><span class="tooltip-label">Type:</span><span class="tooltip-value">${connection.connectionType === 'server' ? 'Server Connection' : 'Database Connection'}</span></div>`);
+    details.push(`<div class="tooltip-row"><span class="tooltip-label">Auth:</span><span class="tooltip-value">${connection.authType}</span></div>`);
+    
+    connectionTooltip.innerHTML = details.join('');
+    
+    // Position tooltip
+    const rect = targetElement.getBoundingClientRect();
+    connectionTooltip.style.left = rect.left + 'px';
+    connectionTooltip.style.bottom = (window.innerHeight - rect.top + 5) + 'px';
+    connectionTooltip.style.top = 'auto';
+    
+    connectionTooltip.classList.add('visible');
+}
+
+// Hide tooltip
+function hideConnectionTooltip() {
+    if (connectionTooltip) {
+        connectionTooltip.classList.remove('visible');
+    }
+}
 
 // Helper function to check if string is valid JSON
 function isValidJSON(str) {
@@ -174,13 +215,66 @@ document.getElementById('actualPlanCheckbox').addEventListener('change', (e) => 
     actualPlanEnabled = e.target.checked;
 });
 
+// Connection selector
+document.getElementById('connectionSelector').addEventListener('change', (e) => {
+    const connectionId = e.target.value;
+    currentConnectionId = connectionId;
+    
+    if (connectionId) {
+        // Find connection config to check type
+        const connection = activeConnections.find(c => c.id === connectionId);
+        
+        if (connection && connection.connectionType === 'server') {
+            // Show database selector and request database list
+            document.getElementById('databaseLabel').style.display = 'inline';
+            document.getElementById('databaseSelector').style.display = 'inline';
+            
+            vscode.postMessage({
+                type: 'switchConnection',
+                connectionId: connectionId
+            });
+        } else {
+            // Hide database selector for direct database connections
+            document.getElementById('databaseLabel').style.display = 'none';
+            document.getElementById('databaseSelector').style.display = 'none';
+            currentDatabaseName = null;
+            
+            vscode.postMessage({
+                type: 'switchConnection',
+                connectionId: connectionId
+            });
+        }
+    } else {
+        document.getElementById('databaseLabel').style.display = 'none';
+        document.getElementById('databaseSelector').style.display = 'none';
+    }
+});
+
+// Add hover events for tooltip
+const connectionSelector = document.getElementById('connectionSelector');
+connectionSelector.addEventListener('mouseenter', () => {
+    if (currentConnectionId) {
+        const connection = activeConnections.find(c => c.id === currentConnectionId);
+        if (connection) {
+            showConnectionTooltip(connection, connectionSelector);
+        }
+    }
+});
+
+connectionSelector.addEventListener('mouseleave', () => {
+    hideConnectionTooltip();
+});
+
 // Database selector
 document.getElementById('databaseSelector').addEventListener('change', (e) => {
-    const connectionId = e.target.value;
-    if (connectionId) {
+    const databaseName = e.target.value;
+    currentDatabaseName = databaseName;
+    
+    if (currentConnectionId && databaseName) {
         vscode.postMessage({
-            type: 'switchConnection',
-            connectionId: connectionId
+            type: 'switchDatabase',
+            connectionId: currentConnectionId,
+            databaseName: databaseName
         });
     }
 });
@@ -270,8 +364,11 @@ function executeQuery() {
         queryText = editor.getValue();
     }
 
-    const databaseSelector = document.getElementById('databaseSelector');
-    const connectionId = databaseSelector.value || null;
+    // Build composite connection ID if database is selected
+    let connectionId = currentConnectionId;
+    if (currentConnectionId && currentDatabaseName) {
+        connectionId = `${currentConnectionId}::${currentDatabaseName}`;
+    }
 
     vscode.postMessage({
         type: 'executeQuery',
@@ -294,8 +391,11 @@ function executeEstimatedPlan() {
         queryText = editor.getValue();
     }
 
-    const databaseSelector = document.getElementById('databaseSelector');
-    const connectionId = databaseSelector.value || null;
+    // Build composite connection ID if database is selected
+    let connectionId = currentConnectionId;
+    if (currentConnectionId && currentDatabaseName) {
+        connectionId = `${currentConnectionId}::${currentDatabaseName}`;
+    }
 
     vscode.postMessage({
         type: 'executeEstimatedPlan',
@@ -783,14 +883,13 @@ window.addEventListener('message', event => {
             break;
 
         case 'connectionsUpdate':
-            // message.options is an array of { value, label, title, icon }
-            updateConnectionsList(message.options || [], message.currentConnectionId);
-            // Request schema update when connection changes (extension will also push schema)
-            // If the UI needs schema for the currently selected entry, also request it
-            const selector = document.getElementById('databaseSelector');
-            if (selector && selector.value) {
-                vscode.postMessage({ type: 'getSchema', connectionId: selector.value });
-            }
+            // message.connections is an array of connection configs
+            updateConnectionsList(message.connections || [], message.currentConnectionId, message.currentDatabase);
+            break;
+
+        case 'databasesUpdate':
+            // message.databases is an array of database names for current server connection
+            updateDatabasesList(message.databases || [], message.currentDatabase);
             break;
 
         case 'schemaUpdate':
@@ -819,38 +918,97 @@ window.addEventListener('message', event => {
     }
 });
 
-function updateConnectionsList(options, currentId) {
-    // options: [{ value, label, title, icon }]
-    activeConnections = options;
-    currentConnectionId = currentId;
+function updateConnectionsList(connections, selectedConnectionId, selectedDatabase) {
+    // connections: [{ id, server, database, connectionType }]
+    activeConnections = connections;
+    currentConnectionId = selectedConnectionId;
+    currentDatabaseName = selectedDatabase;
 
+    const connectionSelector = document.getElementById('connectionSelector');
     const databaseSelector = document.getElementById('databaseSelector');
-    databaseSelector.innerHTML = '';
+    const databaseLabel = document.getElementById('databaseLabel');
+    
+    connectionSelector.innerHTML = '';
 
-    if (!options || options.length === 0) {
+    if (!connections || connections.length === 0) {
         const option = document.createElement('option');
         option.value = '';
         option.textContent = 'Not Connected';
+        connectionSelector.appendChild(option);
+        connectionSelector.disabled = true;
+        databaseSelector.style.display = 'none';
+        databaseLabel.style.display = 'none';
+        return;
+    }
+
+    connectionSelector.disabled = false;
+    connections.forEach(conn => {
+        const option = document.createElement('option');
+        option.value = conn.id;
+        option.textContent = conn.name;
+        
+        if (selectedConnectionId && conn.id === selectedConnectionId) {
+            option.selected = true;
+        }
+        connectionSelector.appendChild(option);
+    });
+    
+    // Handle database selector visibility
+    const selectedConnection = connections.find(c => c.id === selectedConnectionId);
+    if (selectedConnection && selectedConnection.connectionType === 'server') {
+        databaseLabel.style.display = 'inline';
+        databaseSelector.style.display = 'inline';
+        // Request databases list from extension
+        vscode.postMessage({
+            type: 'getDatabases',
+            connectionId: selectedConnectionId
+        });
+    } else {
+        databaseLabel.style.display = 'none';
+        databaseSelector.style.display = 'none';
+        
+        // Request schema for direct database connection
+        if (selectedConnectionId) {
+            vscode.postMessage({ 
+                type: 'getSchema', 
+                connectionId: selectedConnectionId 
+            });
+        }
+    }
+}
+
+function updateDatabasesList(databases, selectedDatabase) {
+    const databaseSelector = document.getElementById('databaseSelector');
+    databaseSelector.innerHTML = '';
+    
+    if (!databases || databases.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No databases available';
         databaseSelector.appendChild(option);
         databaseSelector.disabled = true;
         return;
     }
-
+    
     databaseSelector.disabled = false;
-    options.forEach(opt => {
+    databases.forEach(dbName => {
         const option = document.createElement('option');
-        option.value = opt.value;
-        // Use a simple emoji icon prefix to represent server vs database
-        const icon = opt.icon === 'server' ? '\u{1F5A5}' : '\u{1F4BE}'; // 🖥️ for server, 💾 for database
-        option.textContent = `${icon} ${opt.label}`;
-        option.title = opt.title;
-        // Only select exact match. This avoids ambiguous startsWith matches that can
-        // cause the dropdown to jump to the first database (often master).
-        if (currentId && opt.value === currentId) {
+        option.value = dbName;
+        option.textContent = dbName;
+        
+        if (selectedDatabase && dbName === selectedDatabase) {
             option.selected = true;
         }
         databaseSelector.appendChild(option);
     });
+    
+    // If a database is selected, request its schema
+    if (selectedDatabase && currentConnectionId) {
+        vscode.postMessage({ 
+            type: 'getSchema', 
+            connectionId: `${currentConnectionId}::${selectedDatabase}` 
+        });
+    }
 }
 
 function showLoading() {
