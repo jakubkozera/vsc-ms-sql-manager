@@ -30,8 +30,24 @@ export function registerTableCommands(
             const tableName = tableNode.label as string;
             const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
             
+            // Generate table alias (first 2-3 letters of table name, lowercase)
+            const tableAlias = table.length <= 3 ? table.toLowerCase() : table.substring(0, 2).toLowerCase();
+            
             // Get table columns to build explicit SELECT query
             let query: string;
+            let queryConnection = connection;
+            
+            // If we have a database context and this is a server connection, create a database-specific pool
+            if (tableNode.database && tableNode.connectionId) {
+                try {
+                    queryConnection = await connectionProvider.createDbPool(tableNode.connectionId, tableNode.database);
+                    outputChannel.appendLine(`[TableCommands] Using database-specific pool for ${tableNode.database}`);
+                } catch (error) {
+                    outputChannel.appendLine(`[TableCommands] Failed to create DB pool, using base connection: ${error}`);
+                    queryConnection = connection;
+                }
+            }
+            
             try {
                 const columnsQuery = `
                     SELECT c.name AS COLUMN_NAME
@@ -40,19 +56,19 @@ export function registerTableCommands(
                     ORDER BY c.column_id
                 `;
                 
-                const columnsResult = await connection.request().query(columnsQuery);
+                const columnsResult = await queryConnection.request().query(columnsQuery);
                 
                 if (columnsResult.recordset && columnsResult.recordset.length > 0) {
                     const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
-                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}]`;
+                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}] ${tableAlias}`;
                 } else {
                     // Fallback to * if we can't get columns
-                    query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}]`;
+                    query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] ${tableAlias}`;
                 }
             } catch (error) {
                 // Fallback to * if column query fails
                 outputChannel.appendLine(`Failed to get columns for ${tableName}, using *: ${error}`);
-                query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}]`;
+                query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] ${tableAlias}`;
             }
             
             // Set the preferred database context and open in SQL editor

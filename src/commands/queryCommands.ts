@@ -69,12 +69,28 @@ export function registerQueryCommands(
                 schemaName = item.schema || 'dbo';
             }
             
+            // Generate table alias (first 2-3 letters of table name, lowercase)
+            const tableAlias = tableName.length <= 3 ? tableName.toLowerCase() : tableName.substring(0, 2).toLowerCase();
+            
             // Get table columns to build explicit SELECT query
             let query: string;
             
             // Check if we have an active connection and try to get columns
-            const connection = connectionProvider.getConnection(item.connectionId) || connectionProvider.getConnection();
-            if (connection && connection.connected) {
+            let connection = connectionProvider.getConnection(item.connectionId) || connectionProvider.getConnection();
+            let queryConnection = connection;
+            
+            // If we have a database context and connection, try to create a database-specific pool
+            if (item.database && item.connectionId && connection) {
+                try {
+                    queryConnection = await connectionProvider.createDbPool(item.connectionId, item.database);
+                    outputChannel.appendLine(`[QueryCommands] Using database-specific pool for ${item.database}`);
+                } catch (error) {
+                    outputChannel.appendLine(`[QueryCommands] Failed to create DB pool, using base connection: ${error}`);
+                    queryConnection = connection;
+                }
+            }
+            
+            if (queryConnection && queryConnection.connected) {
                 try {
                     const columnsQuery = `
                         SELECT c.name AS COLUMN_NAME
@@ -83,24 +99,24 @@ export function registerQueryCommands(
                         ORDER BY c.column_id
                     `;
                     
-                    const columnsResult = await connection.request().query(columnsQuery);
+                    const columnsResult = await queryConnection.request().query(columnsQuery);
                     
                     if (columnsResult.recordset && columnsResult.recordset.length > 0) {
                         const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
-                        query = `SELECT TOP (1000) ${columns}\n  FROM [${schemaName}].[${tableName}]`;
+                        query = `SELECT TOP (1000) ${columns}\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
                     } else {
                         // Fallback to * if we can't get columns
-                        query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}]`;
+                        query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
                     }
                 } catch (error) {
                     // Fallback to * if column query fails
                     outputChannel.appendLine(`Failed to get columns for ${fullLabel}, using *: ${error}`);
-                    query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}]`;
+                    query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
                 }
             } else {
                 // No connection available or not connected, use basic query
                 outputChannel.appendLine(`No active connection available for ${fullLabel}, using basic query`);
-                query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}]`;
+                query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
             }
             
             // Set the preferred database context if available
