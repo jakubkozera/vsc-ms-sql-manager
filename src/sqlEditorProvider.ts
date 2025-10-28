@@ -6,6 +6,8 @@ import { ConnectionProvider } from './connectionProvider';
 export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'mssqlManager.sqlEditor';
     private disposedWebviews: Set<vscode.Webview> = new Set();
+    // Track the last selected connection id per webview so we can preserve selection
+    private webviewSelectedConnection = new Map<vscode.Webview, string | null>();
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -83,11 +85,30 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'switchConnection':
-                    this.connectionProvider.setActiveConnection(message.connectionId);
-                    this.updateConnectionsList(webviewPanel.webview);
+                    // connectionId can be 'baseId::database' for server connections expanded into DBs
+                    if (typeof message.connectionId === 'string' && message.connectionId.includes('::')) {
+                        const [baseId, dbName] = message.connectionId.split('::');
+                        this.connectionProvider.setActiveConnection(baseId);
+                        // Update list and then send schema for specific DB
+                        // remember user's selection for this webview
+                        this.webviewSelectedConnection.set(webviewPanel.webview, message.connectionId);
+                        this.outputChannel.appendLine(`[SqlEditorProvider] switchConnection -> selected ${message.connectionId} (base ${baseId}, db ${dbName})`);
+                        await this.updateConnectionsList(webviewPanel.webview);
+                        await this.sendSchemaUpdate(webviewPanel.webview, message.connectionId);
+                    } else {
+                        this.connectionProvider.setActiveConnection(message.connectionId);
+                        this.webviewSelectedConnection.set(webviewPanel.webview, message.connectionId || null);
+                        this.outputChannel.appendLine(`[SqlEditorProvider] switchConnection -> selected ${message.connectionId}`);
+                        await this.updateConnectionsList(webviewPanel.webview);
+                        await this.sendSchemaUpdate(webviewPanel.webview, message.connectionId);
+                    }
                     break;
 
                 case 'getSchema':
+                    // remember request context if provided
+                    if (message.connectionId) {
+                        this.webviewSelectedConnection.set(webviewPanel.webview, message.connectionId);
+                    }
                     await this.sendSchemaUpdate(webviewPanel.webview, message.connectionId);
                     break;
 
@@ -138,28 +159,60 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         return html;
     }
 
-    private updateConnectionsList(webview: vscode.Webview) {
+    private async updateConnectionsList(webview: vscode.Webview) {
         // Don't send messages to disposed webviews
         if (this.disposedWebviews.has(webview)) {
             return;
         }
-        
-        const connections = this.connectionProvider.getAllActiveConnections();
+
+        const activeConnections = this.connectionProvider.getAllActiveConnections();
         const activeConnectionId = this.connectionProvider.getCurrentConfig()?.id || null;
+
+        // Build flattened options: for server-type connections expand to per-database options
+        const options: Array<{ value: string; label: string; title: string; icon: 'server' | 'database' }> = [];
+
+        for (const conn of activeConnections) {
+            const cfg = conn.config;
+            if (cfg.connectionType === 'server') {
+                try {
+                    const pool = this.connectionProvider.getConnection(conn.id);
+                    if (pool) {
+                        const dbsResult = await pool.request().query(`SELECT name FROM sys.databases WHERE state = 0 ORDER BY name`);
+                        for (const row of dbsResult.recordset) {
+                            const dbName = row.name;
+                            // Composite value: base connection id + '::' + database
+                            options.push({ value: `${conn.id}::${dbName}`, label: `${cfg.server}/${dbName}`, title: `${cfg.server}/${dbName}`, icon: 'server' });
+                        }
+                        continue;
+                    }
+                } catch (err) {
+                    this.outputChannel.appendLine(`[SqlEditorProvider] Failed to fetch DB list for server connection ${conn.id}: ${err}`);
+                }
+
+                // Fallback to master if db list cannot be fetched
+                options.push({ value: `${conn.id}::master`, label: `${cfg.server}/master`, title: `${cfg.server}/master`, icon: 'server' });
+            } else {
+                options.push({ value: conn.id, label: `${cfg.server}/${cfg.database}`, title: `${cfg.server}/${cfg.database}`, icon: 'database' });
+            }
+        }
+
+        // Prefer the webview's last selected connection if present so we don't reset user's choice
+        const preserved = this.webviewSelectedConnection.get(webview);
+        const currentConnectionIdToSend = preserved || activeConnectionId;
+
+        this.outputChannel.appendLine(`[SqlEditorProvider] Sending connectionsUpdate to webview. active:${activeConnectionId} preserved:${preserved} using:${currentConnectionIdToSend}`);
 
         webview.postMessage({
             type: 'connectionsUpdate',
-            connections: connections.map(conn => ({
-                id: conn.id,
-                server: conn.config.server,
-                database: conn.config.database
-            })),
-            currentConnectionId: activeConnectionId
+            options,
+            currentConnectionId: currentConnectionIdToSend
         });
 
-        // Send schema update for active connection
-        if (activeConnectionId) {
-            this.sendSchemaUpdate(webview, activeConnectionId);
+        // Send schema update for the preserved/current connection
+        const toRequest = currentConnectionIdToSend || activeConnectionId;
+        if (toRequest) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] After connectionsUpdate requesting schema for ${toRequest}`);
+            await this.sendSchemaUpdate(webview, toRequest);
         }
     }
 
@@ -171,22 +224,46 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         
         console.log('[SCHEMA] sendSchemaUpdate called with connectionId:', connectionId);
         
-        const config = connectionId 
-            ? this.connectionProvider.getConnectionConfig(connectionId)
-            : this.connectionProvider.getCurrentConfig();
-        
-        console.log('[SCHEMA] Config:', config?.id || 'none');
-        
+        // connectionId might be composite: '<connId>::<database>'
+        let config: any = null;
+        let dbName: string | undefined = undefined;
+        if (connectionId && typeof connectionId === 'string' && connectionId.includes('::')) {
+            const [baseId, db] = connectionId.split('::');
+            config = this.connectionProvider.getConnectionConfig(baseId);
+            dbName = db;
+        } else if (connectionId) {
+            config = this.connectionProvider.getConnectionConfig(connectionId);
+        } else {
+            config = this.connectionProvider.getCurrentConfig();
+        }
+
+        console.log('[SCHEMA] Config:', config?.id || 'none', 'dbName:', dbName || '(none)');
+        this.outputChannel.appendLine(`[SqlEditorProvider] sendSchemaUpdate called. config:${config?.id || 'none'} db:${dbName || '(none)'} webviewRequestId:${connectionId || 'none'}`);
+
         if (!config) {
             console.log('[SCHEMA] No config found, returning empty schema');
             return;
         }
 
         try {
-            // TODO: Implement proper schema retrieval from database
-            // For now, retrieve basic table information
-            const connection = this.connectionProvider.getConnection();
-            
+            // Determine connection/pool to use. If a specific database was requested (dbName)
+            // obtain a DB-scoped pool from ConnectionProvider. Otherwise use current connection.
+            let connection: any = null;
+            if (dbName && config) {
+                try {
+                    this.outputChannel.appendLine(`[SqlEditorProvider] Creating/obtaining DB pool for ${config.id} -> ${dbName}`);
+                    connection = await this.connectionProvider.createDbPool(config.id, dbName);
+                    this.outputChannel.appendLine(`[SqlEditorProvider] Using DB pool ${config.id}::${dbName} (connected=${connection?.connected})`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[SqlEditorProvider] Failed to create DB pool for schema update ${config.id} -> ${dbName}: ${err}`);
+                    connection = this.connectionProvider.getConnection(config.id) || this.connectionProvider.getConnection();
+                    this.outputChannel.appendLine(`[SqlEditorProvider] Falling back to base connection for schema: ${connection ? 'available' : 'none'}`);
+                }
+            } else {
+                connection = this.connectionProvider.getConnection();
+                this.outputChannel.appendLine(`[SqlEditorProvider] Using active/base connection for schema (id=${this.connectionProvider.getCurrentConfig()?.id || 'none'})`);
+            }
+
             if (!connection) {
                 console.log('[SCHEMA] No active connection, sending empty schema');
                 webview.postMessage({
@@ -312,11 +389,28 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             return;
         }
 
-        // Use provided connection or active connection
-        const config = connectionId
-            ? this.connectionProvider.getConnectionConfig(connectionId)
-            : this.connectionProvider.getCurrentConfig();
-        
+        // Resolve connection/config and (when needed) create a DB-scoped pool.
+        let config: any = null;
+        let poolToUse: any = null;
+
+        if (connectionId && typeof connectionId === 'string' && connectionId.includes('::')) {
+            const [baseId, dbName] = connectionId.split('::');
+            config = this.connectionProvider.getConnectionConfig(baseId);
+            try {
+                poolToUse = await this.connectionProvider.createDbPool(baseId, dbName);
+            } catch (err) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Failed to create DB pool for execution ${baseId} -> ${dbName}: ${err}`);
+                // Fallback to the base connection if possible
+                poolToUse = this.connectionProvider.getConnection(baseId) || this.connectionProvider.getConnection();
+            }
+        } else if (connectionId) {
+            config = this.connectionProvider.getConnectionConfig(connectionId);
+            poolToUse = this.connectionProvider.getConnection(connectionId) || this.connectionProvider.getConnection();
+        } else {
+            config = this.connectionProvider.getCurrentConfig();
+            poolToUse = this.connectionProvider.getConnection();
+        }
+
         if (!config) {
             webview.postMessage({
                 type: 'error',
@@ -333,6 +427,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         try {
             const startTime = Date.now();
+            this.outputChannel.appendLine(`[SqlEditorProvider] Executing query. config:${config?.id || 'none'} pool:${poolToUse ? (poolToUse?.connected ? 'connected' : 'not-connected') : 'none'} db:${connectionId?.includes('::') ? connectionId.split('::')[1] : (config?.database || 'unknown')}`);
             
             // If actual plan is requested, enable statistics XML
             let finalQuery = query;
@@ -340,7 +435,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 finalQuery = `SET STATISTICS XML ON;\n${query}\nSET STATISTICS XML OFF;`;
             }
             
-            const result = await this.queryExecutor.executeQuery(finalQuery);
+            const result = await this.queryExecutor.executeQuery(finalQuery, poolToUse);
             const executionTime = Date.now() - startTime;
 
             // Check if we have an execution plan in the result
@@ -434,11 +529,28 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             return;
         }
 
-        // Use provided connection or active connection
-        const config = connectionId
-            ? this.connectionProvider.getConnectionConfig(connectionId)
-            : this.connectionProvider.getCurrentConfig();
-        
+        // Resolve connection/config and (when needed) create a DB-scoped pool.
+        let config: any = null;
+        let poolToUse: any = null;
+
+        if (connectionId && typeof connectionId === 'string' && connectionId.includes('::')) {
+            const [baseId, dbName] = connectionId.split('::');
+            config = this.connectionProvider.getConnectionConfig(baseId);
+            try {
+                poolToUse = await this.connectionProvider.createDbPool(baseId, dbName);
+            } catch (err) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Failed to create DB pool for estimated plan ${baseId} -> ${dbName}: ${err}`);
+                // Fallback to the base connection if possible
+                poolToUse = this.connectionProvider.getConnection(baseId) || this.connectionProvider.getConnection();
+            }
+        } else if (connectionId) {
+            config = this.connectionProvider.getConnectionConfig(connectionId);
+            poolToUse = this.connectionProvider.getConnection(connectionId) || this.connectionProvider.getConnection();
+        } else {
+            config = this.connectionProvider.getCurrentConfig();
+            poolToUse = this.connectionProvider.getConnection();
+        }
+
         if (!config) {
             webview.postMessage({
                 type: 'error',
@@ -459,7 +571,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             // Enable SHOWPLAN_XML to get estimated plan without executing
             const planQuery = `SET SHOWPLAN_XML ON;\n${query}\nSET SHOWPLAN_XML OFF;`;
             
-            const result = await this.queryExecutor.executeQuery(planQuery);
+            const result = await this.queryExecutor.executeQuery(planQuery, poolToUse);
             const executionTime = Date.now() - startTime;
 
             // Extract the XML plan from result

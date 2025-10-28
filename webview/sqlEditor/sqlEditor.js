@@ -783,9 +783,14 @@ window.addEventListener('message', event => {
             break;
 
         case 'connectionsUpdate':
-            updateConnectionsList(message.connections, message.currentConnectionId);
-            // Request schema update when connection changes
-            vscode.postMessage({ type: 'getSchema' });
+            // message.options is an array of { value, label, title, icon }
+            updateConnectionsList(message.options || [], message.currentConnectionId);
+            // Request schema update when connection changes (extension will also push schema)
+            // If the UI needs schema for the currently selected entry, also request it
+            const selector = document.getElementById('databaseSelector');
+            if (selector && selector.value) {
+                vscode.postMessage({ type: 'getSchema', connectionId: selector.value });
+            }
             break;
 
         case 'schemaUpdate':
@@ -814,32 +819,38 @@ window.addEventListener('message', event => {
     }
 });
 
-function updateConnectionsList(connections, currentId) {
-    activeConnections = connections;
+function updateConnectionsList(options, currentId) {
+    // options: [{ value, label, title, icon }]
+    activeConnections = options;
     currentConnectionId = currentId;
-    
+
     const databaseSelector = document.getElementById('databaseSelector');
     databaseSelector.innerHTML = '';
-    
-    if (connections.length === 0) {
+
+    if (!options || options.length === 0) {
         const option = document.createElement('option');
         option.value = '';
         option.textContent = 'Not Connected';
         databaseSelector.appendChild(option);
         databaseSelector.disabled = true;
-    } else {
-        databaseSelector.disabled = false;
-        connections.forEach(conn => {
-            const option = document.createElement('option');
-            option.value = conn.id;
-            option.textContent = conn.database;
-            option.title = `${conn.server}/${conn.database}`;
-            if (conn.id === currentId) {
-                option.selected = true;
-            }
-            databaseSelector.appendChild(option);
-        });
+        return;
     }
+
+    databaseSelector.disabled = false;
+    options.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        // Use a simple emoji icon prefix to represent server vs database
+        const icon = opt.icon === 'server' ? '\u{1F5A5}' : '\u{1F4BE}'; // 🖥️ for server, 💾 for database
+        option.textContent = `${icon} ${opt.label}`;
+        option.title = opt.title;
+        // Only select exact match. This avoids ambiguous startsWith matches that can
+        // cause the dropdown to jump to the first database (often master).
+        if (currentId && opt.value === currentId) {
+            option.selected = true;
+        }
+        databaseSelector.appendChild(option);
+    });
 }
 
 function showLoading() {

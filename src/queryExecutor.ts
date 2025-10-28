@@ -19,14 +19,13 @@ export class QueryExecutor {
         private historyManager?: QueryHistoryManager
     ) {}
 
-    async executeQuery(queryText: string): Promise<QueryResult> {
-        if (!this.connectionProvider.isConnected()) {
-            throw new Error('No active database connection. Please connect to a server first.');
-        }
-
-        const connection = this.connectionProvider.getConnection();
+    // Accept an optional `connectionPool` to execute the query against. When not
+    // provided, fall back to the provider's active connection.
+    async executeQuery(queryText: string, connectionPool?: sql.ConnectionPool): Promise<QueryResult> {
+        // If a specific pool was provided, use it. Otherwise use the provider's active connection.
+        const connection = connectionPool || this.connectionProvider.getConnection();
         if (!connection) {
-            throw new Error('Database connection is not available.');
+            throw new Error('No active database connection. Please connect to a database first.');
         }
 
         const startTime = Date.now();

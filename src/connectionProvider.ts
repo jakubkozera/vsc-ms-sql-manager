@@ -115,8 +115,8 @@ export class ConnectionProvider {
     }
 
     async connectWithWebview(): Promise<void> {
-        const { ConnectionWebview } = await import('./connectionWebview');
-        const connectionWebview = new ConnectionWebview(this.context, (config) => {
+        const { ConnectionWebview } = await import('./connectionWebview.js');
+        const connectionWebview = new ConnectionWebview(this.context, (config: any) => {
             this.handleWebviewConnection(config);
         });
         
@@ -549,9 +549,9 @@ export class ConnectionProvider {
             const username = await this.context.secrets.get(`mssqlManager.username.${config.id}`);
             const connectionString = await this.context.secrets.get(`mssqlManager.connectionString.${config.id}`);
             
-            if (password) completeConfig.password = password;
-            if (username) completeConfig.username = username;
-            if (connectionString) completeConfig.connectionString = connectionString;
+            if (password) { completeConfig.password = password; }
+            if (username) { completeConfig.username = username; }
+            if (connectionString) { completeConfig.connectionString = connectionString; }
             
         } catch (error) {
             this.outputChannel.appendLine(`[ConnectionProvider] Warning: Could not retrieve sensitive data for ${config.name}`);
@@ -568,7 +568,7 @@ export class ConnectionProvider {
         
         for (const pair of pairs) {
             const [key, value] = pair.split('=').map(s => s.trim());
-            if (!key || !value) continue;
+            if (!key || !value) { continue; }
             
             const lowerKey = key.toLowerCase();
             
@@ -701,8 +701,8 @@ export class ConnectionProvider {
         const completeConfig = await this.getCompleteConnectionConfig(connection);
         
         // Open webview with existing config for editing
-        const { ConnectionWebview } = await import('./connectionWebview');
-        const connectionWebview = new ConnectionWebview(this.context, (config) => {
+        const { ConnectionWebview } = await import('./connectionWebview.js');
+        const connectionWebview = new ConnectionWebview(this.context, (config: any) => {
             this.handleWebviewConnection(config);
         });
         
