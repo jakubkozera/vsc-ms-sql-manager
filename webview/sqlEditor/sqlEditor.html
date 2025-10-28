@@ -17,14 +17,24 @@
 <body>
     <div id="container">
         <div id="toolbar">
-            <button class="toolbar-button" id="executeButton" title="Execute Query (F5 or Ctrl+Shift+E)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13 -8z" /></svg>
-                Run
-            </button>
-            <label class="checkbox-label" title="Include Actual Execution Plan">
-                <input type="checkbox" id="actualPlanCheckbox">
-                <span>with execution plan</span>
-            </label>
+            <div class="button-container">
+                <button class="main-button" id="executeButton" title="Execute Query (F5 or Ctrl+Shift+E)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13 -8z" /></svg>
+                    Run
+                </button>
+                <button class="dropdown-toggle" id="executeDropdownToggle">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6" /></svg>
+                </button>
+                <div class="dropdown-menu" id="executeDropdownMenu">
+                    <div class="dropdown-item">
+                        <label for="actualPlanCheckbox">With execution plan</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="actualPlanCheckbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
             <button class="toolbar-button secondary" id="cancelButton" disabled title="Cancel Query">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /></svg>
                 Cancel

@@ -159,6 +159,30 @@ document.getElementById('executeButton').addEventListener('click', () => {
     executeQuery();
 });
 
+// Execute button dropdown functionality
+const executeDropdownToggle = document.getElementById('executeDropdownToggle');
+const executeDropdownMenu = document.getElementById('executeDropdownMenu');
+
+executeDropdownToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    executeDropdownMenu.classList.toggle('show');
+    executeDropdownToggle.classList.toggle('open');
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const buttonContainer = executeDropdownToggle.closest('.button-container');
+    if (!buttonContainer.contains(e.target)) {
+        executeDropdownMenu.classList.remove('show');
+        executeDropdownToggle.classList.remove('open');
+    }
+});
+
+// Prevent dropdown from closing when clicking inside
+executeDropdownMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
+});
+
 document.getElementById('cancelButton').addEventListener('click', () => {
     vscode.postMessage({ type: 'cancelQuery' });
 });
