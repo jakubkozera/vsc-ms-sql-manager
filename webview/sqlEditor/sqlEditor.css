@@ -435,6 +435,17 @@ body {
     position: relative;
 }
 
+#resultsContent.single-result-set {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 12px;
+}
+
+#resultsContent.multiple-result-sets {
+    overflow: auto;
+}
+
 #executionStats {
     margin-left: auto;
     padding: 8px 16px;
@@ -578,6 +589,11 @@ th {
     flex-direction: column;
 }
 
+.result-set-container.full-height {
+    height: 100%;
+    flex: 1;
+}
+
 .result-set-header {
     padding: 8px 12px;
     background-color: var(--vscode-editor-lineHighlightBackground);
@@ -592,6 +608,11 @@ th {
     height: 100%;
     overflow: auto;
     position: relative;
+}
+
+.result-set-table.full-height {
+    flex: 1;
+    height: 100%;
 }
 
 .result-set-table table {
@@ -654,6 +675,12 @@ th {
     height: 100% !important;
     min-height: 300px;
     max-height: 400px;
+}
+
+.ag-grid-viewport.full-height {
+    min-height: unset;
+    max-height: unset;
+    height: 100%;
 }
 
 .ag-grid-table {

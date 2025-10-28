@@ -1194,6 +1194,18 @@ function displayResults(resultSets, planXml) {
 
     // Clear previous content
     resultsContent.innerHTML = '';
+    
+    // Determine if we should use single-result-set mode (100% height)
+    const isSingleResultSet = resultSets.length === 1 && !planXml;
+    
+    // Add appropriate class to resultsContent
+    if (isSingleResultSet) {
+        resultsContent.classList.add('single-result-set');
+        resultsContent.classList.remove('multiple-result-sets');
+    } else {
+        resultsContent.classList.add('multiple-result-sets');
+        resultsContent.classList.remove('single-result-set');
+    }
 
     // Create a table for each result set
     resultSets.forEach((results, index) => {
@@ -1204,14 +1216,20 @@ function displayResults(resultSets, planXml) {
         // Create container for this result set
         const resultSetContainer = document.createElement('div');
         resultSetContainer.className = 'result-set-container';
+        if (isSingleResultSet) {
+            resultSetContainer.classList.add('full-height');
+        }
 
         // Create table container
         const tableContainer = document.createElement('div');
         tableContainer.className = 'result-set-table';
+        if (isSingleResultSet) {
+            tableContainer.classList.add('full-height');
+        }
         
         // Initialize AG-Grid-like table for this result set
         console.log('[SQL EDITOR] Creating table for result set', index + 1, 'with', results.length, 'rows');
-        initAgGridTable(results, tableContainer);
+        initAgGridTable(results, tableContainer, isSingleResultSet);
         
         resultSetContainer.appendChild(tableContainer);
         resultsContent.appendChild(resultSetContainer);
@@ -1233,7 +1251,7 @@ function displayResults(resultSets, planXml) {
         
         // Create a single-cell table with the XML plan
         const planData = [{ 'Microsoft SQL Server 2005 XML Showplan': planXml }];
-        initAgGridTable(planData, planTableContainer);
+        initAgGridTable(planData, planTableContainer, false);
         
         planContainer.appendChild(planTableContainer);
         resultsContent.appendChild(planContainer);
@@ -1245,8 +1263,8 @@ function displayResults(resultSets, planXml) {
     console.log('[SQL EDITOR] resultsContent height:', resultsContent?.offsetHeight, 'scrollHeight:', resultsContent?.scrollHeight);
 }
 
-function initAgGridTable(rowData, container) {
-    console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows');
+function initAgGridTable(rowData, container, isSingleResultSet = false) {
+    console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows, single result set:', isSingleResultSet);
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
     
     // Virtual scrolling configuration
@@ -1293,8 +1311,9 @@ function initAgGridTable(rowData, container) {
 
     // Build the table HTML structure with virtual scrolling support
     const tableId = `agGrid_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const viewportClass = isSingleResultSet ? 'ag-grid-viewport full-height' : 'ag-grid-viewport';
     const tableHtml = `
-        <div class="ag-grid-viewport" style="overflow: auto; position: relative; height: 100%; width: 100%;">
+        <div class="${viewportClass}" style="overflow: auto; position: relative; height: 100%; width: 100%;">
             <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; width: 100%;">
                 <thead class="ag-grid-thead"></thead>
                 <tbody class="ag-grid-tbody" style="position: relative;"></tbody>
