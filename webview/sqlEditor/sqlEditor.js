@@ -320,7 +320,7 @@ const connectionDropdown = new CustomDropdown('connection-dropdown', (connection
         
         if (connection && connection.connectionType === 'server') {
             // Show database selector and request database list
-            document.getElementById('databaseLabel').style.display = 'inline';
+            document.getElementById('databaseLabel').style.display = 'inline-block';
             databaseDropdown.show();
             
             vscode.postMessage({
@@ -1028,7 +1028,7 @@ function updateConnectionsList(connections, selectedConnectionId, selectedDataba
     // Handle database selector visibility
     const selectedConnection = connections.find(c => c.id === selectedConnectionId);
     if (selectedConnection && selectedConnection.connectionType === 'server') {
-        databaseLabel.style.display = 'inline';
+        databaseLabel.style.display = 'inline-block';
         databaseDropdown.show();
         // Request databases list from extension - pass current database selection
         vscode.postMessage({
