@@ -43,6 +43,12 @@ export class ConnectionWebview {
             return;
         }
 
+        const iconsRoot = path.join(this.context.extensionPath, 'resources', 'icons');
+        const iconPath = {
+            light: vscode.Uri.file(path.join(iconsRoot, 'connection-light.svg')),
+            dark: vscode.Uri.file(path.join(iconsRoot, 'connection-dark.svg'))
+        };
+
         this.panel = vscode.window.createWebviewPanel(
             'mssqlConnection',
             'MS SQL Server Connection',
@@ -55,6 +61,9 @@ export class ConnectionWebview {
                 ]
             }
         );
+
+        // Assign themed icon (light/dark) after panel creation to satisfy TS types
+        this.panel.iconPath = iconPath;
 
         this.panel.onDidDispose(() => {
             this.panel = undefined;

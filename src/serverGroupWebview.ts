@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ServerGroup } from './connectionProvider';
 
 export class ServerGroupWebview {
@@ -12,6 +13,12 @@ export class ServerGroupWebview {
     async show(editGroup?: ServerGroup): Promise<void> {
         const title = editGroup ? `Edit Server Group: ${editGroup.name}` : 'Create Server Group';
         
+        const iconsRoot = path.join(this.context.extensionPath, 'resources', 'icons');
+        const iconPath = {
+            light: vscode.Uri.file(path.join(iconsRoot, 'server-group-light.svg')),
+            dark: vscode.Uri.file(path.join(iconsRoot, 'server-group-dark.svg'))
+        };
+
         this.panel = vscode.window.createWebviewPanel(
             'serverGroupForm',
             title,
@@ -21,6 +28,9 @@ export class ServerGroupWebview {
                 retainContextWhenHidden: true
             }
         );
+
+        // Apply themed icon after creation
+        this.panel.iconPath = iconPath;
 
         this.panel.webview.html = this.getWebviewContent(editGroup);
         
