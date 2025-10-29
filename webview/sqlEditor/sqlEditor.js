@@ -583,8 +583,8 @@ function provideSqlCompletions(model, position) {
                 suggestions: relatedTables.map(table => {
                     const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
                     
-                    // Generate alias (first letter of table name or full name if short)
-                    const tableAlias = table.name.length <= 3 ? table.name.toLowerCase() : table.name.charAt(0).toLowerCase();
+                    // Generate smart alias
+                    const tableAlias = generateSmartAlias(table.name);
                     
                     // Build the ON clause with FK relationship
                     let insertText = `${fullName} ${tableAlias}`;
@@ -779,6 +779,70 @@ function provideSqlCompletions(model, position) {
     });
 
     return { suggestions };
+}
+
+function generateSmartAlias(tableName) {
+    // Handle short table names (3 characters or less)
+    if (tableName.length <= 3) {
+        return tableName.toLowerCase();
+    }
+    
+    // Remove common prefixes/suffixes
+    let cleanName = tableName
+        .replace(/^tbl_?/i, '')  // Remove tbl prefix
+        .replace(/_?tbl$/i, '')  // Remove tbl suffix
+        .replace(/^tb_?/i, '')   // Remove tb prefix
+        .replace(/_?tb$/i, '');  // Remove tb suffix
+    
+    // Split on various word boundaries
+    const words = cleanName.split(/[_\-\s]|(?=[A-Z])/)
+        .filter(word => word && word.length > 0)
+        .map(word => word.toLowerCase());
+    
+    if (words.length === 1) {
+        const word = words[0];
+        // For single words, use intelligent abbreviation
+        if (word.length <= 3) {
+            return word;
+        } else if (word.length <= 6) {
+            // For medium words, take first 2-3 chars
+            return word.substring(0, word.length <= 4 ? 2 : 3);
+        } else {
+            // For long words, take first and some consonants
+            const vowels = 'aeiou';
+            let alias = word.charAt(0);
+            for (let i = 1; i < word.length && alias.length < 3; i++) {
+                if (!vowels.includes(word.charAt(i))) {
+                    alias += word.charAt(i);
+                }
+            }
+            // If we don't have enough characters, add more
+            if (alias.length < 2) {
+                alias = word.substring(0, 2);
+            }
+            return alias;
+        }
+    } else {
+        // Multiple words: take first letter of each significant word
+        let alias = '';
+        
+        for (const word of words) {
+            if (word.length > 0) {
+                alias += word.charAt(0);
+            }
+        }
+        
+        // Ensure we have at least 2 characters and at most 4
+        if (alias.length === 1) {
+            // If only one word or very short, use first 2-3 chars of the original
+            alias = cleanName.substring(0, Math.min(3, cleanName.length)).toLowerCase();
+        } else if (alias.length > 6) {
+            // If too long, take first 6 letters
+            alias = alias.substring(0, 6);
+        }
+        
+        return alias.toLowerCase();
+    }
 }
 
 function extractTablesFromQuery(query) {
