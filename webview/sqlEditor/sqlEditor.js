@@ -640,6 +640,17 @@ function provideSqlCompletions(model, position) {
         if (lastWherePos !== -1 && lastWherePos > lastFromPos) {
             inWhereClause = true;
             console.log('[SQL-COMPLETION] Context: WHERE clause');
+            
+            // Check if we should suggest operators instead of columns in WHERE clause
+            const textAfterWhere = textUntilPosition.substring(lastWherePos + 5); // +5 for "where".length
+            const shouldSuggestOperators = analyzeWhereContext(textAfterWhere);
+            
+            if (shouldSuggestOperators) {
+                console.log('[SQL-COMPLETION] In WHERE clause, suggesting operators');
+                return {
+                    suggestions: getSqlOperators(range)
+                };
+            }
         } else if (lastSelectPos < lastFromPos) {
             // We have both SELECT and FROM, and SELECT comes first
             // Check if we're still in SELECT list or have moved past FROM
@@ -806,6 +817,104 @@ function provideSqlCompletions(model, position) {
     });
 
     return { suggestions };
+}
+
+function analyzeWhereContext(textAfterWhere) {
+    // Analyze the text after WHERE to determine if we should suggest operators
+    const trimmedText = textAfterWhere.trim();
+    
+    console.log('[SQL-COMPLETION] Analyzing WHERE context:', JSON.stringify(trimmedText));
+    
+    if (!trimmedText) {
+        // Just after WHERE keyword, suggest columns
+        return false;
+    }
+    
+    // Split by AND/OR to analyze each condition separately
+    const conditions = trimmedText.split(/\s+(?:and|or)\s+/i);
+    const currentCondition = conditions[conditions.length - 1].trim();
+    
+    console.log('[SQL-COMPLETION] Current condition:', JSON.stringify(currentCondition));
+    
+    // Check if current condition has a column but no operator yet
+    // Patterns that indicate we have a column and should suggest operators:
+    // 1. "columnName " (column followed by space)
+    // 2. "alias.columnName " 
+    // 3. "[schema].[table].[column] "
+    // 4. "pr.Id " (alias.column)
+    
+    // Regex to match column patterns followed by space or end of string
+    const columnPatterns = [
+        /^(?:\w+\.)*\w+\s*$/,  // Basic column (with optional prefix): "column", "alias.column", "schema.table.column"
+        /^\[?[^\]]+\]?(?:\.\[?[^\]]+\]?)*\s*$/,  // Bracketed identifiers: "[column]", "[alias].[column]"
+    ];
+    
+    for (const pattern of columnPatterns) {
+        if (pattern.test(currentCondition)) {
+            // Check if there's already an operator
+            const hasOperator = /\s*(=|<>|!=|<|>|<=|>=|like|in|not\s+in|is\s+null|is\s+not\s+null|between)\s*/i.test(currentCondition);
+            
+            if (!hasOperator) {
+                console.log('[SQL-COMPLETION] Found column without operator, suggesting operators');
+                return true;
+            }
+        }
+    }
+    
+    // Check for incomplete operators that need completion
+    // e.g., "column I" could be "column IN", "column IS"
+    const incompleteOperators = /\s+(i|is|n|no|not|l|li|lik|b|be|bet|betw|betwe|betwee)$/i;
+    if (incompleteOperators.test(currentCondition)) {
+        console.log('[SQL-COMPLETION] Found incomplete operator, suggesting operators');
+        return true;
+    }
+    
+    // If we have "column = " or "column > " etc., suggest values/columns for right side
+    const hasCompleteOperator = /\s*(=|<>|!=|<|>|<=|>=)\s*$/i.test(currentCondition);
+    if (hasCompleteOperator) {
+        console.log('[SQL-COMPLETION] Found complete operator, should suggest values/columns');
+        return false; // This will fall through to column suggestions
+    }
+    
+    // If we have "column LIKE " or "column IN ", suggest appropriate values
+    const hasLikeOrIn = /\s+(like|in)\s*$/i.test(currentCondition);
+    if (hasLikeOrIn) {
+        console.log('[SQL-COMPLETION] Found LIKE/IN operator, should suggest values');
+        return false; // This could be enhanced to suggest specific value formats
+    }
+    
+    return false;
+}
+
+function getSqlOperators(range) {
+    const operators = [
+        { label: '=', detail: 'Equal to', insertText: '= ' },
+        { label: '<>', detail: 'Not equal to', insertText: '<> ' },
+        { label: '!=', detail: 'Not equal to (alternative)', insertText: '!= ' },
+        { label: '<', detail: 'Less than', insertText: '< ' },
+        { label: '>', detail: 'Greater than', insertText: '> ' },
+        { label: '<=', detail: 'Less than or equal to', insertText: '<= ' },
+        { label: '>=', detail: 'Greater than or equal to', insertText: '>= ' },
+        { label: 'LIKE', detail: 'Pattern matching', insertText: 'LIKE ' },
+        { label: 'NOT LIKE', detail: 'Pattern not matching', insertText: 'NOT LIKE ' },
+        { label: 'IN', detail: 'Value in list', insertText: 'IN (' },
+        { label: 'NOT IN', detail: 'Value not in list', insertText: 'NOT IN (' },
+        { label: 'IS NULL', detail: 'Is null value', insertText: 'IS NULL' },
+        { label: 'IS NOT NULL', detail: 'Is not null value', insertText: 'IS NOT NULL' },
+        { label: 'BETWEEN', detail: 'Between two values', insertText: 'BETWEEN ' },
+        { label: 'NOT BETWEEN', detail: 'Not between two values', insertText: 'NOT BETWEEN ' },
+        { label: 'EXISTS', detail: 'Subquery returns rows', insertText: 'EXISTS (' },
+        { label: 'NOT EXISTS', detail: 'Subquery returns no rows', insertText: 'NOT EXISTS (' }
+    ];
+    
+    return operators.map(op => ({
+        label: op.label,
+        kind: monaco.languages.CompletionItemKind.Operator,
+        detail: op.detail,
+        insertText: op.insertText,
+        range: range,
+        sortText: `0_${op.label}` // High priority for operators
+    }));
 }
 
 function generateSmartAlias(tableName) {
