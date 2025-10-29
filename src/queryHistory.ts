@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 export interface QueryHistoryEntry {
     id: string;
     query: string;
+    title?: string; // optional user-provided title for the query
     connectionId: string;
     connectionName: string;
     database: string;
@@ -57,6 +58,14 @@ export class QueryHistoryManager {
 
     getEntry(id: string): QueryHistoryEntry | undefined {
         return this.history.find(entry => entry.id === id);
+    }
+
+    renameEntry(id: string, title?: string): void {
+        const idx = this.history.findIndex(e => e.id === id);
+        if (idx === -1) return;
+        this.history[idx].title = title;
+        this.saveHistory();
+        this._onDidChangeHistory.fire();
     }
 
     clearHistory(): void {

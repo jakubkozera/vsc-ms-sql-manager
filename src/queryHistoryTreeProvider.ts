@@ -186,7 +186,11 @@ export class QueryHistoryItem extends vscode.TreeItem {
     }
 
     private static formatLabel(entry: QueryHistoryEntry): string {
-        // Get first line of query (truncated)
+        // If a user-provided title exists, show it. Otherwise show first line of query (truncated)
+        if (entry.title && entry.title.trim().length > 0) {
+            return entry.title.trim();
+        }
+
         const firstLine = entry.query.split('\n')[0].trim();
         const maxLength = 50;
         if (firstLine.length > maxLength) {

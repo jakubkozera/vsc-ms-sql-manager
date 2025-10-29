@@ -180,6 +180,38 @@ export function registerQueryHistoryCommands(
         }
     );
 
+    const renameQueryHistoryItemCommand = vscode.commands.registerCommand(
+        'mssqlManager.renameQueryHistoryItem',
+        async (item: any) => {
+            try {
+                if (!item || !item.entry) {
+                    vscode.window.showErrorMessage('Invalid history item');
+                    return;
+                }
+
+                const currentTitle = historyManager.getEntry ? historyManager.getEntry(item.entry.id)?.title : undefined;
+                const placeHolder = currentTitle || item.entry.query.split('\n')[0].substring(0, 100);
+
+                const newTitle = await vscode.window.showInputBox({
+                    prompt: 'Enter new title for this history entry (leave empty to clear)',
+                    placeHolder,
+                    value: currentTitle || ''
+                });
+
+                // If user cancelled, newTitle will be undefined
+                if (typeof newTitle === 'undefined') return;
+
+                // Update title (allow empty to clear)
+                historyManager.renameEntry(item.entry.id, newTitle && newTitle.trim().length > 0 ? newTitle.trim() : undefined);
+                outputChannel.appendLine(`[QueryHistory] Renamed history item: ${item.entry.id} -> ${newTitle}`);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                vscode.window.showErrorMessage(`Failed to rename history item: ${errorMessage}`);
+                outputChannel.appendLine(`[QueryHistory] Rename item failed: ${errorMessage}`);
+            }
+        }
+    );
+
     const refreshQueryHistoryCommand = vscode.commands.registerCommand(
         'mssqlManager.refreshQueryHistory',
         () => {
@@ -215,6 +247,7 @@ export function registerQueryHistoryCommands(
         deleteQueryHistoryItemCommand,
         pinQueryHistoryItemCommand,
         unpinQueryHistoryItemCommand,
+        renameQueryHistoryItemCommand,
         refreshQueryHistoryCommand,
         toggleQueryHistoryGroupingCommand
     ];

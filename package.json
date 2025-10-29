@@ -212,6 +212,11 @@
         "icon": "$(pin)"
       },
       {
+        "command": "mssqlManager.renameQueryHistoryItem",
+        "title": "Rename Query",
+        "icon": "$(edit)"
+      },
+      {
         "command": "mssqlManager.clearQueryHistory",
         "title": "Clear Query History",
         "icon": "$(clear-all)"
@@ -593,13 +598,13 @@
           "group": "5_properties@1"
         },
         {
-          "command": "mssqlManager.openQueryFromHistory",
+          "command": "mssqlManager.pinQueryHistoryItem",
           "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
           "group": "inline@1"
         },
         {
-          "command": "mssqlManager.pinQueryHistoryItem",
-          "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
+          "command": "mssqlManager.renameQueryHistoryItem",
+          "when": "view == mssqlManager.queryHistory && viewItem =~ /^queryHistoryItem/",
           "group": "inline@1"
         },
         {
