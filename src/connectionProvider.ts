@@ -40,7 +40,6 @@ export class ConnectionProvider {
     constructor(
         private context: vscode.ExtensionContext,
         private outputChannel: vscode.OutputChannel,
-        private statusBarItem: vscode.StatusBarItem
     ) {}
 
     addConnectionChangeCallback(callback: () => void): void {
@@ -335,7 +334,6 @@ export class ConnectionProvider {
             this.activeConnections.set(config.id, newConnection);
             this.activeConfigs.set(config.id, config);
             this.currentActiveId = config.id;
-            this.updateStatusBar(config);
             
             this.outputChannel.appendLine(`Successfully connected to ${config.server}/${config.database}`);
             vscode.window.showInformationMessage(`Connected to ${config.server}/${config.database}`);
@@ -428,12 +426,6 @@ export class ConnectionProvider {
                         // Find another active connection to make current
                         const remainingIds = Array.from(this.activeConnections.keys());
                         this.currentActiveId = remainingIds.length > 0 ? remainingIds[0] : null;
-                        
-                        if (this.currentActiveId) {
-                            this.updateStatusBar(this.activeConfigs.get(this.currentActiveId)!);
-                        } else {
-                            this.updateStatusBar(null);
-                        }
                     }
                     
                     this.outputChannel.appendLine(`Disconnected from connection: ${connectionId}`);
@@ -502,11 +494,7 @@ export class ConnectionProvider {
     setActiveConnection(connectionId: string): boolean {
         if (this.activeConnections.has(connectionId)) {
             this.currentActiveId = connectionId;
-            const config = this.activeConfigs.get(connectionId);
-            if (config) {
-                this.updateStatusBar(config);
-            }
-            
+
             // Notify listeners about connection change
             this.notifyConnectionChanged();
             
@@ -535,17 +523,6 @@ export class ConnectionProvider {
         return this.activeConnections.size > 0;
     }
 
-    private updateStatusBar(config: ConnectionConfig | null): void {
-        if (config) {
-            this.statusBarItem.text = `$(database) ${config.server}/${config.database}`;
-            this.statusBarItem.tooltip = `Connected to ${config.server}/${config.database}`;
-            this.statusBarItem.backgroundColor = undefined;
-        } else {
-            this.statusBarItem.text = "$(database) Not Connected";
-            this.statusBarItem.tooltip = "MS SQL Manager - No active connection";
-            this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-        }
-    }
 
     private getSavedConnections(): ConnectionConfig[] {
         // Use extension context global state for persistence

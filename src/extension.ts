@@ -8,21 +8,15 @@ import { QueryHistoryTreeProvider } from './queryHistoryTreeProvider';
 import { registerAllCommands } from './commands';
 
 let outputChannel: vscode.OutputChannel;
-let statusBarItem: vscode.StatusBarItem;
 
 export function activate(context: vscode.ExtensionContext) {
     // Create output channel for logging
     outputChannel = vscode.window.createOutputChannel('MS SQL Manager');
     outputChannel.appendLine('MS SQL Manager extension activated');
 
-    // Create status bar item
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    statusBarItem.text = "$(database) Not Connected";
-    statusBarItem.tooltip = "MS SQL Manager - No active connection";
-    statusBarItem.show();
 
     // Initialize providers
-    const connectionProvider = new ConnectionProvider(context, outputChannel, statusBarItem);
+    const connectionProvider = new ConnectionProvider(context, outputChannel);
     const unifiedTreeProvider = new UnifiedTreeProvider(connectionProvider, outputChannel);
     
     // Initialize query history
@@ -86,8 +80,8 @@ export function activate(context: vscode.ExtensionContext) {
         historyTreeProvider
     );
 
-    // Add output channel and status bar to subscriptions
-    context.subscriptions.push(outputChannel, statusBarItem);
+    // Add output channel to subscriptions
+    context.subscriptions.push(outputChannel);
 }
 
 export function deactivate() {
@@ -96,7 +90,4 @@ export function deactivate() {
         outputChannel.dispose();
     }
     
-    if (statusBarItem) {
-        statusBarItem.dispose();
-    }
 }
