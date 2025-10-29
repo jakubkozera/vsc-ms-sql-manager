@@ -150,6 +150,121 @@ require(['vs/editor/editor.main'], function () {
         }
     });
 
+    // Register SQL hover provider - shows table/column details using dbSchema
+    console.log('[SQL-HOVER] Registering hover provider');
+    monaco.languages.registerHoverProvider('sql', {
+        provideHover: (model, position) => {
+            try {
+                const fullText = model.getValue();
+                const tablesInQuery = extractTablesFromQuery(fullText) || [];
+                const line = model.getLineContent(position.lineNumber);
+                const beforeCursor = line.substring(0, position.column - 1);
+
+                // Helper to render a table's columns as markdown table
+                function renderTableMarkdown(schemaName, tableName, cols) {
+                    var md = '| Column | Type | Nullable |\n';
+                    md += '|---|---|---|\n';
+                    for (var i = 0; i < cols.length; i++) {
+                        var c = cols[i];
+                        var type = c.type + (c.maxLength ? '(' + c.maxLength + ')' : '');
+                        var nullable = c.nullable ? 'YES' : 'NO';
+                        md += '| ' + c.name + ' | ' + type + ' | ' + nullable + ' |\n';
+                    }
+                    return '**' + schemaName + '.' + tableName + '**\n\n' + md;
+                }
+
+                // Detect alias.column or table.column pattern before cursor
+                var aliasColMatch = beforeCursor.match(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/);
+                if (aliasColMatch) {
+                    var alias = aliasColMatch[1];
+                    var colName = aliasColMatch[2];
+
+                    // Resolve alias to table
+                    var tableInfo = findTableForAlias(fullText, alias) || findTable(alias);
+                    if (tableInfo) {
+                        var cols = getColumnsForTable(tableInfo.schema, tableInfo.table) || [];
+                        var col = cols.find(function(c) { return c.name.toLowerCase() === colName.toLowerCase(); });
+                        if (col) {
+                            var mdSingle = '| Property | Value |\n|---|---:|\n';
+                            mdSingle += '| Table | ' + tableInfo.schema + '.' + tableInfo.table + ' |\n';
+                            mdSingle += '| Column | ' + col.name + ' |\n';
+                            mdSingle += '| Type | ' + col.type + (col.maxLength ? '(' + col.maxLength + ')' : '') + ' |\n';
+                            mdSingle += '| Nullable | ' + (col.nullable ? 'YES' : 'NO') + ' |\n';
+                            var matchText = aliasColMatch[0];
+                            var startCol = beforeCursor.lastIndexOf(matchText) + 1;
+                            var range = new monaco.Range(position.lineNumber, startCol, position.lineNumber, startCol + matchText.length);
+                            return { contents: [{ value: mdSingle }], range: range };
+                        }
+
+                        // Column not found - show top columns preview as table
+                        var previewCols = cols.slice(0, 12);
+                        var tableMd = renderTableMarkdown(tableInfo.schema, tableInfo.table, previewCols);
+                        var startCol2 = beforeCursor.lastIndexOf(alias) + 1;
+                        var range2 = new monaco.Range(position.lineNumber, startCol2, position.lineNumber, startCol2 + alias.length);
+                        return { contents: [{ value: tableMd }], range: range2 };
+                    }
+                }
+
+                // No alias dot - check standalone word under cursor
+                var wordObj = model.getWordAtPosition(position);
+                if (wordObj && wordObj.word) {
+                    var w = wordObj.word;
+
+                    // If it's a table name, show full table definition as markdown table
+                    var table = findTable(w);
+                    if (table) {
+                        var cols2 = getColumnsForTable(table.schema, table.table) || [];
+                        var md2 = renderTableMarkdown(table.schema, table.table, cols2);
+                        var range3 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        return { contents: [{ value: md2 }], range: range3 };
+                    }
+
+                    // If it's a column name present in multiple tables, prefer tables present in the current query
+                    var matching = dbSchema.tables.filter(function(t){ return t.columns.some(function(c){ return c.name.toLowerCase() === w.toLowerCase(); }); });
+                    if (matching.length > 1) {
+                        // filter by tables present in query
+                        var inQuery = matching.filter(function(t){
+                            return tablesInQuery.some(function(q){ return q.table.toLowerCase() === t.name.toLowerCase() && (q.schema ? q.schema === t.schema : true); });
+                        });
+                        var effective = inQuery.length > 0 ? inQuery : matching;
+
+                        // Build a markdown table listing each matching table and the column details
+                        var mdMulti = '| Table | Column | Type | Nullable |\n';
+                        mdMulti += '|---|---|---|---|\n';
+                        for (var mi = 0; mi < effective.length; mi++) {
+                            var mt = effective[mi];
+                            var mc = mt.columns.find(function(c){ return c.name.toLowerCase() === w.toLowerCase(); });
+                            if (mc) {
+                                var type = mc.type + (mc.maxLength ? '(' + mc.maxLength + ')' : '');
+                                var nullable = mc.nullable ? 'YES' : 'NO';
+                                mdMulti += '| ' + mt.schema + '.' + mt.name + ' | ' + mc.name + ' | ' + type + ' | ' + nullable + ' |\n';
+                            }
+                        }
+                        var range5 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        return { contents: [{ value: mdMulti }], range: range5 };
+                    }
+
+                    // If it's a column name present in exactly one table in schema, show that column
+                    if (matching.length === 1) {
+                        var t = matching[0];
+                        var col = t.columns.find(function(c){ return c.name.toLowerCase() === w.toLowerCase(); });
+                        var md3 = '| Property | Value |\n|---|---:|\n';
+                        md3 += '| Table | ' + t.schema + '.' + t.name + ' |\n';
+                        md3 += '| Column | ' + col.name + ' |\n';
+                        md3 += '| Type | ' + col.type + (col.maxLength ? '(' + col.maxLength + ')' : '') + ' |\n';
+                        md3 += '| Nullable | ' + (col.nullable ? 'YES' : 'NO') + ' |\n';
+                        var range4 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        return { contents: [{ value: md3 }], range: range4 };
+                    }
+                }
+            } catch (err) {
+                console.error('[SQL-HOVER] Error in hover provider', err);
+            }
+
+            return null;
+        }
+    });
+
     // Notify extension that webview is ready
     vscode.postMessage({ type: 'ready' });
 });
