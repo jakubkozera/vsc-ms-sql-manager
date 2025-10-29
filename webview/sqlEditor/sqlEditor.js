@@ -640,29 +640,46 @@ function provideSqlCompletions(model, position) {
         if (lastWherePos !== -1 && lastWherePos > lastFromPos) {
             inWhereClause = true;
             console.log('[SQL-COMPLETION] Context: WHERE clause');
-        } else if (lastSelectPos < lastFromPos && lowerText.length <= lastFromPos + 50) {
-            // Close to FROM keyword
-            inFromClause = true;
-            console.log('[SQL-COMPLETION] Context: FROM clause');
-        } else if (lastSelectPos > -1 && (lastFromPos === -1 || lastSelectPos > lastFromPos)) {
-            inSelectClause = true;
-            console.log('[SQL-COMPLETION] Context: SELECT clause (no FROM yet)');
         } else if (lastSelectPos < lastFromPos) {
-            // We have both SELECT and FROM, check position
-            inSelectClause = false;
-            console.log('[SQL-COMPLETION] Context: After FROM');
+            // We have both SELECT and FROM, and SELECT comes first
+            // Check if we're still in SELECT list or have moved past FROM
+            const textAfterFrom = lowerText.substring(lastFromPos);
+            
+            // If there's significant content after FROM (table name, etc.), we're not in FROM clause anymore
+            // Look for table names or other keywords that indicate we've moved past the FROM clause
+            if (textAfterFrom.match(/from\s+(?:\[[^\]]+\]|\w+)(?:\s+\w+)?(?:\s+(?:where|join|order|group|having|union|intersect|except))?/)) {
+                // We've completed the FROM clause, suggest columns
+                console.log('[SQL-COMPLETION] Context: After FROM - suggest columns');
+                inSelectClause = false;
+                inWhereClause = false;
+                inFromClause = false;
+                // We'll fall through to column suggestions
+            } else {
+                inFromClause = true;
+                console.log('[SQL-COMPLETION] Context: FROM clause (incomplete)');
+            }
+        } else if (lastSelectPos > lastFromPos) {
+            inSelectClause = true;
+            console.log('[SQL-COMPLETION] Context: SELECT clause (after FROM)');
         }
     } else if (lastSelectPos !== -1 && lastFromPos === -1) {
         inSelectClause = true;
         console.log('[SQL-COMPLETION] Context: SELECT clause (no FROM)');
     } else if (lastFromPos !== -1 && lastWherePos === -1) {
-        inFromClause = true;
-        console.log('[SQL-COMPLETION] Context: FROM clause (no WHERE)');
+        // Check if FROM clause is complete
+        const textAfterFrom = lowerText.substring(lastFromPos);
+        if (textAfterFrom.match(/from\s+(?:\[[^\]]+\]|\w+)(?:\s+\w+)?/)) {
+            // FROM clause appears complete, suggest columns or other clauses
+            console.log('[SQL-COMPLETION] Context: After complete FROM clause');
+        } else {
+            inFromClause = true;
+            console.log('[SQL-COMPLETION] Context: FROM clause (no WHERE)');
+        }
     }
     
-    // If we're in SELECT or WHERE, suggest columns from tables in query
-    if (inSelectClause || inWhereClause) {
-        console.log('[SQL-COMPLETION] Should suggest columns - inSelect:', inSelectClause, 'inWhere:', inWhereClause);
+    // If we're in SELECT or WHERE, or after a complete FROM, suggest columns from tables in query
+    if (inSelectClause || inWhereClause || (!inFromClause && lastFromPos !== -1)) {
+        console.log('[SQL-COMPLETION] Should suggest columns - inSelect:', inSelectClause, 'inWhere:', inWhereClause, 'afterFrom:', !inFromClause && lastFromPos !== -1);
         
         // Get all tables/aliases from the FULL query (not just textUntilPosition)
         const fullText = model.getValue();
@@ -774,14 +791,20 @@ function extractTablesFromQuery(query) {
     const sqlKeywords = ['select', 'from', 'where', 'join', 'inner', 'left', 'right', 'full', 'cross', 'on', 'and', 'or', 'order', 'group', 'by', 'having'];
     
     // Match FROM and JOIN clauses with optional aliases
-    // Patterns: FROM schema.table alias, FROM table alias, JOIN schema.table alias, etc.
+    // Patterns: FROM schema.table alias, FROM [schema].[table] alias, FROM table alias, JOIN schema.table alias, etc.
     const patterns = [
-        /\b(?:from|join)\s+(?:(\w+)\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?/gi
+        // Pattern for bracketed identifiers: FROM [schema].[table] alias or FROM [table] alias
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi,
+        // Pattern for regular identifiers: FROM schema.table alias or FROM table alias  
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:([a-zA-Z_][a-zA-Z0-9_]*)\\.)?([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s+(?:as\\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi
     ];
     
-    patterns.forEach(pattern => {
+    patterns.forEach((pattern, patternIndex) => {
+        console.log(`[SQL-COMPLETION] Testing pattern ${patternIndex + 1}:`, pattern);
+        // Create a new regex instance to avoid global flag issues
+        const regex = new RegExp(pattern.source, pattern.flags);
         let match;
-        while ((match = pattern.exec(query)) !== null) {
+        while ((match = regex.exec(query)) !== null) {
             console.log('[SQL-COMPLETION] Regex match:', match);
             const schema = match[1] || 'dbo';
             const table = match[2];
@@ -791,6 +814,7 @@ function extractTablesFromQuery(query) {
             
             // Skip if the captured alias is actually a SQL keyword
             if (alias && sqlKeywords.includes(alias.toLowerCase())) {
+                console.log('[SQL-COMPLETION] Skipping alias as it\'s a SQL keyword:', alias);
                 alias = undefined;
             }
             
@@ -806,14 +830,25 @@ function extractTablesFromQuery(query) {
                     alias = tableInfo.table;
                 }
                 
-                tables.push({
-                    schema: tableInfo.schema,
-                    table: tableInfo.table,
-                    alias: alias,
-                    hasExplicitAlias: hasExplicitAlias
-                });
+                // Check if table is already added to avoid duplicates
+                const existingTable = tables.find(t => 
+                    t.schema === tableInfo.schema && 
+                    t.table === tableInfo.table
+                );
                 
-                console.log('[SQL-COMPLETION] Added table:', { schema: tableInfo.schema, table: tableInfo.table, alias });
+                if (!existingTable) {
+                    const tableEntry = {
+                        schema: tableInfo.schema,
+                        table: tableInfo.table,
+                        alias: alias,
+                        hasExplicitAlias: hasExplicitAlias
+                    };
+                    
+                    tables.push(tableEntry);
+                    console.log('[SQL-COMPLETION] Added table:', tableEntry);
+                }
+            } else {
+                console.log('[SQL-COMPLETION] Table not found in schema:', table);
             }
         }
     });
@@ -854,12 +889,14 @@ function findTableForAlias(query, alias) {
 function findTable(tableName) {
     const lowerName = tableName.toLowerCase();
     
+    // Check tables first
     for (const table of dbSchema.tables) {
         if (table.name.toLowerCase() === lowerName) {
             return { schema: table.schema, table: table.name };
         }
     }
     
+    // Then check views
     for (const view of dbSchema.views) {
         if (view.name.toLowerCase() === lowerName) {
             return { schema: view.schema, table: view.name };
