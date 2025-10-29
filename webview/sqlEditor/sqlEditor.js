@@ -560,137 +560,120 @@ function provideSqlCompletions(model, position) {
         }
     }
 
-    // Check if we're in SELECT or WHERE clause - suggest columns
+    // Analyze SQL context for intelligent suggestions
     const lowerText = textUntilPosition.toLowerCase();
     
     console.log('[SQL-COMPLETION] Checking context - lowerText:', lowerText);
     
-    // Check if we're in JOIN clause (after JOIN keyword, before ON)
-    const joinMatch = /\b((?:inner|left|right|full|cross)\s+)?join\s*$/i.exec(lineUntilPosition);
-    console.log('[SQL-COMPLETION] JOIN match:', joinMatch ? 'YES' : 'NO');
+    // Analyze the current SQL context
+    const sqlContext = analyzeSqlContext(textUntilPosition, lineUntilPosition);
+    console.log('[SQL-COMPLETION] SQL Context analysis:', sqlContext);
     
-    if (joinMatch) {
-        console.log('[SQL-COMPLETION] In JOIN context, suggesting related tables');
-        // Suggest tables that have foreign key relationships with tables already in the query
-        const tablesInQuery = extractTablesFromQuery(textUntilPosition);
-        console.log('[SQL-COMPLETION] Tables in query for JOIN:', tablesInQuery);
-        
-        if (tablesInQuery.length > 0) {
-            const relatedTables = getRelatedTables(tablesInQuery);
-            console.log('[SQL-COMPLETION] Related tables:', relatedTables.map(t => ({ name: t.name, hasFKInfo: !!t.foreignKeyInfo })));
+    // Handle different SQL contexts
+    switch (sqlContext.type) {
+        case 'JOIN_TABLE':
+            console.log('[SQL-COMPLETION] In JOIN context, suggesting related tables');
+            const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+            console.log('[SQL-COMPLETION] Tables in query for JOIN:', tablesInQuery);
             
-            return {
-                suggestions: relatedTables.map(table => {
-                    const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
-                    
-                    // Generate smart alias
-                    const tableAlias = generateSmartAlias(table.name);
-                    
-                    // Build the ON clause with FK relationship
-                    let insertText = `${fullName} ${tableAlias}`;
-                    let detailText = `Table (${table.columns?.length || 0} columns)`;
-                    
-                    if (table.foreignKeyInfo) {
-                        const fkInfo = table.foreignKeyInfo;
-                        const toAlias = tableAlias;
-                        const fromAlias = fkInfo.fromAlias;
-                        
-                        if (fkInfo.direction === 'to') {
-                            insertText = `${fullName} ${toAlias} ON ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
-                            detailText = `Join on ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
-                        } else {
-                            insertText = `${fullName} ${toAlias} ON ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
-                            detailText = `Join on ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
-                        }
-                    }
-                    
-                    return {
-                        label: fullName,
-                        kind: monaco.languages.CompletionItemKind.Class,
-                        detail: detailText,
-                        insertText: insertText,
-                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                        range: range,
-                        sortText: `0_${fullName}`
-                    };
-                })
-            };
-        }
-    }
-    
-    // Detect context: SELECT, WHERE, or FROM clause
-    let inSelectClause = false;
-    let inWhereClause = false;
-    let inFromClause = false;
-    
-    // Better context detection
-    const lastSelectPos = lowerText.lastIndexOf('select');
-    const lastFromPos = lowerText.lastIndexOf('from');
-    const lastWherePos = lowerText.lastIndexOf('where');
-    const lastJoinPos = Math.max(
-        lowerText.lastIndexOf('join'),
-        lowerText.lastIndexOf('inner join'),
-        lowerText.lastIndexOf('left join'),
-        lowerText.lastIndexOf('right join')
-    );
-    
-    console.log('[SQL-COMPLETION] Context positions - SELECT:', lastSelectPos, 'FROM:', lastFromPos, 'WHERE:', lastWherePos, 'JOIN:', lastJoinPos);
-    
-    if (lastSelectPos !== -1 && lastFromPos !== -1) {
-        if (lastWherePos !== -1 && lastWherePos > lastFromPos) {
-            inWhereClause = true;
-            console.log('[SQL-COMPLETION] Context: WHERE clause');
-            
-            // Check if we should suggest operators instead of columns in WHERE clause
-            const textAfterWhere = textUntilPosition.substring(lastWherePos + 5); // +5 for "where".length
-            const shouldSuggestOperators = analyzeWhereContext(textAfterWhere);
-            
-            if (shouldSuggestOperators) {
-                console.log('[SQL-COMPLETION] In WHERE clause, suggesting operators');
+            if (tablesInQuery.length > 0) {
+                const relatedTables = getRelatedTables(tablesInQuery);
+                console.log('[SQL-COMPLETION] Related tables:', relatedTables.map(t => ({ name: t.name, hasFKInfo: !!t.foreignKeyInfo })));
+                
                 return {
-                    suggestions: getSqlOperators(range)
+                    suggestions: relatedTables.map(table => {
+                        const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
+                        
+                        // Generate smart alias
+                        const tableAlias = generateSmartAlias(table.name);
+                        
+                        // Build the ON clause with FK relationship
+                        let insertText = `${fullName} ${tableAlias}`;
+                        let detailText = `Table (${table.columns?.length || 0} columns)`;
+                        
+                        if (table.foreignKeyInfo) {
+                            const fkInfo = table.foreignKeyInfo;
+                            const toAlias = tableAlias;
+                            const fromAlias = fkInfo.fromAlias;
+                            
+                            if (fkInfo.direction === 'to') {
+                                insertText = `${fullName} ${toAlias} ON ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
+                                detailText = `Join on ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
+                            } else {
+                                insertText = `${fullName} ${toAlias} ON ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                                detailText = `Join on ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                            }
+                        }
+                        
+                        return {
+                            label: fullName,
+                            kind: monaco.languages.CompletionItemKind.Class,
+                            detail: detailText,
+                            insertText: insertText,
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: range,
+                            sortText: `0_${fullName}`
+                        };
+                    })
                 };
             }
-        } else if (lastSelectPos < lastFromPos) {
-            // We have both SELECT and FROM, and SELECT comes first
-            // Check if we're still in SELECT list or have moved past FROM
-            const textAfterFrom = lowerText.substring(lastFromPos);
+            break;
             
-            // If there's significant content after FROM (table name, etc.), we're not in FROM clause anymore
-            // Look for table names or other keywords that indicate we've moved past the FROM clause
-            if (textAfterFrom.match(/from\s+(?:\[[^\]]+\]|\w+)(?:\s+\w+)?(?:\s+(?:where|join|order|group|having|union|intersect|except))?/)) {
-                // We've completed the FROM clause, suggest columns
-                console.log('[SQL-COMPLETION] Context: After FROM - suggest columns');
-                inSelectClause = false;
-                inWhereClause = false;
-                inFromClause = false;
-                // We'll fall through to column suggestions
-            } else {
-                inFromClause = true;
-                console.log('[SQL-COMPLETION] Context: FROM clause (incomplete)');
-            }
-        } else if (lastSelectPos > lastFromPos) {
-            inSelectClause = true;
-            console.log('[SQL-COMPLETION] Context: SELECT clause (after FROM)');
-        }
-    } else if (lastSelectPos !== -1 && lastFromPos === -1) {
-        inSelectClause = true;
-        console.log('[SQL-COMPLETION] Context: SELECT clause (no FROM)');
-    } else if (lastFromPos !== -1 && lastWherePos === -1) {
-        // Check if FROM clause is complete
-        const textAfterFrom = lowerText.substring(lastFromPos);
-        if (textAfterFrom.match(/from\s+(?:\[[^\]]+\]|\w+)(?:\s+\w+)?/)) {
-            // FROM clause appears complete, suggest columns or other clauses
-            console.log('[SQL-COMPLETION] Context: After complete FROM clause');
-        } else {
-            inFromClause = true;
-            console.log('[SQL-COMPLETION] Context: FROM clause (no WHERE)');
-        }
+        case 'ON_CONDITION':
+            console.log('[SQL-COMPLETION] In ON clause, suggesting join conditions');
+            return getJoinConditionSuggestions(textUntilPosition, range);
+            
+        case 'ORDER_BY':
+            console.log('[SQL-COMPLETION] In ORDER BY clause, suggesting columns and sort options');
+            return getOrderBySuggestions(textUntilPosition, range);
+            
+        case 'GROUP_BY':
+            console.log('[SQL-COMPLETION] In GROUP BY clause, suggesting columns');
+            return getGroupBySuggestions(textUntilPosition, range);
+            
+        case 'HAVING':
+            console.log('[SQL-COMPLETION] In HAVING clause, suggesting aggregate conditions');
+            return getHavingSuggestions(textUntilPosition, range);
+            
+        case 'INSERT_COLUMNS':
+            console.log('[SQL-COMPLETION] In INSERT columns, suggesting table columns');
+            return getInsertColumnSuggestions(textUntilPosition, range);
+            
+        case 'INSERT_VALUES':
+            console.log('[SQL-COMPLETION] In INSERT VALUES, suggesting value formats');
+            return getInsertValueSuggestions(textUntilPosition, range);
+            
+        case 'UPDATE_SET':
+            console.log('[SQL-COMPLETION] In UPDATE SET, suggesting column assignments');
+            return getUpdateSetSuggestions(textUntilPosition, range);
     }
     
-    // If we're in SELECT or WHERE, or after a complete FROM, suggest columns from tables in query
-    if (inSelectClause || inWhereClause || (!inFromClause && lastFromPos !== -1)) {
-        console.log('[SQL-COMPLETION] Should suggest columns - inSelect:', inSelectClause, 'inWhere:', inWhereClause, 'afterFrom:', !inFromClause && lastFromPos !== -1);
+    // Detect context: SELECT, WHERE, or FROM clause with enhanced analysis
+    const inSelectClause = sqlContext.type === 'SELECT';
+    const inWhereClause = sqlContext.type === 'WHERE';
+    const inFromClause = sqlContext.type === 'FROM';
+    const afterFromClause = sqlContext.type === 'AFTER_FROM';
+    
+    console.log('[SQL-COMPLETION] Enhanced context detection:', {
+        type: sqlContext.type,
+        confidence: sqlContext.confidence,
+        inSelect: inSelectClause,
+        inWhere: inWhereClause,
+        inFrom: inFromClause,
+        afterFrom: afterFromClause
+    });
+    
+    // Handle WHERE clause with operator suggestions
+    if (inWhereClause && sqlContext.suggestOperators) {
+        console.log('[SQL-COMPLETION] In WHERE clause, suggesting operators');
+        return {
+            suggestions: getSqlOperators(range)
+        };
+    }
+    
+    // If we're in SELECT, WHERE, or after a complete FROM, suggest columns from tables in query
+    if (inSelectClause || inWhereClause || afterFromClause) {
+        console.log('[SQL-COMPLETION] Should suggest columns - context type:', sqlContext.type);
         
         // Get all tables/aliases from the FULL query (not just textUntilPosition)
         const fullText = model.getValue();
@@ -819,71 +802,412 @@ function provideSqlCompletions(model, position) {
     return { suggestions };
 }
 
-function analyzeWhereContext(textAfterWhere) {
-    // Analyze the text after WHERE to determine if we should suggest operators
-    const trimmedText = textAfterWhere.trim();
+function analyzeSqlContext(textUntilPosition, lineUntilPosition) {
+    const lowerText = textUntilPosition.toLowerCase();
+    const lowerLine = lineUntilPosition.toLowerCase();
     
-    console.log('[SQL-COMPLETION] Analyzing WHERE context:', JSON.stringify(trimmedText));
+    // Find positions of key SQL keywords
+    const lastSelectPos = lowerText.lastIndexOf('select');
+    const lastFromPos = lowerText.lastIndexOf('from');
+    const lastWherePos = lowerText.lastIndexOf('where');
+    const lastOrderByPos = lowerText.lastIndexOf('order by');
+    const lastGroupByPos = lowerText.lastIndexOf('group by');
+    const lastHavingPos = lowerText.lastIndexOf('having');
+    const lastInsertPos = lowerText.lastIndexOf('insert');
+    const lastUpdatePos = lowerText.lastIndexOf('update');
+    const lastSetPos = lowerText.lastIndexOf('set');
+    const lastValuesPos = lowerText.lastIndexOf('values');
     
-    if (!trimmedText) {
-        // Just after WHERE keyword, suggest columns
-        return false;
+    // Check for JOIN context
+    const joinMatch = /\b((?:inner|left|right|full|cross)\s+)?join\s*$/i.exec(lowerLine);
+    if (joinMatch) {
+        return { type: 'JOIN_TABLE', confidence: 'high' };
     }
     
-    // Split by AND/OR to analyze each condition separately
-    const conditions = trimmedText.split(/\s+(?:and|or)\s+/i);
-    const currentCondition = conditions[conditions.length - 1].trim();
+    // Check for ON clause context (after JOIN table alias)
+    const onMatch = /\bjoin\s+(?:\w+\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?\s+on\s*/i.exec(lowerLine);
+    if (onMatch || /\bon\s*$/i.test(lowerLine)) {
+        return { type: 'ON_CONDITION', confidence: 'high' };
+    }
     
-    console.log('[SQL-COMPLETION] Current condition:', JSON.stringify(currentCondition));
+    // Check for ORDER BY context
+    if (lastOrderByPos !== -1 && (lastOrderByPos > lastWherePos || lastWherePos === -1)) {
+        const textAfterOrderBy = lowerText.substring(lastOrderByPos + 8); // +8 for "order by".length
+        // Check if we're still in ORDER BY or have moved to next clause
+        if (!/\b(limit|offset|fetch|for|union|intersect|except)\b/.test(textAfterOrderBy)) {
+            return { type: 'ORDER_BY', confidence: 'high' };
+        }
+    }
     
-    // Check if current condition has a column but no operator yet
-    // Patterns that indicate we have a column and should suggest operators:
-    // 1. "columnName " (column followed by space)
-    // 2. "alias.columnName " 
-    // 3. "[schema].[table].[column] "
-    // 4. "pr.Id " (alias.column)
+    // Check for GROUP BY context
+    if (lastGroupByPos !== -1 && lastGroupByPos > Math.max(lastWherePos, lastOrderByPos, lastHavingPos)) {
+        return { type: 'GROUP_BY', confidence: 'high' };
+    }
     
-    // Regex to match column patterns followed by space or end of string
-    const columnPatterns = [
-        /^(?:\w+\.)*\w+\s*$/,  // Basic column (with optional prefix): "column", "alias.column", "schema.table.column"
-        /^\[?[^\]]+\]?(?:\.\[?[^\]]+\]?)*\s*$/,  // Bracketed identifiers: "[column]", "[alias].[column]"
-    ];
+    // Check for HAVING context
+    if (lastHavingPos !== -1 && lastHavingPos > Math.max(lastWherePos, lastGroupByPos)) {
+        const textAfterHaving = lowerText.substring(lastHavingPos + 6); // +6 for "having".length
+        if (!/\b(order|limit|union|intersect|except)\b/.test(textAfterHaving)) {
+            const shouldSuggestOperators = analyzeHavingContext(textAfterHaving);
+            return { 
+                type: 'HAVING', 
+                confidence: 'high',
+                suggestOperators: shouldSuggestOperators
+            };
+        }
+    }
     
-    for (const pattern of columnPatterns) {
-        if (pattern.test(currentCondition)) {
-            // Check if there's already an operator
-            const hasOperator = /\s*(=|<>|!=|<|>|<=|>=|like|in|not\s+in|is\s+null|is\s+not\s+null|between)\s*/i.test(currentCondition);
-            
-            if (!hasOperator) {
-                console.log('[SQL-COMPLETION] Found column without operator, suggesting operators');
-                return true;
+    // Check for INSERT context
+    if (lastInsertPos !== -1 && lastInsertPos > Math.max(lastSelectPos, lastUpdatePos)) {
+        // Check if we're in column list: INSERT INTO table (col1, col2...)
+        const insertMatch = /insert\s+into\s+(?:\w+\.)?(\w+)\s*\(\s*([^)]*)?$/i.exec(lowerLine);
+        if (insertMatch) {
+            return { type: 'INSERT_COLUMNS', confidence: 'high', tableName: insertMatch[1] };
+        }
+        
+        // Check if we're in VALUES clause
+        if (lastValuesPos !== -1 && lastValuesPos > lastInsertPos) {
+            return { type: 'INSERT_VALUES', confidence: 'high' };
+        }
+    }
+    
+    // Check for UPDATE SET context
+    if (lastUpdatePos !== -1 && lastSetPos !== -1 && lastSetPos > lastUpdatePos) {
+        const textAfterSet = lowerText.substring(lastSetPos + 3); // +3 for "set".length
+        if (!/\bwhere\b/.test(textAfterSet) || lastWherePos === -1 || lastWherePos < lastSetPos) {
+            return { type: 'UPDATE_SET', confidence: 'high' };
+        }
+    }
+    
+    // Check for WHERE context
+    if (lastWherePos !== -1 && lastWherePos > Math.max(lastFromPos, lastSetPos)) {
+        const textAfterWhere = lowerText.substring(lastWherePos + 5); // +5 for "where".length
+        const shouldSuggestOperators = analyzeWhereContext(textAfterWhere);
+        return { 
+            type: 'WHERE', 
+            confidence: 'high',
+            suggestOperators: shouldSuggestOperators
+        };
+    }
+    
+    // Check for SELECT context
+    if (lastSelectPos !== -1) {
+        if (lastFromPos === -1 || lastSelectPos > lastFromPos) {
+            return { type: 'SELECT', confidence: 'medium' };
+        } else if (lastFromPos !== -1 && lastSelectPos < lastFromPos) {
+            // Check if FROM clause is complete
+            const textAfterFrom = lowerText.substring(lastFromPos);
+            if (textAfterFrom.match(/from\s+(?:\w+\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?/)) {
+                return { type: 'AFTER_FROM', confidence: 'medium' };
+            } else {
+                return { type: 'FROM', confidence: 'high' };
             }
         }
     }
     
-    // Check for incomplete operators that need completion
-    // e.g., "column I" could be "column IN", "column IS"
-    const incompleteOperators = /\s+(i|is|n|no|not|l|li|lik|b|be|bet|betw|betwe|betwee)$/i;
-    if (incompleteOperators.test(currentCondition)) {
-        console.log('[SQL-COMPLETION] Found incomplete operator, suggesting operators');
-        return true;
+    // Default context
+    return { type: 'DEFAULT', confidence: 'low' };
+}
+
+function analyzeHavingContext(textAfterHaving) {
+    // Similar to WHERE clause analysis but for HAVING (typically with aggregates)
+    const trimmedText = textAfterHaving.trim();
+    
+    if (!trimmedText) {
+        return false;
     }
     
-    // If we have "column = " or "column > " etc., suggest values/columns for right side
-    const hasCompleteOperator = /\s*(=|<>|!=|<|>|<=|>=)\s*$/i.test(currentCondition);
-    if (hasCompleteOperator) {
-        console.log('[SQL-COMPLETION] Found complete operator, should suggest values/columns');
-        return false; // This will fall through to column suggestions
-    }
+    const conditions = trimmedText.split(/\s+(?:and|or)\s+/i);
+    const currentCondition = conditions[conditions.length - 1].trim();
     
-    // If we have "column LIKE " or "column IN ", suggest appropriate values
-    const hasLikeOrIn = /\s+(like|in)\s*$/i.test(currentCondition);
-    if (hasLikeOrIn) {
-        console.log('[SQL-COMPLETION] Found LIKE/IN operator, should suggest values');
-        return false; // This could be enhanced to suggest specific value formats
+    // Check for aggregate function followed by space (e.g., "COUNT(*) ", "SUM(price) ")
+    const aggregatePatterns = [
+        /^(?:count|sum|avg|min|max|stddev|variance)\s*\([^)]*\)\s*$/i,
+        /^(?:\w+\.)*\w+\s*$/  // Column name
+    ];
+    
+    for (const pattern of aggregatePatterns) {
+        if (pattern.test(currentCondition)) {
+            const hasOperator = /\s*(=|<>|!=|<|>|<=|>=|like|in|not\s+in|is\s+null|is\s+not\s+null|between)\s*/i.test(currentCondition);
+            return !hasOperator;
+        }
     }
     
     return false;
+}
+
+function getJoinConditionSuggestions(textUntilPosition, range) {
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    const suggestions = [];
+    
+    if (tablesInQuery.length >= 2) {
+        // Get the last two tables for join condition suggestions
+        const table1 = tablesInQuery[tablesInQuery.length - 2];
+        const table2 = tablesInQuery[tablesInQuery.length - 1];
+        
+        // Find foreign key relationships between these tables
+        if (dbSchema.foreignKeys) {
+            dbSchema.foreignKeys.forEach(fk => {
+                if ((fk.fromTable.toLowerCase() === table1.table.toLowerCase() && 
+                     fk.toTable.toLowerCase() === table2.table.toLowerCase()) ||
+                    (fk.fromTable.toLowerCase() === table2.table.toLowerCase() && 
+                     fk.toTable.toLowerCase() === table1.table.toLowerCase())) {
+                    
+                    const leftAlias = table1.alias;
+                    const rightAlias = table2.alias;
+                    
+                    suggestions.push({
+                        label: `${leftAlias}.${fk.fromColumn} = ${rightAlias}.${fk.toColumn}`,
+                        kind: monaco.languages.CompletionItemKind.Reference,
+                        detail: `Foreign key relationship`,
+                        insertText: `${leftAlias}.${fk.fromColumn} = ${rightAlias}.${fk.toColumn}`,
+                        range: range,
+                        sortText: `0_fk`
+                    });
+                }
+            });
+        }
+        
+        // Suggest all possible column combinations
+        const table1Columns = getColumnsForTable(table1.schema, table1.table);
+        const table2Columns = getColumnsForTable(table2.schema, table2.table);
+        
+        table1Columns.forEach(col1 => {
+            table2Columns.forEach(col2 => {
+                if (col1.name.toLowerCase() === col2.name.toLowerCase() || 
+                    col1.name.toLowerCase().includes('id') && col2.name.toLowerCase().includes('id')) {
+                    
+                    suggestions.push({
+                        label: `${table1.alias}.${col1.name} = ${table2.alias}.${col2.name}`,
+                        kind: monaco.languages.CompletionItemKind.Reference,
+                        detail: `Join on matching columns`,
+                        insertText: `${table1.alias}.${col1.name} = ${table2.alias}.${col2.name}`,
+                        range: range,
+                        sortText: `1_match_${col1.name}`
+                    });
+                }
+            });
+        });
+    }
+    
+    return { suggestions };
+}
+
+function getOrderBySuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    
+    // Add column suggestions
+    tablesInQuery.forEach(tableInfo => {
+        const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
+        const displayAlias = tableInfo.alias || tableInfo.table;
+        
+        columns.forEach(col => {
+            // Column only
+            suggestions.push({
+                label: `${displayAlias}.${col.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Order by column`,
+                insertText: `${displayAlias}.${col.name}`,
+                range: range,
+                sortText: `0_${col.name}`
+            });
+            
+            // Column with ASC
+            suggestions.push({
+                label: `${displayAlias}.${col.name} ASC`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Ascending order`,
+                insertText: `${displayAlias}.${col.name} ASC`,
+                range: range,
+                sortText: `1_${col.name}_asc`
+            });
+            
+            // Column with DESC
+            suggestions.push({
+                label: `${displayAlias}.${col.name} DESC`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Descending order`,
+                insertText: `${displayAlias}.${col.name} DESC`,
+                range: range,
+                sortText: `1_${col.name}_desc`
+            });
+        });
+    });
+    
+    // Add sort direction keywords
+    ['ASC', 'DESC'].forEach(direction => {
+        suggestions.push({
+            label: direction,
+            kind: monaco.languages.CompletionItemKind.Keyword,
+            detail: `Sort direction`,
+            insertText: direction,
+            range: range,
+            sortText: `9_${direction}`
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getGroupBySuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    
+    tablesInQuery.forEach(tableInfo => {
+        const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
+        const displayAlias = tableInfo.alias || tableInfo.table;
+        
+        columns.forEach(col => {
+            suggestions.push({
+                label: `${displayAlias}.${col.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Group by column`,
+                insertText: `${displayAlias}.${col.name}`,
+                range: range,
+                sortText: `0_${col.name}`
+            });
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getHavingSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Check if we should suggest operators
+    const lowerText = textUntilPosition.toLowerCase();
+    const lastHavingPos = lowerText.lastIndexOf('having');
+    
+    if (lastHavingPos !== -1) {
+        const textAfterHaving = textUntilPosition.substring(lastHavingPos + 6);
+        const shouldSuggestOperators = analyzeHavingContext(textAfterHaving);
+        
+        if (shouldSuggestOperators) {
+            return { suggestions: getSqlOperators(range) };
+        }
+    }
+    
+    // Suggest aggregate functions
+    const aggregateFunctions = [
+        { name: 'COUNT(*)', detail: 'Count all rows' },
+        { name: 'COUNT(column)', detail: 'Count non-null values' },
+        { name: 'SUM(column)', detail: 'Sum of values' },
+        { name: 'AVG(column)', detail: 'Average of values' },
+        { name: 'MIN(column)', detail: 'Minimum value' },
+        { name: 'MAX(column)', detail: 'Maximum value' },
+        { name: 'STDDEV(column)', detail: 'Standard deviation' },
+        { name: 'VARIANCE(column)', detail: 'Variance' }
+    ];
+    
+    aggregateFunctions.forEach(func => {
+        suggestions.push({
+            label: func.name,
+            kind: monaco.languages.CompletionItemKind.Function,
+            detail: func.detail,
+            insertText: func.name,
+            range: range,
+            sortText: `0_${func.name}`
+        });
+    });
+    
+    // Also suggest columns for grouping expressions
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    tablesInQuery.forEach(tableInfo => {
+        const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
+        const displayAlias = tableInfo.alias || tableInfo.table;
+        
+        columns.forEach(col => {
+            suggestions.push({
+                label: `${displayAlias}.${col.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Column for aggregate`,
+                insertText: `${displayAlias}.${col.name}`,
+                range: range,
+                sortText: `1_${col.name}`
+            });
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getInsertColumnSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Extract table name from INSERT statement
+    const insertMatch = /insert\s+into\s+(?:(\w+)\.)?(\w+)\s*\(/i.exec(textUntilPosition);
+    if (insertMatch) {
+        const schema = insertMatch[1] || 'dbo';
+        const tableName = insertMatch[2];
+        
+        const columns = getColumnsForTable(schema, tableName);
+        columns.forEach(col => {
+            suggestions.push({
+                label: col.name,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type}${col.nullable ? ' (nullable)' : ' (required)'}`,
+                insertText: col.name,
+                range: range,
+                sortText: col.nullable ? `1_${col.name}` : `0_${col.name}` // Required columns first
+            });
+        });
+    }
+    
+    return { suggestions };
+}
+
+function getInsertValueSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Suggest common value patterns
+    const valuePatterns = [
+        { label: 'NULL', detail: 'Null value', insertText: 'NULL' },
+        { label: "'text'", detail: 'Text value', insertText: "''" },
+        { label: '0', detail: 'Number value', insertText: '0' },
+        { label: 'GETDATE()', detail: 'Current date/time', insertText: 'GETDATE()' },
+        { label: 'NEWID()', detail: 'New GUID', insertText: 'NEWID()' }
+    ];
+    
+    valuePatterns.forEach(pattern => {
+        suggestions.push({
+            label: pattern.label,
+            kind: monaco.languages.CompletionItemKind.Value,
+            detail: pattern.detail,
+            insertText: pattern.insertText,
+            range: range,
+            sortText: `0_${pattern.label}`
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getUpdateSetSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Extract table name from UPDATE statement
+    const updateMatch = /update\s+(?:(\w+)\.)?(\w+)\s+set/i.exec(textUntilPosition);
+    if (updateMatch) {
+        const schema = updateMatch[1] || 'dbo';
+        const tableName = updateMatch[2];
+        
+        const columns = getColumnsForTable(schema, tableName);
+        columns.forEach(col => {
+            // Suggest column = value pattern
+            suggestions.push({
+                label: `${col.name} = `,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Set column value`,
+                insertText: `${col.name} = `,
+                range: range,
+                sortText: `0_${col.name}`
+            });
+        });
+    }
+    
+    return { suggestions };
 }
 
 function getSqlOperators(range) {
