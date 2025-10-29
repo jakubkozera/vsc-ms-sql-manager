@@ -695,26 +695,53 @@ function provideSqlCompletions(model, position) {
                 const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
                 console.log(`[SQL-COMPLETION] Columns for ${tableInfo.schema}.${tableInfo.table}:`, columns.length);
                 
+                // Use the actual alias if available, otherwise use table name
+                const displayAlias = tableInfo.alias || tableInfo.table;
+                console.log(`[SQL-COMPLETION] Using alias "${displayAlias}" for table ${tableInfo.table} (hasExplicitAlias: ${tableInfo.hasExplicitAlias})`);
+                
                 columns.forEach(col => {
-                    const prefix = tableInfo.alias || tableInfo.table;
-                    suggestions.push({
-                        label: col.name,
-                        kind: monaco.languages.CompletionItemKind.Field,
-                        detail: `${prefix}.${col.name} (${col.type})`,
-                        insertText: col.name,
-                        range: range,
-                        sortText: `0_${col.name}` // Prioritize columns
-                    });
-                    
-                    // Also suggest with table prefix
-                    suggestions.push({
-                        label: `${prefix}.${col.name}`,
-                        kind: monaco.languages.CompletionItemKind.Field,
-                        detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
-                        insertText: `${prefix}.${col.name}`,
-                        range: range,
-                        sortText: `1_${col.name}`
-                    });
+                    // For SELECT/WHERE context, prioritize the alias-prefixed suggestions
+                    if (tableInfo.hasExplicitAlias || tablesInQuery.length > 1) {
+                        // When there's an explicit alias or multiple tables, prioritize prefixed columns
+                        suggestions.push({
+                            label: `${displayAlias}.${col.name}`,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${col.type}${col.nullable ? ' (nullable)' : ''} - from ${tableInfo.table}`,
+                            insertText: `${displayAlias}.${col.name}`,
+                            range: range,
+                            sortText: `0_${displayAlias}_${col.name}` // Highest priority for alias-prefixed
+                        });
+                        
+                        // Also suggest without prefix but with lower priority
+                        suggestions.push({
+                            label: col.name,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${displayAlias}.${col.name} (${col.type})`,
+                            insertText: col.name,
+                            range: range,
+                            sortText: `1_${col.name}` // Lower priority for non-prefixed
+                        });
+                    } else {
+                        // Single table without explicit alias - prioritize non-prefixed columns
+                        suggestions.push({
+                            label: col.name,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${displayAlias}.${col.name} (${col.type})`,
+                            insertText: col.name,
+                            range: range,
+                            sortText: `0_${col.name}` // Prioritize non-prefixed columns
+                        });
+                        
+                        // Also suggest with table prefix
+                        suggestions.push({
+                            label: `${displayAlias}.${col.name}`,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
+                            insertText: `${displayAlias}.${col.name}`,
+                            range: range,
+                            sortText: `1_${displayAlias}_${col.name}`
+                        });
+                    }
                 });
             });
             
