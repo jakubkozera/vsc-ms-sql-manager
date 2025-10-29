@@ -115,12 +115,67 @@ export function registerQueryHistoryCommands(
                     return;
                 }
 
-                historyManager.deleteEntry(item.entry.id);
-                outputChannel.appendLine(`[QueryHistory] Deleted history item: ${item.entry.id}`);
+                // Prevent deleting a pinned entry directly - require unpin first
+                const entry = historyManager.getEntry ? historyManager.getEntry(item.entry.id) : undefined;
+                if (entry && entry.pinned) {
+                    const confirm = await vscode.window.showWarningMessage(
+                        'This entry is pinned. Unpin it before deleting. Unpin now?',
+                        { modal: false },
+                        'Unpin'
+                    );
+                    if (confirm === 'Unpin') {
+                        historyManager.setPinned(item.entry.id, false);
+                        outputChannel.appendLine(`[QueryHistory] Unpinned history item before delete: ${item.entry.id}`);
+                        // now delete
+                        historyManager.deleteEntry(item.entry.id);
+                        outputChannel.appendLine(`[QueryHistory] Deleted history item: ${item.entry.id}`);
+                    } else {
+                        return;
+                    }
+                } else {
+                    historyManager.deleteEntry(item.entry.id);
+                    outputChannel.appendLine(`[QueryHistory] Deleted history item: ${item.entry.id}`);
+                }
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
                 vscode.window.showErrorMessage(`Failed to delete history item: ${errorMessage}`);
                 outputChannel.appendLine(`[QueryHistory] Delete item failed: ${errorMessage}`);
+            }
+        }
+    );
+
+    const pinQueryHistoryItemCommand = vscode.commands.registerCommand(
+        'mssqlManager.pinQueryHistoryItem',
+        async (item: any) => {
+            try {
+                if (!item || !item.entry) {
+                    vscode.window.showErrorMessage('Invalid history item');
+                    return;
+                }
+                historyManager.setPinned(item.entry.id, true);
+                outputChannel.appendLine(`[QueryHistory] Pinned history item: ${item.entry.id}`);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                vscode.window.showErrorMessage(`Failed to pin history item: ${errorMessage}`);
+                outputChannel.appendLine(`[QueryHistory] Pin item failed: ${errorMessage}`);
+            }
+        }
+    );
+
+    const unpinQueryHistoryItemCommand = vscode.commands.registerCommand(
+        'mssqlManager.unpinQueryHistoryItem',
+        async (item: any) => {
+            try {
+                if (!item || !item.entry) {
+                    vscode.window.showErrorMessage('Invalid history item');
+                    return;
+                }
+                historyManager.setPinned(item.entry.id, false);
+                outputChannel.appendLine(`[QueryHistory] Unpinned history item: ${item.entry.id}`);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                vscode.window.showErrorMessage(`Failed to unpin history item: ${errorMessage}`);
+                outputChannel.appendLine(`[QueryHistory] Unpin item failed: ${errorMessage}`);
             }
         }
     );
@@ -158,6 +213,8 @@ export function registerQueryHistoryCommands(
         openQueryFromHistoryCommand,
         clearQueryHistoryCommand,
         deleteQueryHistoryItemCommand,
+        pinQueryHistoryItemCommand,
+        unpinQueryHistoryItemCommand,
         refreshQueryHistoryCommand,
         toggleQueryHistoryGroupingCommand
     ];

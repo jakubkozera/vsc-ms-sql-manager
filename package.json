@@ -202,6 +202,16 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "mssqlManager.pinQueryHistoryItem",
+        "title": "Pin Query",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "mssqlManager.unpinQueryHistoryItem",
+        "title": "Unpin Query",
+        "icon": "$(pin)"
+      },
+      {
         "command": "mssqlManager.clearQueryHistory",
         "title": "Clear Query History",
         "icon": "$(clear-all)"
@@ -585,6 +595,16 @@
         {
           "command": "mssqlManager.openQueryFromHistory",
           "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.pinQueryHistoryItem",
+          "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.unpinQueryHistoryItem",
+          "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItemPinned",
           "group": "inline@1"
         },
         {
