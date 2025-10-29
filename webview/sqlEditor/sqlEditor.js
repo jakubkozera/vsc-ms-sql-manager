@@ -760,29 +760,105 @@ function provideSqlCompletions(model, position) {
 
     // Default: suggest tables and views
     const suggestions = [];
+    
+    // Check if this is a new/empty query for special table suggestions
+    const isNewQuery = isNewOrEmptyQuery(textUntilPosition);
+    console.log('[SQL-COMPLETION] Is new query:', isNewQuery);
 
     // Add tables
     dbSchema.tables.forEach(table => {
         const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
+        
+        // Regular table suggestion
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Class,
             detail: `Table (${table.columns.length} columns)`,
             insertText: fullName,
-            range: range
+            range: range,
+            sortText: `2_${fullName}` // Lower priority than special options
         });
+        
+        // Add special script generation options only for new queries
+        if (isNewQuery) {
+            // SELECT TOP 100 option
+            suggestions.push({
+                label: `${table.name}100`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT TOP 100 from ${fullName}`,
+                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${table.name}_100`, // High priority
+                documentation: {
+                    value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`
+                }
+            });
+            
+            // SELECT * option
+            suggestions.push({
+                label: `${table.name}*`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT * from ${fullName}`,
+                insertText: `SELECT *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${table.name}_all`,
+                documentation: {
+                    value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`
+                }
+            });
+            
+            // (COUNT and Schema quick scripts removed per user request)
+        }
     });
 
     // Add views
     dbSchema.views.forEach(view => {
         const fullName = view.schema === 'dbo' ? view.name : `${view.schema}.${view.name}`;
+        
+        // Regular view suggestion
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Interface,
             detail: `View (${view.columns.length} columns)`,
             insertText: fullName,
-            range: range
+            range: range,
+            sortText: `2_${fullName}` // Lower priority than special options
         });
+        
+        // Add special script generation options only for new queries
+        if (isNewQuery) {
+            // SELECT TOP 100 option for views
+            suggestions.push({
+                label: `${view.name}100`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT TOP 100 from ${fullName} (View)`,
+                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${view.name}_100`,
+                documentation: {
+                    value: `**Quick Script**: SELECT TOP 100 rows from view ${fullName}`
+                }
+            });
+            
+            // SELECT * option for views
+            suggestions.push({
+                label: `${view.name}*`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT * from ${fullName} (View)`,
+                insertText: `SELECT *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${view.name}_all`,
+                documentation: {
+                    value: `**Quick Script**: SELECT all rows from view ${fullName}`
+                }
+            });
+            
+            // (COUNT quick script for views removed per user request)
+        }
     });
 
     // Add SQL keywords
@@ -1208,6 +1284,67 @@ function getUpdateSetSuggestions(textUntilPosition, range) {
     }
     
     return { suggestions };
+}
+
+function isNewOrEmptyQuery(textUntilPosition) {
+    // Check if the query is essentially empty or just starting
+    const trimmedText = textUntilPosition.trim();
+    
+    // Empty or just whitespace
+    if (!trimmedText) {
+        return true;
+    }
+    
+    // Check if we're at the very beginning of a statement
+    // Remove comments and check if there's any substantial SQL content
+    const withoutComments = trimmedText
+        .replace(/--.*$/gm, '') // Remove line comments
+        .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
+        .trim();
+    
+    if (!withoutComments) {
+        return true;
+    }
+    
+    // Check if we only have incomplete statement starters
+    const incompletePatterns = [
+        /^\s*$/, // Empty
+        /^\s*select\s*$/i, // Just "SELECT"
+        /^\s*insert\s*$/i, // Just "INSERT"
+        /^\s*update\s*$/i, // Just "UPDATE"
+        /^\s*delete\s*$/i, // Just "DELETE"
+        /^\s*with\s*$/i, // Just "WITH" (CTE)
+        /^\s*create\s*$/i, // Just "CREATE"
+        /^\s*alter\s*$/i, // Just "ALTER"
+        /^\s*drop\s*$/i // Just "DROP"
+    ];
+    
+    for (const pattern of incompletePatterns) {
+        if (pattern.test(withoutComments)) {
+            return true;
+        }
+    }
+    
+    // Check if we're at the start of a new statement after semicolon
+    const statements = withoutComments.split(';');
+    const lastStatement = statements[statements.length - 1].trim();
+    
+    // If the last statement is empty or just a keyword, consider it new
+    if (!lastStatement || incompletePatterns.some(pattern => pattern.test(lastStatement))) {
+        return true;
+    }
+    
+    // Check if we have a very short incomplete statement (less than 20 characters)
+    // This catches cases like "SEL" or "SELECT " without much content
+    if (lastStatement.length < 20) {
+        // Check if it's just keywords without table names or substantial content
+        const hasSubstantialContent = /\b(?:from|join|where|set|into|values)\s+\w+/i.test(lastStatement);
+        if (!hasSubstantialContent) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 function getSqlOperators(range) {
