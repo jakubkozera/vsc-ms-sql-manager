@@ -26,8 +26,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
 
     // Drag and drop implementation
     public async handleDrag(source: TreeNode[], dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
-        // Only allow dragging ConnectionNode items
-        const connectionNodes = source.filter(node => node instanceof ConnectionNode) as ConnectionNode[];
+        // Allow dragging ConnectionNode and ServerConnectionNode items
+        const connectionNodes = source.filter(node => (node instanceof ConnectionNode) || (node instanceof ServerConnectionNode)) as Array<ConnectionNode | ServerConnectionNode>;
         if (connectionNodes.length === 0) {
             return;
         }
@@ -61,7 +61,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             if (target instanceof ServerGroupNode) {
                 // Dropped on a server group - assign to that group
                 targetServerGroupId = target.group.id;
-            } else if (target instanceof ConnectionNode) {
+            } else if (target instanceof ConnectionNode || target instanceof ServerConnectionNode) {
                 // Dropped on a connection - get its parent group
                 const connections = await this.connectionProvider.getSavedConnectionsList();
                 const targetConnection = connections.find(c => c.id === target.connectionId);
