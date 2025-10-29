@@ -131,6 +131,35 @@ require(['vs/editor/editor.main'], function () {
         }
     });
 
+    // Remember right-click position so context-menu 'Go to definition' can use it
+    let lastContextPosition = null;
+    editor.onMouseDown(function(e) {
+        try {
+            // e.event.rightButton is true for right-clicks
+            // Robust detection: check common event properties for right click
+            var isRight = false;
+            try {
+                if (e.event) {
+                    // PointerEvent / MouseEvent properties
+                    isRight = !!(e.event.rightButton || e.event.button === 2 || e.event.which === 3);
+                }
+            } catch (inner) {
+                isRight = false;
+            }
+
+            if (isRight) {
+                if (e.target && e.target.position) {
+                    lastContextPosition = e.target.position;
+                } else {
+                    lastContextPosition = editor.getPosition();
+                }
+                console.log('[editor.onMouseDown] right-click at position', lastContextPosition);
+            }
+        } catch (err) {
+            console.error('[editor.onMouseDown] error', err);
+        }
+    });
+
     // Add keyboard shortcuts
     editor.addCommand(monaco.KeyCode.F5, () => {
         executeQuery();
@@ -215,6 +244,7 @@ require(['vs/editor/editor.main'], function () {
                     if (table) {
                         var cols2 = getColumnsForTable(table.schema, table.table) || [];
                         var md2 = renderTableMarkdown(table.schema, table.table, cols2);
+                        // (removed inline link) user can use the editor context menu 'Go to definition'
                         var range3 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
                         return { contents: [{ value: md2 }], range: range3 };
                     }
@@ -241,6 +271,7 @@ require(['vs/editor/editor.main'], function () {
                             }
                         }
                         var range5 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        // (removed inline link) user can use the editor context menu 'Go to definition'
                         return { contents: [{ value: mdMulti }], range: range5 };
                     }
 
@@ -254,6 +285,7 @@ require(['vs/editor/editor.main'], function () {
                         md3 += '| Type | ' + col.type + (col.maxLength ? '(' + col.maxLength + ')' : '') + ' |\n';
                         md3 += '| Nullable | ' + (col.nullable ? 'YES' : 'NO') + ' |\n';
                         var range4 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        // (removed inline link) user can use the editor context menu 'Go to definition'
                         return { contents: [{ value: md3 }], range: range4 };
                     }
                 }
@@ -267,6 +299,16 @@ require(['vs/editor/editor.main'], function () {
 
     // Notify extension that webview is ready
     vscode.postMessage({ type: 'ready' });
+
+    // Ensure Go-to-definition action is registered after editor is created
+    try {
+        if (typeof registerGoToDefinitionAction === 'function') {
+            registerGoToDefinitionAction();
+            console.log('[GoToDef] Registered action inside require callback');
+        }
+    } catch (e) {
+        console.error('[GoToDef] Failed to register inside require callback', e);
+    }
 });
 
 // Toolbar buttons
@@ -292,6 +334,183 @@ document.addEventListener('click', (e) => {
         executeDropdownToggle.classList.remove('open');
     }
 });
+
+
+// Register a Monaco editor action that appears in the context menu for "Go to definition"
+// This uses the editor selection/word under cursor to build the payload and forwards it to the extension
+function registerGoToDefinitionAction() {
+    // Helper: build a simple CREATE TABLE DDL from an entry in dbSchema
+    function buildTableDDL(table) {
+        try {
+            var lines = [];
+            lines.push('-- Generated table definition');
+            lines.push('CREATE TABLE ' + table.schema + '.' + table.name + ' (');
+            for (var i = 0; i < table.columns.length; i++) {
+                var c = table.columns[i];
+                var colType = c.type + (c.maxLength ? '(' + c.maxLength + ')' : '');
+                var nullable = c.nullable ? 'NULL' : 'NOT NULL';
+                lines.push('    ' + c.name + ' ' + colType + ' ' + nullable + (i < table.columns.length - 1 ? ',' : ''));
+            }
+            lines.push(');');
+
+            // Append any foreign keys that reference or are defined on this table
+            if (dbSchema && Array.isArray(dbSchema.foreignKeys)) {
+                var fks = dbSchema.foreignKeys.filter(function(f) {
+                    return (f.fromSchema === table.schema && f.fromTable === table.name) || (f.toSchema === table.schema && f.toTable === table.name);
+                });
+                if (fks.length > 0) {
+                    lines.push('\n-- Foreign key relationships (summary):');
+                    for (var j = 0; j < fks.length; j++) {
+                        var fk = fks[j];
+                        lines.push('-- ' + fk.constraintName + ': ' + fk.fromSchema + '.' + fk.fromTable + '(' + fk.fromColumn + ') -> ' + fk.toSchema + '.' + fk.toTable + '(' + fk.toColumn + ')');
+                    }
+                }
+            }
+
+            return lines.join('\n');
+        } catch (err) {
+            console.error('[buildTableDDL] error', err);
+            return '-- Unable to generate definition';
+        }
+    }
+
+    editor.addAction({
+        id: 'mssqlmanager.goToDefinition',
+        label: 'Go to definition',
+        keybindings: [],
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: 1.5,
+        run: function(ed) {
+            try {
+            // Prefer lastContextPosition (right-click) when available
+            const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+                const model = ed.getModel();
+                if (!model || !position) return;
+
+                console.log('[GoToDef.run] invoked. position=', position);
+
+                // Get the token/word at position
+                const wordInfo = model.getWordAtPosition(position);
+                console.log('[GoToDef.run] wordInfo=', wordInfo);
+                const line = model.getLineContent(position.lineNumber);
+                const before = line.substring(0, position.column - 1);
+
+                // Try alias.column pattern first
+                const aliasColMatch = before.match(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/);
+                if (aliasColMatch) {
+                    const alias = aliasColMatch[1];
+                    const colName = aliasColMatch[2];
+                    const fullText = model.getValue();
+                    const tableInfo = findTableForAlias(fullText, alias) || findTable(alias);
+                    if (tableInfo) {
+                        vscode.postMessage({ type: 'goToDefinition', objectType: 'column', schema: tableInfo.schema, table: tableInfo.table, column: colName, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+                }
+
+                // Fallback to word under cursor
+                if (wordInfo && wordInfo.word) {
+                    // Helper to parse qualified identifiers and strip brackets/quotes
+                    function stripIdentifierPart(part) {
+                        if (!part) return part;
+                        // Remove square brackets or double quotes if present
+                        part = part.trim();
+                        if ((part.startsWith('[') && part.endsWith(']')) || (part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+                            return part.substring(1, part.length - 1);
+                        }
+                        return part;
+                    }
+
+                    function parseQualifiedIdentifier(name) {
+                        if (!name) return { schema: null, table: null };
+                        // If it contains a dot, split into parts (handles [schema].[table] and schema.table)
+                        const parts = name.split('.');
+                        if (parts.length === 2) {
+                            return { schema: stripIdentifierPart(parts[0]), table: stripIdentifierPart(parts[1]) };
+                        }
+                        // If single part, strip any brackets
+                        return { schema: null, table: stripIdentifierPart(name) };
+                    }
+
+                    const rawWord = wordInfo.word;
+                    const fullText = model.getValue();
+
+                    // parse possible qualified identifier
+                    const parsed = parseQualifiedIdentifier(rawWord);
+
+                    // If we have schema + table from the token itself, try to use it
+                    if (parsed.table && parsed.schema) {
+                        // Prefer asking the extension to script authoritative CREATE for this table
+                        vscode.postMessage({ type: 'scriptTableCreate', schema: parsed.schema, table: parsed.table, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+
+                    // If raw token is just table name (possibly bracketed), normalize and try to find
+                    const normalizedTableName = parsed.table;
+                    // Attempt to find table by name (findTable handles case-insensitive match)
+                    const table = findTable(normalizedTableName);
+                    if (table) {
+                        // Try to build a DDL preview from the in-memory schema and open in a new editor
+                        var schemaTable = dbSchema.tables.find(function(t){ return t.schema === table.schema && (t.name === table.table || t.name === table.name); });
+                        if (schemaTable) {
+                            // Still prefer extension script for full fidelity, but if no extension available fallback to local DDL
+                            try {
+                                vscode.postMessage({ type: 'scriptTableCreate', schema: schemaTable.schema, table: schemaTable.name, connectionId: currentConnectionId, database: currentDatabaseName });
+                                return;
+                            } catch (e) {
+                                var ddl = buildTableDDL(schemaTable);
+                                openInNewEditor(ddl, 'sql');
+                                return;
+                            }
+                        }
+
+                        // Fallback to extension reveal if schema not available
+                        vscode.postMessage({ type: 'goToDefinition', objectType: 'table', schema: table.schema, table: table.table, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+
+                    // If it's a column in a single table, go to that column
+                    const matching = dbSchema.tables.filter(function(t){ return t.columns.some(function(c){ return c.name.toLowerCase() === normalizedTableName.toLowerCase(); }); });
+                    // Prefer tables found in the query
+                    const tablesInQuery = extractTablesFromQuery(fullText) || [];
+                    if (matching.length > 0) {
+                        const inQuery = matching.filter(function(t){ return tablesInQuery.some(function(q){ return q.table.toLowerCase() === t.name.toLowerCase() && (q.schema ? q.schema === t.schema : true); }); });
+                        const effective = inQuery.length > 0 ? inQuery : matching;
+                        // If exactly one table match, reveal that column
+                        if (effective.length === 1) {
+                            // Open table DDL and include a marker for the column
+                            var only = effective[0];
+                            var schemaTable2 = dbSchema.tables.find(function(t){ return t.schema === only.schema && t.name === only.name; });
+                            if (schemaTable2) {
+                                var ddl2 = buildTableDDL(schemaTable2);
+                                ddl2 += '\n\n-- Column: ' + normalizedTableName;
+                                openInNewEditor(ddl2, 'sql');
+                                return;
+                            }
+
+                            // Fallback to extension reveal
+                            vscode.postMessage({ type: 'goToDefinition', objectType: 'column', schema: effective[0].schema, table: effective[0].name, column: normalizedTableName, connectionId: currentConnectionId, database: currentDatabaseName });
+                            return;
+                        }
+                        // Otherwise, send a column-list type so extension can fall back to best guess
+                        vscode.postMessage({ type: 'goToDefinition', objectType: 'column-list', column: normalizedTableName, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error('[GoToDefAction] Error building goToDefinition payload', err);
+            }
+        }
+    });
+}
+
+// Register the action once the editor is ready
+if (typeof editor !== 'undefined' && editor) {
+    registerGoToDefinitionAction();
+} else {
+    // If editor not yet ready, try to register later in the monaco loader callback
+    // (the editor is created in require(['vs/editor/editor.main'], ... ) earlier)
+}
 
 // Prevent dropdown from closing when clicking inside
 executeDropdownMenu.addEventListener('click', (e) => {

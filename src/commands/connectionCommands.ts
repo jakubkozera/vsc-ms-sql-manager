@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
-import { UnifiedTreeProvider, ConnectionNode } from '../unifiedTreeProvider';
+import { UnifiedTreeProvider, ConnectionNode, DatabaseNode, ServerConnectionNode } from '../unifiedTreeProvider';
 import { ServerGroupWebview } from '../serverGroupWebview';
 
 export function registerConnectionCommands(
@@ -249,6 +249,132 @@ export function registerConnectionCommands(
         }
     });
 
+    // Reveal an object (table/column) in the explorer tree
+    const revealInExplorerCommand = vscode.commands.registerCommand('mssqlManager.revealInExplorer', async (payload: any) => {
+        try {
+            if (!payload || !payload.connectionId) {
+                vscode.window.showErrorMessage('No connection specified for reveal');
+                return;
+            }
+
+            const connectionId: string = payload.connectionId;
+            const schemaName: string | undefined = payload.schema;
+            const tableName: string | undefined = payload.table;
+            const columnName: string | undefined = payload.column;
+
+            // Ensure connection is active
+            if (!connectionProvider.isConnectionActive(connectionId)) {
+                await connectionProvider.connectToSavedById(connectionId);
+                unifiedTreeProvider.refresh();
+                // wait briefly for tree to refresh
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
+
+            if (!treeView) {
+                vscode.window.showInformationMessage('Explorer view not available');
+                return;
+            }
+
+            // Walk tree to find DatabaseNode / ConnectionNode and then expand to Tables -> table
+            const rootNodes = await unifiedTreeProvider.getChildren();
+
+            // Find the connection node (either ConnectionNode or ServerConnectionNode)
+            let targetConnNode: any = null;
+            const walkFindConnection = async () => {
+                for (const n of rootNodes) {
+                    // Narrow to known node types before accessing connectionId
+                    if (n instanceof ConnectionNode || n instanceof ServerConnectionNode) {
+                        if (n.connectionId === connectionId) {
+                            targetConnNode = n;
+                            return;
+                        }
+                    }
+
+                    if (n.collapsibleState !== vscode.TreeItemCollapsibleState.None) {
+                        const children = await unifiedTreeProvider.getChildren(n);
+                        for (const c of children) {
+                            if (c instanceof ConnectionNode || c instanceof ServerConnectionNode) {
+                                if (c.connectionId === connectionId) {
+                                    targetConnNode = c;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            await walkFindConnection();
+
+            if (!targetConnNode) {
+                vscode.window.showWarningMessage('Could not find connection node in explorer');
+                return;
+            }
+
+            // Reveal the connection node first
+            await treeView.reveal(targetConnNode, { select: true, focus: true, expand: true });
+
+            // If table specified, expand schema/Tables -> find table node
+            if (tableName) {
+                // Find schema/Tables node under the connection
+                const level1 = await unifiedTreeProvider.getChildren(targetConnNode);
+                // Look for DatabaseNode or SchemaItemNode (Tables)
+                let dbNode: any = null;
+                for (const l1 of level1) {
+                    if (l1 instanceof DatabaseNode && payload.database && l1.database === payload.database) {
+                        dbNode = l1;
+                        break;
+                    }
+                    // If this node is ConnectionNode with same database, use it
+                    if (l1 instanceof ConnectionNode && l1.connectionId === connectionId) {
+                        dbNode = l1;
+                        break;
+                    }
+                }
+
+                const parentForTables = dbNode || targetConnNode;
+                const tablesSection = (await unifiedTreeProvider.getChildren(parentForTables)).find((n: any) => n.itemType === 'tables' || n.label && n.label.toLowerCase().startsWith('tables'));
+                if (tablesSection) {
+                    await treeView.reveal(tablesSection, { select: false, focus: false, expand: true });
+                    // Wait a moment then search for the specific table node
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                    const tables = await unifiedTreeProvider.getChildren(tablesSection);
+                    const matched = tables.find((t: any) => {
+                        const lbl = (t.label || '').toString();
+                        // Label format might be schema.table
+                        if (schemaName) {
+                            return lbl.toLowerCase() === (schemaName + '.' + tableName).toLowerCase();
+                        }
+                        return lbl.toLowerCase().endsWith('.' + tableName.toLowerCase()) || lbl.toLowerCase() === tableName.toLowerCase();
+                    });
+
+                    if (matched) {
+                        await treeView.reveal(matched, { select: true, focus: true, expand: true });
+
+                        // If column specified, expand Columns and reveal column node
+                        if (columnName) {
+                            const childNodes = await unifiedTreeProvider.getChildren(matched);
+                            const colsNode = childNodes.find((c: any) => c.itemType === 'columns');
+                            if (colsNode) {
+                                await treeView.reveal(colsNode, { select: false, focus: false, expand: true });
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                                const colChildren = await unifiedTreeProvider.getChildren(colsNode);
+                                const columnNode = colChildren.find((cn: any) => (cn.label || '').toLowerCase() === columnName.toLowerCase());
+                                if (columnNode) {
+                                    await treeView.reveal(columnNode, { select: true, focus: true, expand: false });
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[revealInExplorer] Error:', error);
+            vscode.window.showErrorMessage(`Failed to reveal object: ${error instanceof Error ? error.message : error}`);
+        }
+    });
+
     return [
         connectCommand,
         disconnectCommand,
@@ -261,5 +387,6 @@ export function registerConnectionCommands(
         editServerGroupCommand,
         debugConnectionsCommand,
         newQueryCommand
+        , revealInExplorerCommand
     ];
 }

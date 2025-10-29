@@ -132,6 +132,52 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     await this.sendSchemaUpdate(webviewPanel.webview, message.connectionId);
                     break;
 
+                case 'goToDefinition':
+                    // Forward to a command that will reveal/expand the tree view to the requested object
+                    // payload: { objectType, schema, table, column, connectionId, database }
+                    try {
+                        await vscode.commands.executeCommand('mssqlManager.revealInExplorer', {
+                            objectType: message.objectType,
+                            schema: message.schema,
+                            table: message.table,
+                            column: message.column,
+                                connectionId: message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null,
+                                database: message.database || undefined
+                        });
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] goToDefinition forward failed: ${err}`);
+                    }
+                    break;
+
+                case 'scriptTableCreate':
+                    // Forward request to existing scriptTableCreate command. Build a lightweight tableNode
+                    try {
+                        // Resolve connectionId and database from message or preserved webview selection
+                        let conn = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null;
+                        let db = message.database || undefined;
+
+                        if (conn && typeof conn === 'string' && conn.includes('::')) {
+                            const parts = conn.split('::');
+                            conn = parts[0];
+                            if (!db && parts.length > 1) {
+                                db = parts[1];
+                            }
+                        }
+
+                        const label = message.schema ? `${message.schema}.${message.table}` : message.table;
+
+                        const tableNode: any = {
+                            connectionId: conn,
+                            label: label,
+                            database: db
+                        };
+
+                        await vscode.commands.executeCommand('mssqlManager.scriptTableCreate', tableNode);
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] scriptTableCreate forward failed: ${err}`);
+                    }
+                    break;
+
                 case 'openInNewEditor':
                     await this.openContentInNewEditor(message.content, message.language);
                     break;
