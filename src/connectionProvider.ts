@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { createDatabaseIcon, createServerGroupIcon } from './serverGroupIcon';
 import * as sql from 'mssql';
 
 export interface ServerGroup {
@@ -117,7 +118,10 @@ export class ConnectionProvider {
     }
 
     async connectWithWebview(): Promise<void> {
-        const { ConnectionWebview } = await import('./connectionWebview');
+        // Use require here so webpack can resolve the TS module during bundling
+        // and avoid runtime import extension issues with node16 resolution.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { ConnectionWebview } = require('./connectionWebview');
         const connectionWebview = new ConnectionWebview(this.context, (config: any) => {
             this.handleWebviewConnection(config);
         });
@@ -168,6 +172,22 @@ export class ConnectionProvider {
             return;
         }
 
+        const serverGroups = this.getServerGroups();
+
+        // Exclude connections that are already active — no need to show them in QuickPick
+        const availableConnections = savedConnections.filter(conn => !this.isConnectionActive(conn.id));
+
+        if (availableConnections.length === 0) {
+            const choice = await vscode.window.showInformationMessage(
+                'All saved connections are already connected. Would you like to create a new connection?',
+                'Create New Connection'
+            );
+            if (choice) {
+                await this.connectWithWebview();
+            }
+            return;
+        }
+
         const items = [
             {
                 label: '$(plus) New Connection',
@@ -175,13 +195,26 @@ export class ConnectionProvider {
                 detail: 'Configure a new SQL Server connection',
                 action: 'new'
             },
-            ...savedConnections.map(conn => ({
-                label: conn.name,
-                description: `${conn.server}/${conn.database}`,
-                detail: `Auth: ${conn.authType}`,
-                action: 'connect',
-                config: conn
-            }))
+            ...availableConnections.map(conn => {
+                // Try to find server group color if available
+                const group = conn.serverGroupId ? serverGroups.find(g => g.id === conn.serverGroupId) : undefined;
+                const groupColor = group ? group.color || '#000000' : '#000000';
+
+                const icon = conn.connectionType === 'server'
+                    ? (this.isConnectionActive(conn.id)
+                        ? new vscode.ThemeIcon('server-environment', new vscode.ThemeColor('charts.green'))
+                        : new vscode.ThemeIcon('server-environment'))
+                    : createDatabaseIcon(this.isConnectionActive(conn.id));
+
+                return {
+                    label: conn.name,
+                    description: `${conn.server}/${conn.database}`,
+                    detail: `Auth: ${conn.authType}`,
+                    action: 'connect',
+                    config: conn,
+                    iconPath: icon
+                } as any;
+            })
         ];
 
         const selected = await vscode.window.showQuickPick(items, {
@@ -713,7 +746,8 @@ export class ConnectionProvider {
         const completeConfig = await this.getCompleteConnectionConfig(connection);
         
         // Open webview with existing config for editing
-        const { ConnectionWebview } = await import('./connectionWebview');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { ConnectionWebview } = require('./connectionWebview');
         const connectionWebview = new ConnectionWebview(this.context, (config: any) => {
             this.handleWebviewConnection(config);
         });
