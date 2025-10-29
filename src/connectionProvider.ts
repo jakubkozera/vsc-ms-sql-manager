@@ -446,7 +446,6 @@ export class ConnectionProvider {
             this.activeConnections.clear();
             this.activeConfigs.clear();
             this.currentActiveId = null;
-            this.updateStatusBar(null);
             
             this.outputChannel.appendLine('Disconnected from all SQL Server connections');
             vscode.window.showInformationMessage('Disconnected from all SQL Server connections');
@@ -772,4 +771,5 @@ export class ConnectionProvider {
             `[ConnectionProvider] Moved connection ${connection.name} to ${targetServerGroupId ? 'group ' + targetServerGroupId : 'root level'}`
         );
     }
+
 }

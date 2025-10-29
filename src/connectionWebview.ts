@@ -242,9 +242,45 @@ export class ConnectionWebview {
 
         h1 {
             color: var(--vscode-foreground);
-            margin-bottom: 30px;
+            margin: 0;
             font-size: 1.5em;
             font-weight: 600;
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            gap: 12px;
+        }
+
+        .icon-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--vscode-foreground);
+            cursor: pointer;
+            font-size: 0.95em;
+        }
+
+        .icon-button svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .icon-button:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+
+        .icon-button.active {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border-color: var(--vscode-button-background);
         }
 
         .form-group {
@@ -539,8 +575,29 @@ export class ConnectionWebview {
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>SQL Server Connection</h1>
+        <div class="container">
+                <div class="header-row">
+                        <h1>SQL Server Connection</h1>
+                        <button type="button" id="useConnectionStringBtn" class="icon-button" title="Use Connection String">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="45"
+                                    height="45"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.5"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                                    <path d="M4 20l3.5 -3.5" />
+                                    <path d="M15 4l-3.5 3.5" />
+                                    <path d="M20 9l-3.5 3.5" />
+                                </svg>
+                                <span>Use Connection String</span>
+                        </button>
+                </div>
         
         <form id="connectionForm">
             <div class="form-group">
@@ -565,14 +622,8 @@ export class ConnectionWebview {
                 </select>
                 <div class="help-text">Database: Connect to specific database. Server: Connect to server for database management</div>
             </div>
+            <input type="checkbox" id="useConnectionString" class="hidden" aria-hidden="true">
 
-            <div class="form-toggle">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="useConnectionString">
-                    <label for="useConnectionString">Use Connection String</label>
-                </div>
-                <div class="help-text">Toggle between connection string and individual fields</div>
-            </div>
 
             <div id="connectionStringSection" class="hidden">
                 <div class="form-group">
@@ -672,6 +723,7 @@ export class ConnectionWebview {
         const connectionTypeGroup = document.getElementById('connectionTypeGroup');
         const sqlAuthFields = document.getElementById('sqlAuthFields');
         const useConnectionStringCheckbox = document.getElementById('useConnectionString');
+        const useConnectionStringBtn = document.getElementById('useConnectionStringBtn');
         const connectionStringSection = document.getElementById('connectionStringSection');
         const individualFieldsSection = document.getElementById('individualFieldsSection');
         const parseBtn = document.getElementById('parseBtn');
@@ -696,7 +748,8 @@ export class ConnectionWebview {
 
         // Toggle between connection string and individual fields
         useConnectionStringCheckbox.addEventListener('change', function() {
-            if (this.checked) {
+            const checked = this.checked;
+            if (checked) {
                 connectionStringSection.classList.remove('hidden');
                 individualFieldsSection.classList.add('hidden');
                 document.getElementById('connectionString').required = true;
@@ -707,7 +760,21 @@ export class ConnectionWebview {
                 document.getElementById('connectionString').required = false;
                 document.getElementById('server').required = true;
             }
+
+            // Update header button visual state
+            if (useConnectionStringBtn) {
+                useConnectionStringBtn.classList.toggle('active', checked);
+            }
         });
+
+        // Header button toggles the same checkbox state
+        if (useConnectionStringBtn) {
+            useConnectionStringBtn.addEventListener('click', function() {
+                const isChecked = useConnectionStringCheckbox.checked;
+                useConnectionStringCheckbox.checked = !isChecked;
+                useConnectionStringCheckbox.dispatchEvent(new Event('change'));
+            });
+        }
 
         // Parse connection string to individual fields
         parseBtn.addEventListener('click', function() {
@@ -1017,6 +1084,10 @@ export class ConnectionWebview {
                 
                 // Trigger events to update UI
                 useConnectionStringCheckbox.dispatchEvent(new Event('change'));
+                // Ensure header button state is synced as well
+                if (useConnectionStringBtn) {
+                    useConnectionStringBtn.classList.toggle('active', useConnectionStringCheckbox.checked);
+                }
                 authTypeSelect.dispatchEvent(new Event('change'));
                 connectionTypeSelect.dispatchEvent(new Event('change'));
             }
@@ -1062,6 +1133,11 @@ export class ConnectionWebview {
         authTypeSelect.dispatchEvent(new Event('change'));
         useConnectionStringCheckbox.dispatchEvent(new Event('change'));
         connectionTypeSelect.dispatchEvent(new Event('change'));
+
+        // Initial sync for header button
+        if (useConnectionStringBtn) {
+            useConnectionStringBtn.classList.toggle('active', useConnectionStringCheckbox.checked);
+        }
     </script>
 </body>
 </html>`;
