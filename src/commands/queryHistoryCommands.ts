@@ -31,7 +31,18 @@ export function registerQueryHistoryCommands(
                 
                 // Combine query with header at the end
                 const fullContent = entry.query + header;
-                
+
+                // Set preferred database for next editor so the SQL editor will initialize
+                // with the same connection+database that the query was executed on.
+                try {
+                    if (entry.connectionId && entry.database) {
+                        connectionProvider.setNextEditorPreferredDatabase(entry.connectionId, entry.database);
+                        outputChannel.appendLine(`[QueryHistory] Preferred DB set for next editor: ${entry.connectionId} -> ${entry.database}`);
+                    }
+                } catch (err) {
+                    outputChannel.appendLine(`[QueryHistory] Failed to set preferred DB for next editor: ${err}`);
+                }
+
                 // Open in custom SQL editor
                 await openSqlInCustomEditor(fullContent, 'history.sql', context);
 
@@ -42,15 +53,19 @@ export function registerQueryHistoryCommands(
                     // Check if already connected to this connection
                     if (!connectionProvider.isConnectionActive(entry.connectionId)) {
                         await connectionProvider.connectToSavedById(entry.connectionId);
+                        // Ensure this connection is set as the active connection
+                        connectionProvider.setActiveConnection(entry.connectionId);
                         vscode.window.showInformationMessage(`Connected to ${entry.connectionName}`);
-                        
+
                         // Refresh the database explorer tree view on successful connection
                         if (unifiedTreeProvider) {
                             outputChannel.appendLine('[QueryHistory] Refreshing database explorer tree view');
                             unifiedTreeProvider.refresh();
                         }
                     } else {
-                        outputChannel.appendLine(`[QueryHistory] Already connected to ${entry.connectionId}`);
+                        // If already connected, make it active so editor/schema requests target it
+                        connectionProvider.setActiveConnection(entry.connectionId);
+                        outputChannel.appendLine(`[QueryHistory] Already connected to ${entry.connectionId}, set as active`);
                     }
                 } catch (error) {
                     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
