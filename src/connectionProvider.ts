@@ -752,7 +752,9 @@ export class ConnectionProvider {
 
             const discovered: ConnectionConfig[] = [];
 
-            for (const c of candidates) {
+            // Run checks in parallel so discovery is fast. Each attempt is isolated with its own
+            // handlers and timeout so a failing driver doesn't affect others.
+            const attemptPromises = candidates.map(c => (async (): Promise<ConnectionConfig | null> => {
                 const testId = `local-${c.server.replace(/[^a-z0-9]/gi, '_')}`;
                 const cfg: ConnectionConfig = {
                     id: testId,
@@ -763,9 +765,8 @@ export class ConnectionProvider {
                     connectionType: 'server'
                 };
 
-                this.outputChannel.appendLine(`[ConnectionProvider] Testing local candidate: ${c.server}`);
+                this.outputChannel.appendLine(`[ConnectionProvider] Testing local candidate (parallel): ${c.server}`);
 
-                // Defensive attempt: attach temporary global handlers to avoid msnodesqlv8 async errors
                 const onUncaught = (err: any) => {
                     this.outputChannel.appendLine(`[ConnectionProvider] Suppressed uncaught exception during discovery for ${c.server}: ${err}`);
                 };
@@ -777,9 +778,7 @@ export class ConnectionProvider {
                 process.once('unhandledRejection', onRejection);
 
                 let pool: any = null;
-
                 try {
-                    // Run connect+query with timeout to avoid hanging on problematic drivers
                     const attempt = (async () => {
                         pool = await createPoolForConfig({ ...cfg, authType: 'windows', useConnectionString: true, connectionString: cfg.connectionString });
                         await pool.connect();
@@ -789,24 +788,21 @@ export class ConnectionProvider {
                     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out')), 2000));
                     await Promise.race([attempt, timeoutPromise]);
 
-                    // success
                     this.outputChannel.appendLine(`[ConnectionProvider] Successfully connected to local candidate: ${c.server}`);
-                    discovered.push(cfg);
+                    return cfg;
                 } catch (err) {
                     this.outputChannel.appendLine(`[ConnectionProvider] Local candidate failed: ${c.server} -> ${err}`);
+                    return null;
                 } finally {
-                    // Clean up temporary global handlers
-                    try { process.removeListener('uncaughtException', onUncaught); } catch (e) { /* ignore */ }
-                    try { process.removeListener('unhandledRejection', onRejection); } catch (e) { /* ignore */ }
+                    try { process.removeListener('uncaughtException', onUncaught); } catch (_) { }
+                    try { process.removeListener('unhandledRejection', onRejection); } catch (_) { }
 
                     if (pool) {
                         try {
-                            // Close only if the pool reports connected, otherwise msnodesqlv8 may throw "Connection is not open"
                             if (typeof pool.connected === 'boolean') {
                                 if (pool.connected) {
                                     await pool.close();
                                 } else {
-                                    // attempt close anyway but ignore known benign errors
                                     try { await pool.close(); } catch (_) { /* ignore */ }
                                 }
                             } else {
@@ -820,6 +816,11 @@ export class ConnectionProvider {
                         }
                     }
                 }
+            })());
+
+            const results = await Promise.all(attemptPromises);
+            for (const res of results) {
+                if (res) discovered.push(res);
             }
 
             if (discovered.length > 0) {
