@@ -245,6 +245,10 @@
         "command": "mssqlManager.newQueryOnDatabase",
         "title": "New Query",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "mssqlManager.copyConnectionString",
+        "title": "Copy Connection String"
       }
     ],
     "viewsContainers": {
@@ -483,6 +487,11 @@
           "group": "2_manage@2"
         },
         {
+          "command": "mssqlManager.copyConnectionString",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "group": "2_manage@3"
+        },
+        {
           "command": "mssqlManager.editServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@1"
@@ -536,6 +545,11 @@
           "command": "mssqlManager.deleteConnection",
           "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
           "group": "2_manage@2"
+        },
+        {
+          "command": "mssqlManager.copyConnectionString",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "group": "2_manage@3"
         },
         {
           "command": "mssqlManager.selectTop1000",

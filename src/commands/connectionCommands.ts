@@ -140,6 +140,68 @@ export function registerConnectionCommands(
         }
     });
 
+    const copyConnectionStringCommand = vscode.commands.registerCommand('mssqlManager.copyConnectionString', async (connectionItem?: any) => {
+        try {
+            if (!connectionItem || !connectionItem.connectionId) {
+                vscode.window.showErrorMessage('Invalid connection item');
+                return;
+            }
+
+            const connectionId = connectionItem.connectionId as string;
+
+            // Try to get active config first, otherwise load saved and fetch secrets
+            let cfg = connectionProvider.getConnectionConfig(connectionId) || null;
+            if (!cfg) {
+                const saved = await connectionProvider.getSavedConnectionsList();
+                cfg = saved.find(c => c.id === connectionId) || null;
+            }
+
+            if (!cfg) {
+                vscode.window.showErrorMessage('Connection configuration not found');
+                return;
+            }
+
+            const complete = await connectionProvider.getCompleteConnectionConfig(cfg);
+
+            // Prefer explicit connectionString if provided
+            let connStr: string | null = null;
+            if (complete.useConnectionString && complete.connectionString) {
+                connStr = complete.connectionString;
+            } else {
+                // Synthesize an ADO-style connection string and include credentials (user requested)
+                const parts: string[] = [];
+                if (complete.server) parts.push(`Server=${complete.server}`);
+                if (complete.database) parts.push(`Database=${complete.database}`);
+                if (complete.authType === 'sql') {
+                    if (complete.username) parts.push(`User Id=${complete.username}`);
+                    if (complete.password) parts.push(`Password=${complete.password}`);
+                } else if (complete.authType === 'windows') {
+                    // Use a generic trusted connection flag
+                    parts.push('Trusted_Connection=Yes');
+                }
+                // include common options
+                if (typeof complete.encrypt === 'boolean') parts.push(`Encrypt=${complete.encrypt}`);
+                if (typeof complete.trustServerCertificate === 'boolean') parts.push(`TrustServerCertificate=${complete.trustServerCertificate}`);
+                if (complete.port) parts.push(`Port=${complete.port}`);
+
+                connStr = parts.join(';') + (parts.length ? ';' : '');
+            }
+
+            if (!connStr) {
+                vscode.window.showErrorMessage('Could not build connection string');
+                return;
+            }
+
+            await vscode.env.clipboard.writeText(connStr);
+            vscode.window.showInformationMessage('Connection string copied to clipboard (includes credentials)');
+            outputChannel.appendLine(`[ConnectionCommands] Copied connection string for ${cfg.name || connectionId}`);
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to copy connection string: ${msg}`);
+            outputChannel.appendLine(`Copy connection string failed: ${msg}`);
+        }
+    });
+
     const createServerGroupCommand = vscode.commands.registerCommand('mssqlManager.createServerGroup', async () => {
         const serverGroupWebview = new ServerGroupWebview(context, async (group) => {
             try {
@@ -383,6 +445,7 @@ export function registerConnectionCommands(
         editConnectionCommand,
         deleteConnectionCommand,
         disconnectConnectionCommand,
+        copyConnectionStringCommand,
         createServerGroupCommand,
         editServerGroupCommand,
         debugConnectionsCommand,
