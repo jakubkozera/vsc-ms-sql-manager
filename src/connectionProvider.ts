@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { createDatabaseIcon, createServerGroupIcon } from './serverGroupIcon';
 import * as sql from 'mssql';
+import { createPoolForConfig, DBPool } from './dbClient';
 
 export interface ServerGroup {
     id: string;
@@ -27,9 +28,9 @@ export interface ConnectionConfig {
 }
 
 export class ConnectionProvider {
-    private activeConnections: Map<string, sql.ConnectionPool> = new Map();
+    private activeConnections: Map<string, DBPool> = new Map();
     // Additional per-parent-connection per-database pools (keyed by `${connectionId}::${database}`)
-    private dbPools: Map<string, sql.ConnectionPool> = new Map();
+    private dbPools: Map<string, DBPool> = new Map();
     private activeConfigs: Map<string, ConnectionConfig> = new Map();
     private currentActiveId: string | null = null;
     private onConnectionChangedCallbacks: Array<() => void> = [];
@@ -322,12 +323,13 @@ export class ConnectionProvider {
                 }
             }
 
-            // Create and test connection
-            const newConnection = new sql.ConnectionPool(sqlConfig);
+            // Create and test connection using dbClient strategy (mssql or msnodesqlv8 depending on auth)
+            const newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate });
             await newConnection.connect();
-            
+
             // Test with a simple query
             const request = newConnection.request();
+            // normalize both clients to return result.recordsets when applicable
             await request.query('SELECT 1 as test');
 
             // Store the new connection
@@ -341,7 +343,7 @@ export class ConnectionProvider {
     }
 
     // Create or return an existing connection pool scoped to a specific database for a given connectionId
-    async createDbPool(connectionId: string, database: string): Promise<sql.ConnectionPool> {
+    async createDbPool(connectionId: string, database: string): Promise<DBPool> {
         const key = `${connectionId}::${database}`;
         const existing = this.dbPools.get(key);
         if (existing && existing.connected) {
@@ -358,30 +360,21 @@ export class ConnectionProvider {
         let sqlConfig: any;
         if (baseConfig.useConnectionString && baseConfig.connectionString) {
             // If using connection string, replace the Database/Initial Catalog value if present
-            sqlConfig = { connectionString: baseConfig.connectionString.replace(/(Initial Catalog|Database)=[^;]+/i, `$1=${database}`) };
+            sqlConfig = { connectionString: baseConfig.connectionString.replace(/(Initial Catalog|Database)=[^;]+/i, `$1=${database}`), authType: baseConfig.authType, useConnectionString: true };
         } else {
             sqlConfig = {
                 server: baseConfig.server,
                 database: database,
-                options: {
-                    encrypt: baseConfig.encrypt || true,
-                    trustServerCertificate: baseConfig.trustServerCertificate || true
-                }
+                authType: baseConfig.authType,
+                username: baseConfig.username,
+                password: baseConfig.password,
+                port: baseConfig.port,
+                encrypt: baseConfig.encrypt,
+                trustServerCertificate: baseConfig.trustServerCertificate
             };
-
-            if (baseConfig.authType === 'sql') {
-                sqlConfig.user = baseConfig.username;
-                sqlConfig.password = baseConfig.password;
-            } else if (baseConfig.authType === 'windows') {
-                sqlConfig.options!.trustedConnection = true;
-            }
-
-            if (baseConfig.port) {
-                sqlConfig.port = baseConfig.port;
-            }
         }
 
-        const pool = new sql.ConnectionPool(sqlConfig);
+        const pool = await createPoolForConfig(sqlConfig);
         await pool.connect();
 
         // Test with a simple query
@@ -455,7 +448,7 @@ export class ConnectionProvider {
         this.notifyConnectionChanged();
     }
 
-    getConnection(connectionId?: string): sql.ConnectionPool | null {
+    getConnection(connectionId?: string): DBPool | null {
         if (connectionId) {
             return this.activeConnections.get(connectionId) || null;
         }
@@ -479,7 +472,7 @@ export class ConnectionProvider {
         return this.activeConfigs.get(connectionId) || null;
     }
 
-    getAllActiveConnections(): { id: string; config: ConnectionConfig; connection: sql.ConnectionPool }[] {
+    getAllActiveConnections(): { id: string; config: ConnectionConfig; connection: DBPool }[] {
         const result = [];
         for (const [id, connection] of this.activeConnections) {
             const config = this.activeConfigs.get(id);

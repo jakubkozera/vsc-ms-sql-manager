@@ -125,46 +125,31 @@ export class ConnectionWebview {
                 message: 'Testing connection...'
             });
 
-            // Import mssql dynamically to test connection
-            const sql = await import('mssql');
+            // Use our dbClient abstraction which will choose msnodesqlv8 for windows auth
+            const { createPoolForConfig } = await import('./dbClient');
 
-            let sqlConfig: any;
-            
+            const cfg: any = {};
             if (config.useConnectionString && config.connectionString) {
-                // Use connection string directly
-                sqlConfig = {
-                    connectionString: config.connectionString
-                };
+                cfg.connectionString = config.connectionString;
+                cfg.useConnectionString = true;
             } else {
-                // Build config from individual properties
-                sqlConfig = {
-                    server: config.server,
-                    database: config.connectionType === 'server' ? 'master' : (config.database || 'master'),
-                    options: {
-                        encrypt: config.encrypt !== false,
-                        trustServerCertificate: config.trustServerCertificate !== false
-                    }
-                };
-
-                if (config.port) {
-                    sqlConfig.port = parseInt(config.port);
-                }
-
-                if (config.authType === 'sql') {
-                    sqlConfig.user = config.username;
-                    sqlConfig.password = config.password;
-                } else if (config.authType === 'windows') {
-                    sqlConfig.options.trustedConnection = true;
-                }
+                cfg.server = config.server;
+                cfg.database = config.connectionType === 'server' ? 'master' : (config.database || 'master');
+                cfg.port = config.port ? parseInt(config.port) : undefined;
+                cfg.encrypt = config.encrypt !== false;
+                cfg.trustServerCertificate = config.trustServerCertificate !== false;
             }
+            cfg.authType = config.authType;
+            cfg.username = config.username;
+            cfg.password = config.password;
 
-            const pool = new sql.ConnectionPool(sqlConfig);
+            const pool = await createPoolForConfig(cfg);
             await pool.connect();
-            
+
             // Test with a simple query
             const request = pool.request();
             await request.query('SELECT 1 as test');
-            
+
             await pool.close();
 
             this.panel?.webview.postMessage({

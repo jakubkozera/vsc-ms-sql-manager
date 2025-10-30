@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import * as sql from 'mssql';
 import { ConnectionProvider } from './connectionProvider';
+import { DBPool } from './dbClient';
 import { QueryHistoryManager } from './queryHistory';
 
 export interface QueryResult {
@@ -11,7 +11,7 @@ export interface QueryResult {
 }
 
 export class QueryExecutor {
-    private currentRequest: sql.Request | null = null;
+    private currentRequest: any = null;
     
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -21,7 +21,7 @@ export class QueryExecutor {
 
     // Accept an optional `connectionPool` to execute the query against. When not
     // provided, fall back to the provider's active connection.
-    async executeQuery(queryText: string, connectionPool?: sql.ConnectionPool): Promise<QueryResult> {
+    async executeQuery(queryText: string, connectionPool?: DBPool): Promise<QueryResult> {
         // If a specific pool was provided, use it. Otherwise use the provider's active connection.
         const connection = connectionPool || this.connectionProvider.getConnection();
         if (!connection) {
@@ -48,10 +48,10 @@ export class QueryExecutor {
                 this.outputChannel.appendLine(`Executing query batch`);
 
                 const result = await request.query(queryText);
-                
-                // mssql library returns all recordsets in result.recordsets array
-                const allRecordsets: any[][] = (result.recordsets || []) as any[][];
-                const totalRowsAffected: number[] = result.rowsAffected || [];
+
+                // Support both mssql.Result and our msnodesqlv8 normalized object
+                const allRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
+                const totalRowsAffected: number[] = result.rowsAffected || result.rowsAffected || (Array.isArray(result.rowsAffected) ? result.rowsAffected : (result.rowsAffected ? [result.rowsAffected] : []));
 
                 this.outputChannel.appendLine(`Query completed. Result sets: ${allRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
 
@@ -197,13 +197,24 @@ export class QueryExecutor {
 
                 const request = connection.request();
                 
-                // Add parameters
-                for (const [key, value] of Object.entries(parameters)) {
-                    request.input(key, value);
-                    this.outputChannel.appendLine(`Parameter @${key} = ${value}`);
+                // Add parameters (if supported by the underlying request)
+                if (request.input && typeof request.input === 'function') {
+                    for (const [key, value] of Object.entries(parameters)) {
+                        request.input(key, value);
+                        this.outputChannel.appendLine(`Parameter @${key} = ${value}`);
+                    }
+                } else {
+                    // If input is not supported, parameters will be ignored and we will fallback to EXEC
+                    this.outputChannel.appendLine('[QueryExecutor] Warning: request.input not supported by this driver; parameters will be ignored');
                 }
 
-                const result = await request.execute(procedureName);
+                let result: any;
+                if (request.execute && typeof request.execute === 'function') {
+                    result = await request.execute(procedureName);
+                } else {
+                    // Fallback for drivers without execute() (msnodesqlv8) — run EXEC proc
+                    result = await request.query(`EXEC ${procedureName}`);
+                }
                 const executionTime = Date.now() - startTime;
                 
                 this.outputChannel.appendLine(`Stored procedure completed in ${executionTime}ms`);

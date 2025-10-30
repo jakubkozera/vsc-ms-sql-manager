@@ -49,8 +49,8 @@ A comprehensive VS Code extension for managing Microsoft SQL Server databases wi
 ## Installation
 
 1. Clone or download this extension
-2. Install dependencies: `pnpm install`
-3. Compile the extension: `pnpm run compile`
+2. Install dependencies: `npm install`
+3. Compile the extension: `npm run compile`
 4. Press `F5` to launch a new VS Code window with the extension loaded
 
 ## Usage
@@ -147,7 +147,7 @@ The extension is built with a modular architecture:
 ## Requirements
 
 - VS Code 1.105.0 or higher
-- Node.js and npm/pnpm for development
+- Node.js and npm for development
 - Access to Microsoft SQL Server instance
 
 ## Dependencies
@@ -160,8 +160,8 @@ The extension is built with a modular architecture:
 To develop and extend this extension:
 
 1. Clone the repository
-2. Install dependencies: `pnpm install`
-3. Start the watch compiler: `pnpm run watch`
+2. Install dependencies: `npm install`
+3. Start the watch compiler: `npm run watch`
 4. Press `F5` to launch the Extension Development Host
 5. Make changes and reload the window to test
 
