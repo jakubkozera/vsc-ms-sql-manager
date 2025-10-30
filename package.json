@@ -527,6 +527,11 @@
           "group": "1_query@1"
         },
         {
+          "command": "mssqlManager.copyConnectionString",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@2"
+        },
+        {
           "command": "mssqlManager.connectToSaved",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionInactive",
           "group": "1_connection@2"

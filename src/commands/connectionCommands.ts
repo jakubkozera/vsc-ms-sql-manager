@@ -163,6 +163,11 @@ export function registerConnectionCommands(
 
             const complete = await connectionProvider.getCompleteConnectionConfig(cfg);
 
+            // If invoked for a specific Database node under a server connection, prefer that database
+            if (connectionItem && connectionItem.database) {
+                complete.database = connectionItem.database;
+            }
+
             // Prefer explicit connectionString if provided
             let connStr: string | null = null;
             if (complete.useConnectionString && complete.connectionString) {
