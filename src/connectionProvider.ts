@@ -724,6 +724,167 @@ export class ConnectionProvider {
         await connectionWebview.show(completeConfig);
     }
 
+    // One-time discovery for Windows users: try to connect to common local SQL Server instances
+    // and register any that succeed in a server group named 'Local'. This should run only once
+    // after the extension is installed/first activated.
+    async discoverLocalServersOnce(): Promise<void> {
+        try {
+            const alreadyRun = this.context.globalState.get<boolean>('mssqlManager.localDiscoveryDone', false);
+            // if (alreadyRun) {
+            //     this.outputChannel.appendLine('[ConnectionProvider] Local discovery already executed, skipping');
+            //     return;
+            // }
+
+            // Only run on Windows
+            if (process.platform !== 'win32') {
+                this.outputChannel.appendLine('[ConnectionProvider] Local discovery skipped: not Windows');
+                await this.context.globalState.update('mssqlManager.localDiscoveryDone', true);
+                return;
+            }
+
+            this.outputChannel.appendLine('[ConnectionProvider] Starting one-time local SQL Server discovery (Windows)');
+
+            const candidates = [
+                { server: 'localhost', display: 'Localhost' },
+                { server: '.\\SQLEXPRESS', display: 'SQL Express' },
+                { server: '(localdb)\\MSSQLLocalDB', display: 'MSSQLLocalDB' }
+            ];
+
+            const discovered: ConnectionConfig[] = [];
+
+            for (const c of candidates) {
+                const testId = `local-${c.server.replace(/[^a-z0-9]/gi, '_')}`;
+                const cfg: ConnectionConfig = {
+                    id: testId,
+                    name: `${c.display}`,
+                    server: c.server,
+                    database: 'master',
+                    authType: 'windows',
+                    connectionType: 'server'
+                };
+
+                this.outputChannel.appendLine(`[ConnectionProvider] Testing local candidate: ${c.server}`);
+
+                // Defensive attempt: attach temporary global handlers to avoid msnodesqlv8 async errors
+                const onUncaught = (err: any) => {
+                    this.outputChannel.appendLine(`[ConnectionProvider] Suppressed uncaught exception during discovery for ${c.server}: ${err}`);
+                };
+                const onRejection = (reason: any) => {
+                    this.outputChannel.appendLine(`[ConnectionProvider] Suppressed unhandled rejection during discovery for ${c.server}: ${reason}`);
+                };
+
+                process.once('uncaughtException', onUncaught);
+                process.once('unhandledRejection', onRejection);
+
+                let pool: any = null;
+
+                try {
+                    // Run connect+query with timeout to avoid hanging on problematic drivers
+                    const attempt = (async () => {
+                        pool = await createPoolForConfig({ ...cfg, authType: 'windows', useConnectionString: true, connectionString: cfg.connectionString });
+                        await pool.connect();
+                        await pool.request().query('SELECT 1 as test');
+                    })();
+
+                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out')), 2000));
+                    await Promise.race([attempt, timeoutPromise]);
+
+                    // success
+                    this.outputChannel.appendLine(`[ConnectionProvider] Successfully connected to local candidate: ${c.server}`);
+                    discovered.push(cfg);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[ConnectionProvider] Local candidate failed: ${c.server} -> ${err}`);
+                } finally {
+                    // Clean up temporary global handlers
+                    try { process.removeListener('uncaughtException', onUncaught); } catch (e) { /* ignore */ }
+                    try { process.removeListener('unhandledRejection', onRejection); } catch (e) { /* ignore */ }
+
+                    if (pool) {
+                        try {
+                            // Close only if the pool reports connected, otherwise msnodesqlv8 may throw "Connection is not open"
+                            if (typeof pool.connected === 'boolean') {
+                                if (pool.connected) {
+                                    await pool.close();
+                                } else {
+                                    // attempt close anyway but ignore known benign errors
+                                    try { await pool.close(); } catch (_) { /* ignore */ }
+                                }
+                            } else {
+                                await pool.close();
+                            }
+                        } catch (err: any) {
+                            const msg = err && (err.message || err.toString()) || String(err);
+                            if (!/Connection is not open/i.test(msg)) {
+                                this.outputChannel.appendLine(`[ConnectionProvider] Warning closing pool for ${c.server}: ${err}`);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (discovered.length > 0) {
+                // Ensure Local server group exists
+                let groups = this.getServerGroups();
+                let localGroup = groups.find(g => g.name === 'Local');
+                if (!localGroup) {
+                    localGroup = { id: `group-local`, name: 'Local', color: '#0078D4' };
+                    await this.saveServerGroup(localGroup);
+                    groups = this.getServerGroups();
+                }
+
+                // Save discovered connections into global state (only public parts)
+                const savedConnections = this.getSavedConnections();
+
+                for (const d of discovered) {
+                    // avoid duplicate by server string
+                    const exists = savedConnections.find(s => s.server === d.server || s.connectionString === d.connectionString);
+                    if (exists) {
+                        // Don't move user's existing connection into Local. Instead create a new discovered entry
+                        // with a distinct id (testId) so the user's Dev/other connection isn't modified.
+                        const alreadyDiscovered = savedConnections.find(s => s.id === d.id);
+                        if (!alreadyDiscovered) {
+                            const publicConfig = { ...d } as any;
+                            publicConfig.serverGroupId = localGroup.id;
+                            // make it clear this was auto-discovered
+                            publicConfig.name = `${d.name}`;
+                            delete publicConfig.connectionString;
+                            savedConnections.push(publicConfig as ConnectionConfig);
+                            this.outputChannel.appendLine(`[ConnectionProvider] Added discovered connection into Local group: ${publicConfig.name}`);
+                        } else {
+                            this.outputChannel.appendLine(`[ConnectionProvider] Discovered connection already exists: ${d.server}`);
+                        }
+                        continue;
+                    }
+
+                    // Assign to Local group
+                    d.serverGroupId = localGroup.id;
+
+                    // Save public part; sensitive data isn't required for windows auth trusted connections
+                    const publicConfig = { ...d } as any;
+                    delete publicConfig.connectionString; // we keep using connectionString in secure storage if needed
+
+                    // push and persist
+                    savedConnections.push(publicConfig as ConnectionConfig);
+                    // Note: we do not store connectionString in secrets for Trusted Connection because not necessary
+                    this.outputChannel.appendLine(`[ConnectionProvider] Registered discovered local connection: ${d.name}`);
+                }
+
+                await this.context.globalState.update('mssqlManager.connections', savedConnections);
+            }
+
+            // Mark discovery done regardless of results to avoid repeating
+            await this.context.globalState.update('mssqlManager.localDiscoveryDone', true);
+            this.outputChannel.appendLine('[ConnectionProvider] Local discovery finished');
+
+            // Notify UI if something changed
+            if (discovered.length > 0) { this.notifyConnectionChanged(); }
+        } catch (error) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Error during local discovery: ${error}`);
+            // still mark as done to avoid repeated attempts
+            await this.context.globalState.update('mssqlManager.localDiscoveryDone', true);
+        }
+    }
+
     async connectToSavedById(connectionId: string): Promise<void> {
         const savedConnections = this.getSavedConnections();
         const connection = savedConnections.find(conn => conn.id === connectionId);

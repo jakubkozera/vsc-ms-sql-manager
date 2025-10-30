@@ -9,7 +9,7 @@ import { registerAllCommands } from './commands';
 
 let outputChannel: vscode.OutputChannel;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     // Create output channel for logging
     outputChannel = vscode.window.createOutputChannel('MS SQL Manager');
     outputChannel.appendLine('MS SQL Manager extension activated');
@@ -18,6 +18,13 @@ export function activate(context: vscode.ExtensionContext) {
     // Initialize providers
     const connectionProvider = new ConnectionProvider(context, outputChannel);
     const unifiedTreeProvider = new UnifiedTreeProvider(connectionProvider, outputChannel);
+
+    // Run one-time local server discovery for Windows users
+    try {
+        await connectionProvider.discoverLocalServersOnce();
+    } catch (err) {
+        outputChannel.appendLine(`[Extension] Local discovery error: ${err}`);
+    }
     
     // Initialize query history
     outputChannel.appendLine('[Extension] Initializing query history...');
