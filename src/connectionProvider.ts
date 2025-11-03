@@ -86,27 +86,28 @@ export class ConnectionProvider {
             throw new Error('Server group not found');
         }
         
-        // Check if any connections are using this group
+        // Get all connections in this group
         const connections = this.getSavedConnections();
         const connectionsInGroup = connections.filter(conn => conn.serverGroupId === groupId);
         
-        if (connectionsInGroup.length > 0) {
-            const move = await vscode.window.showWarningMessage(
-                `This group contains ${connectionsInGroup.length} connection(s). What would you like to do?`,
-                'Move to Default',
-                'Cancel'
-            );
-            
-            if (move === 'Cancel') {
-                return;
+        // Disconnect any active connections in this group
+        for (const conn of connectionsInGroup) {
+            if (this.isConnectionActive(conn.id)) {
+                await this.disconnect(conn.id);
             }
-            
-            if (move === 'Move to Default') {
-                // Remove group assignment from connections
-                for (const conn of connectionsInGroup) {
-                    delete conn.serverGroupId;
-                }
-                await this.context.globalState.update('mssqlManager.connections', connections);
+        }
+        
+        // Delete all connections in this group
+        const remainingConnections = connections.filter(conn => conn.serverGroupId !== groupId);
+        await this.context.globalState.update('mssqlManager.connections', remainingConnections);
+        
+        // Delete passwords from secure storage for deleted connections
+        for (const conn of connectionsInGroup) {
+            try {
+                await this.context.secrets.delete(`mssqlManager.password.${conn.id}`);
+            } catch (error) {
+                // Ignore errors if password doesn't exist
+                this.outputChannel.appendLine(`Could not delete password for connection ${conn.id}: ${error}`);
             }
         }
         
@@ -114,7 +115,7 @@ export class ConnectionProvider {
         groups.splice(groupIndex, 1);
         await this.context.globalState.update('mssqlManager.serverGroups', groups);
         
-        this.outputChannel.appendLine(`Server group deleted: ${groupId}`);
+        this.outputChannel.appendLine(`Server group deleted: ${groupId} (${connectionsInGroup.length} connection(s) removed)`);
     }
 
     async connectWithWebview(): Promise<void> {

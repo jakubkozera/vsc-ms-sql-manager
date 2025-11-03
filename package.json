@@ -89,6 +89,11 @@
         "icon": "$(edit)"
       },
       {
+        "command": "mssqlManager.deleteServerGroup",
+        "title": "Delete Server Group",
+        "icon": "$(trash)"
+      },
+      {
         "command": "mssqlManager.disconnectConnection",
         "title": "Disconnect",
         "icon": "$(close)"
@@ -497,6 +502,11 @@
           "group": "inline@1"
         },
         {
+          "command": "mssqlManager.deleteServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "inline@2"
+        },
+        {
           "command": "mssqlManager.connectToSaved",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionInactive",
           "group": "inline@1"
@@ -760,6 +770,14 @@
         },
         {
           "command": "mssqlManager.newQueryOnDatabase",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.editServerGroup",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.deleteServerGroup",
           "when": "false"
         }
       ]

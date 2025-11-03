@@ -248,6 +248,42 @@ export function registerConnectionCommands(
         }
     });
 
+    const deleteServerGroupCommand = vscode.commands.registerCommand('mssqlManager.deleteServerGroup', async (serverGroupNode?: any) => {
+        try {
+            if (!serverGroupNode || !serverGroupNode.group) {
+                vscode.window.showErrorMessage('Invalid server group item');
+                return;
+            }
+
+            const group = serverGroupNode.group;
+            const connectionCount = serverGroupNode.connectionCount || 0;
+
+            // Show confirmation dialog
+            const message = connectionCount > 0
+                ? `Are you sure you want to delete the server group "${group.name}" and its ${connectionCount} connection(s)?`
+                : `Are you sure you want to delete the server group "${group.name}"?`;
+
+            const confirmed = await vscode.window.showWarningMessage(
+                message,
+                { modal: true },
+                'Delete'
+            );
+
+            if (confirmed !== 'Delete') {
+                return;
+            }
+
+            // Delete the server group
+            await connectionProvider.deleteServerGroup(group.id);
+            vscode.window.showInformationMessage(`Server group "${group.name}" deleted successfully`);
+            unifiedTreeProvider.refresh();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to delete server group: ${errorMessage}`);
+            outputChannel.appendLine(`Delete server group failed: ${errorMessage}`);
+        }
+    });
+
     const debugConnectionsCommand = vscode.commands.registerCommand('mssqlManager.debugConnections', async () => {
         const connections = context.globalState.get<any[]>('mssqlManager.connections', []);
         outputChannel.appendLine(`[DEBUG] Found ${connections.length} saved connections:`);
@@ -453,6 +489,7 @@ export function registerConnectionCommands(
         copyConnectionStringCommand,
         createServerGroupCommand,
         editServerGroupCommand,
+        deleteServerGroupCommand,
         debugConnectionsCommand,
         newQueryCommand
         , revealInExplorerCommand
