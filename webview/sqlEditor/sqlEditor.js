@@ -3157,7 +3157,9 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                     table: containerEl.querySelector('.ag-grid-table'),
                     rowIndex: rowIndex,
                     columnDefs: colDefs,
-                    data: data
+                    data: data,
+                    metadata: metadata,
+                    resultSetIndex: resultSetIndex
                 });
             });
             tr.appendChild(rowNumTd);
@@ -3860,7 +3862,7 @@ function createContextMenu(cellData) {
 }
 
 // Create context menu HTML for row number cells
-function createRowContextMenu() {
+function createRowContextMenu(metadata, resultSetIndex) {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.style.display = 'none';
@@ -3871,16 +3873,32 @@ function createRowContextMenu() {
     
     let rowLabel = 'Copy Row';
     let rowHeaderLabel = 'Copy Row with Headers';
+    let deleteLabel = 'Delete Row';
     
     if (hasMultipleSelections && globalSelection.type === 'row') {
         rowLabel = `Copy ${selectionCount} Rows`;
         rowHeaderLabel = `Copy ${selectionCount} Rows with Headers`;
+        deleteLabel = `Delete ${selectionCount} Rows`;
     }
     
-    menu.innerHTML = `
+    // Check if delete should be available (single table only)
+    const isSingleTable = metadata && !metadata.hasMultipleTables && metadata.isEditable;
+    
+    let menuHtml = `
         <div class="context-menu-item" data-action="copy-row">${rowLabel}</div>
         <div class="context-menu-item" data-action="copy-row-header">${rowHeaderLabel}</div>
     `;
+    
+    if (isSingleTable) {
+        menuHtml += `
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item context-menu-item-delete" data-action="delete-row">${deleteLabel}</div>
+        `;
+    }
+    
+    menu.innerHTML = menuHtml;
+    menu.dataset.resultSetIndex = resultSetIndex;
+    menu.dataset.metadata = JSON.stringify(metadata);
     document.body.appendChild(menu);
     
     // Prevent default context menu on the custom menu itself
@@ -3987,7 +4005,7 @@ function showRowContextMenu(e, cellData) {
         rowContextMenu.remove();
     }
     
-    rowContextMenu = createRowContextMenu();
+    rowContextMenu = createRowContextMenu(cellData.metadata, cellData.resultSetIndex);
     contextMenuData = cellData;
     
     // Position menu at cursor
@@ -4179,14 +4197,41 @@ function handleContextMenuAction(action) {
             }).join('\n');
             textToCopy = tableHeaders + '\n' + tableRows;
             break;
+            
+        case 'delete-row':
+            // Get metadata and resultSetIndex from context menu
+            const menu = document.querySelector('.context-menu');
+            if (!menu) return;
+            
+            const resultSetIndex = parseInt(menu.dataset.resultSetIndex);
+            const metadata = JSON.parse(menu.dataset.metadata);
+            
+            if (hasMultipleSelections && globalSelection.type === 'row') {
+                // Delete multiple selected rows
+                globalSelection.selections.forEach(sel => {
+                    const row = data[sel.rowIndex];
+                    recordRowDeletion(resultSetIndex, sel.rowIndex, row, metadata);
+                    // Mark row for deletion visually
+                    markRowForDeletion(table, sel.rowIndex);
+                });
+            } else {
+                // Delete single row
+                const row = data[rowIndex];
+                recordRowDeletion(resultSetIndex, rowIndex, row, metadata);
+                // Mark row for deletion visually
+                markRowForDeletion(table, rowIndex);
+            }
+            return; // Don't copy to clipboard for delete action
     }
     
-    // Copy to clipboard
-    navigator.clipboard.writeText(textToCopy).then(() => {
-        console.log('[CONTEXT-MENU] Copied to clipboard:', action);
-    }).catch(err => {
-        console.error('[CONTEXT-MENU] Failed to copy:', err);
-    });
+    // Copy to clipboard (skip for delete action)
+    if (action !== 'delete-row') {
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            console.log('[CONTEXT-MENU] Copied to clipboard:', action);
+        }).catch(err => {
+            console.error('[CONTEXT-MENU] Failed to copy:', err);
+        });
+    }
 }
 
 // Global helper functions for selection management across all tables
@@ -5293,7 +5338,24 @@ function exitEditMode(saveChanges) {
     tdElement.removeChild(inputElement);
     tdElement.style.border = '';
 
-    if (saveChanges && newValue !== originalValue) {
+    // Normalize values for comparison
+    let normalizedOriginal = originalValue;
+    let normalizedNew = newValue;
+    
+    // Convert boolean to number (for bit type)
+    if (typeof originalValue === 'boolean') {
+        normalizedOriginal = originalValue ? 1 : 0;
+    }
+    
+    // Convert string to number if original was a number (for numeric types)
+    if (typeof originalValue === 'number' && typeof newValue === 'string' && newValue !== '') {
+        const numValue = Number(newValue);
+        if (!isNaN(numValue)) {
+            normalizedNew = numValue;
+        }
+    }
+
+    if (saveChanges && normalizedNew !== normalizedOriginal) {
         // Value changed - record the change
         recordChange(resultSetIndex, rowIndex, columnDef.field, originalValue, newValue, rowData, metadata);
         
@@ -5400,6 +5462,79 @@ function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, 
 }
 
 /**
+ * Record a row deletion in pending changes
+ */
+function recordRowDeletion(resultSetIndex, rowIndex, rowData, metadata) {
+    console.log('[EDIT] Recording row deletion:', { resultSetIndex, rowIndex, rowData });
+
+    // Get or create change list for this result set
+    if (!pendingChanges.has(resultSetIndex)) {
+        pendingChanges.set(resultSetIndex, []);
+    }
+    const changes = pendingChanges.get(resultSetIndex);
+
+    // Extract primary key values for WHERE clause
+    const primaryKeyValues = {};
+    metadata.primaryKeyColumns.forEach(pkCol => {
+        const pkColMetadata = metadata.columns.find(c => c.name === pkCol);
+        if (pkColMetadata) {
+            primaryKeyValues[pkCol] = rowData[pkCol];
+        }
+    });
+
+    // Get table info from first column (all columns should be from same table in single-table query)
+    const firstCol = metadata.columns[0];
+    
+    const deleteRecord = {
+        type: 'DELETE',
+        rowIndex,
+        primaryKeyValues,
+        sourceTable: firstCol.sourceTable,
+        sourceSchema: firstCol.sourceSchema,
+        rowData: { ...rowData } // Store copy of row data for display
+    };
+
+    // Check if this row already has a delete pending
+    const existingDeleteIndex = changes.findIndex(
+        c => c.type === 'DELETE' && c.rowIndex === rowIndex
+    );
+
+    if (existingDeleteIndex >= 0) {
+        console.log('[EDIT] Row already marked for deletion');
+        return;
+    }
+
+    // Add delete record
+    changes.push(deleteRecord);
+    console.log('[EDIT] Added row deletion to pending');
+
+    // Update pending changes tab badge
+    updatePendingChangesCount();
+    renderPendingChanges();
+}
+
+/**
+ * Mark a row visually as marked for deletion
+ */
+function markRowForDeletion(table, rowIndex) {
+    const tbody = table.querySelector('.ag-grid-tbody');
+    if (!tbody) return;
+    
+    const rows = tbody.querySelectorAll('tr');
+    if (rowIndex < rows.length) {
+        const row = rows[rowIndex];
+        row.classList.add('row-marked-for-deletion');
+        
+        // Also mark all cells in the row
+        row.querySelectorAll('td').forEach(cell => {
+            cell.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
+            cell.style.textDecoration = 'line-through';
+            cell.style.color = 'var(--vscode-descriptionForeground)';
+        });
+    }
+}
+
+/**
  * Update the pending changes count badge
  */
 function updatePendingChangesCount() {
@@ -5502,11 +5637,9 @@ function renderPendingChanges() {
         const metadata = resultSetMetadata[resultSetIndex];
         
         changes.forEach((change, changeIndex) => {
-            const { rowIndex, columnName, oldValue, newValue, sourceTable, sourceSchema } = change;
+            const { type, rowIndex, columnName, oldValue, newValue, sourceTable, sourceSchema } = change;
             
             const tableName = sourceSchema ? `${sourceSchema}.${sourceTable}` : sourceTable;
-            const oldDisplay = oldValue === null || oldValue === undefined ? 'NULL' : String(oldValue);
-            const newDisplay = newValue === null || newValue === undefined ? 'NULL' : String(newValue);
             
             let sql = '';
             try {
@@ -5515,21 +5648,45 @@ function renderPendingChanges() {
                 sql = `-- Error: ${error.message}`;
             }
             
-            html += `
-                <div class="change-item">
-                    <div class="change-header">
-                        <div class="change-location">${tableName}.${columnName} (Row ${rowIndex + 1})</div>
-                        <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+            // Handle DELETE display differently
+            if (type === 'DELETE') {
+                html += `
+                    <div class="change-item change-item-delete">
+                        <div class="change-header">
+                            <div class="change-location">🗑️ ${tableName} (Row ${rowIndex + 1}) - DELETE</div>
+                            <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                        </div>
+                        <div class="change-sql">${escapeHtml(sql)}</div>
                     </div>
-                    <div class="change-details">
-                        <div class="change-label">Old value:</div>
-                        <div class="change-value change-value-old">${escapeHtml(oldDisplay)}</div>
-                        <div class="change-label">New value:</div>
-                        <div class="change-value change-value-new">${escapeHtml(newDisplay)}</div>
+                `;
+            } else {
+                // UPDATE display
+                // Normalize boolean values to 0/1 for display
+                const normalizeValue = (val) => {
+                    if (val === null || val === undefined) return 'NULL';
+                    if (typeof val === 'boolean') return val ? '1' : '0';
+                    return String(val);
+                };
+                
+                const oldDisplay = normalizeValue(oldValue);
+                const newDisplay = normalizeValue(newValue);
+                
+                html += `
+                    <div class="change-item">
+                        <div class="change-header">
+                            <div class="change-location">${tableName}.${columnName} (Row ${rowIndex + 1})</div>
+                            <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                        </div>
+                        <div class="change-details">
+                            <div class="change-label">Old value:</div>
+                            <div class="change-value change-value-old">${escapeHtml(oldDisplay)}</div>
+                            <div class="change-label">New value:</div>
+                            <div class="change-value change-value-new">${escapeHtml(newDisplay)}</div>
+                        </div>
+                        <div class="change-sql">${escapeHtml(sql)}</div>
                     </div>
-                    <div class="change-sql">${escapeHtml(sql)}</div>
-                </div>
-            `;
+                `;
+            }
         });
     });
 
@@ -5579,6 +5736,29 @@ function switchTab(tabName) {
  * Generate UPDATE statement for a change
  */
 function generateUpdateStatement(change, metadata) {
+    // Handle DELETE statements
+    if (change.type === 'DELETE') {
+        const { primaryKeyValues, sourceTable, sourceSchema } = change;
+        
+        if (!sourceTable) {
+            throw new Error('Cannot generate DELETE: no source table');
+        }
+
+        const fullTableName = sourceSchema ? `[${sourceSchema}].[${sourceTable}]` : `[${sourceTable}]`;
+        
+        // Build WHERE clause with primary keys
+        const whereConditions = Object.entries(primaryKeyValues).map(([pkCol, pkValue]) => {
+            return `[${pkCol}] = ${sqlEscape(pkValue)}`;
+        }).join(' AND ');
+
+        if (!whereConditions) {
+            throw new Error('Cannot generate DELETE: no primary key values');
+        }
+
+        return `DELETE FROM ${fullTableName} WHERE ${whereConditions};`;
+    }
+    
+    // Handle UPDATE statements
     const { columnName, newValue, primaryKeyValues, sourceTable, sourceSchema, sourceColumn } = change;
 
     if (!sourceTable) {

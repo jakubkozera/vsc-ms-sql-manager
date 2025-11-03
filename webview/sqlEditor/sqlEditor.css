@@ -658,6 +658,14 @@ th {
     color: var(--vscode-menu-selectionForeground);
 }
 
+.context-menu-item-delete {
+    color: #f48771;
+}
+
+.context-menu-item-delete:hover {
+    background-color: rgba(244, 135, 113, 0.2);
+}
+
 .context-menu-separator {
     height: 1px;
     background-color: var(--vscode-menu-separatorBackground);
@@ -676,7 +684,6 @@ th {
 
 /* Editable cells styles */
 .editable-cell {
-    cursor: cell;
     position: relative;
 }
 
@@ -776,6 +783,14 @@ th {
 
 .change-item:hover {
     background-color: var(--vscode-list-hoverBackground);
+}
+
+.change-item-delete {
+    border-left-color: #f48771;
+}
+
+.row-marked-for-deletion {
+    opacity: 0.7;
 }
 
 .change-header {
