@@ -17,24 +17,53 @@
 <body>
     <div id="container">
         <div id="toolbar">
-            <button class="toolbar-button" id="executeButton" title="Execute Query (F5 or Ctrl+Shift+E)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13 -8z" /></svg>
-                Run
-            </button>
+            <div class="button-container">
+                <button class="main-button" id="executeButton" title="Execute Query (F5 or Ctrl+Shift+E)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13 -8z" /></svg>
+                    Run
+                </button>
+                <button class="dropdown-toggle" id="executeDropdownToggle">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6" /></svg>
+                </button>
+                <div class="dropdown-menu" id="executeDropdownMenu">
+                    <div class="dropdown-item">
+                        <label for="actualPlanCheckbox">With execution plan</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="actualPlanCheckbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
             <button class="toolbar-button secondary" id="cancelButton" disabled title="Cancel Query">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /></svg>
                 Cancel
             </button>
             <div class="toolbar-separator"></div>
-            <label style="font-size: 13px;">Database:</label>
-            <select class="database-selector" id="databaseSelector">
-                <option value="">Not Connected</option>
-            </select>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
+                <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                <path d="M4 20l3.5 -3.5" />
+                <path d="M15 4l-3.5 3.5" />
+                <path d="M20 9l-3.5 3.5" />
+            </svg>
+            <div class="custom-dropdown" id="connection-dropdown">
+                <button class="dropdown-trigger" id="connectionSelector">Not Connected</button>
+                <div class="dropdown-menu" id="connection-menu"></div>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" id="databaseLabel" style="vertical-align: middle; margin-left: 8px;">
+                <path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+                <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+                <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+            </svg>
+            <div class="custom-dropdown" id="database-dropdown" style="display: none;">
+                <button class="dropdown-trigger" id="databaseSelector">Select database</button>
+                <div class="dropdown-menu" id="database-menu"></div>
+            </div>
             <button class="toolbar-button secondary" id="connectButton" title="Manage Connections">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5z" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5z" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" /></svg>
                 Connect
             </button>
-            <button class="toolbar-button secondary" id="estimatedPlanButton" title="Display Estimated Execution Plan">
+            <button class="toolbar-button secondary" id="estimatedPlanButton" title="Display Estimated Execution Plan" style="display: none;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 16l6 -7l5 5l5 -6" />
                     <path d="M15 14m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
@@ -44,10 +73,6 @@
                 </svg>
                 Estimated Plan
             </button>
-            <label class="checkbox-label" title="Include Actual Execution Plan">
-                <input type="checkbox" id="actualPlanCheckbox">
-                <span>Enable actual plan</span>
-            </label>
             <div class="toolbar-separator"></div>
             <span id="statusLabel">Ready</span>
         </div>
@@ -62,13 +87,15 @@
             <div class="results-tabs">
                 <button class="results-tab active" data-tab="results">Results</button>
                 <button class="results-tab" data-tab="messages">Messages</button>
+                <button class="results-tab" data-tab="pendingChanges">Pending Changes <span id="pendingChangesCount" class="tab-badge" style="display: none;">0</span></button>
                 <button class="results-tab" data-tab="queryPlan" style="display: none;">Query Plan</button>
                 <button class="results-tab" data-tab="planTree" style="display: none;">Plan Tree</button>
                 <button class="results-tab" data-tab="topOperations" style="display: none;">Top Operations</button>
-                <span id="executionStats"></span>
+                <div id="aggregationStats" style="display: none;"></div>
             </div>
             <div id="resultsContent" class="tab-content"></div>
             <div id="messagesContent" class="tab-content" style="display: none;"></div>
+            <div id="pendingChangesContent" class="tab-content" style="display: none;"></div>
             <div id="queryPlanContent" class="tab-content" style="display: none;"></div>
             <div id="planTreeContent" class="tab-content" style="display: none;"></div>
             <div id="topOperationsContent" class="tab-content" style="display: none;"></div>

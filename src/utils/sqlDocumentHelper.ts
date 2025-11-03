@@ -5,7 +5,13 @@ import * as path from 'path';
  * Opens SQL content in the custom SQL editor.
  * Creates a .sql file in the extension's scripts folder to ensure the custom editor is used.
  */
-export async function openSqlInCustomEditor(content: string, filename?: string, context?: vscode.ExtensionContext): Promise<vscode.TextEditor> {
+export async function openSqlInCustomEditor(
+    content: string, 
+    filename?: string, 
+    context?: vscode.ExtensionContext,
+    connectionId?: string,
+    database?: string
+): Promise<vscode.TextEditor> {
     // Get the extension's global storage path (creates folder if it doesn't exist)
     const storageUri = context?.globalStorageUri || vscode.Uri.file(path.join(__dirname, '..', '..', 'scripts'));
     

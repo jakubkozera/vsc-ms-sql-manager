@@ -1,17 +1,38 @@
 import * as vscode from 'vscode';
-import * as sql from 'mssql';
 import { ConnectionProvider } from './connectionProvider';
+import { DBPool } from './dbClient';
 import { QueryHistoryManager } from './queryHistory';
+
+export interface ColumnMetadata {
+    name: string;
+    type: string;
+    isNullable: boolean;
+    sourceTable?: string;
+    sourceSchema?: string;
+    sourceColumn?: string;
+    isPrimaryKey: boolean;
+    isIdentity: boolean;
+}
+
+export interface ResultSetMetadata {
+    columns: ColumnMetadata[];
+    isEditable: boolean;
+    primaryKeyColumns: string[];
+    sourceTable?: string;
+    sourceSchema?: string;
+    hasMultipleTables: boolean;
+}
 
 export interface QueryResult {
     recordsets: any[][]; // Changed from single recordset to array of recordsets
     rowsAffected: number[];
     executionTime: number;
     query: string;
+    metadata?: ResultSetMetadata[]; // Metadata for each result set
 }
 
 export class QueryExecutor {
-    private currentRequest: sql.Request | null = null;
+    private currentRequest: any = null;
     
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -19,14 +40,13 @@ export class QueryExecutor {
         private historyManager?: QueryHistoryManager
     ) {}
 
-    async executeQuery(queryText: string): Promise<QueryResult> {
-        if (!this.connectionProvider.isConnected()) {
-            throw new Error('No active database connection. Please connect to a server first.');
-        }
-
-        const connection = this.connectionProvider.getConnection();
+    // Accept an optional `connectionPool` to execute the query against. When not
+    // provided, fall back to the provider's active connection.
+    async executeQuery(queryText: string, connectionPool?: DBPool): Promise<QueryResult> {
+        // If a specific pool was provided, use it. Otherwise use the provider's active connection.
+        const connection = connectionPool || this.connectionProvider.getConnection();
         if (!connection) {
-            throw new Error('Database connection is not available.');
+            throw new Error('No active database connection. Please connect to a database first.');
         }
 
         const startTime = Date.now();
@@ -49,10 +69,10 @@ export class QueryExecutor {
                 this.outputChannel.appendLine(`Executing query batch`);
 
                 const result = await request.query(queryText);
-                
-                // mssql library returns all recordsets in result.recordsets array
-                const allRecordsets: any[][] = (result.recordsets || []) as any[][];
-                const totalRowsAffected: number[] = result.rowsAffected || [];
+
+                // Support both mssql.Result and our msnodesqlv8 normalized object
+                const allRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
+                const totalRowsAffected: number[] = result.rowsAffected || result.rowsAffected || (Array.isArray(result.rowsAffected) ? result.rowsAffected : (result.rowsAffected ? [result.rowsAffected] : []));
 
                 this.outputChannel.appendLine(`Query completed. Result sets: ${allRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
 
@@ -66,6 +86,18 @@ export class QueryExecutor {
                     executionTime,
                     query: queryText
                 };
+
+                // Extract metadata for SELECT queries to enable editing
+                if (allRecordsets.length > 0 && this.isSelectQuery(queryText)) {
+                    try {
+                        this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
+                        queryResult.metadata = await this.extractResultMetadata(queryText, allRecordsets, connection);
+                        this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
+                    } catch (error) {
+                        this.outputChannel.appendLine(`[QueryExecutor] Failed to extract metadata: ${error}`);
+                        // Continue without metadata - result set will be read-only
+                    }
+                }
 
                 // Log results summary
                 if (allRecordsets.length > 0) {
@@ -198,13 +230,24 @@ export class QueryExecutor {
 
                 const request = connection.request();
                 
-                // Add parameters
-                for (const [key, value] of Object.entries(parameters)) {
-                    request.input(key, value);
-                    this.outputChannel.appendLine(`Parameter @${key} = ${value}`);
+                // Add parameters (if supported by the underlying request)
+                if (request.input && typeof request.input === 'function') {
+                    for (const [key, value] of Object.entries(parameters)) {
+                        request.input(key, value);
+                        this.outputChannel.appendLine(`Parameter @${key} = ${value}`);
+                    }
+                } else {
+                    // If input is not supported, parameters will be ignored and we will fallback to EXEC
+                    this.outputChannel.appendLine('[QueryExecutor] Warning: request.input not supported by this driver; parameters will be ignored');
                 }
 
-                const result = await request.execute(procedureName);
+                let result: any;
+                if (request.execute && typeof request.execute === 'function') {
+                    result = await request.execute(procedureName);
+                } else {
+                    // Fallback for drivers without execute() (msnodesqlv8) — run EXEC proc
+                    result = await request.query(`EXEC ${procedureName}`);
+                }
                 const executionTime = Date.now() - startTime;
                 
                 this.outputChannel.appendLine(`Stored procedure completed in ${executionTime}ms`);
@@ -227,5 +270,178 @@ export class QueryExecutor {
     async explainQuery(queryText: string): Promise<QueryResult> {
         const explainQuery = `SET SHOWPLAN_ALL ON;\n${queryText}\nSET SHOWPLAN_ALL OFF;`;
         return this.executeQuery(explainQuery);
+    }
+
+    /**
+     * Extract metadata for result sets to determine editability
+     * This analyzes the query and result columns to detect source tables and primary keys
+     */
+    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool): Promise<ResultSetMetadata[]> {
+        const metadata: ResultSetMetadata[] = [];
+
+        for (const recordset of recordsets) {
+            if (!recordset || recordset.length === 0) {
+                // Empty result set - not editable
+                metadata.push({
+                    columns: [],
+                    isEditable: false,
+                    primaryKeyColumns: [],
+                    hasMultipleTables: false
+                });
+                continue;
+            }
+
+            const columnNames = Object.keys(recordset[0]);
+            const columns: ColumnMetadata[] = [];
+            
+            // Try to detect source tables from the query
+            const tableInfo = this.parseQueryForTables(query);
+            
+            // For each column, try to determine its source
+            for (const colName of columnNames) {
+                const colMetadata: ColumnMetadata = {
+                    name: colName,
+                    type: 'unknown',
+                    isNullable: true,
+                    isPrimaryKey: false,
+                    isIdentity: false
+                };
+
+                // Try to detect column metadata by querying sys.columns if we have table information
+                if (tableInfo.tables.length > 0) {
+                    try {
+                        const colInfo = await this.getColumnInfo(connection, tableInfo.tables, colName);
+                        if (colInfo) {
+                            Object.assign(colMetadata, colInfo);
+                        }
+                    } catch (error) {
+                        this.outputChannel.appendLine(`[QueryExecutor] Failed to get column metadata for ${colName}: ${error}`);
+                    }
+                }
+
+                columns.push(colMetadata);
+            }
+
+            // Determine if result set is editable
+            const primaryKeyColumns = columns.filter(c => c.isPrimaryKey).map(c => c.name);
+            const sourceTables = [...new Set(columns.map(c => c.sourceTable).filter(t => t))];
+            const hasMultipleTables = sourceTables.length > 1;
+            
+            // Editable if:
+            // 1. Has at least one primary key column
+            // 2. All columns can be traced to source tables
+            const allColumnsHaveSource = columns.every(c => c.sourceTable);
+            const isEditable = primaryKeyColumns.length > 0 && allColumnsHaveSource;
+
+            metadata.push({
+                columns,
+                isEditable,
+                primaryKeyColumns,
+                sourceTable: sourceTables.length === 1 ? sourceTables[0] : undefined,
+                sourceSchema: columns[0]?.sourceSchema,
+                hasMultipleTables
+            });
+        }
+
+        return metadata;
+    }
+
+    /**
+     * Check if query is a SELECT statement
+     */
+    private isSelectQuery(query: string): boolean {
+        const trimmed = query.trim().toUpperCase();
+        // Remove comments and check if it starts with SELECT
+        const withoutComments = trimmed.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        return withoutComments.trim().startsWith('SELECT');
+    }
+
+    /**
+     * Parse SQL query to extract table names (basic implementation)
+     */
+    private parseQueryForTables(query: string): { tables: Array<{schema?: string, table: string, alias?: string}> } {
+        const tables: Array<{schema?: string, table: string, alias?: string}> = [];
+        
+        // Simple regex to find table references in FROM and JOIN clauses
+        // This is a basic implementation - may not handle all edge cases
+        const fromRegex = /FROM\s+(?:\[?(\w+)\]?\.)?\[?(\w+)\]?(?:\s+(?:AS\s+)?(\w+))?/gi;
+        const joinRegex = /JOIN\s+(?:\[?(\w+)\]?\.)?\[?(\w+)\]?(?:\s+(?:AS\s+)?(\w+))?/gi;
+        
+        let match;
+        while ((match = fromRegex.exec(query)) !== null) {
+            tables.push({
+                schema: match[1],
+                table: match[2],
+                alias: match[3]
+            });
+        }
+        
+        while ((match = joinRegex.exec(query)) !== null) {
+            tables.push({
+                schema: match[1],
+                table: match[2],
+                alias: match[3]
+            });
+        }
+        
+        return { tables };
+    }
+
+    /**
+     * Get column information from sys.columns and sys.indexes
+     */
+    private async getColumnInfo(
+        connection: DBPool, 
+        tables: Array<{schema?: string, table: string, alias?: string}>,
+        columnName: string
+    ): Promise<Partial<ColumnMetadata> | null> {
+        try {
+            // Build a query to find this column across the specified tables
+            const tableConditions = tables.map(t => {
+                const schema = t.schema || 'dbo';
+                return `(s.name = '${schema}' AND t.name = '${t.table}')`;
+            }).join(' OR ');
+
+            const query = `
+                SELECT TOP 1
+                    c.name AS ColumnName,
+                    TYPE_NAME(c.user_type_id) AS DataType,
+                    c.is_nullable AS IsNullable,
+                    c.is_identity AS IsIdentity,
+                    s.name AS SchemaName,
+                    t.name AS TableName,
+                    CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey
+                FROM sys.columns c
+                INNER JOIN sys.tables t ON c.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                LEFT JOIN (
+                    SELECT ic.object_id, ic.column_id
+                    FROM sys.index_columns ic
+                    INNER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                    WHERE i.is_primary_key = 1
+                ) pk ON c.object_id = pk.object_id AND c.column_id = pk.column_id
+                WHERE c.name = '${columnName}'
+                AND (${tableConditions})
+            `;
+
+            const result = await connection.request().query(query);
+            
+            if (result.recordset && result.recordset.length > 0) {
+                const row = result.recordset[0];
+                return {
+                    type: row.DataType,
+                    isNullable: row.IsNullable,
+                    sourceTable: row.TableName,
+                    sourceSchema: row.SchemaName,
+                    sourceColumn: row.ColumnName,
+                    isPrimaryKey: row.IsPrimaryKey === 1,
+                    isIdentity: row.IsIdentity
+                };
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`[QueryExecutor] Error getting column info: ${error}`);
+        }
+        
+        return null;
     }
 }

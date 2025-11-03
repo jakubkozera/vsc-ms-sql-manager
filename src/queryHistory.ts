@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 export interface QueryHistoryEntry {
     id: string;
     query: string;
+    title?: string; // optional user-provided title for the query
     connectionId: string;
     connectionName: string;
     database: string;
@@ -11,6 +12,7 @@ export interface QueryHistoryEntry {
     rowCounts: number[]; // Number of rows in each result set
     executedAt: Date;
     duration?: number; // in milliseconds
+    pinned?: boolean; // whether the entry is pinned in the UI
 }
 
 export class QueryHistoryManager {
@@ -30,7 +32,8 @@ export class QueryHistoryManager {
         const historyEntry: QueryHistoryEntry = {
             ...entry,
             id: this.generateId(),
-            executedAt: new Date()
+            executedAt: new Date(),
+            pinned: entry.pinned === true // preserve if provided, otherwise default false
         };
 
         console.log(`[QueryHistory] Adding entry: ${historyEntry.id}, query: ${entry.query.substring(0, 50)}...`);
@@ -57,14 +60,52 @@ export class QueryHistoryManager {
         return this.history.find(entry => entry.id === id);
     }
 
+    renameEntry(id: string, title?: string): void {
+        const idx = this.history.findIndex(e => e.id === id);
+        if (idx === -1) return;
+        this.history[idx].title = title;
+        this.saveHistory();
+        this._onDidChangeHistory.fire();
+    }
+
     clearHistory(): void {
-        this.history = [];
+        // Preserve pinned entries when clearing history
+        this.history = this.history.filter(entry => entry.pinned === true);
         this.saveHistory();
         this._onDidChangeHistory.fire();
     }
 
     deleteEntry(id: string): void {
         this.history = this.history.filter(entry => entry.id !== id);
+        this.saveHistory();
+        this._onDidChangeHistory.fire();
+    }
+
+    setPinned(id: string, pinned: boolean): void {
+        const idx = this.history.findIndex(e => e.id === id);
+        if (idx === -1) return;
+        const [entry] = this.history.splice(idx, 1);
+        entry.pinned = pinned;
+        if (pinned) {
+            // Insert after existing pinned entries (keep pinned block at start)
+            const firstNonPinned = this.history.findIndex(e => !e.pinned);
+            if (firstNonPinned === -1) {
+                // all remaining are pinned, append to end
+                this.history.push(entry);
+            } else {
+                this.history.splice(firstNonPinned, 0, entry);
+            }
+        } else {
+            // Unpinned - place after the last pinned entry (i.e., at first non-pinned position)
+            const firstNonPinned = this.history.findIndex(e => !e.pinned);
+            if (firstNonPinned === -1) {
+                // no non-pinned found - append to end
+                this.history.push(entry);
+            } else {
+                // insert at firstNonPinned index (before first non-pinned), which effectively places after pinned block
+                this.history.splice(firstNonPinned, 0, entry);
+            }
+        }
         this.saveHistory();
         this._onDidChangeHistory.fire();
     }

@@ -22,10 +22,61 @@ export function registerTableCommands(
                 return;
             }
 
+            if (!connection.connected) {
+                vscode.window.showErrorMessage('Connection is not active. Please connect to the database first.');
+                return;
+            }
+
             const tableName = tableNode.label as string;
-            const query = `SELECT TOP 1000 * FROM ${tableName};`;
+            const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
             
-            await openSqlInCustomEditor(query, `select_top_1000_${tableName.replace('.', '_')}.sql`, context);
+            // Generate table alias (first 2-3 letters of table name, lowercase)
+            const tableAlias = table.length <= 3 ? table.toLowerCase() : table.substring(0, 2).toLowerCase();
+            
+            // Get table columns to build explicit SELECT query
+            let query: string;
+            let queryConnection = connection;
+            
+            // If we have a database context and this is a server connection, create a database-specific pool
+            if (tableNode.database && tableNode.connectionId) {
+                try {
+                    queryConnection = await connectionProvider.createDbPool(tableNode.connectionId, tableNode.database);
+                    outputChannel.appendLine(`[TableCommands] Using database-specific pool for ${tableNode.database}`);
+                } catch (error) {
+                    outputChannel.appendLine(`[TableCommands] Failed to create DB pool, using base connection: ${error}`);
+                    queryConnection = connection;
+                }
+            }
+            
+            try {
+                const columnsQuery = `
+                    SELECT c.name AS COLUMN_NAME
+                    FROM sys.columns c
+                    WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
+                    ORDER BY c.column_id
+                `;
+                
+                const columnsResult = await queryConnection.request().query(columnsQuery);
+                
+                if (columnsResult.recordset && columnsResult.recordset.length > 0) {
+                    const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
+                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}] ${tableAlias}`;
+                } else {
+                    // Fallback to * if we can't get columns
+                    query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] ${tableAlias}`;
+                }
+            } catch (error) {
+                // Fallback to * if column query fails
+                outputChannel.appendLine(`Failed to get columns for ${tableName}, using *: ${error}`);
+                query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] ${tableAlias}`;
+            }
+            
+            // Set the preferred database context and open in SQL editor
+            if (tableNode.database) {
+                connectionProvider.setNextEditorPreferredDatabase(tableNode.connectionId, tableNode.database);
+            }
+            
+            await openSqlInCustomEditor(query, `select_top_1000_${table}.sql`, context);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate SELECT query: ${errorMessage}`);
@@ -42,10 +93,22 @@ export function registerTableCommands(
 
             const tableName = tableNode.label as string;
             const connection = connectionProvider.getConnection(tableNode.connectionId);
+            let queryConnection = connection;
             
             if (!connection) {
                 vscode.window.showErrorMessage('No active connection found');
                 return;
+            }
+
+            // If we have a database context and this is a server connection, create a database-specific pool
+            if (tableNode.database && tableNode.connectionId) {
+                try {
+                    queryConnection = await connectionProvider.createDbPool(tableNode.connectionId, tableNode.database);
+                    outputChannel.appendLine(`[TableCommands] Using database-specific pool for ${tableNode.database}`);
+                } catch (error) {
+                    outputChannel.appendLine(`[TableCommands] Failed to create DB pool, using base connection: ${error}`);
+                    queryConnection = connection;
+                }
             }
 
             const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
@@ -74,7 +137,10 @@ export function registerTableCommands(
                 ORDER BY c.column_id;
             `;
 
-            const colResult = await connection.request().query(columnsQuery);
+            if (!queryConnection) {
+                throw new Error('No connection available for scripting table');
+            }
+            const colResult = await queryConnection.request().query(columnsQuery);
             
             const fileGroupQuery = `
                 SELECT 
@@ -85,7 +151,7 @@ export function registerTableCommands(
                         ELSE NULL
                     END AS lob_data_space
             `;
-            const fgResult = await connection.request().query(fileGroupQuery);
+            const fgResult = await queryConnection.request().query(fileGroupQuery);
             const dataSpace = fgResult.recordset[0]?.data_space || 'PRIMARY';
             const lobDataSpace = fgResult.recordset[0]?.lob_data_space;
 
@@ -103,7 +169,7 @@ export function registerTableCommands(
                 LEFT JOIN sys.columns c2 ON p.object_id = c2.object_id AND p.end_column_id = c2.column_id
                 WHERE t.object_id = OBJECT_ID('[${schema}].[${table}]');
             `;
-            const temporalResult = await connection.request().query(temporalQuery);
+            const temporalResult = await queryConnection.request().query(temporalQuery);
             const temporalInfo = temporalResult.recordset[0];
             const isTemporalTable = temporalInfo?.temporal_type === 2;
 
@@ -176,7 +242,7 @@ export function registerTableCommands(
                 WHERE kc.parent_object_id = OBJECT_ID('[${schema}].[${table}]') AND kc.type = 'PK'
                 GROUP BY kc.name, i.type_desc, ds.name;
             `;
-            const pkResult = await connection.request().query(pkQuery);
+            const pkResult = await queryConnection.request().query(pkQuery);
             
             if (pkResult.recordset.length > 0) {
                 const pk = pkResult.recordset[0];
@@ -201,7 +267,7 @@ export function registerTableCommands(
                     AND i.type > 0
                 GROUP BY i.name, i.type_desc, i.is_unique, ds.name;
             `;
-            const indexResult = await connection.request().query(indexQuery);
+            const indexResult = await queryConnection.request().query(indexQuery);
             
             for (const idx of indexResult.recordset) {
                 const unique = idx.is_unique ? 'UNIQUE ' : '';
@@ -232,7 +298,7 @@ export function registerTableCommands(
                 WHERE fk.parent_object_id = OBJECT_ID('[${schema}].[${table}]')
                 GROUP BY fk.name, fk.referenced_object_id, fk.delete_referential_action_desc, fk.update_referential_action_desc;
             `;
-            const fkResult = await connection.request().query(fkQuery);
+            const fkResult = await queryConnection.request().query(fkQuery);
             
             for (const fk of fkResult.recordset) {
                 createScript += `ALTER TABLE [${schema}].[${table}]  WITH CHECK ADD  CONSTRAINT [${fk.constraint_name}] FOREIGN KEY([${fk.columns}])\n`;

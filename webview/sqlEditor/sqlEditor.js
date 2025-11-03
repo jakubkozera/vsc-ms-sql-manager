@@ -8,10 +8,17 @@ let lastMessages = [];
 let isResizing = false;
 let activeConnections = [];
 let currentConnectionId = null;
+let currentDatabaseName = null;
 let dbSchema = { tables: [], views: [], foreignKeys: [] };
 let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
+
+// Editable result sets support
+let resultSetMetadata = []; // Metadata for each result set
+let originalQuery = ''; // Original SELECT query for UPDATE generation
+let pendingChanges = new Map(); // Map<resultSetIndex, Array<ChangeRecord>>
+let currentEditingCell = null; // Currently editing cell reference
 
 // Helper function to check if string is valid JSON
 function isValidJSON(str) {
@@ -130,6 +137,35 @@ require(['vs/editor/editor.main'], function () {
         }
     });
 
+    // Remember right-click position so context-menu 'Go to definition' can use it
+    let lastContextPosition = null;
+    editor.onMouseDown(function(e) {
+        try {
+            // e.event.rightButton is true for right-clicks
+            // Robust detection: check common event properties for right click
+            var isRight = false;
+            try {
+                if (e.event) {
+                    // PointerEvent / MouseEvent properties
+                    isRight = !!(e.event.rightButton || e.event.button === 2 || e.event.which === 3);
+                }
+            } catch (inner) {
+                isRight = false;
+            }
+
+            if (isRight) {
+                if (e.target && e.target.position) {
+                    lastContextPosition = e.target.position;
+                } else {
+                    lastContextPosition = editor.getPosition();
+                }
+                console.log('[editor.onMouseDown] right-click at position', lastContextPosition);
+            }
+        } catch (err) {
+            console.error('[editor.onMouseDown] error', err);
+        }
+    });
+
     // Add keyboard shortcuts
     editor.addCommand(monaco.KeyCode.F5, () => {
         executeQuery();
@@ -149,13 +185,342 @@ require(['vs/editor/editor.main'], function () {
         }
     });
 
+    // Register SQL hover provider - shows table/column details using dbSchema
+    console.log('[SQL-HOVER] Registering hover provider');
+    monaco.languages.registerHoverProvider('sql', {
+        provideHover: (model, position) => {
+            try {
+                const fullText = model.getValue();
+                const tablesInQuery = extractTablesFromQuery(fullText) || [];
+                const line = model.getLineContent(position.lineNumber);
+                const beforeCursor = line.substring(0, position.column - 1);
+
+                // Helper to render a table's columns as markdown table
+                function renderTableMarkdown(schemaName, tableName, cols) {
+                    var md = '| Column | Type | Nullable |\n';
+                    md += '|---|---|---|\n';
+                    for (var i = 0; i < cols.length; i++) {
+                        var c = cols[i];
+                        var type = c.type + (c.maxLength ? '(' + c.maxLength + ')' : '');
+                        var nullable = c.nullable ? 'YES' : 'NO';
+                        md += '| ' + c.name + ' | ' + type + ' | ' + nullable + ' |\n';
+                    }
+                    return '**' + schemaName + '.' + tableName + '**\n\n' + md;
+                }
+
+                // Detect alias.column or table.column pattern before cursor
+                var aliasColMatch = beforeCursor.match(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/);
+                if (aliasColMatch) {
+                    var alias = aliasColMatch[1];
+                    var colName = aliasColMatch[2];
+
+                    // Resolve alias to table
+                    var tableInfo = findTableForAlias(fullText, alias) || findTable(alias);
+                    if (tableInfo) {
+                        var cols = getColumnsForTable(tableInfo.schema, tableInfo.table) || [];
+                        var col = cols.find(function(c) { return c.name.toLowerCase() === colName.toLowerCase(); });
+                        if (col) {
+                            var mdSingle = '| Property | Value |\n|---|---:|\n';
+                            mdSingle += '| Table | ' + tableInfo.schema + '.' + tableInfo.table + ' |\n';
+                            mdSingle += '| Column | ' + col.name + ' |\n';
+                            mdSingle += '| Type | ' + col.type + (col.maxLength ? '(' + col.maxLength + ')' : '') + ' |\n';
+                            mdSingle += '| Nullable | ' + (col.nullable ? 'YES' : 'NO') + ' |\n';
+                            var matchText = aliasColMatch[0];
+                            var startCol = beforeCursor.lastIndexOf(matchText) + 1;
+                            var range = new monaco.Range(position.lineNumber, startCol, position.lineNumber, startCol + matchText.length);
+                            return { contents: [{ value: mdSingle }], range: range };
+                        }
+
+                        // Column not found - show top columns preview as table
+                        var previewCols = cols.slice(0, 12);
+                        var tableMd = renderTableMarkdown(tableInfo.schema, tableInfo.table, previewCols);
+                        var startCol2 = beforeCursor.lastIndexOf(alias) + 1;
+                        var range2 = new monaco.Range(position.lineNumber, startCol2, position.lineNumber, startCol2 + alias.length);
+                        return { contents: [{ value: tableMd }], range: range2 };
+                    }
+                }
+
+                // No alias dot - check standalone word under cursor
+                var wordObj = model.getWordAtPosition(position);
+                if (wordObj && wordObj.word) {
+                    var w = wordObj.word;
+
+                    // If it's a table name, show full table definition as markdown table
+                    var table = findTable(w);
+                    if (table) {
+                        var cols2 = getColumnsForTable(table.schema, table.table) || [];
+                        var md2 = renderTableMarkdown(table.schema, table.table, cols2);
+                        // (removed inline link) user can use the editor context menu 'Go to definition'
+                        var range3 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        return { contents: [{ value: md2 }], range: range3 };
+                    }
+
+                    // If it's a column name present in multiple tables, prefer tables present in the current query
+                    var matching = dbSchema.tables.filter(function(t){ return t.columns.some(function(c){ return c.name.toLowerCase() === w.toLowerCase(); }); });
+                    if (matching.length > 1) {
+                        // filter by tables present in query
+                        var inQuery = matching.filter(function(t){
+                            return tablesInQuery.some(function(q){ return q.table.toLowerCase() === t.name.toLowerCase() && (q.schema ? q.schema === t.schema : true); });
+                        });
+                        var effective = inQuery.length > 0 ? inQuery : matching;
+
+                        // Build a markdown table listing each matching table and the column details
+                        var mdMulti = '| Table | Column | Type | Nullable |\n';
+                        mdMulti += '|---|---|---|---|\n';
+                        for (var mi = 0; mi < effective.length; mi++) {
+                            var mt = effective[mi];
+                            var mc = mt.columns.find(function(c){ return c.name.toLowerCase() === w.toLowerCase(); });
+                            if (mc) {
+                                var type = mc.type + (mc.maxLength ? '(' + mc.maxLength + ')' : '');
+                                var nullable = mc.nullable ? 'YES' : 'NO';
+                                mdMulti += '| ' + mt.schema + '.' + mt.name + ' | ' + mc.name + ' | ' + type + ' | ' + nullable + ' |\n';
+                            }
+                        }
+                        var range5 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        // (removed inline link) user can use the editor context menu 'Go to definition'
+                        return { contents: [{ value: mdMulti }], range: range5 };
+                    }
+
+                    // If it's a column name present in exactly one table in schema, show that column
+                    if (matching.length === 1) {
+                        var t = matching[0];
+                        var col = t.columns.find(function(c){ return c.name.toLowerCase() === w.toLowerCase(); });
+                        var md3 = '| Property | Value |\n|---|---:|\n';
+                        md3 += '| Table | ' + t.schema + '.' + t.name + ' |\n';
+                        md3 += '| Column | ' + col.name + ' |\n';
+                        md3 += '| Type | ' + col.type + (col.maxLength ? '(' + col.maxLength + ')' : '') + ' |\n';
+                        md3 += '| Nullable | ' + (col.nullable ? 'YES' : 'NO') + ' |\n';
+                        var range4 = new monaco.Range(position.lineNumber, wordObj.startColumn, position.lineNumber, wordObj.endColumn);
+                        // (removed inline link) user can use the editor context menu 'Go to definition'
+                        return { contents: [{ value: md3 }], range: range4 };
+                    }
+                }
+            } catch (err) {
+                console.error('[SQL-HOVER] Error in hover provider', err);
+            }
+
+            return null;
+        }
+    });
+
     // Notify extension that webview is ready
     vscode.postMessage({ type: 'ready' });
+
+    // Ensure Go-to-definition action is registered after editor is created
+    try {
+        if (typeof registerGoToDefinitionAction === 'function') {
+            registerGoToDefinitionAction();
+            console.log('[GoToDef] Registered action inside require callback');
+        }
+    } catch (e) {
+        console.error('[GoToDef] Failed to register inside require callback', e);
+    }
 });
 
 // Toolbar buttons
 document.getElementById('executeButton').addEventListener('click', () => {
     executeQuery();
+});
+
+// Execute button dropdown functionality
+const executeDropdownToggle = document.getElementById('executeDropdownToggle');
+const executeDropdownMenu = document.getElementById('executeDropdownMenu');
+
+executeDropdownToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    executeDropdownMenu.classList.toggle('show');
+    executeDropdownToggle.classList.toggle('open');
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const buttonContainer = executeDropdownToggle.closest('.button-container');
+    if (!buttonContainer.contains(e.target)) {
+        executeDropdownMenu.classList.remove('show');
+        executeDropdownToggle.classList.remove('open');
+    }
+});
+
+
+// Register a Monaco editor action that appears in the context menu for "Go to definition"
+// This uses the editor selection/word under cursor to build the payload and forwards it to the extension
+function registerGoToDefinitionAction() {
+    // Helper: build a simple CREATE TABLE DDL from an entry in dbSchema
+    function buildTableDDL(table) {
+        try {
+            var lines = [];
+            lines.push('-- Generated table definition');
+            lines.push('CREATE TABLE ' + table.schema + '.' + table.name + ' (');
+            for (var i = 0; i < table.columns.length; i++) {
+                var c = table.columns[i];
+                var colType = c.type + (c.maxLength ? '(' + c.maxLength + ')' : '');
+                var nullable = c.nullable ? 'NULL' : 'NOT NULL';
+                lines.push('    ' + c.name + ' ' + colType + ' ' + nullable + (i < table.columns.length - 1 ? ',' : ''));
+            }
+            lines.push(');');
+
+            // Append any foreign keys that reference or are defined on this table
+            if (dbSchema && Array.isArray(dbSchema.foreignKeys)) {
+                var fks = dbSchema.foreignKeys.filter(function(f) {
+                    return (f.fromSchema === table.schema && f.fromTable === table.name) || (f.toSchema === table.schema && f.toTable === table.name);
+                });
+                if (fks.length > 0) {
+                    lines.push('\n-- Foreign key relationships (summary):');
+                    for (var j = 0; j < fks.length; j++) {
+                        var fk = fks[j];
+                        lines.push('-- ' + fk.constraintName + ': ' + fk.fromSchema + '.' + fk.fromTable + '(' + fk.fromColumn + ') -> ' + fk.toSchema + '.' + fk.toTable + '(' + fk.toColumn + ')');
+                    }
+                }
+            }
+
+            return lines.join('\n');
+        } catch (err) {
+            console.error('[buildTableDDL] error', err);
+            return '-- Unable to generate definition';
+        }
+    }
+
+    editor.addAction({
+        id: 'mssqlmanager.goToDefinition',
+        label: 'Go to definition',
+        keybindings: [],
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: 1.5,
+        run: function(ed) {
+            try {
+            // Prefer lastContextPosition (right-click) when available
+            const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+                const model = ed.getModel();
+                if (!model || !position) return;
+
+                console.log('[GoToDef.run] invoked. position=', position);
+
+                // Get the token/word at position
+                const wordInfo = model.getWordAtPosition(position);
+                console.log('[GoToDef.run] wordInfo=', wordInfo);
+                const line = model.getLineContent(position.lineNumber);
+                const before = line.substring(0, position.column - 1);
+
+                // Try alias.column pattern first
+                const aliasColMatch = before.match(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/);
+                if (aliasColMatch) {
+                    const alias = aliasColMatch[1];
+                    const colName = aliasColMatch[2];
+                    const fullText = model.getValue();
+                    const tableInfo = findTableForAlias(fullText, alias) || findTable(alias);
+                    if (tableInfo) {
+                        vscode.postMessage({ type: 'goToDefinition', objectType: 'column', schema: tableInfo.schema, table: tableInfo.table, column: colName, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+                }
+
+                // Fallback to word under cursor
+                if (wordInfo && wordInfo.word) {
+                    // Helper to parse qualified identifiers and strip brackets/quotes
+                    function stripIdentifierPart(part) {
+                        if (!part) return part;
+                        // Remove square brackets or double quotes if present
+                        part = part.trim();
+                        if ((part.startsWith('[') && part.endsWith(']')) || (part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+                            return part.substring(1, part.length - 1);
+                        }
+                        return part;
+                    }
+
+                    function parseQualifiedIdentifier(name) {
+                        if (!name) return { schema: null, table: null };
+                        // If it contains a dot, split into parts (handles [schema].[table] and schema.table)
+                        const parts = name.split('.');
+                        if (parts.length === 2) {
+                            return { schema: stripIdentifierPart(parts[0]), table: stripIdentifierPart(parts[1]) };
+                        }
+                        // If single part, strip any brackets
+                        return { schema: null, table: stripIdentifierPart(name) };
+                    }
+
+                    const rawWord = wordInfo.word;
+                    const fullText = model.getValue();
+
+                    // parse possible qualified identifier
+                    const parsed = parseQualifiedIdentifier(rawWord);
+
+                    // If we have schema + table from the token itself, try to use it
+                    if (parsed.table && parsed.schema) {
+                        // Prefer asking the extension to script authoritative CREATE for this table
+                        vscode.postMessage({ type: 'scriptTableCreate', schema: parsed.schema, table: parsed.table, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+
+                    // If raw token is just table name (possibly bracketed), normalize and try to find
+                    const normalizedTableName = parsed.table;
+                    // Attempt to find table by name (findTable handles case-insensitive match)
+                    const table = findTable(normalizedTableName);
+                    if (table) {
+                        // Try to build a DDL preview from the in-memory schema and open in a new editor
+                        var schemaTable = dbSchema.tables.find(function(t){ return t.schema === table.schema && (t.name === table.table || t.name === table.name); });
+                        if (schemaTable) {
+                            // Still prefer extension script for full fidelity, but if no extension available fallback to local DDL
+                            try {
+                                vscode.postMessage({ type: 'scriptTableCreate', schema: schemaTable.schema, table: schemaTable.name, connectionId: currentConnectionId, database: currentDatabaseName });
+                                return;
+                            } catch (e) {
+                                var ddl = buildTableDDL(schemaTable);
+                                openInNewEditor(ddl, 'sql');
+                                return;
+                            }
+                        }
+
+                        // Fallback to extension reveal if schema not available
+                        vscode.postMessage({ type: 'goToDefinition', objectType: 'table', schema: table.schema, table: table.table, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+
+                    // If it's a column in a single table, go to that column
+                    const matching = dbSchema.tables.filter(function(t){ return t.columns.some(function(c){ return c.name.toLowerCase() === normalizedTableName.toLowerCase(); }); });
+                    // Prefer tables found in the query
+                    const tablesInQuery = extractTablesFromQuery(fullText) || [];
+                    if (matching.length > 0) {
+                        const inQuery = matching.filter(function(t){ return tablesInQuery.some(function(q){ return q.table.toLowerCase() === t.name.toLowerCase() && (q.schema ? q.schema === t.schema : true); }); });
+                        const effective = inQuery.length > 0 ? inQuery : matching;
+                        // If exactly one table match, reveal that column
+                        if (effective.length === 1) {
+                            // Open table DDL and include a marker for the column
+                            var only = effective[0];
+                            var schemaTable2 = dbSchema.tables.find(function(t){ return t.schema === only.schema && t.name === only.name; });
+                            if (schemaTable2) {
+                                var ddl2 = buildTableDDL(schemaTable2);
+                                ddl2 += '\n\n-- Column: ' + normalizedTableName;
+                                openInNewEditor(ddl2, 'sql');
+                                return;
+                            }
+
+                            // Fallback to extension reveal
+                            vscode.postMessage({ type: 'goToDefinition', objectType: 'column', schema: effective[0].schema, table: effective[0].name, column: normalizedTableName, connectionId: currentConnectionId, database: currentDatabaseName });
+                            return;
+                        }
+                        // Otherwise, send a column-list type so extension can fall back to best guess
+                        vscode.postMessage({ type: 'goToDefinition', objectType: 'column-list', column: normalizedTableName, connectionId: currentConnectionId, database: currentDatabaseName });
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error('[GoToDefAction] Error building goToDefinition payload', err);
+            }
+        }
+    });
+}
+
+// Register the action once the editor is ready
+if (typeof editor !== 'undefined' && editor) {
+    registerGoToDefinitionAction();
+} else {
+    // If editor not yet ready, try to register later in the monaco loader callback
+    // (the editor is created in require(['vs/editor/editor.main'], ... ) earlier)
+}
+
+// Prevent dropdown from closing when clicking inside
+executeDropdownMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
 });
 
 document.getElementById('cancelButton').addEventListener('click', () => {
@@ -174,13 +539,183 @@ document.getElementById('actualPlanCheckbox').addEventListener('change', (e) => 
     actualPlanEnabled = e.target.checked;
 });
 
-// Database selector
-document.getElementById('databaseSelector').addEventListener('change', (e) => {
-    const connectionId = e.target.value;
+// Custom Dropdown Class for Connection and Database Selectors
+class CustomDropdown {
+    constructor(containerId, onSelect) {
+        this.container = document.getElementById(containerId);
+        this.trigger = this.container.querySelector('.dropdown-trigger');
+        this.menu = this.container.querySelector('.dropdown-menu');
+        this.onSelect = onSelect;
+        this.selectedValue = null;
+
+        this.init();
+    }
+
+    init() {
+        // Toggle dropdown on trigger click
+        this.trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggle();
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!this.container.contains(e.target)) {
+                this.close();
+            }
+        });
+
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.close();
+            }
+        });
+    }
+
+    toggle() {
+        const isOpen = this.menu.classList.contains('open');
+
+        // Close all other dropdowns
+        document.querySelectorAll('.dropdown-menu.open').forEach(menu => {
+            menu.classList.remove('open');
+        });
+        document.querySelectorAll('.dropdown-trigger.open').forEach(trigger => {
+            trigger.classList.remove('open');
+        });
+
+        if (!isOpen) {
+            this.open();
+        } else {
+            this.close();
+        }
+    }
+
+    open() {
+        this.menu.classList.add('open');
+        this.trigger.classList.add('open');
+    }
+
+    close() {
+        this.menu.classList.remove('open');
+        this.trigger.classList.remove('open');
+    }
+
+    setItems(items) {
+        // items should be array of {value, text, selected}
+        this.menu.innerHTML = '';
+        
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'dropdown-item';
+            div.textContent = item.text;
+            div.dataset.value = item.value;
+            
+            if (item.selected) {
+                div.classList.add('selected');
+                this.trigger.textContent = item.text;
+                this.selectedValue = item.value;
+            }
+            
+            div.addEventListener('click', () => {
+                this.selectItem(item.value, item.text);
+            });
+            
+            this.menu.appendChild(div);
+        });
+    }
+
+    selectItem(value, text) {
+        // Remove selected class from all items
+        this.menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
+
+        // Add selected class to clicked item
+        const selectedItem = this.menu.querySelector(`[data-value="${value}"]`);
+        if (selectedItem) {
+            selectedItem.classList.add('selected');
+        }
+
+        // Update trigger text
+        this.trigger.textContent = text;
+        this.selectedValue = value;
+
+        // Close dropdown
+        this.close();
+
+        // Call the callback
+        if (this.onSelect) {
+            this.onSelect(value);
+        }
+    }
+
+    setValue(value, text) {
+        this.trigger.textContent = text;
+        this.selectedValue = value;
+        
+        // Update selected state in menu
+        this.menu.querySelectorAll('.dropdown-item').forEach(i => {
+            i.classList.remove('selected');
+            if (i.dataset.value === value) {
+                i.classList.add('selected');
+            }
+        });
+    }
+
+    setDisabled(disabled) {
+        this.trigger.disabled = disabled;
+    }
+
+    show() {
+        this.container.style.display = 'inline-block';
+    }
+
+    hide() {
+        this.container.style.display = 'none';
+    }
+}
+
+// Initialize custom dropdowns
+const connectionDropdown = new CustomDropdown('connection-dropdown', (connectionId) => {
+    currentConnectionId = connectionId;
+    
     if (connectionId) {
+        // Find connection config to check type
+        const connection = activeConnections.find(c => c.id === connectionId);
+        
+        if (connection && connection.connectionType === 'server') {
+            // Show database selector and request database list
+            document.getElementById('databaseLabel').style.display = 'inline-block';
+            databaseDropdown.show();
+            
+            vscode.postMessage({
+                type: 'switchConnection',
+                connectionId: connectionId
+            });
+        } else {
+            // Hide database selector for direct database connections
+            document.getElementById('databaseLabel').style.display = 'none';
+            databaseDropdown.hide();
+            currentDatabaseName = null;
+            
+            vscode.postMessage({
+                type: 'switchConnection',
+                connectionId: connectionId
+            });
+        }
+    } else {
+        document.getElementById('databaseLabel').style.display = 'none';
+        databaseDropdown.hide();
+    }
+});
+
+const databaseDropdown = new CustomDropdown('database-dropdown', (databaseName) => {
+    currentDatabaseName = databaseName;
+    
+    if (currentConnectionId && databaseName) {
         vscode.postMessage({
-            type: 'switchConnection',
-            connectionId: connectionId
+            type: 'switchDatabase',
+            connectionId: currentConnectionId,
+            databaseName: databaseName
         });
     }
 });
@@ -195,6 +730,7 @@ document.querySelectorAll('.results-tab').forEach(tab => {
         // Show/hide appropriate container
         const resultsContent = document.getElementById('resultsContent');
         const messagesContent = document.getElementById('messagesContent');
+        const pendingChangesContent = document.getElementById('pendingChangesContent');
         const queryPlanContent = document.getElementById('queryPlanContent');
         const planTreeContent = document.getElementById('planTreeContent');
         const topOperationsContent = document.getElementById('topOperationsContent');
@@ -202,6 +738,7 @@ document.querySelectorAll('.results-tab').forEach(tab => {
         // Hide all
         resultsContent.style.display = 'none';
         messagesContent.style.display = 'none';
+        if (pendingChangesContent) pendingChangesContent.style.display = 'none';
         queryPlanContent.style.display = 'none';
         planTreeContent.style.display = 'none';
         topOperationsContent.style.display = 'none';
@@ -211,6 +748,11 @@ document.querySelectorAll('.results-tab').forEach(tab => {
             resultsContent.style.display = 'block';
         } else if (currentTab === 'messages') {
             messagesContent.style.display = 'block';
+        } else if (currentTab === 'pendingChanges') {
+            if (pendingChangesContent) {
+                pendingChangesContent.style.display = 'block';
+                renderPendingChanges();
+            }
         } else if (currentTab === 'queryPlan') {
             queryPlanContent.style.display = 'block';
         } else if (currentTab === 'planTree') {
@@ -260,6 +802,22 @@ document.addEventListener('mouseup', () => {
 function executeQuery() {
     if (!editor) return;
 
+    // Clear pending changes immediately when starting new query
+    pendingChanges.clear();
+    
+    // Hide and clear Pending Changes UI
+    const pendingTab = document.querySelector('[data-tab="pendingChanges"]');
+    const pendingBadge = document.getElementById('pendingChangesCount');
+    const pendingContent = document.getElementById('pendingChangesContent');
+    if (pendingTab) pendingTab.style.display = 'none';
+    if (pendingBadge) pendingBadge.style.display = 'none';
+    if (pendingContent) pendingContent.innerHTML = '';
+    
+    // Remove all cell-modified classes
+    document.querySelectorAll('.cell-modified').forEach(cell => {
+        cell.classList.remove('cell-modified');
+    });
+
     const selection = editor.getSelection();
     let queryText;
 
@@ -270,8 +828,11 @@ function executeQuery() {
         queryText = editor.getValue();
     }
 
-    const databaseSelector = document.getElementById('databaseSelector');
-    const connectionId = databaseSelector.value || null;
+    // Build composite connection ID if database is selected
+    let connectionId = currentConnectionId;
+    if (currentConnectionId && currentDatabaseName) {
+        connectionId = `${currentConnectionId}::${currentDatabaseName}`;
+    }
 
     vscode.postMessage({
         type: 'executeQuery',
@@ -294,8 +855,11 @@ function executeEstimatedPlan() {
         queryText = editor.getValue();
     }
 
-    const databaseSelector = document.getElementById('databaseSelector');
-    const connectionId = databaseSelector.value || null;
+    // Build composite connection ID if database is selected
+    let connectionId = currentConnectionId;
+    if (currentConnectionId && currentDatabaseName) {
+        connectionId = `${currentConnectionId}::${currentDatabaseName}`;
+    }
 
     vscode.postMessage({
         type: 'executeEstimatedPlan',
@@ -359,109 +923,120 @@ function provideSqlCompletions(model, position) {
         }
     }
 
-    // Check if we're in SELECT or WHERE clause - suggest columns
+    // Analyze SQL context for intelligent suggestions
     const lowerText = textUntilPosition.toLowerCase();
     
     console.log('[SQL-COMPLETION] Checking context - lowerText:', lowerText);
     
-    // Check if we're in JOIN clause (after JOIN keyword, before ON)
-    const joinMatch = /\b((?:inner|left|right|full|cross)\s+)?join\s*$/i.exec(lineUntilPosition);
-    console.log('[SQL-COMPLETION] JOIN match:', joinMatch ? 'YES' : 'NO');
+    // Analyze the current SQL context
+    const sqlContext = analyzeSqlContext(textUntilPosition, lineUntilPosition);
+    console.log('[SQL-COMPLETION] SQL Context analysis:', sqlContext);
     
-    if (joinMatch) {
-        console.log('[SQL-COMPLETION] In JOIN context, suggesting related tables');
-        // Suggest tables that have foreign key relationships with tables already in the query
-        const tablesInQuery = extractTablesFromQuery(textUntilPosition);
-        console.log('[SQL-COMPLETION] Tables in query for JOIN:', tablesInQuery);
-        
-        if (tablesInQuery.length > 0) {
-            const relatedTables = getRelatedTables(tablesInQuery);
-            console.log('[SQL-COMPLETION] Related tables:', relatedTables.map(t => ({ name: t.name, hasFKInfo: !!t.foreignKeyInfo })));
+    // Handle different SQL contexts
+    switch (sqlContext.type) {
+        case 'JOIN_TABLE':
+            console.log('[SQL-COMPLETION] In JOIN context, suggesting related tables');
+            const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+            console.log('[SQL-COMPLETION] Tables in query for JOIN:', tablesInQuery);
             
-            return {
-                suggestions: relatedTables.map(table => {
-                    const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
-                    
-                    // Generate alias (first letter of table name or full name if short)
-                    const tableAlias = table.name.length <= 3 ? table.name.toLowerCase() : table.name.charAt(0).toLowerCase();
-                    
-                    // Build the ON clause with FK relationship
-                    let insertText = `${fullName} ${tableAlias}`;
-                    let detailText = `Table (${table.columns?.length || 0} columns)`;
-                    
-                    if (table.foreignKeyInfo) {
-                        const fkInfo = table.foreignKeyInfo;
-                        const toAlias = tableAlias;
-                        const fromAlias = fkInfo.fromAlias;
+            if (tablesInQuery.length > 0) {
+                const relatedTables = getRelatedTables(tablesInQuery);
+                console.log('[SQL-COMPLETION] Related tables:', relatedTables.map(t => ({ name: t.name, hasFKInfo: !!t.foreignKeyInfo })));
+                
+                return {
+                    suggestions: relatedTables.map(table => {
+                        const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
                         
-                        if (fkInfo.direction === 'to') {
-                            insertText = `${fullName} ${toAlias} ON ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
-                            detailText = `Join on ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
-                        } else {
-                            insertText = `${fullName} ${toAlias} ON ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
-                            detailText = `Join on ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                        // Generate smart alias
+                        const tableAlias = generateSmartAlias(table.name);
+                        
+                        // Build the ON clause with FK relationship
+                        let insertText = `${fullName} ${tableAlias}`;
+                        let detailText = `Table (${table.columns?.length || 0} columns)`;
+                        
+                        if (table.foreignKeyInfo) {
+                            const fkInfo = table.foreignKeyInfo;
+                            const toAlias = tableAlias;
+                            const fromAlias = fkInfo.fromAlias;
+                            
+                            if (fkInfo.direction === 'to') {
+                                insertText = `${fullName} ${toAlias} ON ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
+                                detailText = `Join on ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
+                            } else {
+                                insertText = `${fullName} ${toAlias} ON ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                                detailText = `Join on ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                            }
                         }
-                    }
-                    
-                    return {
-                        label: fullName,
-                        kind: monaco.languages.CompletionItemKind.Class,
-                        detail: detailText,
-                        insertText: insertText,
-                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                        range: range,
-                        sortText: `0_${fullName}`
-                    };
-                })
-            };
-        }
+                        
+                        return {
+                            label: fullName,
+                            kind: monaco.languages.CompletionItemKind.Class,
+                            detail: detailText,
+                            insertText: insertText,
+                            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                            range: range,
+                            sortText: `0_${fullName}`
+                        };
+                    })
+                };
+            }
+            break;
+            
+        case 'ON_CONDITION':
+            console.log('[SQL-COMPLETION] In ON clause, suggesting join conditions');
+            return getJoinConditionSuggestions(textUntilPosition, range);
+            
+        case 'ORDER_BY':
+            console.log('[SQL-COMPLETION] In ORDER BY clause, suggesting columns and sort options');
+            return getOrderBySuggestions(textUntilPosition, range);
+            
+        case 'GROUP_BY':
+            console.log('[SQL-COMPLETION] In GROUP BY clause, suggesting columns');
+            return getGroupBySuggestions(textUntilPosition, range);
+            
+        case 'HAVING':
+            console.log('[SQL-COMPLETION] In HAVING clause, suggesting aggregate conditions');
+            return getHavingSuggestions(textUntilPosition, range);
+            
+        case 'INSERT_COLUMNS':
+            console.log('[SQL-COMPLETION] In INSERT columns, suggesting table columns');
+            return getInsertColumnSuggestions(textUntilPosition, range);
+            
+        case 'INSERT_VALUES':
+            console.log('[SQL-COMPLETION] In INSERT VALUES, suggesting value formats');
+            return getInsertValueSuggestions(textUntilPosition, range);
+            
+        case 'UPDATE_SET':
+            console.log('[SQL-COMPLETION] In UPDATE SET, suggesting column assignments');
+            return getUpdateSetSuggestions(textUntilPosition, range);
     }
     
-    // Detect context: SELECT, WHERE, or FROM clause
-    let inSelectClause = false;
-    let inWhereClause = false;
-    let inFromClause = false;
+    // Detect context: SELECT, WHERE, or FROM clause with enhanced analysis
+    const inSelectClause = sqlContext.type === 'SELECT';
+    const inWhereClause = sqlContext.type === 'WHERE';
+    const inFromClause = sqlContext.type === 'FROM';
+    const afterFromClause = sqlContext.type === 'AFTER_FROM';
     
-    // Better context detection
-    const lastSelectPos = lowerText.lastIndexOf('select');
-    const lastFromPos = lowerText.lastIndexOf('from');
-    const lastWherePos = lowerText.lastIndexOf('where');
-    const lastJoinPos = Math.max(
-        lowerText.lastIndexOf('join'),
-        lowerText.lastIndexOf('inner join'),
-        lowerText.lastIndexOf('left join'),
-        lowerText.lastIndexOf('right join')
-    );
+    console.log('[SQL-COMPLETION] Enhanced context detection:', {
+        type: sqlContext.type,
+        confidence: sqlContext.confidence,
+        inSelect: inSelectClause,
+        inWhere: inWhereClause,
+        inFrom: inFromClause,
+        afterFrom: afterFromClause
+    });
     
-    console.log('[SQL-COMPLETION] Context positions - SELECT:', lastSelectPos, 'FROM:', lastFromPos, 'WHERE:', lastWherePos, 'JOIN:', lastJoinPos);
-    
-    if (lastSelectPos !== -1 && lastFromPos !== -1) {
-        if (lastWherePos !== -1 && lastWherePos > lastFromPos) {
-            inWhereClause = true;
-            console.log('[SQL-COMPLETION] Context: WHERE clause');
-        } else if (lastSelectPos < lastFromPos && lowerText.length <= lastFromPos + 50) {
-            // Close to FROM keyword
-            inFromClause = true;
-            console.log('[SQL-COMPLETION] Context: FROM clause');
-        } else if (lastSelectPos > -1 && (lastFromPos === -1 || lastSelectPos > lastFromPos)) {
-            inSelectClause = true;
-            console.log('[SQL-COMPLETION] Context: SELECT clause (no FROM yet)');
-        } else if (lastSelectPos < lastFromPos) {
-            // We have both SELECT and FROM, check position
-            inSelectClause = false;
-            console.log('[SQL-COMPLETION] Context: After FROM');
-        }
-    } else if (lastSelectPos !== -1 && lastFromPos === -1) {
-        inSelectClause = true;
-        console.log('[SQL-COMPLETION] Context: SELECT clause (no FROM)');
-    } else if (lastFromPos !== -1 && lastWherePos === -1) {
-        inFromClause = true;
-        console.log('[SQL-COMPLETION] Context: FROM clause (no WHERE)');
+    // Handle WHERE clause with operator suggestions
+    if (inWhereClause && sqlContext.suggestOperators) {
+        console.log('[SQL-COMPLETION] In WHERE clause, suggesting operators');
+        return {
+            suggestions: getSqlOperators(range)
+        };
     }
     
-    // If we're in SELECT or WHERE, suggest columns from tables in query
-    if (inSelectClause || inWhereClause) {
-        console.log('[SQL-COMPLETION] Should suggest columns - inSelect:', inSelectClause, 'inWhere:', inWhereClause);
+    // If we're in SELECT, WHERE, or after a complete FROM, suggest columns from tables in query
+    if (inSelectClause || inWhereClause || afterFromClause) {
+        console.log('[SQL-COMPLETION] Should suggest columns - context type:', sqlContext.type);
         
         // Get all tables/aliases from the FULL query (not just textUntilPosition)
         const fullText = model.getValue();
@@ -477,26 +1052,53 @@ function provideSqlCompletions(model, position) {
                 const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
                 console.log(`[SQL-COMPLETION] Columns for ${tableInfo.schema}.${tableInfo.table}:`, columns.length);
                 
+                // Use the actual alias if available, otherwise use table name
+                const displayAlias = tableInfo.alias || tableInfo.table;
+                console.log(`[SQL-COMPLETION] Using alias "${displayAlias}" for table ${tableInfo.table} (hasExplicitAlias: ${tableInfo.hasExplicitAlias})`);
+                
                 columns.forEach(col => {
-                    const prefix = tableInfo.alias || tableInfo.table;
-                    suggestions.push({
-                        label: col.name,
-                        kind: monaco.languages.CompletionItemKind.Field,
-                        detail: `${prefix}.${col.name} (${col.type})`,
-                        insertText: col.name,
-                        range: range,
-                        sortText: `0_${col.name}` // Prioritize columns
-                    });
-                    
-                    // Also suggest with table prefix
-                    suggestions.push({
-                        label: `${prefix}.${col.name}`,
-                        kind: monaco.languages.CompletionItemKind.Field,
-                        detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
-                        insertText: `${prefix}.${col.name}`,
-                        range: range,
-                        sortText: `1_${col.name}`
-                    });
+                    // For SELECT/WHERE context, prioritize the alias-prefixed suggestions
+                    if (tableInfo.hasExplicitAlias || tablesInQuery.length > 1) {
+                        // When there's an explicit alias or multiple tables, prioritize prefixed columns
+                        suggestions.push({
+                            label: `${displayAlias}.${col.name}`,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${col.type}${col.nullable ? ' (nullable)' : ''} - from ${tableInfo.table}`,
+                            insertText: `${displayAlias}.${col.name}`,
+                            range: range,
+                            sortText: `0_${displayAlias}_${col.name}` // Highest priority for alias-prefixed
+                        });
+                        
+                        // Also suggest without prefix but with lower priority
+                        suggestions.push({
+                            label: col.name,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${displayAlias}.${col.name} (${col.type})`,
+                            insertText: col.name,
+                            range: range,
+                            sortText: `1_${col.name}` // Lower priority for non-prefixed
+                        });
+                    } else {
+                        // Single table without explicit alias - prioritize non-prefixed columns
+                        suggestions.push({
+                            label: col.name,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${displayAlias}.${col.name} (${col.type})`,
+                            insertText: col.name,
+                            range: range,
+                            sortText: `0_${col.name}` // Prioritize non-prefixed columns
+                        });
+                        
+                        // Also suggest with table prefix
+                        suggestions.push({
+                            label: `${displayAlias}.${col.name}`,
+                            kind: monaco.languages.CompletionItemKind.Field,
+                            detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
+                            insertText: `${displayAlias}.${col.name}`,
+                            range: range,
+                            sortText: `1_${displayAlias}_${col.name}`
+                        });
+                    }
                 });
             });
             
@@ -521,29 +1123,105 @@ function provideSqlCompletions(model, position) {
 
     // Default: suggest tables and views
     const suggestions = [];
+    
+    // Check if this is a new/empty query for special table suggestions
+    const isNewQuery = isNewOrEmptyQuery(textUntilPosition);
+    console.log('[SQL-COMPLETION] Is new query:', isNewQuery);
 
     // Add tables
     dbSchema.tables.forEach(table => {
         const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
+        
+        // Regular table suggestion
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Class,
             detail: `Table (${table.columns.length} columns)`,
             insertText: fullName,
-            range: range
+            range: range,
+            sortText: `2_${fullName}` // Lower priority than special options
         });
+        
+        // Add special script generation options only for new queries
+        if (isNewQuery) {
+            // SELECT TOP 100 option
+            suggestions.push({
+                label: `${table.name}100`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT TOP 100 from ${fullName}`,
+                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${table.name}_100`, // High priority
+                documentation: {
+                    value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`
+                }
+            });
+            
+            // SELECT * option
+            suggestions.push({
+                label: `${table.name}*`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT * from ${fullName}`,
+                insertText: `SELECT *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${table.name}_all`,
+                documentation: {
+                    value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`
+                }
+            });
+            
+            // (COUNT and Schema quick scripts removed per user request)
+        }
     });
 
     // Add views
     dbSchema.views.forEach(view => {
         const fullName = view.schema === 'dbo' ? view.name : `${view.schema}.${view.name}`;
+        
+        // Regular view suggestion
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Interface,
             detail: `View (${view.columns.length} columns)`,
             insertText: fullName,
-            range: range
+            range: range,
+            sortText: `2_${fullName}` // Lower priority than special options
         });
+        
+        // Add special script generation options only for new queries
+        if (isNewQuery) {
+            // SELECT TOP 100 option for views
+            suggestions.push({
+                label: `${view.name}100`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT TOP 100 from ${fullName} (View)`,
+                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${view.name}_100`,
+                documentation: {
+                    value: `**Quick Script**: SELECT TOP 100 rows from view ${fullName}`
+                }
+            });
+            
+            // SELECT * option for views
+            suggestions.push({
+                label: `${view.name}*`,
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                detail: `Generate SELECT * from ${fullName} (View)`,
+                insertText: `SELECT *\nFROM ${fullName}`,
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range: range,
+                sortText: `0_${view.name}_all`,
+                documentation: {
+                    value: `**Quick Script**: SELECT all rows from view ${fullName}`
+                }
+            });
+            
+            // (COUNT quick script for views removed per user request)
+        }
     });
 
     // Add SQL keywords
@@ -563,6 +1241,598 @@ function provideSqlCompletions(model, position) {
     return { suggestions };
 }
 
+function analyzeSqlContext(textUntilPosition, lineUntilPosition) {
+    const lowerText = textUntilPosition.toLowerCase();
+    const lowerLine = lineUntilPosition.toLowerCase();
+    
+    // Find positions of key SQL keywords
+    const lastSelectPos = lowerText.lastIndexOf('select');
+    const lastFromPos = lowerText.lastIndexOf('from');
+    const lastWherePos = lowerText.lastIndexOf('where');
+    const lastOrderByPos = lowerText.lastIndexOf('order by');
+    const lastGroupByPos = lowerText.lastIndexOf('group by');
+    const lastHavingPos = lowerText.lastIndexOf('having');
+    const lastInsertPos = lowerText.lastIndexOf('insert');
+    const lastUpdatePos = lowerText.lastIndexOf('update');
+    const lastSetPos = lowerText.lastIndexOf('set');
+    const lastValuesPos = lowerText.lastIndexOf('values');
+    
+    // Check for JOIN context
+    const joinMatch = /\b((?:inner|left|right|full|cross)\s+)?join\s*$/i.exec(lowerLine);
+    if (joinMatch) {
+        return { type: 'JOIN_TABLE', confidence: 'high' };
+    }
+    
+    // Check for ON clause context (after JOIN table alias)
+    const onMatch = /\bjoin\s+(?:\w+\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?\s+on\s*/i.exec(lowerLine);
+    if (onMatch || /\bon\s*$/i.test(lowerLine)) {
+        return { type: 'ON_CONDITION', confidence: 'high' };
+    }
+    
+    // Check for ORDER BY context
+    if (lastOrderByPos !== -1 && (lastOrderByPos > lastWherePos || lastWherePos === -1)) {
+        const textAfterOrderBy = lowerText.substring(lastOrderByPos + 8); // +8 for "order by".length
+        // Check if we're still in ORDER BY or have moved to next clause
+        if (!/\b(limit|offset|fetch|for|union|intersect|except)\b/.test(textAfterOrderBy)) {
+            return { type: 'ORDER_BY', confidence: 'high' };
+        }
+    }
+    
+    // Check for GROUP BY context
+    if (lastGroupByPos !== -1 && lastGroupByPos > Math.max(lastWherePos, lastOrderByPos, lastHavingPos)) {
+        return { type: 'GROUP_BY', confidence: 'high' };
+    }
+    
+    // Check for HAVING context
+    if (lastHavingPos !== -1 && lastHavingPos > Math.max(lastWherePos, lastGroupByPos)) {
+        const textAfterHaving = lowerText.substring(lastHavingPos + 6); // +6 for "having".length
+        if (!/\b(order|limit|union|intersect|except)\b/.test(textAfterHaving)) {
+            const shouldSuggestOperators = analyzeHavingContext(textAfterHaving);
+            return { 
+                type: 'HAVING', 
+                confidence: 'high',
+                suggestOperators: shouldSuggestOperators
+            };
+        }
+    }
+    
+    // Check for INSERT context
+    if (lastInsertPos !== -1 && lastInsertPos > Math.max(lastSelectPos, lastUpdatePos)) {
+        // Check if we're in column list: INSERT INTO table (col1, col2...)
+        const insertMatch = /insert\s+into\s+(?:\w+\.)?(\w+)\s*\(\s*([^)]*)?$/i.exec(lowerLine);
+        if (insertMatch) {
+            return { type: 'INSERT_COLUMNS', confidence: 'high', tableName: insertMatch[1] };
+        }
+        
+        // Check if we're in VALUES clause
+        if (lastValuesPos !== -1 && lastValuesPos > lastInsertPos) {
+            return { type: 'INSERT_VALUES', confidence: 'high' };
+        }
+    }
+    
+    // Check for UPDATE SET context
+    if (lastUpdatePos !== -1 && lastSetPos !== -1 && lastSetPos > lastUpdatePos) {
+        const textAfterSet = lowerText.substring(lastSetPos + 3); // +3 for "set".length
+        if (!/\bwhere\b/.test(textAfterSet) || lastWherePos === -1 || lastWherePos < lastSetPos) {
+            return { type: 'UPDATE_SET', confidence: 'high' };
+        }
+    }
+    
+    // Check for WHERE context
+    if (lastWherePos !== -1 && lastWherePos > Math.max(lastFromPos, lastSetPos)) {
+        const textAfterWhere = lowerText.substring(lastWherePos + 5); // +5 for "where".length
+        const shouldSuggestOperators = analyzeWhereContext(textAfterWhere);
+        return { 
+            type: 'WHERE', 
+            confidence: 'high',
+            suggestOperators: shouldSuggestOperators
+        };
+    }
+    
+    // Check for SELECT context
+    if (lastSelectPos !== -1) {
+        if (lastFromPos === -1 || lastSelectPos > lastFromPos) {
+            return { type: 'SELECT', confidence: 'medium' };
+        } else if (lastFromPos !== -1 && lastSelectPos < lastFromPos) {
+            // Check if FROM clause is complete
+            const textAfterFrom = lowerText.substring(lastFromPos);
+            if (textAfterFrom.match(/from\s+(?:\w+\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?/)) {
+                return { type: 'AFTER_FROM', confidence: 'medium' };
+            } else {
+                return { type: 'FROM', confidence: 'high' };
+            }
+        }
+    }
+    
+    // Default context
+    return { type: 'DEFAULT', confidence: 'low' };
+}
+
+function analyzeWhereContext(textAfterWhere) {
+    // Analyze WHERE clause to determine if we should suggest operators
+    const trimmedText = textAfterWhere.trim();
+    
+    if (!trimmedText) {
+        return false;
+    }
+    
+    const conditions = trimmedText.split(/\s+(?:and|or)\s+/i);
+    const currentCondition = conditions[conditions.length - 1].trim();
+    
+    // Check if current condition has a column/value but no operator yet
+    const columnPatterns = [
+        /^(?:\w+\.)*\w+\s*$/,  // Column name (e.g., "p.Id ", "columnName ")
+        /^['"]\w*$/,  // Starting a string literal
+        /^\d+\.?\d*$/  // Number
+    ];
+    
+    for (const pattern of columnPatterns) {
+        if (pattern.test(currentCondition)) {
+            const hasOperator = /\s*(=|<>|!=|<|>|<=|>=|like|in|not\s+in|is\s+null|is\s+not\s+null|between)\s*/i.test(currentCondition);
+            return !hasOperator;
+        }
+    }
+    
+    return false;
+}
+
+function analyzeHavingContext(textAfterHaving) {
+    // Similar to WHERE clause analysis but for HAVING (typically with aggregates)
+    const trimmedText = textAfterHaving.trim();
+    
+    if (!trimmedText) {
+        return false;
+    }
+    
+    const conditions = trimmedText.split(/\s+(?:and|or)\s+/i);
+    const currentCondition = conditions[conditions.length - 1].trim();
+    
+    // Check for aggregate function followed by space (e.g., "COUNT(*) ", "SUM(price) ")
+    const aggregatePatterns = [
+        /^(?:count|sum|avg|min|max|stddev|variance)\s*\([^)]*\)\s*$/i,
+        /^(?:\w+\.)*\w+\s*$/  // Column name
+    ];
+    
+    for (const pattern of aggregatePatterns) {
+        if (pattern.test(currentCondition)) {
+            const hasOperator = /\s*(=|<>|!=|<|>|<=|>=|like|in|not\s+in|is\s+null|is\s+not\s+null|between)\s*/i.test(currentCondition);
+            return !hasOperator;
+        }
+    }
+    
+    return false;
+}
+
+function getJoinConditionSuggestions(textUntilPosition, range) {
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    const suggestions = [];
+    
+    if (tablesInQuery.length >= 2) {
+        // Get the last two tables for join condition suggestions
+        const table1 = tablesInQuery[tablesInQuery.length - 2];
+        const table2 = tablesInQuery[tablesInQuery.length - 1];
+        
+        // Find foreign key relationships between these tables
+        if (dbSchema.foreignKeys) {
+            dbSchema.foreignKeys.forEach(fk => {
+                if ((fk.fromTable.toLowerCase() === table1.table.toLowerCase() && 
+                     fk.toTable.toLowerCase() === table2.table.toLowerCase()) ||
+                    (fk.fromTable.toLowerCase() === table2.table.toLowerCase() && 
+                     fk.toTable.toLowerCase() === table1.table.toLowerCase())) {
+                    
+                    const leftAlias = table1.alias;
+                    const rightAlias = table2.alias;
+                    
+                    suggestions.push({
+                        label: `${leftAlias}.${fk.fromColumn} = ${rightAlias}.${fk.toColumn}`,
+                        kind: monaco.languages.CompletionItemKind.Reference,
+                        detail: `Foreign key relationship`,
+                        insertText: `${leftAlias}.${fk.fromColumn} = ${rightAlias}.${fk.toColumn}`,
+                        range: range,
+                        sortText: `0_fk`
+                    });
+                }
+            });
+        }
+        
+        // Suggest all possible column combinations
+        const table1Columns = getColumnsForTable(table1.schema, table1.table);
+        const table2Columns = getColumnsForTable(table2.schema, table2.table);
+        
+        table1Columns.forEach(col1 => {
+            table2Columns.forEach(col2 => {
+                if (col1.name.toLowerCase() === col2.name.toLowerCase() || 
+                    col1.name.toLowerCase().includes('id') && col2.name.toLowerCase().includes('id')) {
+                    
+                    suggestions.push({
+                        label: `${table1.alias}.${col1.name} = ${table2.alias}.${col2.name}`,
+                        kind: monaco.languages.CompletionItemKind.Reference,
+                        detail: `Join on matching columns`,
+                        insertText: `${table1.alias}.${col1.name} = ${table2.alias}.${col2.name}`,
+                        range: range,
+                        sortText: `1_match_${col1.name}`
+                    });
+                }
+            });
+        });
+    }
+    
+    return { suggestions };
+}
+
+function getOrderBySuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    
+    // Add column suggestions
+    tablesInQuery.forEach(tableInfo => {
+        const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
+        const displayAlias = tableInfo.alias || tableInfo.table;
+        
+        columns.forEach(col => {
+            // Column only
+            suggestions.push({
+                label: `${displayAlias}.${col.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Order by column`,
+                insertText: `${displayAlias}.${col.name}`,
+                range: range,
+                sortText: `0_${col.name}`
+            });
+            
+            // Column with ASC
+            suggestions.push({
+                label: `${displayAlias}.${col.name} ASC`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Ascending order`,
+                insertText: `${displayAlias}.${col.name} ASC`,
+                range: range,
+                sortText: `1_${col.name}_asc`
+            });
+            
+            // Column with DESC
+            suggestions.push({
+                label: `${displayAlias}.${col.name} DESC`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Descending order`,
+                insertText: `${displayAlias}.${col.name} DESC`,
+                range: range,
+                sortText: `1_${col.name}_desc`
+            });
+        });
+    });
+    
+    // Add sort direction keywords
+    ['ASC', 'DESC'].forEach(direction => {
+        suggestions.push({
+            label: direction,
+            kind: monaco.languages.CompletionItemKind.Keyword,
+            detail: `Sort direction`,
+            insertText: direction,
+            range: range,
+            sortText: `9_${direction}`
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getGroupBySuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    
+    tablesInQuery.forEach(tableInfo => {
+        const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
+        const displayAlias = tableInfo.alias || tableInfo.table;
+        
+        columns.forEach(col => {
+            suggestions.push({
+                label: `${displayAlias}.${col.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Group by column`,
+                insertText: `${displayAlias}.${col.name}`,
+                range: range,
+                sortText: `0_${col.name}`
+            });
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getHavingSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Check if we should suggest operators
+    const lowerText = textUntilPosition.toLowerCase();
+    const lastHavingPos = lowerText.lastIndexOf('having');
+    
+    if (lastHavingPos !== -1) {
+        const textAfterHaving = textUntilPosition.substring(lastHavingPos + 6);
+        const shouldSuggestOperators = analyzeHavingContext(textAfterHaving);
+        
+        if (shouldSuggestOperators) {
+            return { suggestions: getSqlOperators(range) };
+        }
+    }
+    
+    // Suggest aggregate functions
+    const aggregateFunctions = [
+        { name: 'COUNT(*)', detail: 'Count all rows' },
+        { name: 'COUNT(column)', detail: 'Count non-null values' },
+        { name: 'SUM(column)', detail: 'Sum of values' },
+        { name: 'AVG(column)', detail: 'Average of values' },
+        { name: 'MIN(column)', detail: 'Minimum value' },
+        { name: 'MAX(column)', detail: 'Maximum value' },
+        { name: 'STDDEV(column)', detail: 'Standard deviation' },
+        { name: 'VARIANCE(column)', detail: 'Variance' }
+    ];
+    
+    aggregateFunctions.forEach(func => {
+        suggestions.push({
+            label: func.name,
+            kind: monaco.languages.CompletionItemKind.Function,
+            detail: func.detail,
+            insertText: func.name,
+            range: range,
+            sortText: `0_${func.name}`
+        });
+    });
+    
+    // Also suggest columns for grouping expressions
+    const tablesInQuery = extractTablesFromQuery(textUntilPosition);
+    tablesInQuery.forEach(tableInfo => {
+        const columns = getColumnsForTable(tableInfo.schema, tableInfo.table);
+        const displayAlias = tableInfo.alias || tableInfo.table;
+        
+        columns.forEach(col => {
+            suggestions.push({
+                label: `${displayAlias}.${col.name}`,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Column for aggregate`,
+                insertText: `${displayAlias}.${col.name}`,
+                range: range,
+                sortText: `1_${col.name}`
+            });
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getInsertColumnSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Extract table name from INSERT statement
+    const insertMatch = /insert\s+into\s+(?:(\w+)\.)?(\w+)\s*\(/i.exec(textUntilPosition);
+    if (insertMatch) {
+        const schema = insertMatch[1] || 'dbo';
+        const tableName = insertMatch[2];
+        
+        const columns = getColumnsForTable(schema, tableName);
+        columns.forEach(col => {
+            suggestions.push({
+                label: col.name,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type}${col.nullable ? ' (nullable)' : ' (required)'}`,
+                insertText: col.name,
+                range: range,
+                sortText: col.nullable ? `1_${col.name}` : `0_${col.name}` // Required columns first
+            });
+        });
+    }
+    
+    return { suggestions };
+}
+
+function getInsertValueSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Suggest common value patterns
+    const valuePatterns = [
+        { label: 'NULL', detail: 'Null value', insertText: 'NULL' },
+        { label: "'text'", detail: 'Text value', insertText: "''" },
+        { label: '0', detail: 'Number value', insertText: '0' },
+        { label: 'GETDATE()', detail: 'Current date/time', insertText: 'GETDATE()' },
+        { label: 'NEWID()', detail: 'New GUID', insertText: 'NEWID()' }
+    ];
+    
+    valuePatterns.forEach(pattern => {
+        suggestions.push({
+            label: pattern.label,
+            kind: monaco.languages.CompletionItemKind.Value,
+            detail: pattern.detail,
+            insertText: pattern.insertText,
+            range: range,
+            sortText: `0_${pattern.label}`
+        });
+    });
+    
+    return { suggestions };
+}
+
+function getUpdateSetSuggestions(textUntilPosition, range) {
+    const suggestions = [];
+    
+    // Extract table name from UPDATE statement
+    const updateMatch = /update\s+(?:(\w+)\.)?(\w+)\s+set/i.exec(textUntilPosition);
+    if (updateMatch) {
+        const schema = updateMatch[1] || 'dbo';
+        const tableName = updateMatch[2];
+        
+        const columns = getColumnsForTable(schema, tableName);
+        columns.forEach(col => {
+            // Suggest column = value pattern
+            suggestions.push({
+                label: `${col.name} = `,
+                kind: monaco.languages.CompletionItemKind.Field,
+                detail: `${col.type} - Set column value`,
+                insertText: `${col.name} = `,
+                range: range,
+                sortText: `0_${col.name}`
+            });
+        });
+    }
+    
+    return { suggestions };
+}
+
+function isNewOrEmptyQuery(textUntilPosition) {
+    // Check if the query is essentially empty or just starting
+    const trimmedText = textUntilPosition.trim();
+    
+    // Empty or just whitespace
+    if (!trimmedText) {
+        return true;
+    }
+    
+    // Check if we're at the very beginning of a statement
+    // Remove comments and check if there's any substantial SQL content
+    const withoutComments = trimmedText
+        .replace(/--.*$/gm, '') // Remove line comments
+        .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
+        .trim();
+    
+    if (!withoutComments) {
+        return true;
+    }
+    
+    // Check if we only have incomplete statement starters
+    const incompletePatterns = [
+        /^\s*$/, // Empty
+        /^\s*select\s*$/i, // Just "SELECT"
+        /^\s*insert\s*$/i, // Just "INSERT"
+        /^\s*update\s*$/i, // Just "UPDATE"
+        /^\s*delete\s*$/i, // Just "DELETE"
+        /^\s*with\s*$/i, // Just "WITH" (CTE)
+        /^\s*create\s*$/i, // Just "CREATE"
+        /^\s*alter\s*$/i, // Just "ALTER"
+        /^\s*drop\s*$/i // Just "DROP"
+    ];
+    
+    for (const pattern of incompletePatterns) {
+        if (pattern.test(withoutComments)) {
+            return true;
+        }
+    }
+    
+    // Check if we're at the start of a new statement after semicolon
+    const statements = withoutComments.split(';');
+    const lastStatement = statements[statements.length - 1].trim();
+    
+    // If the last statement is empty or just a keyword, consider it new
+    if (!lastStatement || incompletePatterns.some(pattern => pattern.test(lastStatement))) {
+        return true;
+    }
+    
+    // Check if we have a very short incomplete statement (less than 20 characters)
+    // This catches cases like "SEL" or "SELECT " without much content
+    if (lastStatement.length < 20) {
+        // Check if it's just keywords without table names or substantial content
+        const hasSubstantialContent = /\b(?:from|join|where|set|into|values)\s+\w+/i.test(lastStatement);
+        if (!hasSubstantialContent) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+function getSqlOperators(range) {
+    const operators = [
+        { label: '=', detail: 'Equal to', insertText: '= ' },
+        { label: '<>', detail: 'Not equal to', insertText: '<> ' },
+        { label: '!=', detail: 'Not equal to (alternative)', insertText: '!= ' },
+        { label: '<', detail: 'Less than', insertText: '< ' },
+        { label: '>', detail: 'Greater than', insertText: '> ' },
+        { label: '<=', detail: 'Less than or equal to', insertText: '<= ' },
+        { label: '>=', detail: 'Greater than or equal to', insertText: '>= ' },
+        { label: 'LIKE', detail: 'Pattern matching', insertText: 'LIKE ' },
+        { label: 'NOT LIKE', detail: 'Pattern not matching', insertText: 'NOT LIKE ' },
+        { label: 'IN', detail: 'Value in list', insertText: 'IN (' },
+        { label: 'NOT IN', detail: 'Value not in list', insertText: 'NOT IN (' },
+        { label: 'IS NULL', detail: 'Is null value', insertText: 'IS NULL' },
+        { label: 'IS NOT NULL', detail: 'Is not null value', insertText: 'IS NOT NULL' },
+        { label: 'BETWEEN', detail: 'Between two values', insertText: 'BETWEEN ' },
+        { label: 'NOT BETWEEN', detail: 'Not between two values', insertText: 'NOT BETWEEN ' },
+        { label: 'EXISTS', detail: 'Subquery returns rows', insertText: 'EXISTS (' },
+        { label: 'NOT EXISTS', detail: 'Subquery returns no rows', insertText: 'NOT EXISTS (' }
+    ];
+    
+    return operators.map(op => ({
+        label: op.label,
+        kind: monaco.languages.CompletionItemKind.Operator,
+        detail: op.detail,
+        insertText: op.insertText,
+        range: range,
+        sortText: `0_${op.label}` // High priority for operators
+    }));
+}
+
+function generateSmartAlias(tableName) {
+    // Handle short table names (3 characters or less)
+    if (tableName.length <= 3) {
+        return tableName.toLowerCase();
+    }
+    
+    // Remove common prefixes/suffixes
+    let cleanName = tableName
+        .replace(/^tbl_?/i, '')  // Remove tbl prefix
+        .replace(/_?tbl$/i, '')  // Remove tbl suffix
+        .replace(/^tb_?/i, '')   // Remove tb prefix
+        .replace(/_?tb$/i, '');  // Remove tb suffix
+    
+    // Split on various word boundaries
+    const words = cleanName.split(/[_\-\s]|(?=[A-Z])/)
+        .filter(word => word && word.length > 0)
+        .map(word => word.toLowerCase());
+    
+    if (words.length === 1) {
+        const word = words[0];
+        // For single words, use intelligent abbreviation
+        if (word.length <= 3) {
+            return word;
+        } else if (word.length <= 6) {
+            // For medium words, take first 2-3 chars
+            return word.substring(0, word.length <= 4 ? 2 : 3);
+        } else {
+            // For long words, take first and some consonants
+            const vowels = 'aeiou';
+            let alias = word.charAt(0);
+            for (let i = 1; i < word.length && alias.length < 3; i++) {
+                if (!vowels.includes(word.charAt(i))) {
+                    alias += word.charAt(i);
+                }
+            }
+            // If we don't have enough characters, add more
+            if (alias.length < 2) {
+                alias = word.substring(0, 2);
+            }
+            return alias;
+        }
+    } else {
+        // Multiple words: take first letter of each significant word
+        let alias = '';
+        
+        for (const word of words) {
+            if (word.length > 0) {
+                alias += word.charAt(0);
+            }
+        }
+        
+        // Ensure we have at least 2 characters and at most 4
+        if (alias.length === 1) {
+            // If only one word or very short, use first 2-3 chars of the original
+            alias = cleanName.substring(0, Math.min(3, cleanName.length)).toLowerCase();
+        } else if (alias.length > 6) {
+            // If too long, take first 6 letters
+            alias = alias.substring(0, 6);
+        }
+        
+        return alias.toLowerCase();
+    }
+}
+
 function extractTablesFromQuery(query) {
     const tables = [];
     const lowerQuery = query.toLowerCase();
@@ -573,23 +1843,48 @@ function extractTablesFromQuery(query) {
     const sqlKeywords = ['select', 'from', 'where', 'join', 'inner', 'left', 'right', 'full', 'cross', 'on', 'and', 'or', 'order', 'group', 'by', 'having'];
     
     // Match FROM and JOIN clauses with optional aliases
-    // Patterns: FROM schema.table alias, FROM table alias, JOIN schema.table alias, etc.
+    // Patterns: FROM schema.table alias, FROM [schema].[table] alias, FROM table alias, JOIN schema.table alias, etc.
     const patterns = [
-        /\b(?:from|join)\s+(?:(\w+)\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?/gi
+        // Pattern for bracketed identifiers: FROM [schema].[table] alias or FROM [table] alias
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi,
+        // Pattern for schema.table with alias (must have dot)
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi,
+        // Pattern for just table name with alias (no schema)
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s*$)/gi
     ];
     
-    patterns.forEach(pattern => {
+    patterns.forEach((pattern, patternIndex) => {
+        console.log(`[SQL-COMPLETION] Testing pattern ${patternIndex + 1}:`, pattern);
+        // Create a new regex instance to avoid global flag issues
+        const regex = new RegExp(pattern.source, pattern.flags);
         let match;
-        while ((match = pattern.exec(query)) !== null) {
+        while ((match = regex.exec(query)) !== null) {
             console.log('[SQL-COMPLETION] Regex match:', match);
-            const schema = match[1] || 'dbo';
-            const table = match[2];
-            let alias = match[3];
+            
+            // Pattern-specific parsing
+            let schema, table, alias;
+            if (patternIndex === 0) {
+                // Bracketed: [schema].[table] or [table]
+                schema = match[1] || 'dbo';
+                table = match[2];
+                alias = match[3];
+            } else if (patternIndex === 1) {
+                // schema.table (with dot)
+                schema = match[1];
+                table = match[2];
+                alias = match[3];
+            } else {
+                // table only (no schema)
+                schema = 'dbo';
+                table = match[1];
+                alias = match[2];
+            }
             
             console.log('[SQL-COMPLETION] Parsed - schema:', schema, 'table:', table, 'alias:', alias);
             
             // Skip if the captured alias is actually a SQL keyword
             if (alias && sqlKeywords.includes(alias.toLowerCase())) {
+                console.log('[SQL-COMPLETION] Skipping alias as it\'s a SQL keyword:', alias);
                 alias = undefined;
             }
             
@@ -605,14 +1900,25 @@ function extractTablesFromQuery(query) {
                     alias = tableInfo.table;
                 }
                 
-                tables.push({
-                    schema: tableInfo.schema,
-                    table: tableInfo.table,
-                    alias: alias,
-                    hasExplicitAlias: hasExplicitAlias
-                });
+                // Check if table is already added to avoid duplicates
+                const existingTable = tables.find(t => 
+                    t.schema === tableInfo.schema && 
+                    t.table === tableInfo.table
+                );
                 
-                console.log('[SQL-COMPLETION] Added table:', { schema: tableInfo.schema, table: tableInfo.table, alias });
+                if (!existingTable) {
+                    const tableEntry = {
+                        schema: tableInfo.schema,
+                        table: tableInfo.table,
+                        alias: alias,
+                        hasExplicitAlias: hasExplicitAlias
+                    };
+                    
+                    tables.push(tableEntry);
+                    console.log('[SQL-COMPLETION] Added table:', tableEntry);
+                }
+            } else {
+                console.log('[SQL-COMPLETION] Table not found in schema:', table);
             }
         }
     });
@@ -653,12 +1959,14 @@ function findTableForAlias(query, alias) {
 function findTable(tableName) {
     const lowerName = tableName.toLowerCase();
     
+    // Check tables first
     for (const table of dbSchema.tables) {
         if (table.name.toLowerCase() === lowerName) {
             return { schema: table.schema, table: table.name };
         }
     }
     
+    // Then check views
     for (const view of dbSchema.views) {
         if (view.name.toLowerCase() === lowerName) {
             return { schema: view.schema, table: view.name };
@@ -783,9 +2091,13 @@ window.addEventListener('message', event => {
             break;
 
         case 'connectionsUpdate':
-            updateConnectionsList(message.connections, message.currentConnectionId);
-            // Request schema update when connection changes
-            vscode.postMessage({ type: 'getSchema' });
+            // message.connections is an array of connection configs
+            updateConnectionsList(message.connections || [], message.currentConnectionId, message.currentDatabase);
+            break;
+
+        case 'databasesUpdate':
+            // message.databases is an array of database names for current server connection
+            updateDatabasesList(message.databases || [], message.currentDatabase);
             break;
 
         case 'schemaUpdate':
@@ -801,6 +2113,9 @@ window.addEventListener('message', event => {
             break;
 
         case 'results':
+            // Store metadata and original query for editable result sets
+            resultSetMetadata = message.metadata || [];
+            originalQuery = message.originalQuery || '';
             showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages, message.planXml);
             break;
 
@@ -811,33 +2126,125 @@ window.addEventListener('message', event => {
         case 'error':
             showError(message.error, message.messages);
             break;
+
+        case 'commitSuccess':
+            // Clear pending changes after successful commit
+            pendingChanges.clear();
+            updatePendingChangesCount();
+            
+            // Remove all cell-modified classes
+            document.querySelectorAll('.cell-modified').forEach(cell => {
+                cell.classList.remove('cell-modified');
+            });
+            
+            // Show success message
+            displayMessages([{ type: 'info', text: message.message }]);
+            console.log('[EDIT] Changes committed successfully');
+            break;
+
+        case 'confirmActionResult':
+            // Handle confirmation response from extension
+            if (message.confirmed && message.action === 'revertAll') {
+                executeRevertAll();
+            }
+            break;
+
+        case 'autoExecuteQuery':
+            // Auto-execute the query if conditions are met
+            if (editor && currentConnectionId) {
+                const content = editor.getValue().trim();
+                if (content && content.toLowerCase().startsWith('select')) {
+                    // Small delay to ensure the webview is fully initialized
+                    setTimeout(() => {
+                        executeQuery();
+                    }, 50);
+                }
+            }
+            break;
     }
 });
 
-function updateConnectionsList(connections, currentId) {
+function updateConnectionsList(connections, selectedConnectionId, selectedDatabase) {
+    // connections: [{ id, server, database, connectionType }]
     activeConnections = connections;
-    currentConnectionId = currentId;
+    currentConnectionId = selectedConnectionId;
+    currentDatabaseName = selectedDatabase;
+
+    const databaseLabel = document.getElementById('databaseLabel');
     
-    const databaseSelector = document.getElementById('databaseSelector');
-    databaseSelector.innerHTML = '';
+    if (!connections || connections.length === 0) {
+        connectionDropdown.setItems([{
+            value: '',
+            text: 'Not Connected',
+            selected: true
+        }]);
+        connectionDropdown.setDisabled(true);
+        databaseDropdown.hide();
+        databaseLabel.style.display = 'none';
+        return;
+    }
+
+    connectionDropdown.setDisabled(false);
     
-    if (connections.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'Not Connected';
-        databaseSelector.appendChild(option);
-        databaseSelector.disabled = true;
+    const items = connections.map(conn => ({
+        value: conn.id,
+        text: conn.name,
+        selected: selectedConnectionId && conn.id === selectedConnectionId
+    }));
+    
+    connectionDropdown.setItems(items);
+    
+    // Handle database selector visibility
+    const selectedConnection = connections.find(c => c.id === selectedConnectionId);
+    if (selectedConnection && selectedConnection.connectionType === 'server') {
+        databaseLabel.style.display = 'inline-block';
+        databaseDropdown.show();
+        // Request databases list from extension - pass current database selection
+        vscode.postMessage({
+            type: 'getDatabases',
+            connectionId: selectedConnectionId,
+            selectedDatabase: currentDatabaseName
+        });
     } else {
-        databaseSelector.disabled = false;
-        connections.forEach(conn => {
-            const option = document.createElement('option');
-            option.value = conn.id;
-            option.textContent = conn.database;
-            option.title = `${conn.server}/${conn.database}`;
-            if (conn.id === currentId) {
-                option.selected = true;
-            }
-            databaseSelector.appendChild(option);
+        databaseLabel.style.display = 'none';
+        databaseDropdown.hide();
+        
+        // Request schema for direct database connection
+        if (selectedConnectionId) {
+            vscode.postMessage({ 
+                type: 'getSchema', 
+                connectionId: selectedConnectionId 
+            });
+        }
+    }
+}
+
+function updateDatabasesList(databases, selectedDatabase) {
+    if (!databases || databases.length === 0) {
+        databaseDropdown.setItems([{
+            value: '',
+            text: 'No databases available',
+            selected: true
+        }]);
+        databaseDropdown.setDisabled(true);
+        return;
+    }
+    
+    databaseDropdown.setDisabled(false);
+    
+    const items = databases.map(dbName => ({
+        value: dbName,
+        text: dbName,
+        selected: selectedDatabase && dbName === selectedDatabase
+    }));
+    
+    databaseDropdown.setItems(items);
+    
+    // If a database is selected, request its schema
+    if (selectedDatabase && currentConnectionId) {
+        vscode.postMessage({ 
+            type: 'getSchema', 
+            connectionId: `${currentConnectionId}::${selectedDatabase}` 
         });
     }
 }
@@ -876,7 +2283,6 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
-    const executionStatsEl = document.getElementById('executionStats');
     
     lastResults = resultSets;
     lastMessages = messages || [];
@@ -887,9 +2293,6 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     const totalRows = resultSets.reduce((sum, rs) => sum + rs.length, 0);
     statusLabel.textContent = `Query completed (${resultSets.length} result set(s), ${totalRows} rows)`;
 
-    // Update execution stats in compact format
-    executionStatsEl.textContent = `${resultSets.length} result set(s) | ${totalRows} rows | ${executionTime}ms`;
-    
     // Update aggregation stats (initially empty)
     updateAggregationStats();
 
@@ -921,6 +2324,37 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     // Always update both containers
     displayResults(resultSets, planXml);
     displayMessages(messages);
+    
+    // Determine which tab to show by default
+    // If there are no result sets (queries like UPDATE, DELETE, INSERT), show Messages tab
+    // Otherwise, show Results tab
+    const hasResultSets = resultSets && resultSets.length > 0 && resultSets.some(rs => rs && rs.length > 0);
+    
+    if (!hasResultSets) {
+        // Switch to Messages tab for queries without result sets
+        document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.results-tab[data-tab="messages"]').classList.add('active');
+        currentTab = 'messages';
+        
+        // Show messages content, hide others
+        document.getElementById('resultsContent').style.display = 'none';
+        document.getElementById('messagesContent').style.display = 'block';
+        document.getElementById('queryPlanContent').style.display = 'none';
+        document.getElementById('planTreeContent').style.display = 'none';
+        document.getElementById('topOperationsContent').style.display = 'none';
+    } else {
+        // Switch to Results tab for queries with result sets
+        document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
+        currentTab = 'results';
+        
+        // Show results content, hide others
+        document.getElementById('resultsContent').style.display = 'block';
+        document.getElementById('messagesContent').style.display = 'none';
+        document.getElementById('queryPlanContent').style.display = 'none';
+        document.getElementById('planTreeContent').style.display = 'none';
+        document.getElementById('topOperationsContent').style.display = 'none';
+    }
 }
 
 function displayResults(resultSets, planXml) {
@@ -936,6 +2370,18 @@ function displayResults(resultSets, planXml) {
 
     // Clear previous content
     resultsContent.innerHTML = '';
+    
+    // Determine if we should use single-result-set mode (100% height)
+    const isSingleResultSet = resultSets.length === 1 && !planXml;
+    
+    // Add appropriate class to resultsContent
+    if (isSingleResultSet) {
+        resultsContent.classList.add('single-result-set');
+        resultsContent.classList.remove('multiple-result-sets');
+    } else {
+        resultsContent.classList.add('multiple-result-sets');
+        resultsContent.classList.remove('single-result-set');
+    }
 
     // Create a table for each result set
     resultSets.forEach((results, index) => {
@@ -946,14 +2392,21 @@ function displayResults(resultSets, planXml) {
         // Create container for this result set
         const resultSetContainer = document.createElement('div');
         resultSetContainer.className = 'result-set-container';
+        if (isSingleResultSet) {
+            resultSetContainer.classList.add('full-height');
+        }
 
         // Create table container
         const tableContainer = document.createElement('div');
         tableContainer.className = 'result-set-table';
+        if (isSingleResultSet) {
+            tableContainer.classList.add('full-height');
+        }
         
         // Initialize AG-Grid-like table for this result set
         console.log('[SQL EDITOR] Creating table for result set', index + 1, 'with', results.length, 'rows');
-        initAgGridTable(results, tableContainer);
+        const metadata = resultSetMetadata[index];
+        initAgGridTable(results, tableContainer, isSingleResultSet, index, metadata);
         
         resultSetContainer.appendChild(tableContainer);
         resultsContent.appendChild(resultSetContainer);
@@ -975,7 +2428,7 @@ function displayResults(resultSets, planXml) {
         
         // Create a single-cell table with the XML plan
         const planData = [{ 'Microsoft SQL Server 2005 XML Showplan': planXml }];
-        initAgGridTable(planData, planTableContainer);
+        initAgGridTable(planData, planTableContainer, false);
         
         planContainer.appendChild(planTableContainer);
         resultsContent.appendChild(planContainer);
@@ -987,9 +2440,10 @@ function displayResults(resultSets, planXml) {
     console.log('[SQL EDITOR] resultsContent height:', resultsContent?.offsetHeight, 'scrollHeight:', resultsContent?.scrollHeight);
 }
 
-function initAgGridTable(rowData, container) {
-    console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows');
+function initAgGridTable(rowData, container, isSingleResultSet = false, resultSetIndex = 0, metadata = null) {
+    console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows, single result set:', isSingleResultSet);
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
+    console.log('[AG-GRID] Metadata:', metadata);
     
     // Virtual scrolling configuration
     const ROW_HEIGHT = 30; // Fixed row height in pixels
@@ -1035,8 +2489,9 @@ function initAgGridTable(rowData, container) {
 
     // Build the table HTML structure with virtual scrolling support
     const tableId = `agGrid_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const viewportClass = isSingleResultSet ? 'ag-grid-viewport full-height' : 'ag-grid-viewport';
     const tableHtml = `
-        <div class="ag-grid-viewport" style="overflow: auto; position: relative; height: 100%; width: 100%;">
+        <div class="${viewportClass}" style="overflow: auto; position: relative; height: 100%; width: 100%;">
             <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; width: 100%;">
                 <thead class="ag-grid-thead"></thead>
                 <tbody class="ag-grid-tbody" style="position: relative;"></tbody>
@@ -1236,9 +2691,34 @@ function initAgGridTable(rowData, container) {
             `;
             pinIcon.onclick = (e) => {
                 e.stopPropagation();
-                col.pinned = !col.pinned;
-                renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
-                renderAgGridRows(colDefs, filteredData, containerEl);
+                // Preserve current vertical scroll position so user doesn't jump to top
+                try {
+                    const prevScrollTop = viewport.scrollTop;
+                    const prevStartRow = Math.floor(prevScrollTop / ROW_HEIGHT);
+
+                    // Toggle pinned state
+                    col.pinned = !col.pinned;
+
+                    // Re-render headers first (pinned classes may change layout)
+                    renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
+
+                    // Re-render rows keeping the user's current view
+                    currentStartRow = Math.max(0, Math.min(prevStartRow, Math.max(0, filteredData.length - RENDER_CHUNK_SIZE)));
+                    renderAgGridRows(colDefs, filteredData, containerEl, currentStartRow, ROW_HEIGHT, RENDER_CHUNK_SIZE);
+
+                    // Restore exact scroll position (in case row heights/layout changed slightly)
+                    // Use requestAnimationFrame to ensure DOM was updated
+                    requestAnimationFrame(() => {
+                        viewport.scrollTop = prevScrollTop;
+                    });
+                } catch (err) {
+                    // Fallback to safe behavior: render from top
+                    col.pinned = !col.pinned;
+                    currentStartRow = 0;
+                    viewport.scrollTop = 0;
+                    renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, filteredData);
+                    renderAgGridRows(colDefs, filteredData, containerEl, 0, ROW_HEIGHT, RENDER_CHUNK_SIZE);
+                }
             };
             
             pinIcon.oncontextmenu = (e) => {
@@ -1406,11 +2886,19 @@ function initAgGridTable(rowData, container) {
                 // Clear all selections across all tables
                 clearAllSelections();
                 
+                // Collect all cell values from the column
+                const columnField = colDefs[colIndex].field;
+                const columnSelections = filteredData.map((row, rowIndex) => ({
+                    rowIndex: rowIndex,
+                    columnIndex: colIndex,
+                    cellValue: row[columnField]
+                }));
+                
                 // Set global selection state
                 globalSelection = {
                     type: 'column',
                     tableContainer: containerEl,
-                    selections: [{ columnIndex: colIndex }],
+                    selections: columnSelections,
                     columnDef: colDefs[colIndex],
                     data: filteredData,
                     columnDefs: colDefs,
@@ -1636,11 +3124,18 @@ function initAgGridTable(rowData, container) {
                         // Clear all selections across all tables
                         clearAllSelections();
                         
+                        // Collect all cell values from the row
+                        const rowSelections = colDefs.map((col, colIndex) => ({
+                            rowIndex: rowIndex,
+                            columnIndex: colIndex,
+                            cellValue: row[col.field]
+                        }));
+                        
                         // Set global selection state
                         globalSelection = {
                             type: 'row',
                             tableContainer: containerEl,
-                            selections: [{ rowIndex: rowIndex }],
+                            selections: rowSelections,
                             data: data,
                             columnDefs: colDefs,
                             lastClickedIndex: rowIndex
@@ -1662,7 +3157,9 @@ function initAgGridTable(rowData, container) {
                     table: containerEl.querySelector('.ag-grid-table'),
                     rowIndex: rowIndex,
                     columnDefs: colDefs,
-                    data: data
+                    data: data,
+                    metadata: metadata,
+                    resultSetIndex: resultSetIndex
                 });
             });
             tr.appendChild(rowNumTd);
@@ -1859,7 +3356,7 @@ function initAgGridTable(rowData, container) {
                                 columnDef: colDefs[colIndex],
                                 data: data,
                                 columnDefs: colDefs,
-                                lastClickedIndex: { rowIndex, columnIndex }
+                                lastClickedIndex: { rowIndex, colIndex }
                             };
                             
                             // Apply highlighting
@@ -1870,6 +3367,17 @@ function initAgGridTable(rowData, container) {
                     // Update aggregation stats
                     updateAggregationStats();
                 });
+
+                // Add double-click handler for editing (if editable)
+                if (metadata && metadata.isEditable) {
+                    td.addEventListener('dblclick', (e) => {
+                        e.stopPropagation();
+                        enterEditMode(td, row, col, rowIndex, colIndex, data, colDefs, containerEl, resultSetIndex, metadata);
+                    });
+                    // Visual indicator that cell is editable
+                    td.classList.add('editable-cell');
+                    td.style.cursor = 'cell';
+                }
 
                 tr.appendChild(td);
             });
@@ -2089,7 +3597,6 @@ function showError(error, messages) {
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
-    const executionStatsEl = document.getElementById('executionStats');
     const resizer = document.getElementById('resizer');
     
     lastResults = [];
@@ -2100,7 +3607,6 @@ function showError(error, messages) {
     
     const isCancelled = error.includes('cancel');
     statusLabel.textContent = isCancelled ? 'Query cancelled' : 'Query failed';
-    executionStatsEl.textContent = '';
 
     resultsContainer.classList.add('visible');
     resizer.classList.add('visible');
@@ -2356,7 +3862,7 @@ function createContextMenu(cellData) {
 }
 
 // Create context menu HTML for row number cells
-function createRowContextMenu() {
+function createRowContextMenu(metadata, resultSetIndex) {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.style.display = 'none';
@@ -2367,16 +3873,32 @@ function createRowContextMenu() {
     
     let rowLabel = 'Copy Row';
     let rowHeaderLabel = 'Copy Row with Headers';
+    let deleteLabel = 'Delete Row';
     
     if (hasMultipleSelections && globalSelection.type === 'row') {
         rowLabel = `Copy ${selectionCount} Rows`;
         rowHeaderLabel = `Copy ${selectionCount} Rows with Headers`;
+        deleteLabel = `Delete ${selectionCount} Rows`;
     }
     
-    menu.innerHTML = `
+    // Check if delete should be available (single table only)
+    const isSingleTable = metadata && !metadata.hasMultipleTables && metadata.isEditable;
+    
+    let menuHtml = `
         <div class="context-menu-item" data-action="copy-row">${rowLabel}</div>
         <div class="context-menu-item" data-action="copy-row-header">${rowHeaderLabel}</div>
     `;
+    
+    if (isSingleTable) {
+        menuHtml += `
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item context-menu-item-delete" data-action="delete-row">${deleteLabel}</div>
+        `;
+    }
+    
+    menu.innerHTML = menuHtml;
+    menu.dataset.resultSetIndex = resultSetIndex;
+    menu.dataset.metadata = JSON.stringify(metadata);
     document.body.appendChild(menu);
     
     // Prevent default context menu on the custom menu itself
@@ -2478,12 +4000,44 @@ function hideContextMenu() {
 function showRowContextMenu(e, cellData) {
     e.preventDefault();
     
+    const { table, rowIndex, data, columnDefs } = cellData;
+    
+    // Check if right-clicked row is part of current selection
+    const isRowSelected = globalSelection.type === 'row' && 
+                         globalSelection.selections && 
+                         globalSelection.selections.some(sel => sel.rowIndex === rowIndex);
+    
+    // If right-clicked on unselected row, clear selection and select only this row
+    if (!isRowSelected) {
+        clearAllSelections();
+        
+        // Select the right-clicked row
+        globalSelection = {
+            type: 'row',
+            tableContainer: table.closest('.ag-grid-viewport').parentElement,
+            selections: [{ rowIndex }],
+            data: data,
+            columnDefs: columnDefs,
+            lastClickedIndex: rowIndex
+        };
+        
+        // Apply highlighting
+        const tbody = table.querySelector('.ag-grid-tbody');
+        if (tbody) {
+            const rows = tbody.querySelectorAll('tr');
+            if (rowIndex < rows.length) {
+                rows[rowIndex].classList.add('selected');
+                rows[rowIndex].style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #04395e)';
+            }
+        }
+    }
+    
     // Remove existing menu to recreate with updated labels
     if (rowContextMenu) {
         rowContextMenu.remove();
     }
     
-    rowContextMenu = createRowContextMenu();
+    rowContextMenu = createRowContextMenu(cellData.metadata, cellData.resultSetIndex);
     contextMenuData = cellData;
     
     // Position menu at cursor
@@ -2675,14 +4229,41 @@ function handleContextMenuAction(action) {
             }).join('\n');
             textToCopy = tableHeaders + '\n' + tableRows;
             break;
+            
+        case 'delete-row':
+            // Get metadata and resultSetIndex from context menu
+            const menu = document.querySelector('.context-menu');
+            if (!menu) return;
+            
+            const resultSetIndex = parseInt(menu.dataset.resultSetIndex);
+            const metadata = JSON.parse(menu.dataset.metadata);
+            
+            if (hasMultipleSelections && globalSelection.type === 'row') {
+                // Delete multiple selected rows
+                globalSelection.selections.forEach(sel => {
+                    const row = data[sel.rowIndex];
+                    recordRowDeletion(resultSetIndex, sel.rowIndex, row, metadata);
+                    // Mark row for deletion visually
+                    markRowForDeletion(table, sel.rowIndex);
+                });
+            } else {
+                // Delete single row
+                const row = data[rowIndex];
+                recordRowDeletion(resultSetIndex, rowIndex, row, metadata);
+                // Mark row for deletion visually
+                markRowForDeletion(table, rowIndex);
+            }
+            return; // Don't copy to clipboard for delete action
     }
     
-    // Copy to clipboard
-    navigator.clipboard.writeText(textToCopy).then(() => {
-        console.log('[CONTEXT-MENU] Copied to clipboard:', action);
-    }).catch(err => {
-        console.error('[CONTEXT-MENU] Failed to copy:', err);
-    });
+    // Copy to clipboard (skip for delete action)
+    if (action !== 'delete-row') {
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            console.log('[CONTEXT-MENU] Copied to clipboard:', action);
+        }).catch(err => {
+            console.error('[CONTEXT-MENU] Failed to copy:', err);
+        });
+    }
 }
 
 // Global helper functions for selection management across all tables
@@ -2786,186 +4367,56 @@ function applyCellHighlightGlobal(containerEl, rowIndex, colIndex) {
 }
 
 function updateAggregationStats() {
-    const executionStatsEl = document.getElementById('executionStats');
-    if (!executionStatsEl) return;
+    const statsPanel = document.getElementById('aggregationStats');
+    if (!statsPanel) return;
     
-    // Get the base stats text (everything before the separator)
-    const baseText = executionStatsEl.textContent.split('|').slice(0, 3).join('|').trim();
-    
-    if (!globalSelection.type || !globalSelection.data || !globalSelection.selections.length) {
-        // No selection - show only base stats
-        executionStatsEl.textContent = baseText;
+    // If no selection or no data, hide the panel
+    if (!globalSelection || !globalSelection.selections || globalSelection.selections.length === 0) {
+        statsPanel.style.display = 'none';
         return;
     }
     
-    let statsText = '';
+    // Collect all values from selections
+    const numericValues = [];
+    const allValues = [];
     
-    // Show number of selected items
-    statsText += ` | ${globalSelection.selections.length} Selected`;
-    
-    if (globalSelection.type === 'column' && globalSelection.selections.length > 0) {
-        // Calculate column statistics - aggregate all selected columns
-        let allValues = [];
-        globalSelection.selections.forEach(sel => {
-            const colDef = globalSelection.columnDefs[sel.columnIndex];
-            const values = globalSelection.data.map(row => row[colDef.field]);
-            allValues = allValues.concat(values);
-        });
-        
-        const colField = globalSelection.columnDefs[globalSelection.selections[0].columnIndex].field;
-        const colType = globalSelection.columnDefs[globalSelection.selections[0].columnIndex].type;
-        const values = allValues;
-        
-        // Count nulls
-        const nullCount = values.filter(v => v === null || v === undefined).length;
-        
-        // Get distinct values
-        const distinctValues = new Set(values.filter(v => v !== null && v !== undefined));
-        const distinctCount = distinctValues.size;
-        
-        statsText += ` | ${nullCount} Nulls | ${distinctCount} Distinct`;
-        
-        // For numeric columns: SUM, AVG, MIN, MAX
-        if (colType === 'number') {
-            const numericValues = values.filter(v => v !== null && v !== undefined && typeof v === 'number');
-            if (numericValues.length > 0) {
-                const sum = numericValues.reduce((a, b) => a + b, 0);
-                const avg = sum / numericValues.length;
-                const min = Math.min(...numericValues);
-                const max = Math.max(...numericValues);
-                
-                statsText += ` | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min.toLocaleString()} | MAX: ${max.toLocaleString()}`;
+    // Handle different selection types
+    if (globalSelection.type === 'cell' || globalSelection.type === 'row' || globalSelection.type === 'column') {
+        for (const selection of globalSelection.selections) {
+            const value = selection.cellValue;
+            
+            // Skip null/undefined
+            if (value === null || value === undefined) {
+                continue;
             }
-        }
-        
-        // For boolean columns: TRUE/FALSE counts
-        if (colType === 'boolean') {
-            const trueCount = values.filter(v => v === true).length;
-            const falseCount = values.filter(v => v === false).length;
-            statsText += ` | ${trueCount} TRUE | ${falseCount} FALSE`;
-        }
-        
-        // For date columns: MIN/MAX dates
-        if (colType === 'date') {
-            const dateValues = values.filter(v => v !== null && v !== undefined);
-            if (dateValues.length > 0) {
-                // Parse dates and find min/max
-                const parsedDates = dateValues.map(v => {
-                    const d = v instanceof Date ? v : new Date(v);
-                    return isNaN(d.getTime()) ? null : d;
-                }).filter(d => d !== null);
-                
-                if (parsedDates.length > 0) {
-                    const minDate = new Date(Math.min(...parsedDates.map(d => d.getTime())));
-                    const maxDate = new Date(Math.max(...parsedDates.map(d => d.getTime())));
-                    
-                    // Format dates
-                    const formatDate = (d) => {
-                        const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0;
-                        if (hasTime) {
-                            return d.toLocaleString();
-                        } else {
-                            return d.toLocaleDateString();
-                        }
-                    };
-                    
-                    statsText += ` | MIN: ${formatDate(minDate)} | MAX: ${formatDate(maxDate)}`;
+            
+            allValues.push(value);
+            
+            // Check if it's a number
+            if (value !== '') {
+                const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
+                if (!isNaN(num)) {
+                    numericValues.push(num);
                 }
-            }
-        }
-        
-        // For string columns: MIN/MAX length
-        if (colType === 'string') {
-            const stringValues = values.filter(v => v !== null && v !== undefined).map(v => String(v));
-            if (stringValues.length > 0) {
-                const lengths = stringValues.map(s => s.length);
-                const minLen = Math.min(...lengths);
-                const maxLen = Math.max(...lengths);
-                const avgLen = (lengths.reduce((a, b) => a + b, 0) / lengths.length).toFixed(1);
-                
-                statsText += ` | Len: MIN ${minLen}, AVG ${avgLen}, MAX ${maxLen}`;
-            }
-        }
-        
-    } else if (globalSelection.type === 'cell' && globalSelection.selections.length > 0) {
-        // Show cell values - if multiple, show aggregated stats
-        if (globalSelection.selections.length === 1) {
-            // Single cell - show value
-            const value = globalSelection.selections[0].cellValue;
-            const colType = globalSelection.columnDef ? globalSelection.columnDef.type : 'string';
-        
-        if (value === null || value === undefined) {
-            statsText += ` | Value: NULL`;
-        } else {
-            let displayValue = String(value);
-            if (displayValue.length > 50) {
-                displayValue = displayValue.substring(0, 47) + '...';
-            }
-            
-            statsText += ` | Value: ${displayValue}`;
-            
-            // Show additional info based on type
-            if (colType === 'number') {
-                statsText += ` (Numeric)`;
-            } else if (colType === 'boolean') {
-                statsText += ` (Boolean)`;
-            } else if (colType === 'date') {
-                statsText += ` (Date)`;
-            } else if (colType === 'string') {
-                    statsText += ` | Length: ${String(value).length}`;
-                }
-            }
-        } else {
-            // Multiple cells - show aggregated stats
-            const values = globalSelection.selections.map(s => s.cellValue);
-            const nullCount = values.filter(v => v === null || v === undefined).length;
-            const distinctCount = new Set(values.filter(v => v !== null && v !== undefined)).size;
-            
-            statsText += ` | ${nullCount} Nulls | ${distinctCount} Distinct`;
-            
-            // Check if all numeric
-            const numericValues = values.filter(v => v !== null && v !== undefined && typeof v === 'number');
-            if (numericValues.length > 0) {
-                const sum = numericValues.reduce((a, b) => a + b, 0);
-                const avg = sum / numericValues.length;
-                const min = Math.min(...numericValues);
-                const max = Math.max(...numericValues);
-                statsText += ` | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min} | MAX: ${max}`;
-            }
-        }
-        
-    } else if (globalSelection.type === 'row' && globalSelection.columnDefs) {
-        // Calculate row statistics - aggregate all selected rows
-        let allValues = [];
-        globalSelection.selections.forEach(sel => {
-            const row = globalSelection.data[sel.rowIndex];
-            if (row) {
-                const fields = globalSelection.columnDefs.map(col => col.field);
-                const values = fields.map(field => row[field]);
-                allValues = allValues.concat(values);
-            }
-        });
-        
-        if (allValues.length > 0) {
-            // Count nulls
-            const nullCount = allValues.filter(v => v === null || v === undefined).length;
-            const nonNullCount = allValues.length - nullCount;
-            
-            statsText += ` | ${nonNullCount} Values | ${nullCount} Nulls`;
-            
-            // Count numeric values and calculate sum if any
-            const numericValues = allValues.filter(v => v !== null && v !== undefined && typeof v === 'number');
-            if (numericValues.length > 0) {
-                const sum = numericValues.reduce((a, b) => a + b, 0);
-                const avg = sum / numericValues.length;
-                const min = Math.min(...numericValues);
-                const max = Math.max(...numericValues);
-                statsText += ` | ${numericValues.length} Numeric | SUM: ${sum.toLocaleString()} | AVG: ${avg.toFixed(2)} | MIN: ${min} | MAX: ${max}`;
             }
         }
     }
     
-    executionStatsEl.textContent = baseText + statsText;
+    // Always show count
+    let statsText = `Count: ${allValues.length}`;
+    
+    // If we have numeric values, calculate statistics
+    if (numericValues.length > 0) {
+        const sum = numericValues.reduce((a, b) => a + b, 0);
+        const avg = sum / numericValues.length;
+        const min = Math.min(...numericValues);
+        const max = Math.max(...numericValues);
+        
+        statsText += ` | Avg: ${avg.toFixed(2)} | Sum: ${sum.toFixed(2)} | Min: ${min} | Max: ${max}`;
+    }
+    
+    statsPanel.textContent = statsText;
+    statsPanel.style.display = 'block';
 }
 
 // Hide context menu when clicking elsewhere
@@ -2993,7 +4444,6 @@ function showQueryPlan(planXml, executionTime, messages, resultSets) {
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
-    const executionStatsEl = document.getElementById('executionStats');
     const resizer = document.getElementById('resizer');
     
     // Enable buttons
@@ -3013,7 +4463,6 @@ function showQueryPlan(planXml, executionTime, messages, resultSets) {
     
     // Update status
     statusLabel.textContent = resultSets ? `Query completed with execution plan` : `Estimated execution plan generated`;
-    executionStatsEl.textContent = executionTime ? `${executionTime}ms` : '';
     
     resultsContainer.classList.add('visible');
     resizer.classList.add('visible');
@@ -3748,3 +5197,742 @@ window.sortTopOperations = function(column) {
     // This is a placeholder - in a full implementation, you would re-sort and re-render
     console.log('Sort by:', column);
 };
+
+// ===== EDITABLE RESULT SETS FUNCTIONS =====
+
+/**
+ * Enter edit mode for a cell
+ */
+function enterEditMode(tdElement, rowData, columnDef, rowIndex, columnIndex, data, columnDefs, containerEl, resultSetIndex, metadata) {
+    // Don't allow editing if already editing another cell
+    if (currentEditingCell) {
+        exitEditMode(false);
+    }
+
+    const columnName = columnDef.field;
+    const currentValue = rowData[columnName];
+    
+    // Find column metadata
+    const colMetadata = metadata.columns.find(c => c.name === columnName);
+    if (!colMetadata) {
+        console.log('[EDIT] No metadata found for column', columnName);
+        return;
+    }
+
+    // Don't allow editing identity columns or columns without source table
+    if (colMetadata.isIdentity) {
+        console.warn('Cannot edit identity column:', columnName);
+        return;
+    }
+
+    // Store editing state
+    currentEditingCell = {
+        tdElement,
+        rowData,
+        columnDef,
+        rowIndex,
+        columnIndex,
+        data,
+        columnDefs,
+        containerEl,
+        resultSetIndex,
+        metadata,
+        originalValue: currentValue
+    };
+
+    // Clear cell content and add edit border to cell
+    tdElement.textContent = '';
+    tdElement.style.border = '1px solid rgba(255, 143, 0, 0.5)';
+
+    // Create input element based on column type
+    let inputElement;
+    const colType = colMetadata.type.toLowerCase();
+    
+    // Only use textarea for very long text types, not for regular varchar/char
+    if (colType === 'text' || colType === 'ntext' || colType === 'xml') {
+        // Multi-line text
+        inputElement = document.createElement('textarea');
+        inputElement.rows = 3;
+        inputElement.style.resize = 'vertical';
+    } else {
+        // Single-line input for everything else (including varchar, char, etc.)
+        inputElement = document.createElement('input');
+        inputElement.type = 'text';
+        
+        if (colType.includes('int') || colType.includes('numeric') || colType.includes('decimal') || colType.includes('float') || colType.includes('money')) {
+            inputElement.type = 'text'; // Keep as text for better control
+            inputElement.pattern = '-?[0-9]*\\.?[0-9]*';
+        } else if (colType.includes('date') || colType.includes('time')) {
+            inputElement.type = 'text'; // Keep as text to allow formats like 'NULL'
+        } else if (colType === 'bit') {
+            inputElement.type = 'checkbox';
+            inputElement.checked = currentValue === true || currentValue === 1;
+        }
+    }
+
+    // Style the input to look like normal cell content
+    inputElement.style.width = '100%';
+    inputElement.style.height = '100%';
+    inputElement.style.border = 'none';
+    inputElement.style.outline = 'none';
+    inputElement.style.background = 'transparent';
+    inputElement.style.color = 'inherit';
+    inputElement.style.padding = '0';
+    inputElement.style.margin = '0';
+    inputElement.style.fontFamily = 'inherit';
+    inputElement.style.fontSize = 'inherit';
+    inputElement.style.boxSizing = 'border-box';
+
+    // Set current value (handle NULL)
+    if (inputElement.type !== 'checkbox') {
+        if (currentValue === null || currentValue === undefined) {
+            inputElement.value = '';
+            inputElement.placeholder = 'NULL';
+        } else {
+            inputElement.value = String(currentValue);
+        }
+    }
+
+    // Add to cell
+    tdElement.appendChild(inputElement);
+    inputElement.focus();
+    
+    // Select text for easy replacement
+    if (inputElement.select) {
+        inputElement.select();
+    }
+
+    // Handle keyboard events
+    inputElement.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            exitEditMode(true);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            exitEditMode(false);
+        } else if (e.key === 'Tab') {
+            e.preventDefault();
+            exitEditMode(true);
+            // TODO: Move to next editable cell
+        }
+    });
+
+    // Handle blur (clicking outside)
+    inputElement.addEventListener('blur', () => {
+        setTimeout(() => {
+            if (currentEditingCell && currentEditingCell.tdElement === tdElement) {
+                exitEditMode(true);
+            }
+        }, 100);
+    });
+}
+
+/**
+ * Exit edit mode and optionally save changes
+ */
+function exitEditMode(saveChanges) {
+    if (!currentEditingCell) return;
+
+    const {
+        tdElement,
+        rowData,
+        columnDef,
+        rowIndex,
+        columnIndex,
+        data,
+        columnDefs,
+        containerEl,
+        resultSetIndex,
+        metadata,
+        originalValue
+    } = currentEditingCell;
+
+    const inputElement = tdElement.querySelector('input, textarea');
+    if (!inputElement) {
+        currentEditingCell = null;
+        return;
+    }
+
+    let newValue;
+    if (inputElement.type === 'checkbox') {
+        newValue = inputElement.checked ? 1 : 0;
+    } else {
+        const rawValue = inputElement.value.trim();
+        // Handle NULL
+        if (rawValue === '' || rawValue.toUpperCase() === 'NULL') {
+            newValue = null;
+        } else {
+            newValue = rawValue;
+        }
+    }
+
+    // Remove input and restore cell
+    tdElement.removeChild(inputElement);
+    tdElement.style.border = '';
+
+    // Normalize values for comparison
+    let normalizedOriginal = originalValue;
+    let normalizedNew = newValue;
+    
+    // Convert boolean to number (for bit type)
+    if (typeof originalValue === 'boolean') {
+        normalizedOriginal = originalValue ? 1 : 0;
+    }
+    
+    // Convert string to number if original was a number (for numeric types)
+    if (typeof originalValue === 'number' && typeof newValue === 'string' && newValue !== '') {
+        const numValue = Number(newValue);
+        if (!isNaN(numValue)) {
+            normalizedNew = numValue;
+        }
+    }
+
+    if (saveChanges && normalizedNew !== normalizedOriginal) {
+        // Value changed - record the change
+        recordChange(resultSetIndex, rowIndex, columnDef.field, originalValue, newValue, rowData, metadata);
+        
+        // Update the data
+        rowData[columnDef.field] = newValue;
+        
+        // Mark cell as modified
+        tdElement.classList.add('cell-modified');
+    }
+
+    // Restore cell display
+    const value = rowData[columnDef.field];
+    if (value === null || value === undefined) {
+        tdElement.textContent = 'NULL';
+        tdElement.style.color = 'var(--vscode-descriptionForeground)';
+        tdElement.style.fontStyle = 'italic';
+    } else if (columnDef.type === 'boolean' || typeof value === 'boolean') {
+        tdElement.textContent = value ? '✓' : '✗';
+        tdElement.style.color = '';
+        tdElement.style.fontStyle = '';
+    } else if (columnDef.type === 'number' || typeof value === 'number') {
+        tdElement.textContent = typeof value === 'number' ? value.toLocaleString() : value;
+        tdElement.style.textAlign = 'right';
+        tdElement.style.color = '';
+        tdElement.style.fontStyle = '';
+    } else {
+        tdElement.textContent = String(value);
+        tdElement.style.color = '';
+        tdElement.style.fontStyle = '';
+    }
+
+    currentEditingCell = null;
+}
+
+/**
+ * Record a cell change in pending changes
+ */
+function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, rowData, metadata) {
+    console.log('[EDIT] Recording change:', { resultSetIndex, rowIndex, columnName, oldValue, newValue });
+
+    // Get or create change list for this result set
+    if (!pendingChanges.has(resultSetIndex)) {
+        pendingChanges.set(resultSetIndex, []);
+    }
+    const changes = pendingChanges.get(resultSetIndex);
+
+    // Find column metadata first to know the source table
+    const colMetadata = metadata.columns.find(c => c.name === columnName);
+    
+    if (!colMetadata || !colMetadata.sourceTable) {
+        console.error('[EDIT] Cannot record change - no source table for column:', columnName);
+        return;
+    }
+
+    // Extract primary key values for WHERE clause - only for the source table of this column
+    const primaryKeyValues = {};
+    metadata.primaryKeyColumns.forEach(pkCol => {
+        // Find the column metadata for this primary key
+        const pkColMetadata = metadata.columns.find(c => c.name === pkCol);
+        
+        // Only include primary keys that belong to the same table as the edited column
+        if (pkColMetadata && 
+            pkColMetadata.sourceTable === colMetadata.sourceTable && 
+            pkColMetadata.sourceSchema === colMetadata.sourceSchema) {
+            primaryKeyValues[pkCol] = rowData[pkCol];
+        }
+    });
+
+    // Check if we already have a change for this cell
+    const existingChangeIndex = changes.findIndex(
+        c => c.rowIndex === rowIndex && c.columnName === columnName
+    );
+
+    const changeRecord = {
+        rowIndex,
+        columnName,
+        oldValue: existingChangeIndex >= 0 ? changes[existingChangeIndex].oldValue : oldValue,
+        newValue,
+        primaryKeyValues,
+        sourceTable: colMetadata?.sourceTable,
+        sourceSchema: colMetadata?.sourceSchema,
+        sourceColumn: colMetadata?.sourceColumn || columnName
+    };
+
+    if (existingChangeIndex >= 0) {
+        // Update existing change
+        if (changeRecord.oldValue === newValue) {
+            // Value reverted to original - remove change
+            changes.splice(existingChangeIndex, 1);
+            console.log('[EDIT] Change reverted to original, removed from pending');
+        } else {
+            // Update with new value
+            changes[existingChangeIndex] = changeRecord;
+            console.log('[EDIT] Updated existing change');
+        }
+    } else {
+        // Add new change
+        changes.push(changeRecord);
+        console.log('[EDIT] Added new change to pending');
+    }
+
+    // Update pending changes tab badge
+    updatePendingChangesCount();
+}
+
+/**
+ * Record a row deletion in pending changes
+ */
+function recordRowDeletion(resultSetIndex, rowIndex, rowData, metadata) {
+    console.log('[EDIT] Recording row deletion:', { resultSetIndex, rowIndex, rowData });
+
+    // Get or create change list for this result set
+    if (!pendingChanges.has(resultSetIndex)) {
+        pendingChanges.set(resultSetIndex, []);
+    }
+    const changes = pendingChanges.get(resultSetIndex);
+
+    // Extract primary key values for WHERE clause
+    const primaryKeyValues = {};
+    metadata.primaryKeyColumns.forEach(pkCol => {
+        const pkColMetadata = metadata.columns.find(c => c.name === pkCol);
+        if (pkColMetadata) {
+            primaryKeyValues[pkCol] = rowData[pkCol];
+        }
+    });
+
+    // Get table info from first column (all columns should be from same table in single-table query)
+    const firstCol = metadata.columns[0];
+    
+    const deleteRecord = {
+        type: 'DELETE',
+        rowIndex,
+        primaryKeyValues,
+        sourceTable: firstCol.sourceTable,
+        sourceSchema: firstCol.sourceSchema,
+        rowData: { ...rowData } // Store copy of row data for display
+    };
+
+    // Check if this row already has a delete pending
+    const existingDeleteIndex = changes.findIndex(
+        c => c.type === 'DELETE' && c.rowIndex === rowIndex
+    );
+
+    if (existingDeleteIndex >= 0) {
+        console.log('[EDIT] Row already marked for deletion');
+        return;
+    }
+
+    // Add delete record
+    changes.push(deleteRecord);
+    console.log('[EDIT] Added row deletion to pending');
+
+    // Update pending changes tab badge
+    updatePendingChangesCount();
+    renderPendingChanges();
+}
+
+/**
+ * Mark a row visually as marked for deletion
+ */
+function markRowForDeletion(table, rowIndex) {
+    const tbody = table.querySelector('.ag-grid-tbody');
+    if (!tbody) return;
+    
+    const rows = tbody.querySelectorAll('tr');
+    if (rowIndex < rows.length) {
+        const row = rows[rowIndex];
+        row.classList.add('row-marked-for-deletion');
+        
+        // Also mark all cells in the row
+        row.querySelectorAll('td').forEach(cell => {
+            cell.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
+            cell.style.textDecoration = 'line-through';
+            cell.style.color = 'var(--vscode-descriptionForeground)';
+        });
+    }
+}
+
+/**
+ * Update the pending changes count badge
+ */
+function updatePendingChangesCount() {
+    let totalChanges = 0;
+    pendingChanges.forEach(changes => {
+        totalChanges += changes.length;
+    });
+
+    console.log('[EDIT] Total pending changes:', totalChanges);
+
+    // Update tab badge
+    const badge = document.getElementById('pendingChangesCount');
+    const tab = document.querySelector('[data-tab="pendingChanges"]');
+    
+    if (badge) {
+        badge.textContent = totalChanges;
+        badge.style.display = totalChanges > 0 ? 'inline-block' : 'none';
+    }
+    
+    if (tab) {
+        if (totalChanges > 0) {
+            tab.style.display = '';
+        } else {
+            tab.style.display = 'none';
+            // If currently viewing pending changes tab, switch to results
+            if (currentTab === 'pendingChanges') {
+                switchTab('results');
+            }
+        }
+    }
+    
+    // Re-render pending changes panel if it's visible
+    if (currentTab === 'pendingChanges') {
+        renderPendingChanges();
+    }
+}
+
+/**
+ * Render the pending changes panel
+ */
+function updatePendingChangesCount() {
+    const badge = document.getElementById('pendingChangesCount');
+    const tab = document.querySelector('[data-tab="pendingChanges"]');
+    
+    if (badge && tab) {
+        const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+        badge.textContent = totalChanges;
+        badge.style.display = totalChanges > 0 ? 'inline-block' : 'none';
+        
+        // Show/hide the entire Pending Changes tab
+        if (totalChanges > 0) {
+            tab.style.display = '';
+        } else {
+            tab.style.display = 'none';
+            // If currently viewing pending changes tab, switch to results
+            const currentTabContent = document.querySelector('.tab-content[style*="display: block"], .tab-content[style=""]');
+            if (currentTabContent && currentTabContent.id === 'pendingChangesContent') {
+                switchTab('results');
+            }
+        }
+    }
+}
+
+function renderPendingChanges() {
+    const container = document.getElementById('pendingChangesContent');
+    if (!container) return;
+
+    const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+
+    // Update badge count
+    updatePendingChangesCount();
+
+    if (totalChanges === 0) {
+        container.innerHTML = '<div class="no-pending-changes">No pending changes</div>';
+        return;
+    }
+
+    let html = `
+        <div class="pending-changes-header">
+            <div class="pending-changes-title">${totalChanges} Pending Change${totalChanges !== 1 ? 's' : ''}</div>
+            <div class="pending-changes-actions">
+                <button onclick="previewUpdateStatements()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6" /></svg>
+                    Preview SQL
+                </button>
+                <button class="secondary" onclick="revertAllChanges()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>
+                    Revert All
+                </button>
+                <button onclick="commitAllChanges()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12l5 5l10 -10" /></svg>
+                    Commit All
+                </button>
+            </div>
+        </div>
+        <div class="pending-changes-list">
+    `;
+
+    pendingChanges.forEach((changes, resultSetIndex) => {
+        const metadata = resultSetMetadata[resultSetIndex];
+        
+        changes.forEach((change, changeIndex) => {
+            const { type, rowIndex, columnName, oldValue, newValue, sourceTable, sourceSchema } = change;
+            
+            const tableName = sourceSchema ? `${sourceSchema}.${sourceTable}` : sourceTable;
+            
+            let sql = '';
+            try {
+                sql = generateUpdateStatement(change, metadata);
+            } catch (error) {
+                sql = `-- Error: ${error.message}`;
+            }
+            
+            // Handle DELETE display differently
+            if (type === 'DELETE') {
+                html += `
+                    <div class="change-item change-item-delete">
+                        <div class="change-header">
+                            <div class="change-location">🗑️ ${tableName} (Row ${rowIndex + 1}) - DELETE</div>
+                            <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                        </div>
+                        <div class="change-sql">${escapeHtml(sql)}</div>
+                    </div>
+                `;
+            } else {
+                // UPDATE display
+                // Normalize boolean values to 0/1 for display
+                const normalizeValue = (val) => {
+                    if (val === null || val === undefined) return 'NULL';
+                    if (typeof val === 'boolean') return val ? '1' : '0';
+                    return String(val);
+                };
+                
+                const oldDisplay = normalizeValue(oldValue);
+                const newDisplay = normalizeValue(newValue);
+                
+                html += `
+                    <div class="change-item">
+                        <div class="change-header">
+                            <div class="change-location">${tableName}.${columnName} (Row ${rowIndex + 1})</div>
+                            <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                        </div>
+                        <div class="change-details">
+                            <div class="change-label">Old value:</div>
+                            <div class="change-value change-value-old">${escapeHtml(oldDisplay)}</div>
+                            <div class="change-label">New value:</div>
+                            <div class="change-value change-value-new">${escapeHtml(newDisplay)}</div>
+                        </div>
+                        <div class="change-sql">${escapeHtml(sql)}</div>
+                    </div>
+                `;
+            }
+        });
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+/**
+ * Revert a single change
+ */
+function revertChange(resultSetIndex, changeIndex) {
+    const changes = pendingChanges.get(resultSetIndex);
+    if (!changes || changeIndex >= changes.length) return;
+
+    // Remove the change
+    changes.splice(changeIndex, 1);
+    
+    // If no more changes for this result set, remove the key
+    if (changes.length === 0) {
+        pendingChanges.delete(resultSetIndex);
+    }
+    
+    // Update UI - refresh the pending changes panel
+    renderPendingChanges();
+}
+
+/**
+ * Escape HTML for safe display
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
+ * Switch to a specific tab
+ */
+function switchTab(tabName) {
+    const tab = document.querySelector(`[data-tab="${tabName}"]`);
+    if (tab) {
+        tab.click();
+    }
+}
+
+/**
+ * Generate UPDATE statement for a change
+ */
+function generateUpdateStatement(change, metadata) {
+    // Handle DELETE statements
+    if (change.type === 'DELETE') {
+        const { primaryKeyValues, sourceTable, sourceSchema } = change;
+        
+        if (!sourceTable) {
+            throw new Error('Cannot generate DELETE: no source table');
+        }
+
+        const fullTableName = sourceSchema ? `[${sourceSchema}].[${sourceTable}]` : `[${sourceTable}]`;
+        
+        // Build WHERE clause with primary keys
+        const whereConditions = Object.entries(primaryKeyValues).map(([pkCol, pkValue]) => {
+            return `[${pkCol}] = ${sqlEscape(pkValue)}`;
+        }).join(' AND ');
+
+        if (!whereConditions) {
+            throw new Error('Cannot generate DELETE: no primary key values');
+        }
+
+        return `DELETE FROM ${fullTableName} WHERE ${whereConditions};`;
+    }
+    
+    // Handle UPDATE statements
+    const { columnName, newValue, primaryKeyValues, sourceTable, sourceSchema, sourceColumn } = change;
+
+    if (!sourceTable) {
+        throw new Error(`Cannot generate UPDATE: column '${columnName}' has no source table`);
+    }
+
+    const fullTableName = sourceSchema ? `[${sourceSchema}].[${sourceTable}]` : `[${sourceTable}]`;
+    
+    // Build SET clause with proper escaping
+    const setClause = `[${sourceColumn}] = ${sqlEscape(newValue)}`;
+    
+    // Build WHERE clause with primary keys
+    const whereConditions = Object.entries(primaryKeyValues).map(([pkCol, pkValue]) => {
+        return `[${pkCol}] = ${sqlEscape(pkValue)}`;
+    }).join(' AND ');
+
+    if (!whereConditions) {
+        throw new Error('Cannot generate UPDATE: no primary key values');
+    }
+
+    return `UPDATE ${fullTableName} SET ${setClause} WHERE ${whereConditions};`;
+}
+
+/**
+ * SQL escape value for use in queries
+ */
+function sqlEscape(value) {
+    if (value === null || value === undefined) {
+        return 'NULL';
+    }
+    
+    if (typeof value === 'number') {
+        return String(value);
+    }
+    
+    if (typeof value === 'boolean') {
+        return value ? '1' : '0';
+    }
+    
+    // String - escape single quotes and wrap in quotes
+    const strValue = String(value);
+    return `'${strValue.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Commit all pending changes to database
+ */
+function commitAllChanges() {
+    if (pendingChanges.size === 0) {
+        console.log('No pending changes to commit');
+        return;
+    }
+
+    // Generate all UPDATE statements
+    const updateStatements = [];
+    
+    try {
+        pendingChanges.forEach((changes, resultSetIndex) => {
+            const metadata = resultSetMetadata[resultSetIndex];
+            
+            changes.forEach(change => {
+                const sql = generateUpdateStatement(change, metadata);
+                updateStatements.push(sql);
+            });
+        });
+
+        // Send to extension for execution in transaction
+        let connectionId = currentConnectionId;
+        if (currentConnectionId && currentDatabaseName) {
+            connectionId = `${currentConnectionId}::${currentDatabaseName}`;
+        }
+
+        vscode.postMessage({
+            type: 'commitChanges',
+            statements: updateStatements,
+            connectionId: connectionId,
+            originalQuery: originalQuery
+        });
+
+    } catch (error) {
+        console.error('Failed to generate UPDATE statements:', error);
+    }
+}
+
+/**
+ * Revert all pending changes
+ */
+function revertAllChanges() {
+    if (pendingChanges.size === 0) {
+        return;
+    }
+
+    const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+    
+    // Use vscode modal instead of confirm (which is blocked in sandboxed webview)
+    vscode.postMessage({
+        type: 'confirmAction',
+        message: `Revert all ${totalChanges} pending changes?`,
+        action: 'revertAll'
+    });
+}
+
+function executeRevertAll() {
+    // Clear pending changes
+    pendingChanges.clear();
+    
+    // Remove all cell-modified classes
+    document.querySelectorAll('.cell-modified').forEach(cell => {
+        cell.classList.remove('cell-modified');
+    });
+    
+    // Update UI
+    updatePendingChangesCount();
+    renderPendingChanges();
+}
+
+/**
+ * Show preview of UPDATE statements
+ */
+function previewUpdateStatements() {
+    if (pendingChanges.size === 0) {
+        return;
+    }
+
+    try {
+        const updateStatements = [];
+        
+        pendingChanges.forEach((changes, resultSetIndex) => {
+            const metadata = resultSetMetadata[resultSetIndex];
+            
+            changes.forEach(change => {
+                const sql = generateUpdateStatement(change, metadata);
+                updateStatements.push(sql);
+            });
+        });
+
+        // Open in new editor
+        const sqlContent = `-- Generated UPDATE statements\n-- ${updateStatements.length} statement(s)\n\nBEGIN TRANSACTION;\n\n${updateStatements.join('\n\n')}\n\nCOMMIT TRANSACTION;\n-- ROLLBACK TRANSACTION;`;
+        
+        openInNewEditor(sqlContent, 'sql');
+
+    } catch (error) {
+        console.error('Failed to generate preview:', error);
+    }
+}

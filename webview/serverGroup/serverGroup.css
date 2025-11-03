@@ -1,0 +1,233 @@
+body {
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    color: var(--vscode-foreground);
+    background-color: var(--vscode-editor-background);
+    padding: 20px;
+    margin: 0;
+}
+
+.form-container {
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--vscode-foreground);
+}
+
+input[type="text"], textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--vscode-input-border);
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border-radius: 4px;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    box-sizing: border-box;
+}
+
+input[type="text"]:focus, textarea:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder);
+}
+
+textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+.icon-picker {
+    display: flex;
+    gap: 15px;
+    margin-top: 8px;
+    margin-bottom: 20px;
+}
+
+.icon-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background-color: var(--vscode-editor-lineHighlightBackground);
+}
+
+.icon-option:hover {
+    border-color: var(--vscode-focusBorder);
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.icon-option.selected {
+    border-color: var(--vscode-button-background);
+    background-color: var(--vscode-list-activeSelectionBackground);
+}
+
+.icon-option svg {
+    color: var(--vscode-foreground);
+}
+
+.icon-option.add-custom-icon {
+    border-style: dashed;
+    opacity: 0.7;
+}
+
+.icon-option.add-custom-icon:hover {
+    opacity: 1;
+}
+
+.custom-icon-option-item {
+    position: relative;
+}
+
+.delete-custom-icon {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--vscode-errorForeground);
+    border: none;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.2s;
+}
+
+.delete-custom-icon svg {
+    width: 12px;
+    height: 12px;
+    stroke: white;
+}
+
+.delete-custom-icon:hover {
+    transform: scale(1.1);
+    background-color: var(--vscode-errorForeground);
+}
+
+.custom-icon-option-item:hover .delete-custom-icon {
+    display: flex;
+}
+
+.color-picker {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.color-option {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    position: relative;
+}
+
+.color-option:hover {
+    border-color: var(--vscode-focusBorder);
+}
+
+.color-option.selected {
+    border-color: var(--vscode-button-background);
+    box-shadow: 0 0 0 2px var(--vscode-button-background);
+}
+
+.color-option.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-weight: bold;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 30px;
+    justify-content: flex-end;
+}
+
+button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    transition: background-color 0.2s;
+}
+
+.primary-button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+}
+
+.primary-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.secondary-button {
+    background-color: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+}
+
+.secondary-button:hover {
+    background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.required {
+    color: var(--vscode-errorForeground);
+}
+
+.preview {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    background-color: var(--vscode-editor-lineHighlightBackground);
+}
+
+.preview-title {
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.preview-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.preview-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-icon svg {
+    width: 16px;
+    height: 16px;
+}

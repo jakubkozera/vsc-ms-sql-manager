@@ -89,6 +89,11 @@
         "icon": "$(edit)"
       },
       {
+        "command": "mssqlManager.deleteServerGroup",
+        "title": "Delete Server Group",
+        "icon": "$(trash)"
+      },
+      {
         "command": "mssqlManager.disconnectConnection",
         "title": "Disconnect",
         "icon": "$(close)"
@@ -202,6 +207,21 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "mssqlManager.pinQueryHistoryItem",
+        "title": "Pin Query",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "mssqlManager.unpinQueryHistoryItem",
+        "title": "Unpin Query",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "mssqlManager.renameQueryHistoryItem",
+        "title": "Rename Query",
+        "icon": "$(edit)"
+      },
+      {
         "command": "mssqlManager.clearQueryHistory",
         "title": "Clear Query History",
         "icon": "$(clear-all)"
@@ -225,6 +245,15 @@
         "command": "mssqlManager.newQuery",
         "title": "New Query",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "mssqlManager.newQueryOnDatabase",
+        "title": "New Query",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "mssqlManager.copyConnectionString",
+        "title": "Copy Connection String"
       }
     ],
     "viewsContainers": {
@@ -463,9 +492,79 @@
           "group": "2_manage@2"
         },
         {
+          "command": "mssqlManager.copyConnectionString",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "group": "2_manage@3"
+        },
+        {
           "command": "mssqlManager.editServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.deleteServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "inline@2"
+        },
+        {
+          "command": "mssqlManager.connectToSaved",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionInactive",
+          "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.editConnection",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "mssqlManager.deleteConnection",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "group": "inline@3"
+        },
+        {
+          "command": "mssqlManager.disconnectConnection",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "inline@4"
+        },
+        {
+          "command": "mssqlManager.newQuery",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "mssqlManager.newQueryOnDatabase",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@1"
+        },
+        {
+          "command": "mssqlManager.copyConnectionString",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@2"
+        },
+        {
+          "command": "mssqlManager.connectToSaved",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionInactive",
+          "group": "1_connection@2"
+        },
+        {
+          "command": "mssqlManager.disconnectConnection",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "1_connection@2"
+        },
+        {
+          "command": "mssqlManager.editConnection",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "group": "2_manage@1"
+        },
+        {
+          "command": "mssqlManager.deleteConnection",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "group": "2_manage@2"
+        },
+        {
+          "command": "mssqlManager.copyConnectionString",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "group": "2_manage@3"
         },
         {
           "command": "mssqlManager.selectTop1000",
@@ -528,8 +627,18 @@
           "group": "5_properties@1"
         },
         {
-          "command": "mssqlManager.openQueryFromHistory",
+          "command": "mssqlManager.pinQueryHistoryItem",
           "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.renameQueryHistoryItem",
+          "when": "view == mssqlManager.queryHistory && viewItem =~ /^queryHistoryItem/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.unpinQueryHistoryItem",
+          "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItemPinned",
           "group": "inline@1"
         },
         {
@@ -658,6 +767,18 @@
         {
           "command": "mssqlManager.toggleQueryHistoryGrouping",
           "when": "false"
+        },
+        {
+          "command": "mssqlManager.newQueryOnDatabase",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.editServerGroup",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.deleteServerGroup",
+          "when": "false"
         }
       ]
     },
@@ -685,31 +806,33 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run package",
+    "vscode:prepublish": "npm run package",
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
     "install-extension": "code --install-extension ms-sql-manager-0.0.1.vsix"
   },
   "devDependencies": {
-    "@types/vscode": "^1.105.0",
+    "@types/mssql": "^9.1.8",
     "@types/node": "^20.x",
+    "@types/vscode": "^1.105.0",
     "@typescript-eslint/eslint-plugin": "^8.7.0",
     "@typescript-eslint/parser": "^8.7.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
     "eslint": "^9.11.1",
+    "ts-loader": "^9.5.1",
     "typescript": "^5.6.2",
     "webpack": "^5.95.0",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.1"
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "msnodesqlv8": "^5.1.1",
     "mssql": "^10.0.2"
   }
 }

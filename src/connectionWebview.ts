@@ -43,6 +43,12 @@ export class ConnectionWebview {
             return;
         }
 
+        const iconsRoot = path.join(this.context.extensionPath, 'resources', 'icons');
+        const iconPath = {
+            light: vscode.Uri.file(path.join(iconsRoot, 'connection-light.svg')),
+            dark: vscode.Uri.file(path.join(iconsRoot, 'connection-dark.svg'))
+        };
+
         this.panel = vscode.window.createWebviewPanel(
             'mssqlConnection',
             'MS SQL Server Connection',
@@ -55,6 +61,9 @@ export class ConnectionWebview {
                 ]
             }
         );
+
+        // Assign themed icon (light/dark) after panel creation to satisfy TS types
+        this.panel.iconPath = iconPath;
 
         this.panel.onDidDispose(() => {
             this.panel = undefined;
@@ -116,46 +125,31 @@ export class ConnectionWebview {
                 message: 'Testing connection...'
             });
 
-            // Import mssql dynamically to test connection
-            const sql = await import('mssql');
+            // Use our dbClient abstraction which will choose msnodesqlv8 for windows auth
+            const { createPoolForConfig } = await import('./dbClient');
 
-            let sqlConfig: any;
-            
+            const cfg: any = {};
             if (config.useConnectionString && config.connectionString) {
-                // Use connection string directly
-                sqlConfig = {
-                    connectionString: config.connectionString
-                };
+                cfg.connectionString = config.connectionString;
+                cfg.useConnectionString = true;
             } else {
-                // Build config from individual properties
-                sqlConfig = {
-                    server: config.server,
-                    database: config.database || 'master',
-                    options: {
-                        encrypt: config.encrypt !== false,
-                        trustServerCertificate: config.trustServerCertificate !== false
-                    }
-                };
-
-                if (config.port) {
-                    sqlConfig.port = parseInt(config.port);
-                }
-
-                if (config.authType === 'sql') {
-                    sqlConfig.user = config.username;
-                    sqlConfig.password = config.password;
-                } else if (config.authType === 'windows') {
-                    sqlConfig.options.trustedConnection = true;
-                }
+                cfg.server = config.server;
+                cfg.database = config.connectionType === 'server' ? 'master' : (config.database || 'master');
+                cfg.port = config.port ? parseInt(config.port) : undefined;
+                cfg.encrypt = config.encrypt !== false;
+                cfg.trustServerCertificate = config.trustServerCertificate !== false;
             }
+            cfg.authType = config.authType;
+            cfg.username = config.username;
+            cfg.password = config.password;
 
-            const pool = new sql.ConnectionPool(sqlConfig);
+            const pool = await createPoolForConfig(cfg);
             await pool.connect();
-            
+
             // Test with a simple query
             const request = pool.request();
             await request.query('SELECT 1 as test');
-            
+
             await pool.close();
 
             this.panel?.webview.postMessage({
@@ -182,6 +176,7 @@ export class ConnectionWebview {
                 server: config.server || '',
                 database: config.database || 'master',
                 authType: config.authType || 'sql',
+                connectionType: config.connectionType || 'database',
                 username: config.authType === 'sql' ? config.username : undefined,
                 password: config.authType === 'sql' ? config.password : undefined,
                 port: config.port ? parseInt(config.port) : undefined,
@@ -241,9 +236,45 @@ export class ConnectionWebview {
 
         h1 {
             color: var(--vscode-foreground);
-            margin-bottom: 30px;
+            margin: 0;
             font-size: 1.5em;
             font-weight: 600;
+        }
+
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+            gap: 12px;
+        }
+
+        .icon-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--vscode-foreground);
+            cursor: pointer;
+            font-size: 0.95em;
+        }
+
+        .icon-button svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .icon-button:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+
+        .icon-button.active {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border-color: var(--vscode-button-background);
         }
 
         .form-group {
@@ -538,8 +569,29 @@ export class ConnectionWebview {
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>SQL Server Connection</h1>
+        <div class="container">
+                <div class="header-row">
+                        <h1>SQL Server Connection</h1>
+                        <button type="button" id="useConnectionStringBtn" class="icon-button" title="Use Connection String">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="45"
+                                    height="45"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.5"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                                    <path d="M4 20l3.5 -3.5" />
+                                    <path d="M15 4l-3.5 3.5" />
+                                    <path d="M20 9l-3.5 3.5" />
+                                </svg>
+                                <span>Use Connection String</span>
+                        </button>
+                </div>
         
         <form id="connectionForm">
             <div class="form-group">
@@ -556,13 +608,16 @@ export class ConnectionWebview {
                 <div class="help-text">Optional: Organize connections into groups</div>
             </div>
 
-            <div class="form-toggle">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="useConnectionString">
-                    <label for="useConnectionString">Use Connection String</label>
-                </div>
-                <div class="help-text">Toggle between connection string and individual fields</div>
+            <div class="form-group hidden" id="connectionTypeGroup">
+                <label for="connectionType">Connection Type *</label>
+                <select id="connectionType" required>
+                    <option value="database">Database Connection</option>
+                    <option value="server">Server Connection</option>
+                </select>
+                <div class="help-text">Database: Connect to specific database. Server: Connect to server for database management</div>
             </div>
+            <input type="checkbox" id="useConnectionString" class="hidden" aria-hidden="true">
+
 
             <div id="connectionStringSection" class="hidden">
                 <div class="form-group">
@@ -658,8 +713,11 @@ export class ConnectionWebview {
         // Form elements
         const form = document.getElementById('connectionForm');
         const authTypeSelect = document.getElementById('authType');
+        const connectionTypeSelect = document.getElementById('connectionType');
+        const connectionTypeGroup = document.getElementById('connectionTypeGroup');
         const sqlAuthFields = document.getElementById('sqlAuthFields');
         const useConnectionStringCheckbox = document.getElementById('useConnectionString');
+        const useConnectionStringBtn = document.getElementById('useConnectionStringBtn');
         const connectionStringSection = document.getElementById('connectionStringSection');
         const individualFieldsSection = document.getElementById('individualFieldsSection');
         const parseBtn = document.getElementById('parseBtn');
@@ -671,6 +729,7 @@ export class ConnectionWebview {
         const passwordToggle = document.getElementById('passwordToggle');
         const eyeIcon = document.getElementById('eyeIcon');
         const eyeOffIcon = document.getElementById('eyeOffIcon');
+        const databaseField = document.getElementById('database');
 
         // Toggle password visibility
         passwordToggle.addEventListener('click', function() {
@@ -683,7 +742,8 @@ export class ConnectionWebview {
 
         // Toggle between connection string and individual fields
         useConnectionStringCheckbox.addEventListener('change', function() {
-            if (this.checked) {
+            const checked = this.checked;
+            if (checked) {
                 connectionStringSection.classList.remove('hidden');
                 individualFieldsSection.classList.add('hidden');
                 document.getElementById('connectionString').required = true;
@@ -694,7 +754,21 @@ export class ConnectionWebview {
                 document.getElementById('connectionString').required = false;
                 document.getElementById('server').required = true;
             }
+
+            // Update header button visual state
+            if (useConnectionStringBtn) {
+                useConnectionStringBtn.classList.toggle('active', checked);
+            }
         });
+
+        // Header button toggles the same checkbox state
+        if (useConnectionStringBtn) {
+            useConnectionStringBtn.addEventListener('click', function() {
+                const isChecked = useConnectionStringCheckbox.checked;
+                useConnectionStringCheckbox.checked = !isChecked;
+                useConnectionStringCheckbox.dispatchEvent(new Event('change'));
+            });
+        }
 
         // Parse connection string to individual fields
         parseBtn.addEventListener('click', function() {
@@ -741,6 +815,21 @@ export class ConnectionWebview {
                 sqlAuthFields.classList.add('hidden');
                 document.getElementById('username').required = false;
                 document.getElementById('password').required = false;
+            }
+        });
+
+        // Connection type is now hidden in the UI. We treat an empty database field
+        // as indicating a server-level connection. If a database is provided, it's a database connection.
+        // Keep the old event handler behavior in case the field is programmatically set.
+        connectionTypeSelect.addEventListener('change', function() {
+            const connectionType = this.value;
+            if (connectionType === 'server') {
+                databaseField.value = 'master';
+                databaseField.placeholder = 'master (recommended for server connections)';
+                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database (master recommended for server management)';
+            } else {
+                databaseField.placeholder = 'master';
+                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database to connect to';
             }
         });
 
@@ -935,14 +1024,19 @@ export class ConnectionWebview {
             
             console.log('[ConnectionWebview] Form data - serverGroup value:', serverGroupValue);
             
+            // If database field is empty, interpret that as a server connection
+            const rawDatabase = document.getElementById('database').value.trim();
+            const inferredConnectionType = rawDatabase === '' ? 'server' : 'database';
+
             const formData = {
                 id: form.dataset.connectionId,
                 name: document.getElementById('connectionName').value.trim(),
                 serverGroupId: serverGroupValue || undefined,
+                connectionType: inferredConnectionType,
                 useConnectionString: useConnectionString,
                 connectionString: useConnectionString ? document.getElementById('connectionString').value.trim() : null,
                 server: document.getElementById('server').value.trim(),
-                database: document.getElementById('database').value.trim() || 'master',
+                database: rawDatabase || (inferredConnectionType === 'server' ? 'master' : 'master'),
                 port: document.getElementById('port').value || null,
                 authType: document.getElementById('authType').value,
                 username: document.getElementById('username').value.trim() || null,
@@ -961,6 +1055,8 @@ export class ConnectionWebview {
                 form.dataset.connectionId = config.id;
                 document.getElementById('connectionName').value = config.name || '';
                 document.getElementById('serverGroup').value = config.serverGroupId || '';
+                // Keep connectionType hidden, but set its value for backward compatibility
+                document.getElementById('connectionType').value = config.connectionType || (config.database ? 'database' : 'server');
                 
                 console.log('[ConnectionWebview] Set serverGroup value to:', config.serverGroupId);
                 
@@ -970,7 +1066,8 @@ export class ConnectionWebview {
                 } else {
                     document.getElementById('useConnectionString').checked = false;
                     document.getElementById('server').value = config.server || '';
-                    document.getElementById('database').value = config.database || 'master';
+                        // If the saved connection has an empty database it represents a server connection
+                        document.getElementById('database').value = config.database || (config.connectionType === 'server' ? '' : 'master');
                     document.getElementById('port').value = config.port || '';
                     document.getElementById('authType').value = config.authType || 'sql';
                     document.getElementById('username').value = config.username || '';
@@ -981,7 +1078,12 @@ export class ConnectionWebview {
                 
                 // Trigger events to update UI
                 useConnectionStringCheckbox.dispatchEvent(new Event('change'));
+                // Ensure header button state is synced as well
+                if (useConnectionStringBtn) {
+                    useConnectionStringBtn.classList.toggle('active', useConnectionStringCheckbox.checked);
+                }
                 authTypeSelect.dispatchEvent(new Event('change'));
+                connectionTypeSelect.dispatchEvent(new Event('change'));
             }
         }
 
@@ -1024,6 +1126,12 @@ export class ConnectionWebview {
         // Initialize form
         authTypeSelect.dispatchEvent(new Event('change'));
         useConnectionStringCheckbox.dispatchEvent(new Event('change'));
+        connectionTypeSelect.dispatchEvent(new Event('change'));
+
+        // Initial sync for header button
+        if (useConnectionStringBtn) {
+            useConnectionStringBtn.classList.toggle('active', useConnectionStringCheckbox.checked);
+        }
     </script>
 </body>
 </html>`;

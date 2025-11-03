@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as sql from 'mssql';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
 import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon, createFunctionIcon, createTriggerIcon, createTypeIcon, createSequenceIcon, createSynonymIcon, createAssemblyIcon } from './serverGroupIcon';
 
@@ -25,8 +26,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
 
     // Drag and drop implementation
     public async handleDrag(source: TreeNode[], dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
-        // Only allow dragging ConnectionNode items
-        const connectionNodes = source.filter(node => node instanceof ConnectionNode) as ConnectionNode[];
+        // Allow dragging ConnectionNode and ServerConnectionNode items
+        const connectionNodes = source.filter(node => (node instanceof ConnectionNode) || (node instanceof ServerConnectionNode)) as Array<ConnectionNode | ServerConnectionNode>;
         if (connectionNodes.length === 0) {
             return;
         }
@@ -52,13 +53,15 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
+            // Single DB pool variable reused across branches when needed
+            let dbPoolForElement: any;
             // Determine target server group ID
             let targetServerGroupId: string | undefined;
 
             if (target instanceof ServerGroupNode) {
                 // Dropped on a server group - assign to that group
                 targetServerGroupId = target.group.id;
-            } else if (target instanceof ConnectionNode) {
+            } else if (target instanceof ConnectionNode || target instanceof ServerConnectionNode) {
                 // Dropped on a connection - get its parent group
                 const connections = await this.connectionProvider.getSavedConnectionsList();
                 const targetConnection = connections.find(c => c.id === target.connectionId);
@@ -95,8 +98,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             return undefined;
         }
         
-        // ConnectionNode might be inside a ServerGroupNode or at root level
-        if (element instanceof ConnectionNode) {
+        // ConnectionNode and ServerConnectionNode might be inside a ServerGroupNode or at root level
+        if (element instanceof ConnectionNode || element instanceof ServerConnectionNode) {
             // Check if this connection belongs to a server group
             const connections = await this.connectionProvider.getSavedConnectionsList();
             const connection = connections.find(c => c.id === element.connectionId);
@@ -108,7 +111,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 if (serverGroup) {
                     const groupConnections = connections.filter(conn => conn.serverGroupId === serverGroup.id);
-                    return new ServerGroupNode(serverGroup, groupConnections.length);
+                    return new ServerGroupNode(serverGroup, groupConnections.length, this.connectionProvider);
                 }
             }
             
@@ -116,22 +119,58 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             return undefined;
         }
         
-        // SchemaItemNode has a ConnectionNode as parent
+        // DatabaseNode, SecurityNode, and LoginNode have ServerConnectionNode as parent
+        if (element instanceof DatabaseNode || element instanceof SecurityNode || element instanceof LoginNode) {
+            if (element.connectionId) {
+                const connections = await this.connectionProvider.getSavedConnectionsList();
+                const connection = connections.find(c => c.id === element.connectionId);
+                
+                if (connection && connection.connectionType === 'server') {
+                    return new ServerConnectionNode(
+                        connection.name,
+                        connection.server,
+                        connection.id,
+                        connection.authType || 'sql',
+                        this.connectionProvider.isConnectionActive(connection.id),
+                        this.connectionProvider.isConnectionPending(connection.id)
+                    );
+                }
+            }
+        }
+        
+        // SchemaItemNode has a ConnectionNode or DatabaseNode as parent
         if (element instanceof SchemaItemNode) {
             if (element.connectionId) {
                 const connections = await this.connectionProvider.getSavedConnectionsList();
                 const connection = connections.find(c => c.id === element.connectionId);
                 
                 if (connection) {
-                    return new ConnectionNode(
-                        connection.name,
-                        connection.server,
-                        connection.database,
-                        connection.id,
-                        connection.authType || 'sql',
-                        this.connectionProvider.isConnectionActive(connection.id),
-                        this.connectionProvider.isConnectionPending(connection.id)
-                    );
+                    if (connection.connectionType === 'server' && element.database) {
+                        // Parent is a DatabaseNode
+                        return new DatabaseNode(
+                            element.database,
+                            element.connectionId,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                    } else if (connection.connectionType === 'database') {
+                        // Parent is a ConnectionNode
+                        return new ConnectionNode(
+                            connection.name,
+                            connection.server,
+                            connection.database,
+                            connection.id,
+                            connection.authType || 'sql',
+                            this.connectionProvider.isConnectionActive(connection.id),
+                            this.connectionProvider.isConnectionPending(connection.id)
+                        );
+                    } else if (connection.connectionType === 'server' && element.schema === 'security') {
+                        // Parent is a SecurityNode for security-related items
+                        return new SecurityNode(
+                            'Security',
+                            element.connectionId,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                    }
                 }
             }
         }
@@ -151,6 +190,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     }
 
     async getChildren(element?: TreeNode): Promise<TreeNode[]> {
+        console.log(`[DEBUG] getChildren called with element:`, element ? {type: element.constructor.name, label: element.label} : 'root');
+        this.outputChannel.appendLine(`[UnifiedTreeProvider] getChildren called with element: ${element ? `${element.constructor.name}(${element.label})` : 'root'}`);
+        
         if (!element) {
             // Root level - show server groups and ungrouped connections
             try {
@@ -167,22 +209,33 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 for (const group of serverGroups) {
                     const groupConnections = connections.filter(conn => conn.serverGroupId === group.id);
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Group ${group.name} has ${groupConnections.length} connections: ${JSON.stringify(groupConnections.map(c => c.name))}`);
-                    nodes.push(new ServerGroupNode(group, groupConnections.length));
+                    nodes.push(new ServerGroupNode(group, groupConnections.length, this.connectionProvider));
                 }
                 
                 // Add ungrouped connections
                 const ungroupedConnections = connections.filter(conn => !conn.serverGroupId);
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${ungroupedConnections.length} ungrouped connections: ${JSON.stringify(ungroupedConnections.map(c => c.name))}`);
                 for (const conn of ungroupedConnections) {
-                    nodes.push(new ConnectionNode(
-                        conn.name,
-                        conn.server,
-                        conn.database,
-                        conn.id,
-                        conn.authType || 'sql',
-                        this.connectionProvider.isConnectionActive(conn.id),
-                        this.connectionProvider.isConnectionPending(conn.id)
-                    ));
+                    if (conn.connectionType === 'server') {
+                        nodes.push(new ServerConnectionNode(
+                            conn.name,
+                            conn.server,
+                            conn.id,
+                            conn.authType || 'sql',
+                            this.connectionProvider.isConnectionActive(conn.id),
+                            this.connectionProvider.isConnectionPending(conn.id)
+                        ));
+                    } else {
+                        nodes.push(new ConnectionNode(
+                            conn.name,
+                            conn.server,
+                            conn.database,
+                            conn.id,
+                            conn.authType || 'sql',
+                            this.connectionProvider.isConnectionActive(conn.id),
+                            this.connectionProvider.isConnectionPending(conn.id)
+                        ));
+                    }
                 }
                 
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${nodes.length} root nodes`);
@@ -200,17 +253,46 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading connections for group ${element.group.name}: found ${groupConnections.length} connections`);
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Group connections: ${JSON.stringify(groupConnections.map(c => ({name: c.name, serverGroupId: c.serverGroupId})))}`);
                 
-                return groupConnections.map(conn => new ConnectionNode(
-                    conn.name,
-                    conn.server,
-                    conn.database,
-                    conn.id,
-                    conn.authType || 'sql',
-                    this.connectionProvider.isConnectionActive(conn.id),
-                    this.connectionProvider.isConnectionPending(conn.id)
-                ));
+                return groupConnections.map(conn => {
+                    if (conn.connectionType === 'server') {
+                        return new ServerConnectionNode(
+                            conn.name,
+                            conn.server,
+                            conn.id,
+                            conn.authType || 'sql',
+                            this.connectionProvider.isConnectionActive(conn.id),
+                            this.connectionProvider.isConnectionPending(conn.id)
+                        );
+                    } else {
+                        return new ConnectionNode(
+                            conn.name,
+                            conn.server,
+                            conn.database,
+                            conn.id,
+                            conn.authType || 'sql',
+                            this.connectionProvider.isConnectionActive(conn.id),
+                            this.connectionProvider.isConnectionPending(conn.id)
+                        );
+                    }
+                });
             } catch (error) {
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading group connections: ${error}`);
+                return [];
+            }
+        } else if (element instanceof ServerConnectionNode) {
+            // Show server-level items: databases and security
+            if (this.connectionProvider.isConnectionActive(element.connectionId)) {
+                return await this.getServerChildren(element.connectionId);
+            } else {
+                // Not active - start auto-connect in background and return empty for now
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Starting auto-connect to server ${element.connectionId}...`);
+                
+                // Start connection in background (don't await)
+                this.connectionProvider.connectToSavedById(element.connectionId).catch(error => {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Server auto-connect failed: ${error}`);
+                    vscode.window.showErrorMessage(`Failed to connect to server: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                });
+                
                 return [];
             }
         } else if (element instanceof ConnectionNode) {
@@ -232,26 +314,176 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 // Return empty immediately - tree will refresh when connection completes
                 return [];
             }
+        } else if (element instanceof DatabaseNode) {
+            // Show schema for a specific database from server connection
+            console.log(`[DEBUG] DatabaseNode - database: ${element.database}, connectionId: ${element.connectionId}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Expanding DatabaseNode: ${element.database}, connectionId: ${element.connectionId}`);
+            
+            const isActive = this.connectionProvider.isConnectionActive(element.connectionId);
+            console.log(`[DEBUG] Connection active check: ${isActive}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Connection active: ${isActive}`);
+            
+            if (isActive) {
+                console.log(`[DEBUG] About to call getSchemaChildren for database: ${element.database}`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Connection is active, calling getSchemaChildren...`);
+                try {
+                    const result = await this.getSchemaChildren(element.connectionId, element.database);
+                    console.log(`[DEBUG] getSchemaChildren result:`, result);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] getSchemaChildren returned ${result.length} items`);
+                    return result;
+                } catch (error) {
+                    console.error(`[DEBUG] Error in getSchemaChildren:`, error);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Error in getSchemaChildren: ${error}`);
+                    return [];
+                }
+            } else {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Connection is not active for ${element.connectionId}`);
+            }
+            return [];
+        } else if (element instanceof SecurityNode) {
+            // Show security items like logins
+            if (this.connectionProvider.isConnectionActive(element.connectionId)) {
+                return await this.getSecurityChildren(element.connectionId);
+            }
+            return [];
         } else if (element instanceof SchemaItemNode) {
             // Handle schema expansion (tables, views, etc.)
+            console.log(`[DEBUG] SchemaItemNode - type: ${element.itemType}, schema: ${element.schema}, database: ${element.database}, connectionId: ${element.connectionId}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Expanding SchemaItemNode: type=${element.itemType}, database=${element.database}`);
             return await this.getSchemaItemChildren(element);
         }
         
         return [];
     }
 
-    private async getSchemaChildren(connectionId: string, database: string): Promise<SchemaItemNode[]> {
+    private async getServerChildren(connectionId: string): Promise<TreeNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
         }
 
         try {
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading schema for connection ${connectionId}...`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading server-level items for connection ${connectionId}...`);
+            
+            const items: TreeNode[] = [];
+            
+            // Get all databases from the server
+            const databasesQuery = `
+                SELECT name, database_id, collation_name, state_desc
+                FROM sys.databases 
+                WHERE state = 0  -- Online databases only
+                ORDER BY name
+            `;
+            
+            const databasesRequest = connection.request();
+            const databasesResult = await databasesRequest.query(databasesQuery);
+            
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${databasesResult.recordset.length} databases`);
+            
+            // Add each database as a DatabaseNode
+            for (const db of databasesResult.recordset) {
+                const databaseNode = new DatabaseNode(
+                    db.name,
+                    connectionId,
+                    vscode.TreeItemCollapsibleState.Collapsed
+                );
+                databaseNode.description = db.state_desc;
+                databaseNode.tooltip = `Database: ${db.name}\nState: ${db.state_desc}\nCollation: ${db.collation_name}`;
+                items.push(databaseNode);
+            }
+            
+            // Add Security section
+            const securityNode = new SecurityNode(
+                'Security',
+                connectionId,
+                vscode.TreeItemCollapsibleState.Collapsed
+            );
+            items.push(securityNode);
+            
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Total server items created: ${items.length}`);
+            return items;
+            
+        } catch (error) {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading server items: ${error}`);
+            return [];
+        }
+    }
+
+    private async getSecurityChildren(connectionId: string): Promise<TreeNode[]> {
+        const connection = this.connectionProvider.getConnection(connectionId);
+        if (!connection) {
+            return [];
+        }
+
+        try {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading security items for connection ${connectionId}...`);
+            
+            const items: TreeNode[] = [];
+            
+            // Get logins from server
+            const loginsQuery = `
+                SELECT 
+                    name,
+                    type_desc,
+                    is_disabled,
+                    create_date,
+                    modify_date,
+                    default_database_name
+                FROM sys.server_principals 
+                WHERE type IN ('S', 'U', 'G', 'R', 'C', 'K')
+                ORDER BY name
+            `;
+            
+            const loginsRequest = connection.request();
+            const loginsResult = await loginsRequest.query(loginsQuery);
+            
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${loginsResult.recordset.length} logins`);
+            
+            // Add Logins section
+            const loginsSection = new SchemaItemNode(
+                `Logins (${loginsResult.recordset.length})`,
+                'logins',
+                'security',
+                vscode.TreeItemCollapsibleState.Collapsed
+            );
+            loginsSection.connectionId = connectionId;
+            items.push(loginsSection);
+            
+            return items;
+            
+        } catch (error) {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading security items: ${error}`);
+            return [];
+        }
+    }
+
+    private async getSchemaChildren(connectionId: string, database: string): Promise<SchemaItemNode[]> {
+        console.log(`[DEBUG] getSchemaChildren called with connectionId: ${connectionId}, database: ${database}`);
+        
+        const connection = this.connectionProvider.getConnection(connectionId);
+        if (!connection) {
+            console.log(`[DEBUG] No connection found for ${connectionId}`);
+            return [];
+        }
+
+        try {
+            console.log(`[DEBUG] Starting schema loading for database: ${database}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading schema for connection ${connectionId}, database: ${database}...`);
             
             const items: SchemaItemNode[] = [];
             
-            // Get tables
+            // Use a per-database pool to avoid USE [db] which is not supported by some drivers
+            let dbPool: any = null;
+            try {
+                dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for ${database}`);
+            } catch (err) {
+                console.error(`[DEBUG] Failed to create DB pool for ${database}:`, err);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${database}: ${err}`);
+                return [];
+            }
+            
+            // Get tables - now using current database context
             const tablesQuery = `
                 SELECT TABLE_NAME, TABLE_SCHEMA 
                 FROM INFORMATION_SCHEMA.TABLES 
@@ -259,10 +491,12 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             `;
             
-            const tablesRequest = connection.request();
-            const tablesResult = await tablesRequest.query(tablesQuery);
+            console.log(`[DEBUG] Executing tables query:`, tablesQuery);
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${tablesResult.recordset.length} tables`);
+            const tablesResult = await dbPool.request().query(tablesQuery);
+            
+            console.log(`[DEBUG] Tables query result:`, tablesResult.recordset.length);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${tablesResult.recordset.length} tables in database ${database}`);
             
             // Group tables by schema
             const tablesBySchema: { [schema: string]: any[] } = {};
@@ -274,7 +508,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 tablesBySchema[schema].push(table);
             });
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Tables grouped by schema: ${JSON.stringify(Object.keys(tablesBySchema).map(schema => `${schema}: ${tablesBySchema[schema].length}`))}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Tables grouped by schema in ${database}: ${JSON.stringify(Object.keys(tablesBySchema).map(schema => `${schema}: ${tablesBySchema[schema].length}`))}`);
             
             // Add a single "Tables" node instead of one per schema
             if (tablesResult.recordset.length > 0) {
@@ -287,20 +521,20 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 tablesNode.connectionId = connectionId;
                 tablesNode.database = database;
                 items.push(tablesNode);
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables for database ${database}`);
             }
             
-            // Get views
+            // Get views - now using current database context
             const viewsQuery = `
                 SELECT TABLE_NAME, TABLE_SCHEMA 
                 FROM INFORMATION_SCHEMA.VIEWS 
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             `;
             
-            const viewsRequest = connection.request();
-            const viewsResult = await viewsRequest.query(viewsQuery);
+            const viewsResult = await dbPool.request().query(viewsQuery);
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${viewsResult.recordset.length} views`);
+            console.log(`[DEBUG] Views query result:`, viewsResult.recordset.length);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${viewsResult.recordset.length} views in database ${database}`);
             
             if (viewsResult.recordset.length > 0) {
                 const viewsNode = new SchemaItemNode(
@@ -325,27 +559,54 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             programmabilityNode.database = database;
             items.push(programmabilityNode);
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Total schema items created: ${items.length}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Total schema items created for database ${database}: ${items.length}`);
             return items;
             
         } catch (error) {
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading schema: ${error}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading schema for database ${database}: ${error}`);
             return [];
         }
     }
 
-    private async getSchemaItemChildren(element: SchemaItemNode): Promise<SchemaItemNode[]> {
+    private async getSchemaItemChildren(element: SchemaItemNode): Promise<TreeNode[]> {
+        console.log(`[DEBUG] getSchemaItemChildren - element:`, {type: element.itemType, schema: element.schema, database: element.database, connectionId: element.connectionId});
+        this.outputChannel.appendLine(`[UnifiedTreeProvider] getSchemaItemChildren called for type: ${element.itemType}, database: ${element.database}`);
+        
         const connection = this.connectionProvider.getConnection(element.connectionId);
         if (!connection) {
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] No connection found for ${element.connectionId}`);
             return [];
+        }
+        // Prepare a DB-scoped pool when this SchemaItemNode belongs to a specific database.
+        // Many branches below previously used `USE [db]` or ran queries on the base connection
+        // which caused the driver to run them against the master DB. Create a per-database pool
+        // and prefer it when executing database-scoped queries.
+        let dbPoolForElement: any = null;
+        if (element.database) {
+            try {
+                dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for element.database: ${element.database}`);
+            } catch (err) {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database}: ${err}`);
+                // Fall back to the base connection; some server-scoped queries still use it.
+                dbPoolForElement = null;
+            }
         }
 
         try {
             if (element.itemType === 'tables') {
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all tables for schema: ${element.schema}`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all tables for database: ${element.database || 'current'}`);
                 
                 // Check if table statistics should be displayed
                 const showStats = vscode.workspace.getConfiguration('mssqlManager').get<boolean>('showTableStatistics', true);
+                
+                // Use DB pool for this database
+                try {
+                    dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
+                    return [];
+                }
                 
                 let query: string;
                 if (showStats) {
@@ -376,10 +637,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     `;
                 }
                 
-                const request = connection.request();
-                const result = await request.query(query);
+                const result = await dbPoolForElement.request().query(query);
                 
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} tables to display`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} tables to display in database ${element.database || 'current'}`);
                 
                 return result.recordset.map((table: any) => {
                     const tableNode = new SchemaItemNode(
@@ -389,6 +649,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     tableNode.connectionId = element.connectionId;
+                    tableNode.database = element.database;
                     
                     if (showStats) {
                         // Format row count (e.g., 1.6k, 23k, 1.2M)
@@ -420,7 +681,15 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     return tableNode;
                 });
             } else if (element.itemType === 'views') {
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all views`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all views for database: ${element.database || 'current'}`);
+                
+                // Use DB pool for this database
+                try {
+                    dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
+                    return [];
+                }
                 
                 const query = `
                     SELECT TABLE_NAME, TABLE_SCHEMA 
@@ -428,10 +697,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     ORDER BY TABLE_SCHEMA, TABLE_NAME
                 `;
                 
-                const request = connection.request();
-                const result = await request.query(query);
+                const result = await dbPoolForElement.request().query(query);
                 
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} views to display`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} views to display in database ${element.database || 'current'}`);
                 
                 return result.recordset.map((view: any) => {
                     const viewNode = new SchemaItemNode(
@@ -441,16 +709,25 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.None
                     );
                     viewNode.connectionId = element.connectionId;
+                    viewNode.database = element.database;
                     return viewNode;
                 });
             } else if (element.itemType === 'programmability') {
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading programmability items`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading programmability items for database: ${element.database || 'current'}`);
                 
                 const items: SchemaItemNode[] = [];
                 
+                // Use DB pool for this database
+                try {
+                    dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
+                    return [];
+                }
+                
                 // Get stored procedures count
                 const procsQuery = `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE'`;
-                const procsResult = await connection.request().query(procsQuery);
+                const procsResult = await dbPoolForElement.request().query(procsQuery);
                 const procsCount = procsResult.recordset[0]?.count || 0;
                 
                 if (procsCount > 0) {
@@ -465,9 +742,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     items.push(storedProcsNode);
                 }
                 
-                // Get functions count
+                // Get functions count  
                 const functionsQuery = `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'FUNCTION'`;
-                const functionsResult = await connection.request().query(functionsQuery);
+                const functionsResult = await dbPoolForElement.request().query(functionsQuery);
                 const functionsCount = functionsResult.recordset[0]?.count || 0;
                 
                 if (functionsCount > 0) {
@@ -482,9 +759,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     items.push(functionsNode);
                 }
                 
-                // Get database triggers count
+                // Get database triggers count (use sys.triggers from specific database context)
                 const triggersQuery = `SELECT COUNT(*) as count FROM sys.triggers WHERE parent_class = 0`;
-                const triggersResult = await connection.request().query(triggersQuery);
+                const triggersResult = await dbPoolForElement.request().query(triggersQuery);
                 const triggersCount = triggersResult.recordset[0]?.count || 0;
                 
                 if (triggersCount > 0) {
@@ -501,7 +778,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Get assemblies count
                 const assembliesQuery = `SELECT COUNT(*) as count FROM sys.assemblies WHERE is_user_defined = 1`;
-                const assembliesResult = await connection.request().query(assembliesQuery);
+                const assembliesResult = await dbPoolForElement.request().query(assembliesQuery);
                 const assembliesCount = assembliesResult.recordset[0]?.count || 0;
                 
                 if (assembliesCount > 0) {
@@ -529,7 +806,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Get sequences count
                 const sequencesQuery = `SELECT COUNT(*) as count FROM sys.sequences`;
-                const sequencesResult = await connection.request().query(sequencesQuery);
+                const sequencesResult = await dbPoolForElement.request().query(sequencesQuery);
                 const sequencesCount = sequencesResult.recordset[0]?.count || 0;
                 
                 if (sequencesCount > 0) {
@@ -546,7 +823,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Get synonyms count
                 const synonymsQuery = `SELECT COUNT(*) as count FROM sys.synonyms`;
-                const synonymsResult = await connection.request().query(synonymsQuery);
+                const synonymsResult = await dbPoolForElement.request().query(synonymsQuery);
                 const synonymsCount = synonymsResult.recordset[0]?.count || 0;
                 
                 if (synonymsCount > 0) {
@@ -563,7 +840,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Get rules count (deprecated but still queryable)
                 const rulesQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'R'`;
-                const rulesResult = await connection.request().query(rulesQuery);
+                const rulesResult = await dbPoolForElement.request().query(rulesQuery);
                 const rulesCount = rulesResult.recordset[0]?.count || 0;
                 
                 if (rulesCount > 0) {
@@ -580,7 +857,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Get defaults count (deprecated but still queryable)
                 const defaultsQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'D' AND parent_object_id = 0`;
-                const defaultsResult = await connection.request().query(defaultsQuery);
+                const defaultsResult = await dbPoolForElement.request().query(defaultsQuery);
                 const defaultsCount = defaultsResult.recordset[0]?.count || 0;
                 
                 if (defaultsCount > 0) {
@@ -597,13 +874,20 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 return items;
             } else if (element.itemType === 'stored-procedures') {
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading stored procedures subcategories`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading stored procedures subcategories for database: ${element.database || 'current'}`);
                 
                 const items: SchemaItemNode[] = [];
+                // Use DB pool for this database
+                try {
+                    dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
+                    return [];
+                }
                 
                 // System Stored Procedures
                 const systemProcsQuery = `SELECT COUNT(*) as count FROM sys.procedures WHERE is_ms_shipped = 1`;
-                const systemProcsResult = await connection.request().query(systemProcsQuery);
+                const systemProcsResult = await (dbPoolForElement ? dbPoolForElement.request().query(systemProcsQuery) : connection.request().query(systemProcsQuery));
                 const systemProcsCount = systemProcsResult.recordset[0]?.count || 0;
                 
                 if (systemProcsCount > 0) {
@@ -620,7 +904,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Extended Stored Procedures
                 const extendedProcsQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'X'`;
-                const extendedProcsResult = await connection.request().query(extendedProcsQuery);
+                const extendedProcsResult = await (dbPoolForElement ? dbPoolForElement.request().query(extendedProcsQuery) : connection.request().query(extendedProcsQuery));
                 const extendedProcsCount = extendedProcsResult.recordset[0]?.count || 0;
                 
                 if (extendedProcsCount > 0) {
@@ -636,6 +920,14 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 }
                 
                 // User Stored Procedures
+                // Use DB pool for this database
+                try {
+                    dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
+                    return [];
+                }
+                
                 const query = `
                     SELECT ROUTINE_NAME, ROUTINE_SCHEMA 
                     FROM INFORMATION_SCHEMA.ROUTINES 
@@ -644,9 +936,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 `;
                 
                 const request = connection.request();
-                const result = await request.query(query);
+                const result = await (dbPoolForElement ? dbPoolForElement.request().query(query) : request.query(query));
                 
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} user procedures to display`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} user procedures to display in database ${element.database || 'current'}`);
                 
                 const userProcs = result.recordset.map((proc: any) => {
                     const procNode = new SchemaItemNode(
@@ -663,13 +955,22 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 return [...items, ...userProcs];
             } else if (element.itemType === 'functions') {
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading functions subcategories`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading functions subcategories for database: ${element.database || 'current'}`);
                 
                 const items: SchemaItemNode[] = [];
                 
+                // Use DB pool for this database
+                let dbPoolForElement: any;
+                try {
+                    dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
+                    return [];
+                }
+                
                 // Table-valued Functions
                 const tvfQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type IN ('TF', 'IF')`;
-                const tvfResult = await connection.request().query(tvfQuery);
+                const tvfResult = await (dbPoolForElement ? dbPoolForElement.request().query(tvfQuery) : connection.request().query(tvfQuery));
                 const tvfCount = tvfResult.recordset[0]?.count || 0;
                 
                 if (tvfCount > 0) {
@@ -680,12 +981,13 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     tvfNode.connectionId = element.connectionId;
+                    tvfNode.database = element.database;
                     items.push(tvfNode);
                 }
                 
                 // Scalar-valued Functions
                 const svfQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'FN'`;
-                const svfResult = await connection.request().query(svfQuery);
+                const svfResult = await (dbPoolForElement ? dbPoolForElement.request().query(svfQuery) : connection.request().query(svfQuery));
                 const svfCount = svfResult.recordset[0]?.count || 0;
                 
                 if (svfCount > 0) {
@@ -696,12 +998,13 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     svfNode.connectionId = element.connectionId;
+                    svfNode.database = element.database;
                     items.push(svfNode);
                 }
                 
                 // Aggregate Functions
                 const aggQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'AF'`;
-                const aggResult = await connection.request().query(aggQuery);
+                const aggResult = await (dbPoolForElement ? dbPoolForElement.request().query(aggQuery) : connection.request().query(aggQuery));
                 const aggCount = aggResult.recordset[0]?.count || 0;
                 
                 if (aggCount > 0) {
@@ -712,6 +1015,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.Collapsed
                     );
                     aggNode.connectionId = element.connectionId;
+                    aggNode.database = element.database;
                     items.push(aggNode);
                 }
                 
@@ -723,7 +1027,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // User-Defined Data Types
                 const uddtQuery = `SELECT COUNT(*) as count FROM sys.types WHERE is_user_defined = 1 AND is_table_type = 0 AND is_assembly_type = 0`;
-                const uddtResult = await connection.request().query(uddtQuery);
+                const uddtResult = await (dbPoolForElement ? dbPoolForElement.request().query(uddtQuery) : connection.request().query(uddtQuery));
                 const uddtCount = uddtResult.recordset[0]?.count || 0;
                 
                 if (uddtCount > 0) {
@@ -739,7 +1043,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // User-Defined Table Types
                 const udttQuery = `SELECT COUNT(*) as count FROM sys.types WHERE is_user_defined = 1 AND is_table_type = 1`;
-                const udttResult = await connection.request().query(udttQuery);
+                const udttResult = await (dbPoolForElement ? dbPoolForElement.request().query(udttQuery) : connection.request().query(udttQuery));
                 const udttCount = udttResult.recordset[0]?.count || 0;
                 
                 if (udttCount > 0) {
@@ -755,7 +1059,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // CLR Types
                 const clrQuery = `SELECT COUNT(*) as count FROM sys.types WHERE is_assembly_type = 1`;
-                const clrResult = await connection.request().query(clrQuery);
+                const clrResult = await (dbPoolForElement ? dbPoolForElement.request().query(clrQuery) : connection.request().query(clrQuery));
                 const clrCount = clrResult.recordset[0]?.count || 0;
                 
                 if (clrCount > 0) {
@@ -771,7 +1075,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // XML Schema Collections
                 const xmlQuery = `SELECT COUNT(*) as count FROM sys.xml_schema_collections WHERE xml_collection_id > 65535`;
-                const xmlResult = await connection.request().query(xmlQuery);
+                const xmlResult = await (dbPoolForElement ? dbPoolForElement.request().query(xmlQuery) : connection.request().query(xmlQuery));
                 const xmlCount = xmlResult.recordset[0]?.count || 0;
                 
                 if (xmlCount > 0) {
@@ -790,7 +1094,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 // Show table details (columns, keys, etc.)
                 // Extract table name from label format schema.tableName
                 const fullLabel = element.label as string;
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Expanding table with label: ${fullLabel}`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Expanding table with label: ${fullLabel} in database: ${element.database || 'current'}`);
                 
                 let tableName: string;
                 let schema: string;
@@ -806,49 +1110,58 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     schema = element.schema;
                 }
                 
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Parsed table: ${tableName}, schema: ${schema}`);
-                return await this.getTableDetails(tableName, schema, element.connectionId!);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Parsed table: ${tableName}, schema: ${schema}, database: ${element.database || 'current'}`);
+                return await this.getTableDetails(tableName, schema, element.connectionId!, element.database);
             } else if (element.itemType === 'columns') {
                 // Show individual columns - get table name from stored property
                 const tableName = (element as any).tableName;
                 if (tableName) {
-                    return await this.getColumnDetails(tableName, element.schema, element.connectionId!);
+                    return await this.getColumnDetails(tableName, element.schema, element.connectionId!, element.database);
                 }
                 return [];
             } else if (element.itemType === 'keys') {
                 const tableName = (element as any).tableName;
                 if (tableName) {
-                    return await this.getKeyDetails(tableName, element.schema, element.connectionId!);
+                    return await this.getKeyDetails(tableName, element.schema, element.connectionId!, element.database);
                 }
                 return [];
             } else if (element.itemType === 'constraints') {
                 const tableName = (element as any).tableName;
                 if (tableName) {
-                    return await this.getConstraintDetails(tableName, element.schema, element.connectionId!);
+                    return await this.getConstraintDetails(tableName, element.schema, element.connectionId!, element.database);
                 }
                 return [];
             } else if (element.itemType === 'triggers') {
                 const tableName = (element as any).tableName;
                 if (tableName) {
-                    return await this.getTriggerDetails(tableName, element.schema, element.connectionId!);
+                    return await this.getTriggerDetails(tableName, element.schema, element.connectionId!, element.database);
                 }
                 return [];
             } else if (element.itemType === 'indexes') {
                 const tableName = (element as any).tableName;
                 if (tableName) {
-                    return await this.getIndexDetails(tableName, element.schema, element.connectionId!);
+                    return await this.getIndexDetails(tableName, element.schema, element.connectionId!, element.database);
                 }
                 return [];
             } else if (element.itemType === 'statistics') {
                 const tableName = (element as any).tableName;
                 if (tableName) {
-                    return await this.getStatisticsDetails(tableName, element.schema, element.connectionId!);
+                    return await this.getStatisticsDetails(tableName, element.schema, element.connectionId!, element.database);
                 }
                 return [];
             } else if (element.itemType === 'system-procedures' || element.itemType === 'extended-procedures') {
                 // For now, return empty - these are system objects
                 return [];
             } else if (element.itemType === 'table-valued-functions') {
+                // Use DB pool for this database
+                let dbPoolForElement: any;
+                try {
+                    dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
+                    return [];
+                }
+                
                 const query = `
                     SELECT SCHEMA_NAME(schema_id) as ROUTINE_SCHEMA, name as ROUTINE_NAME
                     FROM sys.objects 
@@ -864,9 +1177,13 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.None
                     );
                     funcNode.connectionId = element.connectionId;
+                    funcNode.database = element.database;
                     return funcNode;
                 });
             } else if (element.itemType === 'scalar-valued-functions') {
+                // Switch to the database first
+                await connection.request().query(`USE [${element.database || 'master'}]`);
+                
                 const query = `
                     SELECT SCHEMA_NAME(schema_id) as ROUTINE_SCHEMA, name as ROUTINE_NAME
                     FROM sys.objects 
@@ -882,9 +1199,13 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.None
                     );
                     funcNode.connectionId = element.connectionId;
+                    funcNode.database = element.database;
                     return funcNode;
                 });
             } else if (element.itemType === 'aggregate-functions') {
+                // Switch to the database first
+                await connection.request().query(`USE [${element.database || 'master'}]`);
+                
                 const query = `
                     SELECT SCHEMA_NAME(schema_id) as ROUTINE_SCHEMA, name as ROUTINE_NAME
                     FROM sys.objects 
@@ -900,6 +1221,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         vscode.TreeItemCollapsibleState.None
                     );
                     funcNode.connectionId = element.connectionId;
+                    funcNode.database = element.database;
                     return funcNode;
                 });
             } else if (element.itemType === 'database-triggers') {
@@ -1082,6 +1404,38 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     defaultNode.connectionId = element.connectionId;
                     return defaultNode;
                 });
+            } else if (element.itemType === 'logins') {
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all logins`);
+                
+                const query = `
+                    SELECT 
+                        name,
+                        type_desc,
+                        is_disabled,
+                        create_date,
+                        modify_date,
+                        default_database_name
+                    FROM sys.server_principals 
+                    WHERE type IN ('S', 'U', 'G', 'R', 'C', 'K')
+                    ORDER BY name
+                `;
+                
+                const request = connection.request();
+                const result = await request.query(query);
+                
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} logins to display`);
+                
+                return result.recordset.map((login: any) => {
+                    const loginNode = new LoginNode(
+                        login.name,
+                        element.connectionId!,
+                        login.type_desc,
+                        login.is_disabled
+                    );
+                    loginNode.description = `${login.type_desc}${login.is_disabled ? ' (Disabled)' : ''}`;
+                    loginNode.tooltip = `Login: ${login.name}\nType: ${login.type_desc}\nStatus: ${login.is_disabled ? 'Disabled' : 'Enabled'}\nDefault DB: ${login.default_database_name}`;
+                    return loginNode;
+                });
             }
             
         } catch (error) {
@@ -1091,8 +1445,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         return [];
     }
 
-    private async getTableDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
-        this.outputChannel.appendLine(`[UnifiedTreeProvider] Getting table details for: ${tableName} in schema: ${schema}`);
+    private async getTableDetails(tableName: string, schema: string, connectionId: string, database?: string): Promise<SchemaItemNode[]> {
+        this.outputChannel.appendLine(`[UnifiedTreeProvider] Getting table details for: ${tableName} in schema: ${schema}, database: ${database || 'current'}`);
         
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
@@ -1103,6 +1457,18 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         try {
             const items: SchemaItemNode[] = [];
             
+            // Prefer a DB-scoped pool for database-specific queries
+            let dbPool: any = null;
+            if (database) {
+                try {
+                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getTableDetails: ${database}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getTableDetails ${database}: ${err}`);
+                    dbPool = null;
+                }
+            }
+
             // Get columns
             const columnsQuery = `
                 SELECT 
@@ -1118,10 +1484,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Executing columns query: ${columnsQuery}`);
             
-            const columnsRequest = connection.request();
-            const columnsResult = await columnsRequest.query(columnsQuery);
+            const columnsResult = await (dbPool ? dbPool.request().query(columnsQuery) : connection.request().query(columnsQuery));
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${columnsResult.recordset.length} columns for table ${tableName}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${columnsResult.recordset.length} columns for table ${tableName} in database ${database || 'current'}`);
             
             if (columnsResult.recordset.length > 0) {
                 const columnsNode = new SchemaItemNode(
@@ -1133,9 +1498,10 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 // Store table name and connection ID for later use
                 (columnsNode as any).tableName = tableName;
                 columnsNode.connectionId = connectionId;
+                columnsNode.database = database;
                 items.push(columnsNode);
                 
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Created columns node for table ${tableName}`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Created columns node for table ${tableName} in database ${database || 'current'}`);
             }
             
             // Get Keys (Primary Keys, Foreign Keys, Unique Keys)
@@ -1152,9 +1518,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
                 GROUP BY tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE
             `;
-            
-            const keysRequest = connection.request();
-            const keysResult = await keysRequest.query(keysQuery);
+            const keysResult = await (dbPool ? dbPool.request().query(keysQuery) : connection.request().query(keysQuery));
             
             if (keysResult.recordset.length > 0) {
                 const keysNode = new SchemaItemNode(
@@ -1165,6 +1529,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 );
                 (keysNode as any).tableName = tableName;
                 keysNode.connectionId = connectionId;
+                keysNode.database = database;
                 items.push(keysNode);
             }
             
@@ -1181,9 +1546,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         AND tc.TABLE_SCHEMA = '${schema}'
                 )
             `;
-            
-            const constraintsRequest = connection.request();
-            const constraintsResult = await constraintsRequest.query(constraintsQuery);
+            const constraintsResult = await (dbPool ? dbPool.request().query(constraintsQuery) : connection.request().query(constraintsQuery));
             
             if (constraintsResult.recordset.length > 0) {
                 const constraintsNode = new SchemaItemNode(
@@ -1194,6 +1557,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 );
                 (constraintsNode as any).tableName = tableName;
                 constraintsNode.connectionId = connectionId;
+                constraintsNode.database = database;
                 items.push(constraintsNode);
             }
             
@@ -1206,9 +1570,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 FROM sys.triggers
                 WHERE parent_id = OBJECT_ID('${schema}.${tableName}')
             `;
-            
-            const triggersRequest = connection.request();
-            const triggersResult = await triggersRequest.query(triggersQuery);
+            const triggersResult = await (dbPool ? dbPool.request().query(triggersQuery) : connection.request().query(triggersQuery));
             
             if (triggersResult.recordset.length > 0) {
                 const triggersNode = new SchemaItemNode(
@@ -1219,6 +1581,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 );
                 (triggersNode as any).tableName = tableName;
                 triggersNode.connectionId = connectionId;
+                triggersNode.database = database;
                 items.push(triggersNode);
             }
             
@@ -1237,9 +1600,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     AND i.type > 0
                 GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
             `;
-            
-            const indexesRequest = connection.request();
-            const indexesResult = await indexesRequest.query(indexesQuery);
+            const indexesResult = await (dbPool ? dbPool.request().query(indexesQuery) : connection.request().query(indexesQuery));
             
             if (indexesResult.recordset.length > 0) {
                 const indexesNode = new SchemaItemNode(
@@ -1250,6 +1611,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 );
                 (indexesNode as any).tableName = tableName;
                 indexesNode.connectionId = connectionId;
+                indexesNode.database = database;
                 items.push(indexesNode);
             }
             
@@ -1266,9 +1628,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 WHERE s.object_id = OBJECT_ID('${schema}.${tableName}')
                 GROUP BY s.name, s.auto_created, s.user_created
             `;
-            
-            const statisticsRequest = connection.request();
-            const statisticsResult = await statisticsRequest.query(statisticsQuery);
+            const statisticsResult = await (dbPool ? dbPool.request().query(statisticsQuery) : connection.request().query(statisticsQuery));
             
             if (statisticsResult.recordset.length > 0) {
                 const statisticsNode = new SchemaItemNode(
@@ -1279,25 +1639,38 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 );
                 (statisticsNode as any).tableName = tableName;
                 statisticsNode.connectionId = connectionId;
+                statisticsNode.database = database;
                 items.push(statisticsNode);
             }
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${items.length} items for table ${tableName}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${items.length} items for table ${tableName} in database ${database || 'current'}`);
             return items;
             
         } catch (error) {
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading table details for ${tableName}: ${error}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading table details for ${tableName} in database ${database || 'current'}: ${error}`);
             return [];
         }
     }
 
-    private async getColumnDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
+    private async getColumnDetails(tableName: string, schema: string, connectionId: string, database?: string): Promise<SchemaItemNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
         }
 
         try {
+            // Prefer a DB-scoped pool for database-specific queries
+            let dbPool: any = null;
+            if (database) {
+                try {
+                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getColumnDetails: ${database}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getColumnDetails ${database}: ${err}`);
+                    dbPool = null;
+                }
+            }
+
             const columnsQuery = `
                 SELECT 
                     COLUMN_NAME,
@@ -1312,8 +1685,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 ORDER BY ORDINAL_POSITION
             `;
             
-            const columnsRequest = connection.request();
-            const columnsResult = await columnsRequest.query(columnsQuery);
+            const columnsResult = await (dbPool ? dbPool.request().query(columnsQuery) : connection.request().query(columnsQuery));
             
             return columnsResult.recordset.map((column: any) => {
                 const dataType = column.CHARACTER_MAXIMUM_LENGTH 
@@ -1336,6 +1708,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 columnNode.description = dataType + nullable;
                 columnNode.tooltip = `${column.COLUMN_NAME}: ${dataType}${nullable}${defaultValue}`;
                 columnNode.connectionId = connectionId;
+                columnNode.database = database;
                 
                 return columnNode;
             });
@@ -1346,13 +1719,25 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
     }
 
-    private async getKeyDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
+    private async getKeyDetails(tableName: string, schema: string, connectionId: string, database?: string): Promise<SchemaItemNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
         }
 
         try {
+            // Prefer a DB-scoped pool for database-specific queries
+            let dbPool: any = null;
+            if (database) {
+                try {
+                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getKeyDetails: ${database}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getKeyDetails ${database}: ${err}`);
+                    dbPool = null;
+                }
+            }
+
             const keysQuery = `
                 SELECT 
                     tc.CONSTRAINT_NAME,
@@ -1366,9 +1751,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
                 GROUP BY tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE
             `;
-            
-            const keysRequest = connection.request();
-            const keysResult = await keysRequest.query(keysQuery);
+            const keysResult = await (dbPool ? dbPool.request().query(keysQuery) : connection.request().query(keysQuery));
             
             return keysResult.recordset.map((key: any) => {
                 const keyNode = new SchemaItemNode(
@@ -1381,6 +1764,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 keyNode.description = key.CONSTRAINT_TYPE;
                 keyNode.tooltip = `${key.CONSTRAINT_NAME}\nType: ${key.CONSTRAINT_TYPE}\nColumns: ${key.COLUMNS}`;
                 keyNode.connectionId = connectionId;
+                keyNode.database = database;
                 
                 return keyNode;
             });
@@ -1391,13 +1775,25 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
     }
 
-    private async getConstraintDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
+    private async getConstraintDetails(tableName: string, schema: string, connectionId: string, database?: string): Promise<SchemaItemNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
         }
 
         try {
+            // Prefer a DB-scoped pool for database-specific queries
+            let dbPool: any = null;
+            if (database) {
+                try {
+                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getConstraintDetails: ${database}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getConstraintDetails ${database}: ${err}`);
+                    dbPool = null;
+                }
+            }
+
             const constraintsQuery = `
                 SELECT 
                     cc.CONSTRAINT_NAME,
@@ -1410,9 +1806,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         AND tc.TABLE_SCHEMA = '${schema}'
                 )
             `;
-            
-            const constraintsRequest = connection.request();
-            const constraintsResult = await constraintsRequest.query(constraintsQuery);
+            const constraintsResult = await (dbPool ? dbPool.request().query(constraintsQuery) : connection.request().query(constraintsQuery));
             
             return constraintsResult.recordset.map((constraint: any) => {
                 const constraintNode = new SchemaItemNode(
@@ -1425,6 +1819,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 constraintNode.description = 'CHECK';
                 constraintNode.tooltip = `${constraint.CONSTRAINT_NAME}\n${constraint.CHECK_CLAUSE}`;
                 constraintNode.connectionId = connectionId;
+                constraintNode.database = database;
                 
                 return constraintNode;
             });
@@ -1435,13 +1830,25 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
     }
 
-    private async getTriggerDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
+    private async getTriggerDetails(tableName: string, schema: string, connectionId: string, database?: string): Promise<SchemaItemNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
         }
 
         try {
+            // Prefer a DB-scoped pool for database-specific queries
+            let dbPool: any = null;
+            if (database) {
+                try {
+                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getTriggerDetails: ${database}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getTriggerDetails ${database}: ${err}`);
+                    dbPool = null;
+                }
+            }
+
             const triggersQuery = `
                 SELECT 
                     name,
@@ -1450,9 +1857,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 FROM sys.triggers
                 WHERE parent_id = OBJECT_ID('${schema}.${tableName}')
             `;
-            
-            const triggersRequest = connection.request();
-            const triggersResult = await triggersRequest.query(triggersQuery);
+            const triggersResult = await (dbPool ? dbPool.request().query(triggersQuery) : connection.request().query(triggersQuery));
             
             return triggersResult.recordset.map((trigger: any) => {
                 const triggerNode = new SchemaItemNode(
@@ -1468,6 +1873,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 triggerNode.description = `${type} - ${status}`;
                 triggerNode.tooltip = `${trigger.name}\nType: ${type}\nStatus: ${status}`;
                 triggerNode.connectionId = connectionId;
+                triggerNode.database = database;
                 
                 return triggerNode;
             });
@@ -1478,13 +1884,25 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
     }
 
-    private async getIndexDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
+    private async getIndexDetails(tableName: string, schema: string, connectionId: string, database?: string): Promise<SchemaItemNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
         }
 
         try {
+            // Prefer a DB-scoped pool for database-specific queries
+            let dbPool: any = null;
+            if (database) {
+                try {
+                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getIndexDetails: ${database}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getIndexDetails ${database}: ${err}`);
+                    dbPool = null;
+                }
+            }
+
             const indexesQuery = `
                 SELECT 
                     i.name,
@@ -1499,9 +1917,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     AND i.type > 0
                 GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
             `;
-            
-            const indexesRequest = connection.request();
-            const indexesResult = await indexesRequest.query(indexesQuery);
+            const indexesResult = await (dbPool ? dbPool.request().query(indexesQuery) : connection.request().query(indexesQuery));
             
             return indexesResult.recordset.map((index: any) => {
                 const indexNode = new SchemaItemNode(
@@ -1517,6 +1933,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 indexNode.description = `${index.type_desc}${pk}`;
                 indexNode.tooltip = `${index.name}\nType: ${index.type_desc}\n${unique}${pk}\nColumns: ${index.columns}`;
                 indexNode.connectionId = connectionId;
+                indexNode.database = database;
                 
                 return indexNode;
             });
@@ -1527,13 +1944,25 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
     }
 
-    private async getStatisticsDetails(tableName: string, schema: string, connectionId: string): Promise<SchemaItemNode[]> {
+    private async getStatisticsDetails(tableName: string, schema: string, connectionId: string, database?: string): Promise<SchemaItemNode[]> {
         const connection = this.connectionProvider.getConnection(connectionId);
         if (!connection) {
             return [];
         }
 
         try {
+            // Prefer a DB-scoped pool for database-specific queries
+            let dbPool: any = null;
+            if (database) {
+                try {
+                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getStatisticsDetails: ${database}`);
+                } catch (err) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getStatisticsDetails ${database}: ${err}`);
+                    dbPool = null;
+                }
+            }
+
             const statisticsQuery = `
                 SELECT 
                     s.name,
@@ -1546,9 +1975,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 WHERE s.object_id = OBJECT_ID('${schema}.${tableName}')
                 GROUP BY s.name, s.auto_created, s.user_created
             `;
-            
-            const statisticsRequest = connection.request();
-            const statisticsResult = await statisticsRequest.query(statisticsQuery);
+            const statisticsResult = await (dbPool ? dbPool.request().query(statisticsQuery) : connection.request().query(statisticsQuery));
             
             return statisticsResult.recordset.map((stat: any) => {
                 const statNode = new SchemaItemNode(
@@ -1563,6 +1990,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 statNode.description = type;
                 statNode.tooltip = `${stat.name}\nType: ${type}\nColumns: ${stat.columns}`;
                 statNode.connectionId = connectionId;
+                statNode.database = database;
                 
                 return statNode;
             });
@@ -1588,7 +2016,8 @@ abstract class TreeNode extends vscode.TreeItem {
 export class ServerGroupNode extends TreeNode {
     constructor(
         public readonly group: ServerGroup,
-        public readonly connectionCount: number
+        public readonly connectionCount: number,
+        private connectionProvider?: ConnectionProvider
     ) {
         super(
             group.name,
@@ -1601,7 +2030,23 @@ export class ServerGroupNode extends TreeNode {
         
         // Set colored icon - use theme-aware icons
         const isOpen = this.collapsibleState === vscode.TreeItemCollapsibleState.Expanded;
-        this.iconPath = createServerGroupIcon(group.color, isOpen);
+        
+        // Get custom icon SVG if using custom icon
+        let customIconSvg: string | undefined;
+        if (group.iconType === 'custom' && group.customIconId && connectionProvider) {
+            const customIcons = connectionProvider.getCustomIcons();
+            const customIcon = customIcons.find(icon => icon.id === group.customIconId);
+            if (customIcon) {
+                customIconSvg = customIcon.svgContent;
+            }
+        }
+        
+        this.iconPath = createServerGroupIcon(
+            group.color || '#0078D4', 
+            isOpen, 
+            group.iconType || 'folder',
+            customIconSvg
+        );
 
         // Add edit button (VS Code TreeItem button API)
         // Only available in VS Code 1.78+
@@ -1616,6 +2061,119 @@ export class ServerGroupNode extends TreeNode {
                 }
             }
         ];
+    }
+}
+
+// Server Connection nodes (connects to server, not specific database)
+export class ServerConnectionNode extends TreeNode {
+    public isPending: boolean = false;
+    
+    constructor(
+        public readonly name: string,
+        public readonly server: string,
+        public readonly connectionId: string,
+        public readonly authType: string,
+        public readonly isActive: boolean,
+        isPending: boolean = false
+    ) {
+        // Determine collapsible state - Expanded when active, Collapsed otherwise
+        const collapsibleState = isActive 
+            ? vscode.TreeItemCollapsibleState.Expanded 
+            : vscode.TreeItemCollapsibleState.Collapsed;
+            
+        super(
+            isPending ? `${name} (Connecting...)` : name, 
+            collapsibleState
+        );
+        
+        this.isPending = isPending;
+        this.description = `${server} (Server)`;
+        this.tooltip = `Server: ${server}\nAuth: ${authType}${isActive ? '\n(Active)' : isPending ? '\n(Connecting...)' : ''}\nConnection Type: Server`;
+        // Set contextValue based on connection state
+        this.contextValue = isActive ? 'serverConnectionActive' : 'serverConnectionInactive';
+        
+        // Set icon based on connection state
+        if (isPending) {
+            this.iconPath = createLoadingSpinnerIcon();
+        } else if (isActive) {
+            this.iconPath = new vscode.ThemeIcon('server-environment', new vscode.ThemeColor('charts.green'));
+        } else {
+            this.iconPath = new vscode.ThemeIcon('server-environment');
+        }
+        
+        // Set resource URI for file decoration
+        if (isActive) {
+            this.resourceUri = vscode.Uri.parse(`mssql-server-connection:${connectionId}#active`);
+        }
+        
+        // Set unique ID that changes with connection state to force VS Code to reset expand/collapse state
+        this.id = `server-connection-${connectionId}-${isActive ? 'active' : 'inactive'}`;
+    }
+}
+
+// Database nodes (for server connections)
+export class DatabaseNode extends TreeNode {
+    public database: string;
+    public connectionId: string;
+    
+    constructor(
+        database: string,
+        connectionId: string,
+        collapsibleState: vscode.TreeItemCollapsibleState
+    ) {
+        super(database, collapsibleState);
+        
+        this.database = database;
+        this.connectionId = connectionId;
+        this.contextValue = 'database';
+        this.iconPath = createDatabaseIcon();
+    }
+}
+
+// Security nodes
+export class SecurityNode extends TreeNode {
+    public connectionId: string;
+    
+    constructor(
+        label: string,
+        connectionId: string,
+        collapsibleState: vscode.TreeItemCollapsibleState
+    ) {
+        super(label, collapsibleState);
+        
+        this.connectionId = connectionId;
+        this.contextValue = 'security';
+        this.iconPath = new vscode.ThemeIcon('shield');
+    }
+}
+
+// Login nodes
+export class LoginNode extends TreeNode {
+    public connectionId: string;
+    public loginType: string;
+    public isDisabled: boolean;
+    
+    constructor(
+        name: string,
+        connectionId: string,
+        loginType: string,
+        isDisabled: boolean
+    ) {
+        super(name, vscode.TreeItemCollapsibleState.None);
+        
+        this.connectionId = connectionId;
+        this.loginType = loginType;
+        this.isDisabled = isDisabled;
+        this.contextValue = 'login';
+        
+        // Set icon based on login type and status
+        if (isDisabled) {
+            this.iconPath = new vscode.ThemeIcon('account', new vscode.ThemeColor('problemsErrorIcon.foreground'));
+        } else if (loginType === 'WINDOWS_LOGIN' || loginType === 'WINDOWS_GROUP') {
+            this.iconPath = new vscode.ThemeIcon('account', new vscode.ThemeColor('charts.blue'));
+        } else {
+            this.iconPath = new vscode.ThemeIcon('account');
+        }
     }
 }
 

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Group</title>
+    <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+    <div class="form-container">
+        <h2>{{title}}</h2>
+        
+        <form id="serverGroupForm">
+            <div class="form-group">
+                <label for="groupName">Server group name <span class="required">*</span></label>
+                <input type="text" id="groupName" name="name" required 
+                       placeholder="Enter server group name">
+            </div>
+
+            <div class="form-group">
+                <label for="groupDescription">Group description</label>
+                <textarea id="groupDescription" name="description" 
+                         placeholder="Optional description for this server group"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Icon type <span class="required">*</span></label>
+                <div class="icon-picker" id="iconPicker">
+                    <div class="icon-option" data-icon="folder" title="Folder (Default)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2" />
+                        </svg>
+                    </div>
+                    <div class="icon-option" data-icon="folder-heroicons" title="Heroicons Folder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
+                        </svg>
+                    </div>
+                    <div class="icon-option" data-icon="vscode-folder" title="VS Code Style">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M13 7L11.8845 4.76892C11.5634 4.1268 11.4029 3.80573 11.1634 3.57116C10.9516 3.36373 10.6963 3.20597 10.4161 3.10931C10.0992 3 9.74021 3 9.02229 3H5.2C4.0799 3 3.51984 3 3.09202 3.21799C2.71569 3.40973 2.40973 3.71569 2.21799 4.09202C2 4.51984 2 5.0799 2 6.2V7M2 7H17.2C18.8802 7 19.7202 7 20.362 7.32698C20.9265 7.6146 21.3854 8.07354 21.673 8.63803C22 9.27976 22 10.1198 22 11.8V16.2C22 17.8802 22 18.7202 21.673 19.362C21.3854 19.9265 20.9265 20.3854 20.362 20.673C19.7202 21 18.8802 21 17.2 21H6.8C5.11984 21 4.27976 21 3.63803 20.673C3.07354 20.3854 2.6146 19.9265 2.32698 19.362C2 18.7202 2 17.8802 2 16.2V7Z" />
+                        </svg>
+                    </div>
+                    <!-- Custom icons will be dynamically added here -->
+                    <div class="icon-option add-custom-icon" title="Add Custom Icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 5v14M5 12h14" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" id="colorPickerGroup">
+                <label>Group color <span class="required">*</span></label>
+                <div class="color-picker">
+                    <div class="color-option" data-color="#A16340" style="background-color: #A16340;"></div>
+                    <div class="color-option" data-color="#7F0000" style="background-color: #7F0000;"></div>
+                    <div class="color-option" data-color="#914576" style="background-color: #914576;"></div>
+                    <div class="color-option" data-color="#6E9859" style="background-color: #6E9859;"></div>
+                    <div class="color-option" data-color="#5F82A5" style="background-color: #5F82A5;"></div>
+                    <div class="color-option" data-color="#4452A6" style="background-color: #4452A6;"></div>
+                    <div class="color-option" data-color="#6A6599" style="background-color: #6A6599;"></div>
+                    <div class="color-option" data-color="#515151" style="background-color: #515151;"></div>
+                    <div class="color-option custom-color-option" style="background: none; display: flex; align-items: center; justify-content: center; border-style: dashed;">
+                        <input type="color" id="customColorInput" title="Pick custom color" style="width: 32px; height: 32px; border: none; background: none; padding: 0; cursor: pointer;" />
+                    </div>
+                </div>
+                <div style="margin-top: 8px; font-size: 0.95em; color: var(--vscode-descriptionForeground);">You can pick a custom color or select one of the presets above.</div>
+            </div>
+
+            <div class="preview" id="preview" style="display: none;">
+                <div class="preview-title">Preview:</div>
+                <div class="preview-item">
+                    <div class="preview-icon" id="previewIcon"></div>
+                    <span id="previewName">Server Group Name</span>
+                </div>
+            </div>
+
+            <div class="buttons">
+                <button type="button" class="secondary-button" onclick="cancelForm()">Cancel</button>
+                <button type="submit" class="primary-button">{{buttonText}}</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const editingGroup = {{groupData}};
+    </script>
+    <script src="{{scriptUri}}"></script>
+</body>
+</html>
