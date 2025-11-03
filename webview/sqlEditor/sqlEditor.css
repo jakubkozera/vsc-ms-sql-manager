@@ -453,6 +453,13 @@ body {
     color: var(--vscode-descriptionForeground);
 }
 
+#aggregationStats {
+    margin-left: auto;
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+}
+
 table {
     border-collapse: collapse;
     width: 100%;

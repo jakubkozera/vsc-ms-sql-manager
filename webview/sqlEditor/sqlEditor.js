@@ -2753,11 +2753,19 @@ function initAgGridTable(rowData, container, isSingleResultSet = false) {
                 // Clear all selections across all tables
                 clearAllSelections();
                 
+                // Collect all cell values from the column
+                const columnField = colDefs[colIndex].field;
+                const columnSelections = filteredData.map((row, rowIndex) => ({
+                    rowIndex: rowIndex,
+                    columnIndex: colIndex,
+                    cellValue: row[columnField]
+                }));
+                
                 // Set global selection state
                 globalSelection = {
                     type: 'column',
                     tableContainer: containerEl,
-                    selections: [{ columnIndex: colIndex }],
+                    selections: columnSelections,
                     columnDef: colDefs[colIndex],
                     data: filteredData,
                     columnDefs: colDefs,
@@ -2983,11 +2991,18 @@ function initAgGridTable(rowData, container, isSingleResultSet = false) {
                         // Clear all selections across all tables
                         clearAllSelections();
                         
+                        // Collect all cell values from the row
+                        const rowSelections = colDefs.map((col, colIndex) => ({
+                            rowIndex: rowIndex,
+                            columnIndex: colIndex,
+                            cellValue: row[col.field]
+                        }));
+                        
                         // Set global selection state
                         globalSelection = {
                             type: 'row',
                             tableContainer: containerEl,
-                            selections: [{ rowIndex: rowIndex }],
+                            selections: rowSelections,
                             data: data,
                             columnDefs: colDefs,
                             lastClickedIndex: rowIndex
@@ -3206,7 +3221,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false) {
                                 columnDef: colDefs[colIndex],
                                 data: data,
                                 columnDefs: colDefs,
-                                lastClickedIndex: { rowIndex, columnIndex }
+                                lastClickedIndex: { rowIndex, colIndex }
                             };
                             
                             // Apply highlighting
@@ -4131,9 +4146,56 @@ function applyCellHighlightGlobal(containerEl, rowIndex, colIndex) {
 }
 
 function updateAggregationStats() {
-    // This function is now a no-op since we removed the execution stats display
-    // Aggregation stats could be shown elsewhere if needed in the future
-    return;
+    const statsPanel = document.getElementById('aggregationStats');
+    if (!statsPanel) return;
+    
+    // If no selection or no data, hide the panel
+    if (!globalSelection || !globalSelection.selections || globalSelection.selections.length === 0) {
+        statsPanel.style.display = 'none';
+        return;
+    }
+    
+    // Collect all values from selections
+    const numericValues = [];
+    const allValues = [];
+    
+    // Handle different selection types
+    if (globalSelection.type === 'cell' || globalSelection.type === 'row' || globalSelection.type === 'column') {
+        for (const selection of globalSelection.selections) {
+            const value = selection.cellValue;
+            
+            // Skip null/undefined
+            if (value === null || value === undefined) {
+                continue;
+            }
+            
+            allValues.push(value);
+            
+            // Check if it's a number
+            if (value !== '') {
+                const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
+                if (!isNaN(num)) {
+                    numericValues.push(num);
+                }
+            }
+        }
+    }
+    
+    // Always show count
+    let statsText = `Count: ${allValues.length}`;
+    
+    // If we have numeric values, calculate statistics
+    if (numericValues.length > 0) {
+        const sum = numericValues.reduce((a, b) => a + b, 0);
+        const avg = sum / numericValues.length;
+        const min = Math.min(...numericValues);
+        const max = Math.max(...numericValues);
+        
+        statsText += ` | Avg: ${avg.toFixed(2)} | Sum: ${sum.toFixed(2)} | Min: ${min} | Max: ${max}`;
+    }
+    
+    statsPanel.textContent = statsText;
+    statsPanel.style.display = 'block';
 }
 
 // Hide context menu when clicking elsewhere
