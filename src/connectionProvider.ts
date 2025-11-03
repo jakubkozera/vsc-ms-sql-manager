@@ -131,27 +131,19 @@ export class ConnectionProvider {
     }
 
     private async handleWebviewConnection(config: ConnectionConfig): Promise<void> {
+        this.outputChannel.appendLine(`[ConnectionProvider] Handling webview connection: ${JSON.stringify({...config, password: '***'})}`);
+        
+        // Mark as pending and trigger UI update
+        this.pendingConnections.add(config.id);
+        this.notifyConnectionChanged();
+        
         try {
-            this.outputChannel.appendLine(`[ConnectionProvider] Handling webview connection: ${JSON.stringify({...config, password: '***'})}`);
-            
-            // Mark as pending and trigger UI update
-            this.pendingConnections.add(config.id);
-            this.notifyConnectionChanged();
-            
             await this.establishConnection(config);
             await this.saveConnection(config);
-            
-            // Remove from pending
+        } finally {
+            // Always remove from pending, whether success or failure
             this.pendingConnections.delete(config.id);
             this.notifyConnectionChanged();
-        } catch (error) {
-            // Remove from pending on error
-            this.pendingConnections.delete(config.id);
-            this.notifyConnectionChanged();
-            
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
-            vscode.window.showErrorMessage(`Failed to connect: ${errorMessage}`);
         }
     }
 
@@ -234,11 +226,11 @@ export class ConnectionProvider {
     }
 
     private async connectToSaved(config: ConnectionConfig): Promise<void> {
+        // Mark as pending and trigger UI update
+        this.pendingConnections.add(config.id);
+        this.notifyConnectionChanged();
+        
         try {
-            // Mark as pending and trigger UI update
-            this.pendingConnections.add(config.id);
-            this.notifyConnectionChanged();
-            
             // Get complete config with sensitive data from secure storage
             const completeConfig = await this.getCompleteConnectionConfig(config);
             
@@ -260,86 +252,93 @@ export class ConnectionProvider {
             }
 
             await this.establishConnection(completeConfig);
-            
-            // Remove from pending
-            this.pendingConnections.delete(config.id);
-            
-            this.notifyConnectionChanged();
-        } catch (error) {
-            // Remove from pending on error
+        } finally {
+            // Always remove from pending, whether success or failure
             this.pendingConnections.delete(config.id);
             this.notifyConnectionChanged();
-            
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
-            vscode.window.showErrorMessage(`Failed to connect: ${errorMessage}`);
         }
     }
 
     private async establishConnection(config: ConnectionConfig): Promise<void> {
         this.outputChannel.appendLine(`Connecting to ${config.server}/${config.database}...`);
         
-        // Show progress
+        // Show progress with detailed steps
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: 'Connecting to SQL Server',
+            title: `Connecting to ${config.name || config.server}`,
             cancellable: false
         }, async (progress) => {
-            progress.report({ message: `Connecting to ${config.server}...` });
+            try {
+                progress.report({ message: 'Preparing connection...' });
 
-            // Close existing connection with same ID if any
-            const existingConnection = this.activeConnections.get(config.id);
-            if (existingConnection) {
-                await existingConnection.close();
-                this.activeConnections.delete(config.id);
-                this.activeConfigs.delete(config.id);
-            }
+                // Close existing connection with same ID if any
+                const existingConnection = this.activeConnections.get(config.id);
+                if (existingConnection) {
+                    await existingConnection.close();
+                    this.activeConnections.delete(config.id);
+                    this.activeConfigs.delete(config.id);
+                }
 
-            // Build connection config for mssql
-            let sqlConfig: any;
-            
-            if (config.useConnectionString && config.connectionString) {
-                // Use connection string directly
+                progress.report({ message: 'Configuring authentication...' });
+                
+                // Build connection config for mssql
+                let sqlConfig: any;
+                
+                if (config.useConnectionString && config.connectionString) {
+                    // Use connection string directly
+                    sqlConfig = {
+                        connectionString: config.connectionString
+                    };
+                } else {
+                // Build config from individual properties
                 sqlConfig = {
-                    connectionString: config.connectionString
-                };
-            } else {
-            // Build config from individual properties
-            sqlConfig = {
-                server: config.server,
-                database: config.connectionType === 'server' ? 'master' : config.database,
-                options: {
-                    encrypt: config.encrypt || true,
-                    trustServerCertificate: config.trustServerCertificate || true
-                }
-            };                if (config.authType === 'sql') {
-                    sqlConfig.user = config.username;
-                    sqlConfig.password = config.password;
-                } else if (config.authType === 'windows') {
-                    sqlConfig.options!.trustedConnection = true;
+                    server: config.server,
+                    database: config.connectionType === 'server' ? 'master' : config.database,
+                    options: {
+                        encrypt: config.encrypt || true,
+                        trustServerCertificate: config.trustServerCertificate || true
+                    }
+                };                if (config.authType === 'sql') {
+                        sqlConfig.user = config.username;
+                        sqlConfig.password = config.password;
+                    } else if (config.authType === 'windows') {
+                        sqlConfig.options!.trustedConnection = true;
+                    }
+
+                    if (config.port) {
+                        sqlConfig.port = config.port;
+                    }
                 }
 
-                if (config.port) {
-                    sqlConfig.port = config.port;
-                }
+                progress.report({ message: `Connecting to ${config.server}...` });
+                
+                // Create and test connection using dbClient strategy (mssql or msnodesqlv8 depending on auth)
+                const newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate });
+                await newConnection.connect();
+
+                progress.report({ message: 'Verifying connection...' });
+                
+                // Test with a simple query
+                const request = newConnection.request();
+                // normalize both clients to return result.recordsets when applicable
+                await request.query('SELECT 1 as test');
+                
+                // Store the new connection
+                this.activeConnections.set(config.id, newConnection);
+                this.activeConfigs.set(config.id, config);
+                this.currentActiveId = config.id;
+                
+                const displayDb = config.connectionType === 'server' ? 'server' : config.database;
+                this.outputChannel.appendLine(`Successfully connected to ${config.server}/${displayDb}`);
+                
+                // Final progress update
+                progress.report({ message: `Successfully connected!` });
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
+                vscode.window.showErrorMessage(`Failed to connect to ${config.server}: ${errorMessage}`);
+                throw error;
             }
-
-            // Create and test connection using dbClient strategy (mssql or msnodesqlv8 depending on auth)
-            const newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate });
-            await newConnection.connect();
-
-            // Test with a simple query
-            const request = newConnection.request();
-            // normalize both clients to return result.recordsets when applicable
-            await request.query('SELECT 1 as test');
-
-            // Store the new connection
-            this.activeConnections.set(config.id, newConnection);
-            this.activeConfigs.set(config.id, config);
-            this.currentActiveId = config.id;
-            
-            this.outputChannel.appendLine(`Successfully connected to ${config.server}/${config.database}`);
-            vscode.window.showInformationMessage(`Connected to ${config.server}/${config.database}`);
         });
     }
 
@@ -888,6 +887,17 @@ export class ConnectionProvider {
     }
 
     async connectToSavedById(connectionId: string): Promise<void> {
+        // Check if already connected or connecting
+        if (this.isConnectionActive(connectionId)) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Already connected to ${connectionId}, skipping`);
+            return;
+        }
+        
+        if (this.isConnectionPending(connectionId)) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Connection to ${connectionId} already in progress, skipping`);
+            return;
+        }
+        
         const savedConnections = this.getSavedConnections();
         const connection = savedConnections.find(conn => conn.id === connectionId);
         
