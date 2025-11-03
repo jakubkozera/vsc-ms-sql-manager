@@ -746,9 +746,9 @@ export class ConnectionProvider {
             this.outputChannel.appendLine('[ConnectionProvider] Starting one-time local SQL Server discovery (Windows)');
 
             const candidates = [
+                { server: '(localdb)\\MSSQLLocalDB', display: 'MSSQLLocalDB' },
                 { server: 'localhost', display: 'Localhost' },
                 { server: '.\\SQLEXPRESS', display: 'SQL Express' },
-                { server: '(localdb)\\MSSQLLocalDB', display: 'MSSQLLocalDB' }
             ];
 
             const discovered: ConnectionConfig[] = [];
@@ -786,7 +786,7 @@ export class ConnectionProvider {
                         await pool.request().query('SELECT 1 as test');
                     })();
 
-                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out')), 2000));
+                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timed out')), 5000));
                     await Promise.race([attempt, timeoutPromise]);
 
                     this.outputChannel.appendLine(`[ConnectionProvider] Successfully connected to local candidate: ${c.server}`);
