@@ -4000,6 +4000,38 @@ function hideContextMenu() {
 function showRowContextMenu(e, cellData) {
     e.preventDefault();
     
+    const { table, rowIndex, data, columnDefs } = cellData;
+    
+    // Check if right-clicked row is part of current selection
+    const isRowSelected = globalSelection.type === 'row' && 
+                         globalSelection.selections && 
+                         globalSelection.selections.some(sel => sel.rowIndex === rowIndex);
+    
+    // If right-clicked on unselected row, clear selection and select only this row
+    if (!isRowSelected) {
+        clearAllSelections();
+        
+        // Select the right-clicked row
+        globalSelection = {
+            type: 'row',
+            tableContainer: table.closest('.ag-grid-viewport').parentElement,
+            selections: [{ rowIndex }],
+            data: data,
+            columnDefs: columnDefs,
+            lastClickedIndex: rowIndex
+        };
+        
+        // Apply highlighting
+        const tbody = table.querySelector('.ag-grid-tbody');
+        if (tbody) {
+            const rows = tbody.querySelectorAll('tr');
+            if (rowIndex < rows.length) {
+                rows[rowIndex].classList.add('selected');
+                rows[rowIndex].style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #04395e)';
+            }
+        }
+    }
+    
     // Remove existing menu to recreate with updated labels
     if (rowContextMenu) {
         rowContextMenu.remove();
