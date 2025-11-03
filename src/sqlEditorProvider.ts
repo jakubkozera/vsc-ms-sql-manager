@@ -209,8 +209,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         const scriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.js');
 
         // Convert to webview URIs for proper loading
-        const styleUri = webview.asWebviewUri(stylePath).toString();
-        const scriptUri = webview.asWebviewUri(scriptPath).toString();
+        // Add cache buster to force reload
+        const cacheBuster = Date.now();
+        const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
+        const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
 
         // Read base HTML template
         let html = fs.readFileSync(htmlPath.fsPath, 'utf8');

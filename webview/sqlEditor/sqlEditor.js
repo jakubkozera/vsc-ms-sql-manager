@@ -1319,6 +1319,34 @@ function analyzeSqlContext(textUntilPosition, lineUntilPosition) {
     return { type: 'DEFAULT', confidence: 'low' };
 }
 
+function analyzeWhereContext(textAfterWhere) {
+    // Analyze WHERE clause to determine if we should suggest operators
+    const trimmedText = textAfterWhere.trim();
+    
+    if (!trimmedText) {
+        return false;
+    }
+    
+    const conditions = trimmedText.split(/\s+(?:and|or)\s+/i);
+    const currentCondition = conditions[conditions.length - 1].trim();
+    
+    // Check if current condition has a column/value but no operator yet
+    const columnPatterns = [
+        /^(?:\w+\.)*\w+\s*$/,  // Column name (e.g., "p.Id ", "columnName ")
+        /^['"]\w*$/,  // Starting a string literal
+        /^\d+\.?\d*$/  // Number
+    ];
+    
+    for (const pattern of columnPatterns) {
+        if (pattern.test(currentCondition)) {
+            const hasOperator = /\s*(=|<>|!=|<|>|<=|>=|like|in|not\s+in|is\s+null|is\s+not\s+null|between)\s*/i.test(currentCondition);
+            return !hasOperator;
+        }
+    }
+    
+    return false;
+}
+
 function analyzeHavingContext(textAfterHaving) {
     // Similar to WHERE clause analysis but for HAVING (typically with aggregates)
     const trimmedText = textAfterHaving.trim();
@@ -1790,8 +1818,10 @@ function extractTablesFromQuery(query) {
     const patterns = [
         // Pattern for bracketed identifiers: FROM [schema].[table] alias or FROM [table] alias
         /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi,
-        // Pattern for regular identifiers: FROM schema.table alias or FROM table alias  
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:([a-zA-Z_][a-zA-Z0-9_]*)\\.)?([a-zA-Z_][a-zA-Z0-9_]*)(?:\\s+(?:as\\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi
+        // Pattern for schema.table with alias (must have dot)
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi,
+        // Pattern for just table name with alias (no schema)
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s*$)/gi
     ];
     
     patterns.forEach((pattern, patternIndex) => {
@@ -1801,9 +1831,25 @@ function extractTablesFromQuery(query) {
         let match;
         while ((match = regex.exec(query)) !== null) {
             console.log('[SQL-COMPLETION] Regex match:', match);
-            const schema = match[1] || 'dbo';
-            const table = match[2];
-            let alias = match[3];
+            
+            // Pattern-specific parsing
+            let schema, table, alias;
+            if (patternIndex === 0) {
+                // Bracketed: [schema].[table] or [table]
+                schema = match[1] || 'dbo';
+                table = match[2];
+                alias = match[3];
+            } else if (patternIndex === 1) {
+                // schema.table (with dot)
+                schema = match[1];
+                table = match[2];
+                alias = match[3];
+            } else {
+                // table only (no schema)
+                schema = 'dbo';
+                table = match[1];
+                alias = match[2];
+            }
             
             console.log('[SQL-COMPLETION] Parsed - schema:', schema, 'table:', table, 'alias:', alias);
             
