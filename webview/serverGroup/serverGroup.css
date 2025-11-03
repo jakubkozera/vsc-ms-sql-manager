@@ -78,6 +78,51 @@ textarea {
     color: var(--vscode-foreground);
 }
 
+.icon-option.add-custom-icon {
+    border-style: dashed;
+    opacity: 0.7;
+}
+
+.icon-option.add-custom-icon:hover {
+    opacity: 1;
+}
+
+.custom-icon-option-item {
+    position: relative;
+}
+
+.delete-custom-icon {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--vscode-errorForeground);
+    border: none;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.2s;
+}
+
+.delete-custom-icon svg {
+    width: 12px;
+    height: 12px;
+    stroke: white;
+}
+
+.delete-custom-icon:hover {
+    transform: scale(1.1);
+    background-color: var(--vscode-errorForeground);
+}
+
+.custom-icon-option-item:hover .delete-custom-icon {
+    display: flex;
+}
+
 .color-picker {
     display: grid;
     grid-template-columns: repeat(6, 1fr);

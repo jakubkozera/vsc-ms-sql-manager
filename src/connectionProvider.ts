@@ -7,8 +7,15 @@ export interface ServerGroup {
     id: string;
     name: string;
     description?: string;
-    color: string;
-    iconType?: 'folder' | 'folder-heroicons' | 'vscode-folder';
+    color?: string; // Optional when using custom icon
+    iconType?: 'folder' | 'folder-heroicons' | 'vscode-folder' | 'custom';
+    customIconId?: string; // Reference to saved custom icon
+}
+
+export interface CustomIcon {
+    id: string;
+    name: string;
+    svgContent: string;
 }
 
 export interface ConnectionConfig {
@@ -63,6 +70,54 @@ export class ConnectionProvider {
     // Server Groups management
     getServerGroups(): ServerGroup[] {
         return this.context.globalState.get<ServerGroup[]>('mssqlManager.serverGroups', []);
+    }
+
+    // Custom Icons management
+    getCustomIcons(): CustomIcon[] {
+        return this.context.globalState.get<CustomIcon[]>('mssqlManager.customIcons', []);
+    }
+
+    async saveCustomIcon(icon: CustomIcon): Promise<void> {
+        const icons = this.getCustomIcons();
+        const existingIndex = icons.findIndex(i => i.id === icon.id);
+        
+        if (existingIndex >= 0) {
+            icons[existingIndex] = icon;
+        } else {
+            icons.push(icon);
+        }
+        
+        await this.context.globalState.update('mssqlManager.customIcons', icons);
+        this.outputChannel.appendLine(`Custom icon saved: ${icon.name}`);
+    }
+
+    async deleteCustomIcon(iconId: string): Promise<void> {
+        const icons = this.getCustomIcons();
+        const iconIndex = icons.findIndex(i => i.id === iconId);
+        
+        if (iconIndex === -1) {
+            throw new Error('Custom icon not found');
+        }
+        
+        // Check if any server group is using this icon
+        const groups = this.getServerGroups();
+        const groupsUsingIcon = groups.filter(g => g.customIconId === iconId);
+        
+        if (groupsUsingIcon.length > 0) {
+            // Reset those groups to default icon
+            for (const group of groupsUsingIcon) {
+                group.iconType = 'folder';
+                group.color = group.color || '#0078D4';
+                delete group.customIconId;
+                await this.saveServerGroup(group);
+            }
+        }
+        
+        // Remove the icon
+        icons.splice(iconIndex, 1);
+        await this.context.globalState.update('mssqlManager.customIcons', icons);
+        
+        this.outputChannel.appendLine(`Custom icon deleted: ${iconId} (${groupsUsingIcon.length} group(s) reset to default)`);
     }
 
     async saveServerGroup(group: ServerGroup): Promise<void> {

@@ -111,7 +111,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 if (serverGroup) {
                     const groupConnections = connections.filter(conn => conn.serverGroupId === serverGroup.id);
-                    return new ServerGroupNode(serverGroup, groupConnections.length);
+                    return new ServerGroupNode(serverGroup, groupConnections.length, this.connectionProvider);
                 }
             }
             
@@ -209,7 +209,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 for (const group of serverGroups) {
                     const groupConnections = connections.filter(conn => conn.serverGroupId === group.id);
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Group ${group.name} has ${groupConnections.length} connections: ${JSON.stringify(groupConnections.map(c => c.name))}`);
-                    nodes.push(new ServerGroupNode(group, groupConnections.length));
+                    nodes.push(new ServerGroupNode(group, groupConnections.length, this.connectionProvider));
                 }
                 
                 // Add ungrouped connections
@@ -2016,7 +2016,8 @@ abstract class TreeNode extends vscode.TreeItem {
 export class ServerGroupNode extends TreeNode {
     constructor(
         public readonly group: ServerGroup,
-        public readonly connectionCount: number
+        public readonly connectionCount: number,
+        private connectionProvider?: ConnectionProvider
     ) {
         super(
             group.name,
@@ -2029,7 +2030,23 @@ export class ServerGroupNode extends TreeNode {
         
         // Set colored icon - use theme-aware icons
         const isOpen = this.collapsibleState === vscode.TreeItemCollapsibleState.Expanded;
-        this.iconPath = createServerGroupIcon(group.color, isOpen, group.iconType || 'folder');
+        
+        // Get custom icon SVG if using custom icon
+        let customIconSvg: string | undefined;
+        if (group.iconType === 'custom' && group.customIconId && connectionProvider) {
+            const customIcons = connectionProvider.getCustomIcons();
+            const customIcon = customIcons.find(icon => icon.id === group.customIconId);
+            if (customIcon) {
+                customIconSvg = customIcon.svgContent;
+            }
+        }
+        
+        this.iconPath = createServerGroupIcon(
+            group.color || '#0078D4', 
+            isOpen, 
+            group.iconType || 'folder',
+            customIconSvg
+        );
 
         // Add edit button (VS Code TreeItem button API)
         // Only available in VS Code 1.78+

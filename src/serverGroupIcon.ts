@@ -6,11 +6,17 @@ function createThemedSvgIcon(lightSvg: string, darkSvg: string): { light: vscode
 	return { light: lightUri, dark: darkUri };
 }
 
-export function createServerGroupIcon(color: string, isOpen: boolean = false, iconType: 'folder' | 'folder-heroicons' | 'vscode-folder' = 'folder'): { light: vscode.Uri; dark: vscode.Uri } {
+export function createServerGroupIcon(color: string, isOpen: boolean = false, iconType: 'folder' | 'folder-heroicons' | 'vscode-folder' | 'custom' = 'folder', customIconSvg?: string): { light: vscode.Uri; dark: vscode.Uri } {
     let svgLight: string;
     let svgDark: string;
 
-    if (iconType === 'folder-heroicons') {
+    if (iconType === 'custom' && customIconSvg) {
+        // Use custom SVG content directly
+        // For custom icons, we don't apply color transformation, just use as-is
+        svgLight = customIconSvg;
+        svgDark = customIconSvg;
+        return createThemedSvgIcon(svgLight, svgDark);
+    } else if (iconType === 'folder-heroicons') {
         // Heroicons folder icon
         svgLight = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
