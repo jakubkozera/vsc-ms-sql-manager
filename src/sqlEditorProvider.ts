@@ -149,6 +149,28 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     }
                     break;
 
+                case 'commitChanges':
+                    await this.commitChanges(message.statements, message.connectionId, message.originalQuery, webviewPanel.webview);
+                    break;
+
+                case 'confirmAction':
+                    // Handle confirmation dialogs (since confirm() is blocked in sandboxed webviews)
+                    const result = await vscode.window.showWarningMessage(
+                        message.message,
+                        { modal: true },
+                        'Yes',
+                        'No'
+                    );
+                    
+                    if (result === 'Yes') {
+                        webviewPanel.webview.postMessage({
+                            type: 'confirmActionResult',
+                            action: message.action,
+                            confirmed: true
+                        });
+                    }
+                    break;
+
                 case 'scriptTableCreate':
                     // Forward request to existing scriptTableCreate command. Build a lightweight tableNode
                     try {
@@ -615,7 +637,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 executionTime: executionTime,
                 rowsAffected: result.rowsAffected?.[0] || 0,
                 messages: messages,
-                planXml: planXml
+                planXml: planXml,
+                metadata: result.metadata || [], // Include metadata for editability
+                originalQuery: query // Store original query for UPDATE generation
             });
         } catch (error: any) {
             webview.postMessage({
@@ -729,8 +753,87 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 viewColumn: vscode.ViewColumn.Beside,
                 preview: false
             });
+        } catch (error) {
+            this.outputChannel.appendLine(`Failed to open content in new editor: ${error}`);
+        }
+    }
+
+    private async commitChanges(statements: string[], connectionId: string | null, originalQuery: string, webview: vscode.Webview) {
+        this.outputChannel.appendLine(`[SqlEditorProvider] Committing ${statements.length} changes...`);
+
+        // Resolve connection pool
+        let poolToUse: any = null;
+        if (connectionId && typeof connectionId === 'string' && connectionId.includes('::')) {
+            const [baseId, dbName] = connectionId.split('::');
+            try {
+                poolToUse = await this.connectionProvider.createDbPool(baseId, dbName);
+            } catch (err) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Failed to create DB pool for commit: ${err}`);
+                webview.postMessage({
+                    type: 'error',
+                    error: 'Failed to connect to database',
+                    messages: [{ type: 'error', text: 'Failed to connect to database for committing changes' }]
+                });
+                return;
+            }
+        } else if (connectionId) {
+            poolToUse = this.connectionProvider.getConnection(connectionId) || this.connectionProvider.getConnection();
+        } else {
+            poolToUse = this.connectionProvider.getConnection();
+        }
+
+        if (!poolToUse) {
+            webview.postMessage({
+                type: 'error',
+                error: 'No active connection',
+                messages: [{ type: 'error', text: 'Please connect to a database first' }]
+            });
+            return;
+        }
+
+        try {
+            // Execute all UPDATE statements in a transaction
+            const transactionSql = `
+BEGIN TRANSACTION;
+
+${statements.join('\n')}
+
+COMMIT TRANSACTION;
+            `.trim();
+
+            this.outputChannel.appendLine(`[SqlEditorProvider] Executing transaction:\n${transactionSql}`);
+
+            const result = await this.queryExecutor.executeQuery(transactionSql, poolToUse);
+            
+            this.outputChannel.appendLine(`[SqlEditorProvider] Transaction completed successfully`);
+
+            // Send success message
+            webview.postMessage({
+                type: 'commitSuccess',
+                message: `Successfully committed ${statements.length} change(s)`,
+                messages: [
+                    { type: 'info', text: `Successfully committed ${statements.length} change(s) to the database` }
+                ]
+            });
+
+            // Auto-refresh by re-executing the original query
+            if (originalQuery) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Re-executing original query to refresh results`);
+                await this.executeQuery(originalQuery, connectionId, webview, false);
+            }
+
         } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to open content in editor: ${error.message}`);
+            this.outputChannel.appendLine(`[SqlEditorProvider] Transaction failed: ${error}`);
+            
+            // Send error message
+            webview.postMessage({
+                type: 'error',
+                error: `Failed to commit changes: ${error.message}`,
+                messages: [
+                    { type: 'error', text: `Transaction rolled back: ${error.message}` },
+                    { type: 'info', text: 'No changes were saved to the database' }
+                ]
+            });
         }
     }
 }

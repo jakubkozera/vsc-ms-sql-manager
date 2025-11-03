@@ -14,6 +14,12 @@ let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
 
+// Editable result sets support
+let resultSetMetadata = []; // Metadata for each result set
+let originalQuery = ''; // Original SELECT query for UPDATE generation
+let pendingChanges = new Map(); // Map<resultSetIndex, Array<ChangeRecord>>
+let currentEditingCell = null; // Currently editing cell reference
+
 // Helper function to check if string is valid JSON
 function isValidJSON(str) {
     if (typeof str !== 'string' || !str.trim()) return false;
@@ -724,6 +730,7 @@ document.querySelectorAll('.results-tab').forEach(tab => {
         // Show/hide appropriate container
         const resultsContent = document.getElementById('resultsContent');
         const messagesContent = document.getElementById('messagesContent');
+        const pendingChangesContent = document.getElementById('pendingChangesContent');
         const queryPlanContent = document.getElementById('queryPlanContent');
         const planTreeContent = document.getElementById('planTreeContent');
         const topOperationsContent = document.getElementById('topOperationsContent');
@@ -731,6 +738,7 @@ document.querySelectorAll('.results-tab').forEach(tab => {
         // Hide all
         resultsContent.style.display = 'none';
         messagesContent.style.display = 'none';
+        if (pendingChangesContent) pendingChangesContent.style.display = 'none';
         queryPlanContent.style.display = 'none';
         planTreeContent.style.display = 'none';
         topOperationsContent.style.display = 'none';
@@ -740,6 +748,11 @@ document.querySelectorAll('.results-tab').forEach(tab => {
             resultsContent.style.display = 'block';
         } else if (currentTab === 'messages') {
             messagesContent.style.display = 'block';
+        } else if (currentTab === 'pendingChanges') {
+            if (pendingChangesContent) {
+                pendingChangesContent.style.display = 'block';
+                renderPendingChanges();
+            }
         } else if (currentTab === 'queryPlan') {
             queryPlanContent.style.display = 'block';
         } else if (currentTab === 'planTree') {
@@ -788,6 +801,22 @@ document.addEventListener('mouseup', () => {
 
 function executeQuery() {
     if (!editor) return;
+
+    // Clear pending changes immediately when starting new query
+    pendingChanges.clear();
+    
+    // Hide and clear Pending Changes UI
+    const pendingTab = document.querySelector('[data-tab="pendingChanges"]');
+    const pendingBadge = document.getElementById('pendingChangesCount');
+    const pendingContent = document.getElementById('pendingChangesContent');
+    if (pendingTab) pendingTab.style.display = 'none';
+    if (pendingBadge) pendingBadge.style.display = 'none';
+    if (pendingContent) pendingContent.innerHTML = '';
+    
+    // Remove all cell-modified classes
+    document.querySelectorAll('.cell-modified').forEach(cell => {
+        cell.classList.remove('cell-modified');
+    });
 
     const selection = editor.getSelection();
     let queryText;
@@ -2084,6 +2113,9 @@ window.addEventListener('message', event => {
             break;
 
         case 'results':
+            // Store metadata and original query for editable result sets
+            resultSetMetadata = message.metadata || [];
+            originalQuery = message.originalQuery || '';
             showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages, message.planXml);
             break;
 
@@ -2093,6 +2125,28 @@ window.addEventListener('message', event => {
 
         case 'error':
             showError(message.error, message.messages);
+            break;
+
+        case 'commitSuccess':
+            // Clear pending changes after successful commit
+            pendingChanges.clear();
+            updatePendingChangesCount();
+            
+            // Remove all cell-modified classes
+            document.querySelectorAll('.cell-modified').forEach(cell => {
+                cell.classList.remove('cell-modified');
+            });
+            
+            // Show success message
+            displayMessages([{ type: 'info', text: message.message }]);
+            console.log('[EDIT] Changes committed successfully');
+            break;
+
+        case 'confirmActionResult':
+            // Handle confirmation response from extension
+            if (message.confirmed && message.action === 'revertAll') {
+                executeRevertAll();
+            }
             break;
 
         case 'autoExecuteQuery':
@@ -2351,7 +2405,8 @@ function displayResults(resultSets, planXml) {
         
         // Initialize AG-Grid-like table for this result set
         console.log('[SQL EDITOR] Creating table for result set', index + 1, 'with', results.length, 'rows');
-        initAgGridTable(results, tableContainer, isSingleResultSet);
+        const metadata = resultSetMetadata[index];
+        initAgGridTable(results, tableContainer, isSingleResultSet, index, metadata);
         
         resultSetContainer.appendChild(tableContainer);
         resultsContent.appendChild(resultSetContainer);
@@ -2385,9 +2440,10 @@ function displayResults(resultSets, planXml) {
     console.log('[SQL EDITOR] resultsContent height:', resultsContent?.offsetHeight, 'scrollHeight:', resultsContent?.scrollHeight);
 }
 
-function initAgGridTable(rowData, container, isSingleResultSet = false) {
+function initAgGridTable(rowData, container, isSingleResultSet = false, resultSetIndex = 0, metadata = null) {
     console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows, single result set:', isSingleResultSet);
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
+    console.log('[AG-GRID] Metadata:', metadata);
     
     // Virtual scrolling configuration
     const ROW_HEIGHT = 30; // Fixed row height in pixels
@@ -3309,6 +3365,17 @@ function initAgGridTable(rowData, container, isSingleResultSet = false) {
                     // Update aggregation stats
                     updateAggregationStats();
                 });
+
+                // Add double-click handler for editing (if editable)
+                if (metadata && metadata.isEditable) {
+                    td.addEventListener('dblclick', (e) => {
+                        e.stopPropagation();
+                        enterEditMode(td, row, col, rowIndex, colIndex, data, colDefs, containerEl, resultSetIndex, metadata);
+                    });
+                    // Visual indicator that cell is editable
+                    td.classList.add('editable-cell');
+                    td.style.cursor = 'cell';
+                }
 
                 tr.appendChild(td);
             });
@@ -5053,3 +5120,607 @@ window.sortTopOperations = function(column) {
     // This is a placeholder - in a full implementation, you would re-sort and re-render
     console.log('Sort by:', column);
 };
+
+// ===== EDITABLE RESULT SETS FUNCTIONS =====
+
+/**
+ * Enter edit mode for a cell
+ */
+function enterEditMode(tdElement, rowData, columnDef, rowIndex, columnIndex, data, columnDefs, containerEl, resultSetIndex, metadata) {
+    // Don't allow editing if already editing another cell
+    if (currentEditingCell) {
+        exitEditMode(false);
+    }
+
+    const columnName = columnDef.field;
+    const currentValue = rowData[columnName];
+    
+    // Find column metadata
+    const colMetadata = metadata.columns.find(c => c.name === columnName);
+    if (!colMetadata) {
+        console.log('[EDIT] No metadata found for column', columnName);
+        return;
+    }
+
+    // Don't allow editing identity columns or columns without source table
+    if (colMetadata.isIdentity) {
+        console.warn('Cannot edit identity column:', columnName);
+        return;
+    }
+
+    // Store editing state
+    currentEditingCell = {
+        tdElement,
+        rowData,
+        columnDef,
+        rowIndex,
+        columnIndex,
+        data,
+        columnDefs,
+        containerEl,
+        resultSetIndex,
+        metadata,
+        originalValue: currentValue
+    };
+
+    // Clear cell content and add edit border to cell
+    tdElement.textContent = '';
+    tdElement.style.border = '1px solid rgba(255, 143, 0, 0.5)';
+
+    // Create input element based on column type
+    let inputElement;
+    const colType = colMetadata.type.toLowerCase();
+    
+    // Only use textarea for very long text types, not for regular varchar/char
+    if (colType === 'text' || colType === 'ntext' || colType === 'xml') {
+        // Multi-line text
+        inputElement = document.createElement('textarea');
+        inputElement.rows = 3;
+        inputElement.style.resize = 'vertical';
+    } else {
+        // Single-line input for everything else (including varchar, char, etc.)
+        inputElement = document.createElement('input');
+        inputElement.type = 'text';
+        
+        if (colType.includes('int') || colType.includes('numeric') || colType.includes('decimal') || colType.includes('float') || colType.includes('money')) {
+            inputElement.type = 'text'; // Keep as text for better control
+            inputElement.pattern = '-?[0-9]*\\.?[0-9]*';
+        } else if (colType.includes('date') || colType.includes('time')) {
+            inputElement.type = 'text'; // Keep as text to allow formats like 'NULL'
+        } else if (colType === 'bit') {
+            inputElement.type = 'checkbox';
+            inputElement.checked = currentValue === true || currentValue === 1;
+        }
+    }
+
+    // Style the input to look like normal cell content
+    inputElement.style.width = '100%';
+    inputElement.style.height = '100%';
+    inputElement.style.border = 'none';
+    inputElement.style.outline = 'none';
+    inputElement.style.background = 'transparent';
+    inputElement.style.color = 'inherit';
+    inputElement.style.padding = '0';
+    inputElement.style.margin = '0';
+    inputElement.style.fontFamily = 'inherit';
+    inputElement.style.fontSize = 'inherit';
+    inputElement.style.boxSizing = 'border-box';
+
+    // Set current value (handle NULL)
+    if (inputElement.type !== 'checkbox') {
+        if (currentValue === null || currentValue === undefined) {
+            inputElement.value = '';
+            inputElement.placeholder = 'NULL';
+        } else {
+            inputElement.value = String(currentValue);
+        }
+    }
+
+    // Add to cell
+    tdElement.appendChild(inputElement);
+    inputElement.focus();
+    
+    // Select text for easy replacement
+    if (inputElement.select) {
+        inputElement.select();
+    }
+
+    // Handle keyboard events
+    inputElement.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            exitEditMode(true);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            exitEditMode(false);
+        } else if (e.key === 'Tab') {
+            e.preventDefault();
+            exitEditMode(true);
+            // TODO: Move to next editable cell
+        }
+    });
+
+    // Handle blur (clicking outside)
+    inputElement.addEventListener('blur', () => {
+        setTimeout(() => {
+            if (currentEditingCell && currentEditingCell.tdElement === tdElement) {
+                exitEditMode(true);
+            }
+        }, 100);
+    });
+}
+
+/**
+ * Exit edit mode and optionally save changes
+ */
+function exitEditMode(saveChanges) {
+    if (!currentEditingCell) return;
+
+    const {
+        tdElement,
+        rowData,
+        columnDef,
+        rowIndex,
+        columnIndex,
+        data,
+        columnDefs,
+        containerEl,
+        resultSetIndex,
+        metadata,
+        originalValue
+    } = currentEditingCell;
+
+    const inputElement = tdElement.querySelector('input, textarea');
+    if (!inputElement) {
+        currentEditingCell = null;
+        return;
+    }
+
+    let newValue;
+    if (inputElement.type === 'checkbox') {
+        newValue = inputElement.checked ? 1 : 0;
+    } else {
+        const rawValue = inputElement.value.trim();
+        // Handle NULL
+        if (rawValue === '' || rawValue.toUpperCase() === 'NULL') {
+            newValue = null;
+        } else {
+            newValue = rawValue;
+        }
+    }
+
+    // Remove input and restore cell
+    tdElement.removeChild(inputElement);
+    tdElement.style.border = '';
+
+    if (saveChanges && newValue !== originalValue) {
+        // Value changed - record the change
+        recordChange(resultSetIndex, rowIndex, columnDef.field, originalValue, newValue, rowData, metadata);
+        
+        // Update the data
+        rowData[columnDef.field] = newValue;
+        
+        // Mark cell as modified
+        tdElement.classList.add('cell-modified');
+    }
+
+    // Restore cell display
+    const value = rowData[columnDef.field];
+    if (value === null || value === undefined) {
+        tdElement.textContent = 'NULL';
+        tdElement.style.color = 'var(--vscode-descriptionForeground)';
+        tdElement.style.fontStyle = 'italic';
+    } else if (columnDef.type === 'boolean' || typeof value === 'boolean') {
+        tdElement.textContent = value ? '✓' : '✗';
+        tdElement.style.color = '';
+        tdElement.style.fontStyle = '';
+    } else if (columnDef.type === 'number' || typeof value === 'number') {
+        tdElement.textContent = typeof value === 'number' ? value.toLocaleString() : value;
+        tdElement.style.textAlign = 'right';
+        tdElement.style.color = '';
+        tdElement.style.fontStyle = '';
+    } else {
+        tdElement.textContent = String(value);
+        tdElement.style.color = '';
+        tdElement.style.fontStyle = '';
+    }
+
+    currentEditingCell = null;
+}
+
+/**
+ * Record a cell change in pending changes
+ */
+function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, rowData, metadata) {
+    console.log('[EDIT] Recording change:', { resultSetIndex, rowIndex, columnName, oldValue, newValue });
+
+    // Get or create change list for this result set
+    if (!pendingChanges.has(resultSetIndex)) {
+        pendingChanges.set(resultSetIndex, []);
+    }
+    const changes = pendingChanges.get(resultSetIndex);
+
+    // Find column metadata first to know the source table
+    const colMetadata = metadata.columns.find(c => c.name === columnName);
+    
+    if (!colMetadata || !colMetadata.sourceTable) {
+        console.error('[EDIT] Cannot record change - no source table for column:', columnName);
+        return;
+    }
+
+    // Extract primary key values for WHERE clause - only for the source table of this column
+    const primaryKeyValues = {};
+    metadata.primaryKeyColumns.forEach(pkCol => {
+        // Find the column metadata for this primary key
+        const pkColMetadata = metadata.columns.find(c => c.name === pkCol);
+        
+        // Only include primary keys that belong to the same table as the edited column
+        if (pkColMetadata && 
+            pkColMetadata.sourceTable === colMetadata.sourceTable && 
+            pkColMetadata.sourceSchema === colMetadata.sourceSchema) {
+            primaryKeyValues[pkCol] = rowData[pkCol];
+        }
+    });
+
+    // Check if we already have a change for this cell
+    const existingChangeIndex = changes.findIndex(
+        c => c.rowIndex === rowIndex && c.columnName === columnName
+    );
+
+    const changeRecord = {
+        rowIndex,
+        columnName,
+        oldValue: existingChangeIndex >= 0 ? changes[existingChangeIndex].oldValue : oldValue,
+        newValue,
+        primaryKeyValues,
+        sourceTable: colMetadata?.sourceTable,
+        sourceSchema: colMetadata?.sourceSchema,
+        sourceColumn: colMetadata?.sourceColumn || columnName
+    };
+
+    if (existingChangeIndex >= 0) {
+        // Update existing change
+        if (changeRecord.oldValue === newValue) {
+            // Value reverted to original - remove change
+            changes.splice(existingChangeIndex, 1);
+            console.log('[EDIT] Change reverted to original, removed from pending');
+        } else {
+            // Update with new value
+            changes[existingChangeIndex] = changeRecord;
+            console.log('[EDIT] Updated existing change');
+        }
+    } else {
+        // Add new change
+        changes.push(changeRecord);
+        console.log('[EDIT] Added new change to pending');
+    }
+
+    // Update pending changes tab badge
+    updatePendingChangesCount();
+}
+
+/**
+ * Update the pending changes count badge
+ */
+function updatePendingChangesCount() {
+    let totalChanges = 0;
+    pendingChanges.forEach(changes => {
+        totalChanges += changes.length;
+    });
+
+    console.log('[EDIT] Total pending changes:', totalChanges);
+
+    // Update tab badge
+    const badge = document.getElementById('pendingChangesCount');
+    const tab = document.querySelector('[data-tab="pendingChanges"]');
+    
+    if (badge) {
+        badge.textContent = totalChanges;
+        badge.style.display = totalChanges > 0 ? 'inline-block' : 'none';
+    }
+    
+    if (tab) {
+        if (totalChanges > 0) {
+            tab.style.display = '';
+        } else {
+            tab.style.display = 'none';
+            // If currently viewing pending changes tab, switch to results
+            if (currentTab === 'pendingChanges') {
+                switchTab('results');
+            }
+        }
+    }
+    
+    // Re-render pending changes panel if it's visible
+    if (currentTab === 'pendingChanges') {
+        renderPendingChanges();
+    }
+}
+
+/**
+ * Render the pending changes panel
+ */
+function updatePendingChangesCount() {
+    const badge = document.getElementById('pendingChangesCount');
+    const tab = document.querySelector('[data-tab="pendingChanges"]');
+    
+    if (badge && tab) {
+        const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+        badge.textContent = totalChanges;
+        badge.style.display = totalChanges > 0 ? 'inline-block' : 'none';
+        
+        // Show/hide the entire Pending Changes tab
+        if (totalChanges > 0) {
+            tab.style.display = '';
+        } else {
+            tab.style.display = 'none';
+            // If currently viewing pending changes tab, switch to results
+            const currentTabContent = document.querySelector('.tab-content[style*="display: block"], .tab-content[style=""]');
+            if (currentTabContent && currentTabContent.id === 'pendingChangesContent') {
+                switchTab('results');
+            }
+        }
+    }
+}
+
+function renderPendingChanges() {
+    const container = document.getElementById('pendingChangesContent');
+    if (!container) return;
+
+    const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+
+    // Update badge count
+    updatePendingChangesCount();
+
+    if (totalChanges === 0) {
+        container.innerHTML = '<div class="no-pending-changes">No pending changes</div>';
+        return;
+    }
+
+    let html = `
+        <div class="pending-changes-header">
+            <div class="pending-changes-title">${totalChanges} Pending Change${totalChanges !== 1 ? 's' : ''}</div>
+            <div class="pending-changes-actions">
+                <button onclick="previewUpdateStatements()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6" /></svg>
+                    Preview SQL
+                </button>
+                <button class="secondary" onclick="revertAllChanges()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>
+                    Revert All
+                </button>
+                <button onclick="commitAllChanges()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12l5 5l10 -10" /></svg>
+                    Commit All
+                </button>
+            </div>
+        </div>
+        <div class="pending-changes-list">
+    `;
+
+    pendingChanges.forEach((changes, resultSetIndex) => {
+        const metadata = resultSetMetadata[resultSetIndex];
+        
+        changes.forEach((change, changeIndex) => {
+            const { rowIndex, columnName, oldValue, newValue, sourceTable, sourceSchema } = change;
+            
+            const tableName = sourceSchema ? `${sourceSchema}.${sourceTable}` : sourceTable;
+            const oldDisplay = oldValue === null || oldValue === undefined ? 'NULL' : String(oldValue);
+            const newDisplay = newValue === null || newValue === undefined ? 'NULL' : String(newValue);
+            
+            let sql = '';
+            try {
+                sql = generateUpdateStatement(change, metadata);
+            } catch (error) {
+                sql = `-- Error: ${error.message}`;
+            }
+            
+            html += `
+                <div class="change-item">
+                    <div class="change-header">
+                        <div class="change-location">${tableName}.${columnName} (Row ${rowIndex + 1})</div>
+                        <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                    </div>
+                    <div class="change-details">
+                        <div class="change-label">Old value:</div>
+                        <div class="change-value change-value-old">${escapeHtml(oldDisplay)}</div>
+                        <div class="change-label">New value:</div>
+                        <div class="change-value change-value-new">${escapeHtml(newDisplay)}</div>
+                    </div>
+                    <div class="change-sql">${escapeHtml(sql)}</div>
+                </div>
+            `;
+        });
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+/**
+ * Revert a single change
+ */
+function revertChange(resultSetIndex, changeIndex) {
+    const changes = pendingChanges.get(resultSetIndex);
+    if (!changes || changeIndex >= changes.length) return;
+
+    // Remove the change
+    changes.splice(changeIndex, 1);
+    
+    // If no more changes for this result set, remove the key
+    if (changes.length === 0) {
+        pendingChanges.delete(resultSetIndex);
+    }
+    
+    // Update UI - refresh the pending changes panel
+    renderPendingChanges();
+}
+
+/**
+ * Escape HTML for safe display
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
+ * Switch to a specific tab
+ */
+function switchTab(tabName) {
+    const tab = document.querySelector(`[data-tab="${tabName}"]`);
+    if (tab) {
+        tab.click();
+    }
+}
+
+/**
+ * Generate UPDATE statement for a change
+ */
+function generateUpdateStatement(change, metadata) {
+    const { columnName, newValue, primaryKeyValues, sourceTable, sourceSchema, sourceColumn } = change;
+
+    if (!sourceTable) {
+        throw new Error(`Cannot generate UPDATE: column '${columnName}' has no source table`);
+    }
+
+    const fullTableName = sourceSchema ? `[${sourceSchema}].[${sourceTable}]` : `[${sourceTable}]`;
+    
+    // Build SET clause with proper escaping
+    const setClause = `[${sourceColumn}] = ${sqlEscape(newValue)}`;
+    
+    // Build WHERE clause with primary keys
+    const whereConditions = Object.entries(primaryKeyValues).map(([pkCol, pkValue]) => {
+        return `[${pkCol}] = ${sqlEscape(pkValue)}`;
+    }).join(' AND ');
+
+    if (!whereConditions) {
+        throw new Error('Cannot generate UPDATE: no primary key values');
+    }
+
+    return `UPDATE ${fullTableName} SET ${setClause} WHERE ${whereConditions};`;
+}
+
+/**
+ * SQL escape value for use in queries
+ */
+function sqlEscape(value) {
+    if (value === null || value === undefined) {
+        return 'NULL';
+    }
+    
+    if (typeof value === 'number') {
+        return String(value);
+    }
+    
+    if (typeof value === 'boolean') {
+        return value ? '1' : '0';
+    }
+    
+    // String - escape single quotes and wrap in quotes
+    const strValue = String(value);
+    return `'${strValue.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Commit all pending changes to database
+ */
+function commitAllChanges() {
+    if (pendingChanges.size === 0) {
+        console.log('No pending changes to commit');
+        return;
+    }
+
+    // Generate all UPDATE statements
+    const updateStatements = [];
+    
+    try {
+        pendingChanges.forEach((changes, resultSetIndex) => {
+            const metadata = resultSetMetadata[resultSetIndex];
+            
+            changes.forEach(change => {
+                const sql = generateUpdateStatement(change, metadata);
+                updateStatements.push(sql);
+            });
+        });
+
+        // Send to extension for execution in transaction
+        let connectionId = currentConnectionId;
+        if (currentConnectionId && currentDatabaseName) {
+            connectionId = `${currentConnectionId}::${currentDatabaseName}`;
+        }
+
+        vscode.postMessage({
+            type: 'commitChanges',
+            statements: updateStatements,
+            connectionId: connectionId,
+            originalQuery: originalQuery
+        });
+
+    } catch (error) {
+        console.error('Failed to generate UPDATE statements:', error);
+    }
+}
+
+/**
+ * Revert all pending changes
+ */
+function revertAllChanges() {
+    if (pendingChanges.size === 0) {
+        return;
+    }
+
+    const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+    
+    // Use vscode modal instead of confirm (which is blocked in sandboxed webview)
+    vscode.postMessage({
+        type: 'confirmAction',
+        message: `Revert all ${totalChanges} pending changes?`,
+        action: 'revertAll'
+    });
+}
+
+function executeRevertAll() {
+    // Clear pending changes
+    pendingChanges.clear();
+    
+    // Remove all cell-modified classes
+    document.querySelectorAll('.cell-modified').forEach(cell => {
+        cell.classList.remove('cell-modified');
+    });
+    
+    // Update UI
+    updatePendingChangesCount();
+    renderPendingChanges();
+}
+
+/**
+ * Show preview of UPDATE statements
+ */
+function previewUpdateStatements() {
+    if (pendingChanges.size === 0) {
+        return;
+    }
+
+    try {
+        const updateStatements = [];
+        
+        pendingChanges.forEach((changes, resultSetIndex) => {
+            const metadata = resultSetMetadata[resultSetIndex];
+            
+            changes.forEach(change => {
+                const sql = generateUpdateStatement(change, metadata);
+                updateStatements.push(sql);
+            });
+        });
+
+        // Open in new editor
+        const sqlContent = `-- Generated UPDATE statements\n-- ${updateStatements.length} statement(s)\n\nBEGIN TRANSACTION;\n\n${updateStatements.join('\n\n')}\n\nCOMMIT TRANSACTION;\n-- ROLLBACK TRANSACTION;`;
+        
+        openInNewEditor(sqlContent, 'sql');
+
+    } catch (error) {
+        console.error('Failed to generate preview:', error);
+    }
+}
