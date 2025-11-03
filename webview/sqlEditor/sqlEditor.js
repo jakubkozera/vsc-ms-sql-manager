@@ -2270,6 +2270,37 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     // Always update both containers
     displayResults(resultSets, planXml);
     displayMessages(messages);
+    
+    // Determine which tab to show by default
+    // If there are no result sets (queries like UPDATE, DELETE, INSERT), show Messages tab
+    // Otherwise, show Results tab
+    const hasResultSets = resultSets && resultSets.length > 0 && resultSets.some(rs => rs && rs.length > 0);
+    
+    if (!hasResultSets) {
+        // Switch to Messages tab for queries without result sets
+        document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.results-tab[data-tab="messages"]').classList.add('active');
+        currentTab = 'messages';
+        
+        // Show messages content, hide others
+        document.getElementById('resultsContent').style.display = 'none';
+        document.getElementById('messagesContent').style.display = 'block';
+        document.getElementById('queryPlanContent').style.display = 'none';
+        document.getElementById('planTreeContent').style.display = 'none';
+        document.getElementById('topOperationsContent').style.display = 'none';
+    } else {
+        // Switch to Results tab for queries with result sets
+        document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
+        currentTab = 'results';
+        
+        // Show results content, hide others
+        document.getElementById('resultsContent').style.display = 'block';
+        document.getElementById('messagesContent').style.display = 'none';
+        document.getElementById('queryPlanContent').style.display = 'none';
+        document.getElementById('planTreeContent').style.display = 'none';
+        document.getElementById('topOperationsContent').style.display = 'none';
+    }
 }
 
 function displayResults(resultSets, planXml) {
