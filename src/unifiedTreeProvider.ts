@@ -2029,7 +2029,7 @@ export class ServerGroupNode extends TreeNode {
         
         // Set colored icon - use theme-aware icons
         const isOpen = this.collapsibleState === vscode.TreeItemCollapsibleState.Expanded;
-        this.iconPath = createServerGroupIcon(group.color, isOpen);
+        this.iconPath = createServerGroupIcon(group.color, isOpen, group.iconType || 'folder');
 
         // Add edit button (VS Code TreeItem button API)
         // Only available in VS Code 1.78+

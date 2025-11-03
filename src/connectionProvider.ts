@@ -8,6 +8,7 @@ export interface ServerGroup {
     name: string;
     description?: string;
     color: string;
+    iconType?: 'folder' | 'folder-heroicons' | 'vscode-folder';
 }
 
 export interface ConnectionConfig {
