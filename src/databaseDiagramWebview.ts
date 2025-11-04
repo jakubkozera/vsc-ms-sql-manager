@@ -189,6 +189,7 @@ export class DatabaseDiagramWebview {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Database Diagram - ${database}</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -442,6 +443,12 @@ export class DatabaseDiagramWebview {
             document.body.innerHTML = '<div style="color: white; padding: 20px;">Error: D3.js library failed to load</div>';
         }
 
+        // Check if dagre is loaded
+        if (typeof dagre === 'undefined') {
+            console.error('Dagre.js is not loaded!');
+            document.body.innerHTML = '<div style="color: white; padding: 20px;">Error: Dagre.js library failed to load</div>';
+        }
+
         if (!tables || tables.length === 0) {
             console.warn('No tables to display');
             document.body.innerHTML = '<div style="color: white; padding: 20px;">No tables found in database</div>';
@@ -484,17 +491,50 @@ export class DatabaseDiagramWebview {
         const headerHeight = 40;
         const rowHeight = 25;
 
-        // Calculate positions for tables (simple grid layout)
-        const cols = Math.ceil(Math.sqrt(tables.length));
-        const xSpacing = tableWidth + 100;
-        const ySpacing = 300;
-
-        tables.forEach((table, i) => {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            table.x = 100 + col * xSpacing;
-            table.y = 100 + row * ySpacing;
+        // Calculate table heights
+        tables.forEach((table) => {
             table.height = headerHeight + table.columns.length * rowHeight;
+            table.width = tableWidth;
+        });
+
+        // Use Dagre for automatic layout
+        const g = new dagre.graphlib.Graph();
+        g.setGraph({
+            rankdir: 'TB', // Top to Bottom
+            nodesep: 80,   // Horizontal spacing between nodes
+            ranksep: 100,  // Vertical spacing between ranks
+            marginx: 50,
+            marginy: 50
+        });
+        g.setDefaultEdgeLabel(() => ({}));
+
+        // Add nodes (tables) to graph
+        tables.forEach(table => {
+            const tableKey = \`\${table.schema}.\${table.name}\`;
+            g.setNode(tableKey, {
+                label: tableKey,
+                width: table.width,
+                height: table.height
+            });
+        });
+
+        // Add edges (relationships) to graph
+        relationships.forEach(rel => {
+            g.setEdge(rel.from, rel.to);
+        });
+
+        // Run Dagre layout algorithm
+        dagre.layout(g);
+
+        // Apply calculated positions to tables
+        tables.forEach(table => {
+            const tableKey = \`\${table.schema}.\${table.name}\`;
+            const node = g.node(tableKey);
+            if (node) {
+                // Dagre gives us the center position, convert to top-left
+                table.x = node.x - table.width / 2;
+                table.y = node.y - table.height / 2;
+            }
         });
 
         // Create table map for relationship drawing
@@ -708,26 +748,71 @@ export class DatabaseDiagramWebview {
 
                 if (fromTable && toTable && fromTable.visible && toTable.visible) {
                     // Get Y positions for specific columns
-                    const y1 = getColumnYPosition(fromTable, rel.fromColumn);
-                    const y2 = getColumnYPosition(toTable, rel.toColumn);
+                    const fromY = getColumnYPosition(fromTable, rel.fromColumn);
+                    const toY = getColumnYPosition(toTable, rel.toColumn);
                     
-                    // X positions at the edges of tables
-                    const x1 = fromTable.x + tableWidth;
-                    const x2 = toTable.x;
+                    // Determine connection points based on relative positions
+                    let x1, y1, x2, y2;
                     
-                    const midX = (x1 + x2) / 2;
+                    // Check if tables are horizontally aligned or vertically aligned
+                    const horizontalDistance = Math.abs((fromTable.x + fromTable.width / 2) - (toTable.x + toTable.width / 2));
+                    const verticalDistance = Math.abs((fromTable.y + fromTable.height / 2) - (toTable.y + toTable.height / 2));
                     
-                    relationshipGroup.append('path')
-                        .attr('class', 'relationship-line')
-                        .attr('d', \`M \${x1},\${y1} C \${midX},\${y1} \${midX},\${y2} \${x2},\${y2}\`)
-                        .append('title')
-                        .text(\`\${rel.name}: \${rel.fromColumn} → \${rel.toColumn}\`);
+                    if (horizontalDistance > verticalDistance) {
+                        // Horizontal layout - connect from right/left edges
+                        if (fromTable.x < toTable.x) {
+                            // From is left of To
+                            x1 = fromTable.x + tableWidth;
+                            x2 = toTable.x;
+                        } else {
+                            // From is right of To
+                            x1 = fromTable.x;
+                            x2 = toTable.x + tableWidth;
+                        }
+                        y1 = fromY;
+                        y2 = toY;
+                        
+                        // Bezier curve for horizontal connections
+                        const midX = (x1 + x2) / 2;
+                        relationshipGroup.append('path')
+                            .attr('class', 'relationship-line')
+                            .attr('d', \`M \${x1},\${y1} C \${midX},\${y1} \${midX},\${y2} \${x2},\${y2}\`)
+                            .append('title')
+                            .text(\`\${rel.name}: \${rel.fromColumn} → \${rel.toColumn}\`);
+                    } else {
+                        // Vertical layout - connect from top/bottom edges
+                        if (fromTable.y < toTable.y) {
+                            // From is above To
+                            y1 = fromTable.y + fromTable.height;
+                            y2 = toTable.y;
+                        } else {
+                            // From is below To
+                            y1 = fromTable.y;
+                            y2 = toTable.y + toTable.height;
+                        }
+                        
+                        // X position based on column position within table
+                        const fromColIndex = fromTable.columns.findIndex(c => c.name === rel.fromColumn);
+                        const toColIndex = toTable.columns.findIndex(c => c.name === rel.toColumn);
+                        
+                        x1 = fromTable.x + tableWidth / 2;
+                        x2 = toTable.x + tableWidth / 2;
+                        
+                        // Bezier curve for vertical connections
+                        const midY = (y1 + y2) / 2;
+                        relationshipGroup.append('path')
+                            .attr('class', 'relationship-line')
+                            .attr('d', \`M \${x1},\${y1} C \${x1},\${midY} \${x2},\${midY} \${x2},\${y2}\`)
+                            .append('title')
+                            .text(\`\${rel.name}: \${rel.fromColumn} → \${rel.toColumn}\`);
+                    }
                 }
             });
         }
 
         function resetZoom() {
-            svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+            // Instead of just resetting to identity, fit to the current visible tables
+            fitToScreen();
         }
 
         function fitToScreen() {
@@ -749,7 +834,8 @@ export class DatabaseDiagramWebview {
                     return;
                 }
 
-                const scale = 0.9 / Math.max(fullWidth / width, fullHeight / height);
+                // Calculate scale with some padding (0.85 instead of 0.9 for more breathing room)
+                const scale = 0.85 / Math.max(fullWidth / width, fullHeight / height);
                 const translate = [width / 2 - scale * midX, height / 2 - scale * midY];
 
                 svg.transition().duration(750).call(
@@ -789,30 +875,115 @@ export class DatabaseDiagramWebview {
 
         function selectAllTables() {
             const checkboxes = document.querySelectorAll('.filter-item:not(.hidden) input[type="checkbox"]');
+            let changed = false;
+            
             checkboxes.forEach(cb => {
                 if (!cb.checked) {
                     cb.checked = true;
-                    cb.onchange();
+                    // Update visibility directly
+                    const label = cb.nextElementSibling;
+                    if (label) {
+                        const tableKey = label.textContent;
+                        const table = tableMap.get(tableKey);
+                        if (table) {
+                            table.visible = true;
+                            changed = true;
+                        }
+                    }
                 }
             });
+            
+            if (changed) {
+                recalculateLayout();
+                redrawDiagram();
+            }
         }
 
         function deselectAllTables() {
             const checkboxes = document.querySelectorAll('.filter-item:not(.hidden) input[type="checkbox"]');
+            let changed = false;
+            
             checkboxes.forEach(cb => {
                 if (cb.checked) {
                     cb.checked = false;
-                    cb.onchange();
+                    // Update visibility directly
+                    const label = cb.nextElementSibling;
+                    if (label) {
+                        const tableKey = label.textContent;
+                        const table = tableMap.get(tableKey);
+                        if (table) {
+                            table.visible = false;
+                            changed = true;
+                        }
+                    }
                 }
             });
+            
+            if (changed) {
+                recalculateLayout();
+                redrawDiagram();
+            }
         }
 
         function toggleTableVisibility(tableKey, visible) {
             const table = tableMap.get(tableKey);
             if (table) {
                 table.visible = visible;
+                recalculateLayout();
                 redrawDiagram();
             }
+        }
+
+        function recalculateLayout() {
+            // Filter visible tables
+            const visibleTables = tables.filter(t => t.visible);
+            
+            if (visibleTables.length === 0) {
+                return;
+            }
+
+            // Create new Dagre graph for visible tables only
+            const g = new dagre.graphlib.Graph();
+            g.setGraph({
+                rankdir: 'TB',
+                nodesep: 80,
+                ranksep: 100,
+                marginx: 50,
+                marginy: 50
+            });
+            g.setDefaultEdgeLabel(() => ({}));
+
+            // Add only visible nodes
+            visibleTables.forEach(table => {
+                const tableKey = \`\${table.schema}.\${table.name}\`;
+                g.setNode(tableKey, {
+                    label: tableKey,
+                    width: table.width,
+                    height: table.height
+                });
+            });
+
+            // Add only edges between visible tables
+            relationships.forEach(rel => {
+                const fromTable = tableMap.get(rel.from);
+                const toTable = tableMap.get(rel.to);
+                if (fromTable && toTable && fromTable.visible && toTable.visible) {
+                    g.setEdge(rel.from, rel.to);
+                }
+            });
+
+            // Run Dagre layout
+            dagre.layout(g);
+
+            // Apply new positions
+            visibleTables.forEach(table => {
+                const tableKey = \`\${table.schema}.\${table.name}\`;
+                const node = g.node(tableKey);
+                if (node) {
+                    table.x = node.x - table.width / 2;
+                    table.y = node.y - table.height / 2;
+                }
+            });
         }
 
         function redrawDiagram() {
