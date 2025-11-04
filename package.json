@@ -119,6 +119,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "mssqlManager.refreshNode",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "mssqlManager.newStoredProcedure",
         "title": "New Stored Procedure...",
         "icon": "$(add)"
@@ -497,6 +502,11 @@
           "group": "2_manage@3"
         },
         {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "3_refresh@1"
+        },
+        {
           "command": "mssqlManager.editServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@1"
@@ -565,6 +575,31 @@
           "command": "mssqlManager.copyConnectionString",
           "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
           "group": "2_manage@3"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "3_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "2_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem == tables",
+          "group": "9_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem == views",
+          "group": "9_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem == programmability",
+          "group": "9_refresh@1"
         },
         {
           "command": "mssqlManager.selectTop1000",
@@ -674,6 +709,10 @@
         },
         {
           "command": "mssqlManager.refreshTable",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
           "when": "false"
         },
         {

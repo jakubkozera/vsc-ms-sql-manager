@@ -24,6 +24,10 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         this._onDidChangeFileDecorations.fire(undefined as any);
     }
 
+    refreshNode(node?: TreeNode): void {
+        this._onDidChangeTreeData.fire(node);
+    }
+
     // Drag and drop implementation
     public async handleDrag(source: TreeNode[], dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
         // Allow dragging ConnectionNode and ServerConnectionNode items
@@ -520,6 +524,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 );
                 tablesNode.connectionId = connectionId;
                 tablesNode.database = database;
+                tablesNode.contextValue = 'tables';
                 items.push(tablesNode);
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables for database ${database}`);
             }
@@ -545,6 +550,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 );
                 viewsNode.connectionId = connectionId;
                 viewsNode.database = database;
+                viewsNode.contextValue = 'views';
                 items.push(viewsNode);
             }
             
@@ -557,6 +563,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             );
             programmabilityNode.connectionId = connectionId;
             programmabilityNode.database = database;
+            programmabilityNode.contextValue = 'programmability';
             items.push(programmabilityNode);
             
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Total schema items created for database ${database}: ${items.length}`);

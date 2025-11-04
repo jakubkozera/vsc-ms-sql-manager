@@ -25,6 +25,11 @@ export function registerAllCommands(
         unifiedTreeProvider.refresh();
     });
 
+    const refreshNodeCommand = vscode.commands.registerCommand('mssqlManager.refreshNode', (node?: any) => {
+        outputChannel.appendLine(`[Extension] Refreshing node: ${node?.label || 'root'}`);
+        unifiedTreeProvider.refreshNode(node);
+    });
+
     const connectionCommands = registerConnectionCommands(
         context,
         connectionProvider,
@@ -55,6 +60,7 @@ export function registerAllCommands(
 
     const allCommands = [
         refreshCommand,
+        refreshNodeCommand,
         ...connectionCommands,
         ...queryCommands,
         ...tableCommands,
