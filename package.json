@@ -269,6 +269,11 @@
         "command": "mssqlManager.filterTables",
         "title": "Filter Tables...",
         "icon": "$(filter)"
+      },
+      {
+        "command": "mssqlManager.showDatabaseDiagram",
+        "title": "Diagram",
+        "icon": "$(type-hierarchy)"
       }
     ],
     "viewsContainers": {
@@ -512,6 +517,11 @@
           "group": "2_manage@3"
         },
         {
+          "command": "mssqlManager.showDatabaseDiagram",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "2_manage@4"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
           "group": "3_refresh@1"
@@ -592,9 +602,19 @@
           "group": "2_manage@3"
         },
         {
+          "command": "mssqlManager.showDatabaseDiagram",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "2_manage@4"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
           "group": "3_refresh@1"
+        },
+        {
+          "command": "mssqlManager.showDatabaseDiagram",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@3"
         },
         {
           "command": "mssqlManager.refreshNode",
@@ -845,6 +865,10 @@
         },
         {
           "command": "mssqlManager.filterTables",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.showDatabaseDiagram",
           "when": "false"
         }
       ]
