@@ -478,6 +478,85 @@ export function registerConnectionCommands(
         }
     });
 
+    const filterDatabasesCommand = vscode.commands.registerCommand('mssqlManager.filterDatabases', async (serverConnectionNode?: any) => {
+        try {
+            if (!serverConnectionNode || !serverConnectionNode.connectionId) {
+                vscode.window.showErrorMessage('Invalid server connection item');
+                return;
+            }
+
+            const connectionId = serverConnectionNode.connectionId;
+            const connections = await connectionProvider.getSavedConnectionsList();
+            const connection = connections.find(c => c.id === connectionId);
+
+            if (!connection) {
+                vscode.window.showErrorMessage('Connection not found');
+                return;
+            }
+
+            // Use require to load the module
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { DatabaseFilterWebview } = require('../databaseFilterWebview');
+            
+            const existingFilter = connectionProvider.getDatabaseFilter(connectionId);
+            const filterWebview = new DatabaseFilterWebview(
+                context,
+                async (filter: any) => {
+                    await connectionProvider.setDatabaseFilter(connectionId, filter);
+                    unifiedTreeProvider.refresh();
+                },
+                connection.server,
+                existingFilter
+            );
+
+            await filterWebview.show();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to open database filter: ${errorMessage}`);
+            outputChannel.appendLine(`Filter databases failed: ${errorMessage}`);
+        }
+    });
+
+    const filterTablesCommand = vscode.commands.registerCommand('mssqlManager.filterTables', async (tablesNode?: any) => {
+        try {
+            if (!tablesNode || !tablesNode.connectionId || !tablesNode.database) {
+                vscode.window.showErrorMessage('Invalid tables node');
+                return;
+            }
+
+            const connectionId = tablesNode.connectionId;
+            const database = tablesNode.database;
+            const connections = await connectionProvider.getSavedConnectionsList();
+            const connection = connections.find(c => c.id === connectionId);
+
+            if (!connection) {
+                vscode.window.showErrorMessage('Connection not found');
+                return;
+            }
+
+            // Use require to load the module
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { TableFilterWebview } = require('../tableFilterWebview');
+            
+            const existingFilter = connectionProvider.getTableFilter(connectionId, database);
+            const filterWebview = new TableFilterWebview(
+                context,
+                async (filter: any) => {
+                    await connectionProvider.setTableFilter(connectionId, database, filter);
+                    unifiedTreeProvider.refresh();
+                },
+                `${connection.server} - ${database}`,
+                existingFilter
+            );
+
+            await filterWebview.show();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to open table filter: ${errorMessage}`);
+            outputChannel.appendLine(`Filter tables failed: ${errorMessage}`);
+        }
+    });
+
     return [
         connectCommand,
         disconnectCommand,
@@ -491,7 +570,9 @@ export function registerConnectionCommands(
         editServerGroupCommand,
         deleteServerGroupCommand,
         debugConnectionsCommand,
-        newQueryCommand
-        , revealInExplorerCommand
+        newQueryCommand,
+        revealInExplorerCommand,
+        filterDatabasesCommand,
+        filterTablesCommand
     ];
 }

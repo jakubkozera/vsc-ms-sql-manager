@@ -18,6 +18,27 @@ export interface CustomIcon {
     svgContent: string;
 }
 
+export interface TableFilter {
+    name?: { operator: string; value: string };
+    schema?: { operator: string; value: string };
+    owner?: { operator: string; value: string };
+}
+
+export interface DatabaseFilter {
+    name?: {
+        operator: string;
+        value: string;
+    };
+    state?: {
+        operator: string;
+        value: string;
+    };
+    collation?: {
+        operator: string;
+        value: string;
+    };
+}
+
 export interface ConnectionConfig {
     id: string;
     name: string;
@@ -45,11 +66,19 @@ export class ConnectionProvider {
     private pendingConnections: Set<string> = new Set();
     // Preferred database for next editor (temporary, cleared after use)
     private nextEditorPreferredDatabase: { connectionId: string; database: string } | null = null;
+    // Database filters per connection (keyed by connectionId)
+    private databaseFilters: Map<string, DatabaseFilter> = new Map();
+    // Table filters per database (keyed by `${connectionId}::${database}`)
+    private tableFilters: Map<string, TableFilter> = new Map();
 
     constructor(
         private context: vscode.ExtensionContext,
         private outputChannel: vscode.OutputChannel,
-    ) {}
+    ) {
+        // Load saved filters
+        this.loadDatabaseFilters();
+        this.loadTableFilters();
+    }
 
     addConnectionChangeCallback(callback: () => void): void {
         this.outputChannel.appendLine('[ConnectionProvider] Adding connection change callback');
@@ -992,6 +1021,75 @@ export class ConnectionProvider {
         this.outputChannel.appendLine(
             `[ConnectionProvider] Moved connection ${connection.name} to ${targetServerGroupId ? 'group ' + targetServerGroupId : 'root level'}`
         );
+    }
+
+    // Database filters management
+    private loadDatabaseFilters(): void {
+        const filters = this.context.globalState.get<Record<string, DatabaseFilter>>('mssqlManager.databaseFilters', {});
+        this.databaseFilters = new Map(Object.entries(filters));
+        this.outputChannel.appendLine(`[ConnectionProvider] Loaded ${this.databaseFilters.size} database filters`);
+    }
+
+    private async saveDatabaseFilters(): Promise<void> {
+        const filtersObject = Object.fromEntries(this.databaseFilters);
+        await this.context.globalState.update('mssqlManager.databaseFilters', filtersObject);
+        this.outputChannel.appendLine(`[ConnectionProvider] Saved ${this.databaseFilters.size} database filters`);
+    }
+
+    getDatabaseFilter(connectionId: string): DatabaseFilter | undefined {
+        return this.databaseFilters.get(connectionId);
+    }
+
+    async setDatabaseFilter(connectionId: string, filter: DatabaseFilter | null): Promise<void> {
+        if (filter === null) {
+            this.databaseFilters.delete(connectionId);
+            this.outputChannel.appendLine(`[ConnectionProvider] Cleared database filter for connection ${connectionId}`);
+        } else {
+            this.databaseFilters.set(connectionId, filter);
+            this.outputChannel.appendLine(`[ConnectionProvider] Set database filter for connection ${connectionId}`);
+        }
+        await this.saveDatabaseFilters();
+        this.notifyConnectionChanged();
+    }
+
+    hasDatabaseFilter(connectionId: string): boolean {
+        return this.databaseFilters.has(connectionId);
+    }
+
+    // Table filters management
+    private loadTableFilters(): void {
+        const filters = this.context.globalState.get<Record<string, TableFilter>>('mssqlManager.tableFilters', {});
+        this.tableFilters = new Map(Object.entries(filters));
+        this.outputChannel.appendLine(`[ConnectionProvider] Loaded ${this.tableFilters.size} table filters`);
+    }
+
+    private async saveTableFilters(): Promise<void> {
+        const filtersObject = Object.fromEntries(this.tableFilters);
+        await this.context.globalState.update('mssqlManager.tableFilters', filtersObject);
+        this.outputChannel.appendLine(`[ConnectionProvider] Saved ${this.tableFilters.size} table filters`);
+    }
+
+    getTableFilter(connectionId: string, database: string): TableFilter | undefined {
+        const key = `${connectionId}::${database}`;
+        return this.tableFilters.get(key);
+    }
+
+    async setTableFilter(connectionId: string, database: string, filter: TableFilter | null): Promise<void> {
+        const key = `${connectionId}::${database}`;
+        if (filter === null) {
+            this.tableFilters.delete(key);
+            this.outputChannel.appendLine(`[ConnectionProvider] Cleared table filter for ${key}`);
+        } else {
+            this.tableFilters.set(key, filter);
+            this.outputChannel.appendLine(`[ConnectionProvider] Set table filter for ${key}`);
+        }
+        await this.saveTableFilters();
+        this.notifyConnectionChanged();
+    }
+
+    hasTableFilter(connectionId: string, database: string): boolean {
+        const key = `${connectionId}::${database}`;
+        return this.tableFilters.has(key);
     }
 
 }

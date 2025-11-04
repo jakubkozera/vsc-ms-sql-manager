@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+    <title>Table Filter Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--vscode-editor-background, #1e1e1e);
+            color: var(--vscode-foreground, #cccccc);
+            font-size: 13px;
+            padding: 0;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .filter-panel {
+            background-color: var(--vscode-sideBar-background, #252526);
+            border: 1px solid var(--vscode-panel-border, #3c3c3c);
+            width: 800px;
+            max-width: 90vw;
+            border-radius: 4px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .filter-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+            font-weight: 600;
+            color: var(--vscode-foreground, #cccccc);
+        }
+
+        .filter-path {
+            padding: 8px 16px;
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground, #999999);
+            border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+        }
+
+        .filter-table {
+            padding: 16px;
+        }
+
+        .filter-row {
+            display: grid;
+            grid-template-columns: 150px 200px 1fr 40px;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .filter-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .property-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--vscode-foreground, #cccccc);
+            font-size: 13px;
+        }
+
+        .info-icon {
+            width: 14px;
+            height: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: help;
+            opacity: 0.7;
+            color: var(--vscode-foreground, #cccccc);
+        }
+
+        .info-icon svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .dropdown {
+            position: relative;
+        }
+
+        .dropdown-button {
+            width: 100%;
+            padding: 4px 28px 4px 8px;
+            background-color: var(--vscode-dropdown-background, #3c3c3c);
+            color: var(--vscode-dropdown-foreground, #cccccc);
+            border: 1px solid var(--vscode-dropdown-border, #3c3c3c);
+            border-radius: 2px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 13px;
+            position: relative;
+            height: 26px;
+        }
+
+        .dropdown-button:hover {
+            background-color: var(--vscode-dropdown-listBackground, #454545);
+        }
+
+        .dropdown-button:focus {
+            outline: 1px solid var(--vscode-focusBorder, #007acc);
+            outline-offset: -1px;
+        }
+
+        .dropdown-button::after {
+            content: '▼';
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 8px;
+            color: var(--vscode-foreground, #cccccc);
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--vscode-dropdown-listBackground, #3c3c3c);
+            border: 1px solid var(--vscode-dropdown-border, #3c3c3c);
+            border-radius: 2px;
+            margin-top: 2px;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .dropdown-menu.open {
+            display: block;
+        }
+
+        .dropdown-item {
+            padding: 6px 8px;
+            cursor: pointer;
+            color: var(--vscode-dropdown-foreground, #cccccc);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dropdown-item:hover {
+            background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+        }
+
+        .dropdown-item.selected {
+            background-color: var(--vscode-list-activeSelectionBackground, #094771);
+        }
+
+        .dropdown-item::before {
+            content: '✓';
+            width: 14px;
+            opacity: 0;
+            font-size: 12px;
+        }
+
+        .dropdown-item.selected::before {
+            opacity: 1;
+        }
+
+        .input-field {
+            padding: 4px 8px;
+            background-color: var(--vscode-input-background, #3c3c3c);
+            color: var(--vscode-input-foreground, #cccccc);
+            border: 1px solid var(--vscode-input-border, #3c3c3c);
+            border-radius: 2px;
+            font-size: 13px;
+            height: 26px;
+        }
+
+        .input-field:focus {
+            outline: 1px solid var(--vscode-focusBorder, #007acc);
+            outline-offset: -1px;
+        }
+
+        .input-field::placeholder {
+            color: var(--vscode-input-placeholderForeground, #767676);
+        }
+
+        .clear-button {
+            width: 24px;
+            height: 24px;
+            background: transparent;
+            border: none;
+            color: var(--vscode-foreground, #cccccc);
+            cursor: pointer;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.7;
+        }
+
+        .clear-button:hover {
+            background-color: var(--vscode-toolbar-hoverBackground, #2a2d2e);
+            opacity: 1;
+        }
+
+        .clear-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 8px;
+            padding: 16px;
+            border-top: 1px solid var(--vscode-panel-border, #3c3c3c);
+        }
+
+        .button {
+            padding: 6px 14px;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 13px;
+            border: 1px solid transparent;
+            transition: background-color 0.1s;
+        }
+
+        .button-secondary {
+            background-color: var(--vscode-button-secondaryBackground, #3c3c3c);
+            color: var(--vscode-button-secondaryForeground, #cccccc);
+            border-color: var(--vscode-button-secondaryBackground, #3c3c3c);
+        }
+
+        .button-secondary:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground, #454545);
+        }
+
+        .button-primary {
+            background-color: var(--vscode-button-background, #0e639c);
+            color: var(--vscode-button-foreground, #ffffff);
+        }
+
+        .button-primary:hover {
+            background-color: var(--vscode-button-hoverBackground, #1177bb);
+        }
+
+        .button:focus {
+            outline: 1px solid var(--vscode-focusBorder, #007acc);
+            outline-offset: -1px;
+        }
+
+        .button svg {
+            width: 16px;
+            height: 16px;
+            margin-right: 6px;
+        }
+
+        .button-with-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .table-header {
+            display: grid;
+            grid-template-columns: 150px 200px 1fr 40px;
+            gap: 12px;
+            padding: 0 16px 8px;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--vscode-descriptionForeground, #999999);
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="filter-panel">
+        <div class="filter-header">Table Filter Settings</div>
+        <div class="filter-path" id="filter-path">Path: Loading...</div>
+
+        <div class="table-header">
+            <div>Property</div>
+            <div>Operator</div>
+            <div>Value</div>
+            <div>Clear</div>
+        </div>
+
+        <div class="filter-table">
+            <div class="filter-row">
+                <div class="property-label">
+                    Name <span class="info-icon" title="Filter tables by name. Use Contains, Starts With, Ends With, or Equals operators to match table names (including schema prefix if specified).">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+                            <path d="M12 9h.01" />
+                            <path d="M11 12h1v4h1" />
+                        </svg>
+                    </span>
+                </div>
+                <div class="dropdown" data-property="name-operator">
+                    <button class="dropdown-button" onclick="toggleDropdown(this)">
+                        Contains
+                    </button>
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item selected" onclick="selectOperator(this, 'Contains')">Contains</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Contains')">Not Contains</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Starts With')">Starts With</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Starts With')">Not Starts With
+                        </div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Ends With')">Ends With</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Ends With')">Not Ends With</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Equals')">Equals</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Equals')">Not Equals</div>
+                    </div>
+                </div>
+                <input type="text" class="input-field" id="name-value" placeholder="">
+                <button class="clear-button" onclick="clearField('name-value')" title="Clear">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14z" />
+                        <path d="M9 9l6 6m0 -6l-6 6" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="filter-row">
+                <div class="property-label">
+                    Schema <span class="info-icon" title="Filter tables by schema name. Common schemas include dbo (default), sys (system), INFORMATION_SCHEMA, or custom schemas created in your database.">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+                            <path d="M12 9h.01" />
+                            <path d="M11 12h1v4h1" />
+                        </svg>
+                    </span>
+                </div>
+                <div class="dropdown" data-property="schema-operator">
+                    <button class="dropdown-button" onclick="toggleDropdown(this)">
+                        Equals
+                    </button>
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item selected" onclick="selectOperator(this, 'Equals')">Equals</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Equals')">Not Equals</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Contains')">Contains</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Contains')">Not Contains</div>
+                    </div>
+                </div>
+                <input type="text" class="input-field" id="schema-value" placeholder="e.g., dbo">
+                <button class="clear-button" onclick="clearField('schema-value')" title="Clear">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14z" />
+                        <path d="M9 9l6 6m0 -6l-6 6" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="filter-row">
+                <div class="property-label">
+                    Owner <span class="info-icon" title="Filter tables by owner. The owner is typically the user or role that created the table or was assigned ownership. Common owners include dbo, sa, or specific database users.">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+                            <path d="M12 9h.01" />
+                            <path d="M11 12h1v4h1" />
+                        </svg>
+                    </span>
+                </div>
+                <div class="dropdown" data-property="owner-operator">
+                    <button class="dropdown-button" onclick="toggleDropdown(this)">
+                        Contains
+                    </button>
+                    <div class="dropdown-menu">
+                        <div class="dropdown-item selected" onclick="selectOperator(this, 'Contains')">Contains</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Contains')">Not Contains</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Equals')">Equals</div>
+                        <div class="dropdown-item" onclick="selectOperator(this, 'Not Equals')">Not Equals</div>
+                    </div>
+                </div>
+                <input type="text" class="input-field" id="owner-value" placeholder="">
+                <button class="clear-button" onclick="clearField('owner-value')" title="Clear">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14z" />
+                        <path d="M9 9l6 6m0 -6l-6 6" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="filter-actions">
+            <button class="button button-secondary button-with-icon" onclick="clearAll()">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" />
+                    <path
+                        d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" />
+                    <path d="M4.012 16.737a2 2 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" />
+                    <path d="M11.5 11.5l4.9 5" />
+                    <path d="M16.5 11.5l-5.1 5" />
+                </svg>
+                Clear All
+            </button>
+            <button class="button button-secondary" onclick="closePanel()">Close</button>
+            <button class="button button-primary" onclick="applyFilters()">OK</button>
+        </div>
+    </div>
+
+    <script>
+        const vscode = acquireVsCodeApi();
+        
+        // Load initial state
+        window.addEventListener('message', event => {
+            const message = event.data;
+            switch (message.command) {
+                case 'init':
+                    // Set path
+                    document.getElementById('filter-path').textContent = `Path: ${message.path}`;
+                    
+                    // Load existing filters if any
+                    if (message.filters) {
+                        loadFilters(message.filters);
+                    }
+                    break;
+            }
+        });
+
+        function loadFilters(filters) {
+            if (filters.name) {
+                document.getElementById('name-value').value = filters.name.value || '';
+                setOperator('name-operator', filters.name.operator);
+            }
+            if (filters.schema) {
+                document.getElementById('schema-value').value = filters.schema.value || '';
+                setOperator('schema-operator', filters.schema.operator);
+            }
+            if (filters.owner) {
+                document.getElementById('owner-value').value = filters.owner.value || '';
+                setOperator('owner-operator', filters.owner.operator);
+            }
+        }
+
+        function setOperator(propertyName, operatorValue) {
+            const dropdown = document.querySelector(`[data-property="${propertyName}"]`);
+            if (dropdown) {
+                const button = dropdown.querySelector('.dropdown-button');
+                const items = dropdown.querySelectorAll('.dropdown-item');
+                
+                items.forEach(item => {
+                    item.classList.remove('selected');
+                    if (item.textContent === operatorValue) {
+                        item.classList.add('selected');
+                        button.textContent = operatorValue;
+                    }
+                });
+            }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown')) {
+                document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                    menu.classList.remove('open');
+                });
+            }
+        });
+
+        function toggleDropdown(button) {
+            const dropdown = button.parentElement;
+            const menu = dropdown.querySelector('.dropdown-menu');
+            const isOpen = menu.classList.contains('open');
+
+            // Close all other dropdowns
+            document.querySelectorAll('.dropdown-menu').forEach(m => {
+                m.classList.remove('open');
+            });
+
+            // Toggle current dropdown
+            if (!isOpen) {
+                menu.classList.add('open');
+            }
+        }
+
+        function selectOperator(item, value) {
+            const menu = item.parentElement;
+            const button = menu.previousElementSibling;
+
+            // Remove selected from all items
+            menu.querySelectorAll('.dropdown-item').forEach(i => {
+                i.classList.remove('selected');
+            });
+
+            // Add selected to clicked item
+            item.classList.add('selected');
+
+            // Update button text
+            button.textContent = value;
+
+            // Close menu
+            menu.classList.remove('open');
+        }
+
+        function clearField(fieldId) {
+            document.getElementById(fieldId).value = '';
+        }
+
+        function clearAll() {
+            document.querySelectorAll('.input-field').forEach(input => {
+                input.value = '';
+            });
+            
+            // Send clear message
+            vscode.postMessage({
+                command: 'clearFilters'
+            });
+        }
+
+        function closePanel() {
+            vscode.postMessage({
+                command: 'close'
+            });
+        }
+
+        function applyFilters() {
+            const filters = {
+                name: {
+                    operator: document.querySelector('[data-property="name-operator"] .dropdown-item.selected').textContent,
+                    value: document.getElementById('name-value').value
+                },
+                schema: {
+                    operator: document.querySelector('[data-property="schema-operator"] .dropdown-item.selected').textContent,
+                    value: document.getElementById('schema-value').value
+                },
+                owner: {
+                    operator: document.querySelector('[data-property="owner-operator"] .dropdown-item.selected').textContent,
+                    value: document.getElementById('owner-value').value
+                }
+            };
+
+            vscode.postMessage({
+                command: 'applyFilters',
+                filters: filters
+            });
+        }
+    </script>
+</body>
+
+</html>

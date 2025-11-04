@@ -136,7 +136,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         connection.id,
                         connection.authType || 'sql',
                         this.connectionProvider.isConnectionActive(connection.id),
-                        this.connectionProvider.isConnectionPending(connection.id)
+                        this.connectionProvider.isConnectionPending(connection.id),
+                        this.connectionProvider.hasDatabaseFilter(connection.id)
                     );
                 }
             }
@@ -227,7 +228,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                             conn.id,
                             conn.authType || 'sql',
                             this.connectionProvider.isConnectionActive(conn.id),
-                            this.connectionProvider.isConnectionPending(conn.id)
+                            this.connectionProvider.isConnectionPending(conn.id),
+                            this.connectionProvider.hasDatabaseFilter(conn.id)
                         ));
                     } else {
                         nodes.push(new ConnectionNode(
@@ -265,7 +267,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                             conn.id,
                             conn.authType || 'sql',
                             this.connectionProvider.isConnectionActive(conn.id),
-                            this.connectionProvider.isConnectionPending(conn.id)
+                            this.connectionProvider.isConnectionPending(conn.id),
+                            this.connectionProvider.hasDatabaseFilter(conn.id)
                         );
                     } else {
                         return new ConnectionNode(
@@ -382,10 +385,19 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             const databasesRequest = connection.request();
             const databasesResult = await databasesRequest.query(databasesQuery);
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${databasesResult.recordset.length} databases`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${databasesResult.recordset.length} databases before filtering`);
+            
+            // Apply database filter if exists
+            const filter = this.connectionProvider.getDatabaseFilter(connectionId);
+            let filteredDatabases = databasesResult.recordset;
+            
+            if (filter) {
+                filteredDatabases = this.applyDatabaseFilter(databasesResult.recordset, filter);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Filtered down to ${filteredDatabases.length} databases`);
+            }
             
             // Add each database as a DatabaseNode
-            for (const db of databasesResult.recordset) {
+            for (const db of filteredDatabases) {
                 const databaseNode = new DatabaseNode(
                     db.name,
                     connectionId,
@@ -516,8 +528,14 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             
             // Add a single "Tables" node instead of one per schema
             if (tablesResult.recordset.length > 0) {
+                // Check if table filter is active
+                const hasTableFilter = this.connectionProvider.hasTableFilter(connectionId, database);
+                const tablesLabel = hasTableFilter 
+                    ? `Tables (${tablesResult.recordset.length}) (filtered)`
+                    : `Tables (${tablesResult.recordset.length})`;
+                
                 const tablesNode = new SchemaItemNode(
-                    `Tables (${tablesResult.recordset.length})`,
+                    tablesLabel,
                     'tables',
                     'all', // Use 'all' to indicate all schemas
                     vscode.TreeItemCollapsibleState.Collapsed
@@ -526,7 +544,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 tablesNode.database = database;
                 tablesNode.contextValue = 'tables';
                 items.push(tablesNode);
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables for database ${database}`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables for database ${database}${hasTableFilter ? ' (filtered)' : ''}`);
             }
             
             // Get views - now using current database context
@@ -622,6 +640,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         SELECT 
                             t.TABLE_SCHEMA,
                             t.TABLE_NAME,
+                            USER_NAME(st.principal_id) AS TABLE_OWNER,
                             p.rows AS row_count,
                             SUM(a.total_pages) * 8 / 1024.0 AS size_mb
                         FROM INFORMATION_SCHEMA.TABLES t
@@ -631,14 +650,18 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
                         WHERE t.TABLE_TYPE = 'BASE TABLE'
                             AND i.index_id <= 1
-                        GROUP BY t.TABLE_SCHEMA, t.TABLE_NAME, p.rows
+                        GROUP BY t.TABLE_SCHEMA, t.TABLE_NAME, st.principal_id, p.rows
                         ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
                     `;
                 } else {
                     // Load only table names without statistics
                     query = `
-                        SELECT TABLE_NAME, TABLE_SCHEMA 
-                        FROM INFORMATION_SCHEMA.TABLES 
+                        SELECT 
+                            TABLE_NAME, 
+                            TABLE_SCHEMA,
+                            USER_NAME(st.principal_id) AS TABLE_OWNER
+                        FROM INFORMATION_SCHEMA.TABLES t
+                        INNER JOIN sys.tables st ON t.TABLE_NAME = st.name AND t.TABLE_SCHEMA = SCHEMA_NAME(st.schema_id)
                         WHERE TABLE_TYPE = 'BASE TABLE'
                         ORDER BY TABLE_SCHEMA, TABLE_NAME
                     `;
@@ -646,9 +669,17 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 const result = await dbPoolForElement.request().query(query);
                 
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} tables to display in database ${element.database || 'current'}`);
+                // Apply table filter if exists
+                const tableFilter = this.connectionProvider.getTableFilter(element.connectionId!, element.database || 'master');
+                let filteredTables = result.recordset;
+                if (tableFilter && Object.keys(tableFilter).length > 0) {
+                    filteredTables = this.applyTableFilter(result.recordset, tableFilter);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Applied table filter - ${filteredTables.length}/${result.recordset.length} tables match`);
+                } else {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} tables to display in database ${element.database || 'current'}`);
+                }
                 
-                return result.recordset.map((table: any) => {
+                return filteredTables.map((table: any) => {
                     const tableNode = new SchemaItemNode(
                         `${table.TABLE_SCHEMA}.${table.TABLE_NAME}`, // Simple format: schema.tableName
                         'table',
@@ -2007,6 +2038,192 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             return [];
         }
     }
+
+    private applyDatabaseFilter(databases: any[], filter: any): any[] {
+        return databases.filter(db => {
+            // Filter by name
+            if (filter.name && filter.name.value) {
+                const nameValue = filter.name.value.toLowerCase();
+                const dbName = db.name.toLowerCase();
+                const operator = filter.name.operator;
+
+                switch (operator) {
+                    case 'Contains':
+                        if (!dbName.includes(nameValue)) { return false; }
+                        break;
+                    case 'Not Contains':
+                        if (dbName.includes(nameValue)) { return false; }
+                        break;
+                    case 'Starts With':
+                        if (!dbName.startsWith(nameValue)) { return false; }
+                        break;
+                    case 'Not Starts With':
+                        if (dbName.startsWith(nameValue)) { return false; }
+                        break;
+                    case 'Ends With':
+                        if (!dbName.endsWith(nameValue)) { return false; }
+                        break;
+                    case 'Not Ends With':
+                        if (dbName.endsWith(nameValue)) { return false; }
+                        break;
+                    case 'Equals':
+                        if (dbName !== nameValue) { return false; }
+                        break;
+                    case 'Not Equals':
+                        if (dbName === nameValue) { return false; }
+                        break;
+                }
+            }
+
+            // Filter by state
+            if (filter.state && filter.state.value) {
+                const stateValue = filter.state.value.toLowerCase();
+                const dbState = (db.state_desc || '').toLowerCase();
+                const operator = filter.state.operator;
+
+                switch (operator) {
+                    case 'Equals':
+                        if (dbState !== stateValue) { return false; }
+                        break;
+                    case 'Not Equals':
+                        if (dbState === stateValue) { return false; }
+                        break;
+                }
+            }
+
+            // Filter by collation
+            if (filter.collation && filter.collation.value) {
+                const collationValue = filter.collation.value.toLowerCase();
+                const dbCollation = (db.collation_name || '').toLowerCase();
+                const operator = filter.collation.operator;
+
+                switch (operator) {
+                    case 'Contains':
+                        if (!dbCollation.includes(collationValue)) { return false; }
+                        break;
+                    case 'Not Contains':
+                        if (dbCollation.includes(collationValue)) { return false; }
+                        break;
+                    case 'Equals':
+                        if (dbCollation !== collationValue) { return false; }
+                        break;
+                    case 'Not Equals':
+                        if (dbCollation === collationValue) { return false; }
+                        break;
+                }
+            }
+
+            return true;
+        });
+    }
+
+    private applyTableFilter(tables: any[], filter: any): any[] {
+        return tables.filter(table => {
+            // Filter by name
+            if (filter.name && filter.name.value) {
+                const nameValue = filter.name.value.toLowerCase();
+                const tableName = table.TABLE_NAME.toLowerCase();
+                const operator = filter.name.operator;
+
+                switch (operator) {
+                    case 'Contains':
+                        if (!tableName.includes(nameValue)) { return false; }
+                        break;
+                    case 'Not Contains':
+                        if (tableName.includes(nameValue)) { return false; }
+                        break;
+                    case 'Starts With':
+                        if (!tableName.startsWith(nameValue)) { return false; }
+                        break;
+                    case 'Not Starts With':
+                        if (tableName.startsWith(nameValue)) { return false; }
+                        break;
+                    case 'Ends With':
+                        if (!tableName.endsWith(nameValue)) { return false; }
+                        break;
+                    case 'Not Ends With':
+                        if (tableName.endsWith(nameValue)) { return false; }
+                        break;
+                    case 'Equals':
+                        if (tableName !== nameValue) { return false; }
+                        break;
+                    case 'Not Equals':
+                        if (tableName === nameValue) { return false; }
+                        break;
+                }
+            }
+
+            // Filter by schema
+            if (filter.schema && filter.schema.value) {
+                const schemaValue = filter.schema.value.toLowerCase();
+                const tableSchema = (table.TABLE_SCHEMA || '').toLowerCase();
+                const operator = filter.schema.operator;
+
+                switch (operator) {
+                    case 'Contains':
+                        if (!tableSchema.includes(schemaValue)) { return false; }
+                        break;
+                    case 'Not Contains':
+                        if (tableSchema.includes(schemaValue)) { return false; }
+                        break;
+                    case 'Starts With':
+                        if (!tableSchema.startsWith(schemaValue)) { return false; }
+                        break;
+                    case 'Not Starts With':
+                        if (tableSchema.startsWith(schemaValue)) { return false; }
+                        break;
+                    case 'Ends With':
+                        if (!tableSchema.endsWith(schemaValue)) { return false; }
+                        break;
+                    case 'Not Ends With':
+                        if (tableSchema.endsWith(schemaValue)) { return false; }
+                        break;
+                    case 'Equals':
+                        if (tableSchema !== schemaValue) { return false; }
+                        break;
+                    case 'Not Equals':
+                        if (tableSchema === schemaValue) { return false; }
+                        break;
+                }
+            }
+
+            // Filter by owner
+            if (filter.owner && filter.owner.value) {
+                const ownerValue = filter.owner.value.toLowerCase();
+                const tableOwner = (table.TABLE_OWNER || '').toLowerCase();
+                const operator = filter.owner.operator;
+
+                switch (operator) {
+                    case 'Contains':
+                        if (!tableOwner.includes(ownerValue)) { return false; }
+                        break;
+                    case 'Not Contains':
+                        if (tableOwner.includes(ownerValue)) { return false; }
+                        break;
+                    case 'Starts With':
+                        if (!tableOwner.startsWith(ownerValue)) { return false; }
+                        break;
+                    case 'Not Starts With':
+                        if (tableOwner.startsWith(ownerValue)) { return false; }
+                        break;
+                    case 'Ends With':
+                        if (!tableOwner.endsWith(ownerValue)) { return false; }
+                        break;
+                    case 'Not Ends With':
+                        if (tableOwner.endsWith(ownerValue)) { return false; }
+                        break;
+                    case 'Equals':
+                        if (tableOwner !== ownerValue) { return false; }
+                        break;
+                    case 'Not Equals':
+                        if (tableOwner === ownerValue) { return false; }
+                        break;
+                }
+            }
+
+            return true;
+        });
+    }
 }
 
 // Base class for tree nodes
@@ -2081,7 +2298,8 @@ export class ServerConnectionNode extends TreeNode {
         public readonly connectionId: string,
         public readonly authType: string,
         public readonly isActive: boolean,
-        isPending: boolean = false
+        isPending: boolean = false,
+        public readonly hasFilter: boolean = false
     ) {
         // Determine collapsible state - Expanded when active, Collapsed otherwise
         const collapsibleState = isActive 
@@ -2094,8 +2312,8 @@ export class ServerConnectionNode extends TreeNode {
         );
         
         this.isPending = isPending;
-        this.description = `${server} (Server)`;
-        this.tooltip = `Server: ${server}\nAuth: ${authType}${isActive ? '\n(Active)' : isPending ? '\n(Connecting...)' : ''}\nConnection Type: Server`;
+        this.description = `${server} (Server)${hasFilter ? ' (filtered)' : ''}`;
+        this.tooltip = `Server: ${server}\nAuth: ${authType}${isActive ? '\n(Active)' : isPending ? '\n(Connecting...)' : ''}${hasFilter ? '\n(Filtered)' : ''}\nConnection Type: Server`;
         // Set contextValue based on connection state
         this.contextValue = isActive ? 'serverConnectionActive' : 'serverConnectionInactive';
         
