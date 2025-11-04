@@ -751,61 +751,30 @@ export class DatabaseDiagramWebview {
                     const fromY = getColumnYPosition(fromTable, rel.fromColumn);
                     const toY = getColumnYPosition(toTable, rel.toColumn);
                     
-                    // Determine connection points based on relative positions
+                    // Always connect from sides (left/right edges)
                     let x1, y1, x2, y2;
                     
-                    // Check if tables are horizontally aligned or vertically aligned
-                    const horizontalDistance = Math.abs((fromTable.x + fromTable.width / 2) - (toTable.x + toTable.width / 2));
-                    const verticalDistance = Math.abs((fromTable.y + fromTable.height / 2) - (toTable.y + toTable.height / 2));
-                    
-                    if (horizontalDistance > verticalDistance) {
-                        // Horizontal layout - connect from right/left edges
-                        if (fromTable.x < toTable.x) {
-                            // From is left of To
-                            x1 = fromTable.x + tableWidth;
-                            x2 = toTable.x;
-                        } else {
-                            // From is right of To
-                            x1 = fromTable.x;
-                            x2 = toTable.x + tableWidth;
-                        }
-                        y1 = fromY;
-                        y2 = toY;
-                        
-                        // Bezier curve for horizontal connections
-                        const midX = (x1 + x2) / 2;
-                        relationshipGroup.append('path')
-                            .attr('class', 'relationship-line')
-                            .attr('d', \`M \${x1},\${y1} C \${midX},\${y1} \${midX},\${y2} \${x2},\${y2}\`)
-                            .append('title')
-                            .text(\`\${rel.name}: \${rel.fromColumn} → \${rel.toColumn}\`);
+                    // Determine which side to connect from based on relative X positions
+                    if (fromTable.x < toTable.x) {
+                        // From is left of To - connect from right edge of From to left edge of To
+                        x1 = fromTable.x + tableWidth;
+                        x2 = toTable.x;
                     } else {
-                        // Vertical layout - connect from top/bottom edges
-                        if (fromTable.y < toTable.y) {
-                            // From is above To
-                            y1 = fromTable.y + fromTable.height;
-                            y2 = toTable.y;
-                        } else {
-                            // From is below To
-                            y1 = fromTable.y;
-                            y2 = toTable.y + toTable.height;
-                        }
-                        
-                        // X position based on column position within table
-                        const fromColIndex = fromTable.columns.findIndex(c => c.name === rel.fromColumn);
-                        const toColIndex = toTable.columns.findIndex(c => c.name === rel.toColumn);
-                        
-                        x1 = fromTable.x + tableWidth / 2;
-                        x2 = toTable.x + tableWidth / 2;
-                        
-                        // Bezier curve for vertical connections
-                        const midY = (y1 + y2) / 2;
-                        relationshipGroup.append('path')
-                            .attr('class', 'relationship-line')
-                            .attr('d', \`M \${x1},\${y1} C \${x1},\${midY} \${x2},\${midY} \${x2},\${y2}\`)
-                            .append('title')
-                            .text(\`\${rel.name}: \${rel.fromColumn} → \${rel.toColumn}\`);
+                        // From is right of To - connect from left edge of From to right edge of To
+                        x1 = fromTable.x;
+                        x2 = toTable.x + tableWidth;
                     }
+                    
+                    y1 = fromY;
+                    y2 = toY;
+                    
+                    // Bezier curve for smooth connections
+                    const midX = (x1 + x2) / 2;
+                    relationshipGroup.append('path')
+                        .attr('class', 'relationship-line')
+                        .attr('d', \`M \${x1},\${y1} C \${midX},\${y1} \${midX},\${y2} \${x2},\${y2}\`)
+                        .append('title')
+                        .text(\`\${rel.name}: \${rel.fromColumn} → \${rel.toColumn}\`);
                 }
             });
         }
