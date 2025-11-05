@@ -8,7 +8,7 @@ export function registerDatabaseCommands(
     outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
     
-    const diagramWebview = new DatabaseDiagramWebview(connectionProvider, outputChannel);
+    const diagramWebview = new DatabaseDiagramWebview(connectionProvider, outputChannel, context);
 
     const showDatabaseDiagram = vscode.commands.registerCommand(
         'mssqlManager.showDatabaseDiagram',
