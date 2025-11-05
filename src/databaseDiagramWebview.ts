@@ -1183,6 +1183,40 @@ export class DatabaseDiagramWebview {
                 console.log('[Export] SVG element found, cloning...');
                 const svgClone = svgElement.cloneNode(true);
                 
+                // Get computed styles and apply them inline
+                console.log('[Export] Applying computed styles...');
+                const applyComputedStyles = (original, clone) => {
+                    const origElements = original.querySelectorAll('*');
+                    const cloneElements = clone.querySelectorAll('*');
+                    
+                    for (let i = 0; i < origElements.length; i++) {
+                        const origEl = origElements[i];
+                        const cloneEl = cloneElements[i];
+                        const computedStyle = window.getComputedStyle(origEl);
+                        
+                        // Apply relevant styles inline
+                        if (cloneEl.tagName === 'rect') {
+                            cloneEl.setAttribute('fill', computedStyle.fill);
+                            cloneEl.setAttribute('stroke', computedStyle.stroke);
+                            cloneEl.setAttribute('stroke-width', computedStyle.strokeWidth);
+                        } else if (cloneEl.tagName === 'text') {
+                            cloneEl.setAttribute('fill', computedStyle.fill);
+                            cloneEl.setAttribute('font-family', computedStyle.fontFamily);
+                            cloneEl.setAttribute('font-size', computedStyle.fontSize);
+                            cloneEl.setAttribute('font-weight', computedStyle.fontWeight);
+                        } else if (cloneEl.tagName === 'path') {
+                            cloneEl.setAttribute('stroke', computedStyle.stroke);
+                            cloneEl.setAttribute('stroke-width', computedStyle.strokeWidth);
+                            cloneEl.setAttribute('fill', computedStyle.fill);
+                            if (computedStyle.strokeDasharray !== 'none') {
+                                cloneEl.setAttribute('stroke-dasharray', computedStyle.strokeDasharray);
+                            }
+                        }
+                    }
+                };
+                
+                applyComputedStyles(svgElement, svgClone);
+                
                 // Get the bounding box of visible content
                 const bounds = container.node().getBBox();
                 
@@ -1190,6 +1224,15 @@ export class DatabaseDiagramWebview {
                 svgClone.setAttribute('viewBox', \`\${bounds.x - 20} \${bounds.y - 20} \${bounds.width + 40} \${bounds.height + 40}\`);
                 svgClone.setAttribute('width', bounds.width + 40);
                 svgClone.setAttribute('height', bounds.height + 40);
+                
+                // Add background
+                const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                bgRect.setAttribute('x', bounds.x - 20);
+                bgRect.setAttribute('y', bounds.y - 20);
+                bgRect.setAttribute('width', bounds.width + 40);
+                bgRect.setAttribute('height', bounds.height + 40);
+                bgRect.setAttribute('fill', '#1e1e1e');
+                svgClone.insertBefore(bgRect, svgClone.firstChild);
                 
                 // Serialize to string
                 console.log('[Export] Serializing SVG...');
@@ -1239,6 +1282,40 @@ export class DatabaseDiagramWebview {
                 console.log('[Export] SVG element found, cloning...');
                 const svgClone = svgElement.cloneNode(true);
                 
+                // Get computed styles and apply them inline (same as SVG export)
+                console.log('[Export] Applying computed styles...');
+                const applyComputedStyles = (original, clone) => {
+                    const origElements = original.querySelectorAll('*');
+                    const cloneElements = clone.querySelectorAll('*');
+                    
+                    for (let i = 0; i < origElements.length; i++) {
+                        const origEl = origElements[i];
+                        const cloneEl = cloneElements[i];
+                        const computedStyle = window.getComputedStyle(origEl);
+                        
+                        // Apply relevant styles inline
+                        if (cloneEl.tagName === 'rect') {
+                            cloneEl.setAttribute('fill', computedStyle.fill);
+                            cloneEl.setAttribute('stroke', computedStyle.stroke);
+                            cloneEl.setAttribute('stroke-width', computedStyle.strokeWidth);
+                        } else if (cloneEl.tagName === 'text') {
+                            cloneEl.setAttribute('fill', computedStyle.fill);
+                            cloneEl.setAttribute('font-family', computedStyle.fontFamily);
+                            cloneEl.setAttribute('font-size', computedStyle.fontSize);
+                            cloneEl.setAttribute('font-weight', computedStyle.fontWeight);
+                        } else if (cloneEl.tagName === 'path') {
+                            cloneEl.setAttribute('stroke', computedStyle.stroke);
+                            cloneEl.setAttribute('stroke-width', computedStyle.strokeWidth);
+                            cloneEl.setAttribute('fill', computedStyle.fill);
+                            if (computedStyle.strokeDasharray !== 'none') {
+                                cloneEl.setAttribute('stroke-dasharray', computedStyle.strokeDasharray);
+                            }
+                        }
+                    }
+                };
+                
+                applyComputedStyles(svgElement, svgClone);
+                
                 // Get the bounding box of visible content
                 const bounds = container.node().getBBox();
                 
@@ -1248,6 +1325,15 @@ export class DatabaseDiagramWebview {
                 const height = bounds.height + 40;
                 svgClone.setAttribute('width', width);
                 svgClone.setAttribute('height', height);
+                
+                // Add background
+                const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                bgRect.setAttribute('x', bounds.x - 20);
+                bgRect.setAttribute('y', bounds.y - 20);
+                bgRect.setAttribute('width', bounds.width + 40);
+                bgRect.setAttribute('height', bounds.height + 40);
+                bgRect.setAttribute('fill', '#1e1e1e');
+                svgClone.insertBefore(bgRect, svgClone.firstChild);
                 
                 // Serialize SVG
                 const serializer = new XMLSerializer();
