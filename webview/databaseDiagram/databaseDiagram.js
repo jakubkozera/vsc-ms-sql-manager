@@ -15,7 +15,11 @@ let diagramSettings = {
     arrowHeadStyle: 'arrow',
     lineStyle: 'solid',
     lineWidth: 2,
-    headWidth: 1
+    headWidth: 1,
+    headerStyle: 'color',
+    headerColor: '#264f78',
+    textColor: '#cccccc',
+    datatypeColor: '#cccccc'
 };
 
 console.log('Tables loaded:', tables);
@@ -315,17 +319,37 @@ function drawTables() {
             .call(drag);
 
         // Table header
-        tableG.append('rect')
+        const headerRect = tableG.append('rect')
             .attr('class', 'table-header')
             .attr('width', table.width)
             .attr('height', headerHeight)
-            .attr('rx', 4);
+            .attr('rx', 4)
+            .attr('stroke', 'var(--vscode-panel-border, #454545)')
+            .attr('stroke-width', 2);
+        
+        // Apply header style
+        if (diagramSettings.headerStyle === 'color') {
+            headerRect.attr('fill', diagramSettings.headerColor)
+                .attr('stroke-dasharray', 'none');
+        } else if (diagramSettings.headerStyle === 'transparent') {
+            headerRect.attr('fill', 'none')
+                .attr('stroke-dasharray', 'none');
+        } else if (diagramSettings.headerStyle === 'dotted') {
+            headerRect.attr('fill', 'none')
+                .attr('stroke', diagramSettings.textColor)
+                .attr('stroke-dasharray', '2,2');
+        } else if (diagramSettings.headerStyle === 'dashed') {
+            headerRect.attr('fill', 'none')
+                .attr('stroke', diagramSettings.textColor)
+                .attr('stroke-dasharray', '8,4');
+        }
 
         tableG.append('text')
             .attr('class', 'table-name')
             .attr('x', table.width / 2)
             .attr('y', headerHeight / 2 + 5)
             .attr('text-anchor', 'middle')
+            .attr('fill', diagramSettings.textColor)
             .text(`${table.schema}.${table.name}`);
 
         // Table body
@@ -374,7 +398,7 @@ function drawTables() {
                 
                 currentX += iconSize;
             }
-
+            
             // Calculate text position based on table's icon space
             // This ensures consistent alignment for all columns in the table
             let alignedTextX;
@@ -385,12 +409,13 @@ function drawTables() {
                 // No icons in this table
                 alignedTextX = iconStartX;
             }
-            
+                
             // Column name - always aligned at the same position
             tableG.append('text')
                 .attr('class', 'column-text')
                 .attr('x', alignedTextX)
                 .attr('y', y)
+                .attr('fill', diagramSettings.textColor)
                 .text(`${column.name}`);
 
             // Column type (right-aligned) - only if showDatatypes is enabled
@@ -400,6 +425,7 @@ function drawTables() {
                     .attr('x', table.width - 10)
                     .attr('y', y)
                     .attr('text-anchor', 'end')
+                    .attr('fill', diagramSettings.datatypeColor)
                     .style('opacity', 0.7)
                     .text(`${column.type}`);
             }
@@ -669,6 +695,15 @@ function toggleSettingsPanel() {
     const panel = document.getElementById('settingsPanel');
     panel.classList.toggle('visible');
 }
+
+function toggleSettingsGroup(groupId) {
+    const content = document.getElementById(groupId + 'Content');
+    const toggle = document.getElementById(groupId + 'Toggle');
+    
+    content.classList.toggle('collapsed');
+    toggle.classList.toggle('collapsed');
+}
+
 function updateDiagramSettings() {
     // Read settings from UI
     diagramSettings.showDatatypes = document.getElementById('showDatatypes').checked;
@@ -680,6 +715,18 @@ function updateDiagramSettings() {
     diagramSettings.lineStyle = document.getElementById('lineStyle').value;
     diagramSettings.lineWidth = parseFloat(document.getElementById('lineWidth').value);
     diagramSettings.headWidth = parseFloat(document.getElementById('headWidth').value);
+    diagramSettings.headerStyle = document.getElementById('headerStyle').value;
+    diagramSettings.headerColor = document.getElementById('headerColor').value;
+    diagramSettings.textColor = document.getElementById('textColor').value;
+    diagramSettings.datatypeColor = document.getElementById('datatypeColor').value;
+    
+    // Show/hide header color picker based on header style
+    const headerColorContainer = document.getElementById('headerColorContainer');
+    if (diagramSettings.headerStyle === 'color') {
+        headerColorContainer.style.display = 'flex';
+    } else {
+        headerColorContainer.style.display = 'none';
+    }
     
     // Update arrow markers
     updateArrowheadMarkers();

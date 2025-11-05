@@ -26,9 +26,8 @@ body {
 }
 
 .table-header {
-    fill: var(--vscode-editor-selectionBackground, #264f78);
-    stroke: var(--vscode-panel-border, #454545);
     stroke-width: 2;
+    /* fill, stroke, and stroke-dasharray are set dynamically via JS */
 }
 
 .table-body {
@@ -38,14 +37,14 @@ body {
 }
 
 .table-name {
-    fill: var(--vscode-editor-foreground, #cccccc);
     font-weight: bold;
     font-size: 14px;
+    /* fill is set dynamically via JS */
 }
 
 .column-text {
-    fill: var(--vscode-editor-foreground, #cccccc);
     font-size: 12px;
+    /* fill is set dynamically via JS */
 }
 
 .pk-indicator {
@@ -251,18 +250,17 @@ body {
 
 /* Settings Panel */
 .settings-panel {
-    position: absolute;
-    top: 60px;
-    left: 10px;
+    position: fixed;
+    top: 0;
+    left: 0;
     width: 320px;
-    max-height: calc(100vh - 80px);
+    height: 100vh;
     background: var(--vscode-editor-background);
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 4px;
+    border-right: 1px solid var(--vscode-panel-border);
     z-index: 1001;
     display: none;
     flex-direction: column;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
 }
 
 .settings-panel.visible {
@@ -283,15 +281,11 @@ body {
 }
 
 .settings-content {
-    padding: 10px;
     flex: 1;
     overflow-y: auto;
-    max-height: calc(100vh - 140px);
 }
 
 .settings-group {
-    margin-bottom: 20px;
-    padding-bottom: 15px;
     border-bottom: 1px solid var(--vscode-panel-border);
 }
 
@@ -299,11 +293,45 @@ body {
     border-bottom: none;
 }
 
-.settings-group h3 {
+.settings-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 15px;
+    cursor: pointer;
+    background: var(--vscode-editor-background);
+    transition: background-color 0.2s;
+}
+
+.settings-group-header:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.settings-group-header h3 {
     font-size: 13px;
     font-weight: bold;
-    margin-bottom: 10px;
+    margin: 0;
     color: var(--vscode-foreground);
+    flex: 1;
+}
+
+.settings-group-toggle {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.2s;
+}
+
+.settings-group-toggle.collapsed {
+    transform: rotate(-90deg);
+}
+
+.settings-group-content {
+    padding: 10px 15px;
+    display: block;
+}
+
+.settings-group-content.collapsed {
+    display: none;
 }
 
 .settings-checkbox {
@@ -311,8 +339,10 @@ body {
     align-items: center;
     gap: 8px;
     padding: 5px 0;
+    margin-bottom: 5px;
     cursor: pointer;
     user-select: none;
+    width: 100%;
 }
 
 .settings-checkbox input[type="checkbox"] {
@@ -328,6 +358,7 @@ body {
     flex-direction: column;
     gap: 5px;
     margin-bottom: 12px;
+    width: 100%;
 }
 
 .settings-item label {
