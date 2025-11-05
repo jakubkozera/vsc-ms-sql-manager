@@ -60,7 +60,7 @@ function updateArrowheadMarkers() {
         // Open arrow - two lines forming >
         const baseSize = 8;
         const scaledSize = baseSize * headScale;
-        defs.append('marker')
+        const marker = defs.append('marker')
             .attr('id', 'arrowhead')
             .attr('viewBox', '0 0 10 10')
             .attr('refX', 9)
@@ -68,13 +68,16 @@ function updateArrowheadMarkers() {
             .attr('orient', 'auto')
             .attr('markerWidth', scaledSize)
             .attr('markerHeight', scaledSize)
-            .append('path')
+            .attr('markerUnits', 'userSpaceOnUse');
+        
+        marker.append('path')
             .attr('d', 'M 0,0 L 10,5 L 0,10')
             .attr('fill', 'none')
             .attr('stroke', markerColor)
-            .attr('stroke-width', 2)
+            .attr('stroke-width', 1.5)
             .attr('stroke-linecap', 'round')
-            .attr('stroke-linejoin', 'round');
+            .attr('stroke-linejoin', 'round')
+            .attr('vector-effect', 'non-scaling-stroke');
     } else if (arrowStyle === 'triangle') {
         const baseSize = 8;
         const scaledSize = baseSize * headScale;
