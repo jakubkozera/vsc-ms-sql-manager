@@ -57,6 +57,36 @@ export class ScriptGenerationWebview {
 
         this.panel.webview.html = this.getHtmlContent();
 
+        // Set panel icon (use light/dark extension resources)
+        try {
+            const path = require('path');
+            const lightIcon = path.join(this.context.extensionPath, 'resources', 'icons', 'generate-sql-icon.svg');
+            const darkIcon = path.join(this.context.extensionPath, 'resources', 'icons', 'generate-sql-icon-dark.svg');
+
+            const setIconForTheme = (themeKind: vscode.ColorThemeKind) => {
+                try {
+                    if (themeKind === vscode.ColorThemeKind.Light) {
+                        this.panel!.iconPath = vscode.Uri.file(lightIcon);
+                    } else {
+                        this.panel!.iconPath = vscode.Uri.file(darkIcon);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            };
+
+            // Set initial icon
+            setIconForTheme(vscode.window.activeColorTheme.kind);
+
+            // Listen for theme changes and update icon
+            const disposable = vscode.window.onDidChangeActiveColorTheme(e => {
+                setIconForTheme(e.kind);
+            });
+            this.context.subscriptions.push(disposable);
+        } catch (e) {
+            // ignore if icon cannot be set
+        }
+
         // Send initial data to webview
         this.panel.webview.postMessage({
             command: 'init',
