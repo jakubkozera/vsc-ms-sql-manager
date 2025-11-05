@@ -10,6 +10,7 @@ import { registerTableCommands } from './tableCommands';
 import { registerStoredProcedureCommands } from './storedProcedureCommands';
 import { registerQueryHistoryCommands } from './queryHistoryCommands';
 import { registerDatabaseCommands } from './databaseCommands';
+import { registerScriptGenerationCommands } from './scriptGenerationCommands';
 
 export function registerAllCommands(
     context: vscode.ExtensionContext,
@@ -65,6 +66,12 @@ export function registerAllCommands(
         outputChannel
     );
 
+    const scriptGenerationCommands = registerScriptGenerationCommands(
+        context,
+        connectionProvider,
+        outputChannel
+    );
+
     const allCommands = [
         refreshCommand,
         refreshNodeCommand,
@@ -72,7 +79,8 @@ export function registerAllCommands(
         ...queryCommands,
         ...tableCommands,
         ...storedProcedureCommands,
-        ...databaseCommands
+        ...databaseCommands,
+        ...scriptGenerationCommands
     ];
 
     // Register query history commands if available

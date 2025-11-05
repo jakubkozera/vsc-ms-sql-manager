@@ -274,6 +274,11 @@
         "command": "mssqlManager.showDatabaseDiagram",
         "title": "Diagram",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "mssqlManager.generateDatabaseScripts",
+        "title": "Generate Scripts...",
+        "icon": "$(file-text)"
       }
     ],
     "viewsContainers": {
@@ -522,6 +527,11 @@
           "group": "2_manage@4"
         },
         {
+          "command": "mssqlManager.generateDatabaseScripts",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "2_script@1"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
           "group": "3_refresh@1"
@@ -617,9 +627,14 @@
           "group": "1_query@3"
         },
         {
+          "command": "mssqlManager.generateDatabaseScripts",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "2_script@1"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == database",
-          "group": "2_refresh@1"
+          "group": "3_refresh@1"
         },
         {
           "command": "mssqlManager.filterTables",
