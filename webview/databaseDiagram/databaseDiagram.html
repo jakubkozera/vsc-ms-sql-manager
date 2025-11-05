@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Diagram</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+    <link rel="stylesheet" href="{{cssUri}}">
+</head>
+<body>
+    <div class="toolbar">
+        <button onclick="resetZoom()" data-tooltip="Reset View">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+                <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+            </svg>
+        </button>
+        <button onclick="fitToScreen()" data-tooltip="Fit to Screen">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 12v-6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v6" />
+                <path d="M10 18h-7" />
+                <path d="M21 18h-7" />
+                <path d="M6 15l-3 3l3 3" />
+                <path d="M18 15l3 3l-3 3" />
+            </svg>
+        </button>
+        <div class="toolbar-divider"></div>
+        <button onclick="toggleFilterPanel()" data-tooltip="Filter Tables">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z" />
+            </svg>
+        </button>
+        <button onclick="toggleSettingsPanel()" data-tooltip="Diagram Settings">
+            <svg xmlns="http://www.w3.org/2000/svg" width="45" height="45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                <path d="M4 6l8 0" />
+                <path d="M16 6l4 0" />
+                <path d="M8 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                <path d="M4 12l2 0" />
+                <path d="M10 12l10 0" />
+                <path d="M17 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                <path d="M4 18l11 0" />
+                <path d="M19 18l1 0" />
+            </svg>
+        </button>
+        <div class="toolbar-divider"></div>
+        <button onclick="exportAsSVG()" data-tooltip="Export to SVG">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2" />
+                <path d="M9 12h12l-3 -3" />
+                <path d="M18 15l3 -3" />
+            </svg>
+        </button>
+    </div>
+    
+    <div id="filterPanel" class="filter-panel">
+        <div class="filter-header">
+            <span>Filter Tables</span>
+            <span style="cursor: pointer;" onclick="toggleFilterPanel()">✕</span>
+        </div>
+        <div class="filter-search">
+            <input type="text" id="filterSearch" placeholder="Search tables..." oninput="filterTableList()">
+        </div>
+        <div class="filter-actions">
+            <button onclick="selectAllTables()">Select All</button>
+            <button onclick="deselectAllTables()">Deselect All</button>
+        </div>
+        <div class="filter-list" id="filterList">
+            <!-- Table checkboxes will be inserted here -->
+        </div>
+    </div>
+    
+    <div id="settingsPanel" class="settings-panel">
+        <div class="settings-header">
+            <span>Diagram Settings</span>
+            <span style="cursor: pointer;" onclick="toggleSettingsPanel()">✕</span>
+        </div>
+        <div class="settings-content">
+            <div class="settings-group">
+                <div class="settings-group-header" onclick="toggleSettingsGroup('displayOptions')">
+                    <h3>Display Options</h3>
+                    <svg id="displayOptionsToggle" class="settings-group-toggle" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 9l6 6l6 -6" />
+                    </svg>
+                </div>
+                <div id="displayOptionsContent" class="settings-group-content">
+                    <label class="settings-checkbox">
+                        <input type="checkbox" id="showDatatypes" checked onchange="updateDiagramSettings()">
+                        <span>Show Data Types</span>
+                    </label>
+                    <label class="settings-checkbox">
+                        <input type="checkbox" id="showKeys" checked onchange="updateDiagramSettings()">
+                        <span>Show Keys (PK/FK)</span>
+                    </label>
+                    <label class="settings-checkbox">
+                        <input type="checkbox" id="showReferences" checked onchange="updateDiagramSettings()">
+                        <span>Show Table References</span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="settings-group">
+                <div class="settings-group-header" onclick="toggleSettingsGroup('relationshipStyling')">
+                    <h3>Relationship Styling</h3>
+                    <svg id="relationshipStylingToggle" class="settings-group-toggle" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 9l6 6l6 -6" />
+                    </svg>
+                </div>
+                <div id="relationshipStylingContent" class="settings-group-content">
+                    <div class="settings-item">
+                        <label>Line Color</label>
+                        <input type="color" id="lineColor" value="#4fc3f7" onchange="updateDiagramSettings()">
+                    </div>
+                    <div class="settings-item">
+                        <label>Arrow Color</label>
+                        <input type="color" id="arrowColor" value="#4fc3f7" onchange="updateDiagramSettings()">
+                    </div>
+                    <div class="settings-item">
+                        <label>Arrow Head Style</label>
+                        <select id="arrowHeadStyle" onchange="updateDiagramSettings()">
+                            <option value="arrow">Arrow</option>
+                            <option value="triangle">Triangle</option>
+                            <option value="circle">Circle</option>
+                            <option value="diamond">Diamond</option>
+                            <option value="none">None</option>
+                        </select>
+                    </div>
+                    <div class="settings-item">
+                        <label>Line Style</label>
+                        <select id="lineStyle" onchange="updateDiagramSettings()">
+                            <option value="solid">Solid</option>
+                            <option value="dashed">Dashed</option>
+                            <option value="dotted">Dotted</option>
+                        </select>
+                    </div>
+                    <div class="settings-item">
+                        <label>Line Width</label>
+                        <input type="number" id="lineWidth" min="1" max="5" step="0.5" value="2" onchange="updateDiagramSettings()">
+                    </div>
+                    <div class="settings-item">
+                        <label>Head Width</label>
+                        <input type="number" id="headWidth" min="0.5" max="3" step="0.1" value="1" onchange="updateDiagramSettings()">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="settings-group">
+                <div class="settings-group-header" onclick="toggleSettingsGroup('tableStyling')">
+                    <h3>Table Styling</h3>
+                    <svg id="tableStylingToggle" class="settings-group-toggle" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 9l6 6l6 -6" />
+                    </svg>
+                </div>
+                <div id="tableStylingContent" class="settings-group-content">
+                    <div class="settings-item">
+                        <label>Header Style</label>
+                        <select id="headerStyle" onchange="updateDiagramSettings()">
+                            <option value="color">Color</option>
+                            <option value="transparent">Transparent</option>
+                            <option value="dotted">Dotted</option>
+                            <option value="dashed">Dashed</option>
+                        </select>
+                    </div>
+                    <div class="settings-item" id="headerColorContainer">
+                        <label>Header Color</label>
+                        <input type="color" id="headerColor" value="#264f78" onchange="updateDiagramSettings()">
+                    </div>
+                    <div class="settings-item">
+                        <label>Text Color</label>
+                        <input type="color" id="textColor" value="#cccccc" onchange="updateDiagramSettings()">
+                    </div>
+                    <div class="settings-item">
+                        <label>Data Type Color</label>
+                        <input type="color" id="datatypeColor" value="#cccccc" onchange="updateDiagramSettings()">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <svg id="diagram"></svg>
+
+    <script>
+        const TABLES_DATA = {{tablesJson}};
+        const RELATIONSHIPS_DATA = {{relationshipsJson}};
+        const DATABASE_NAME = "{{databaseName}}";
+    </script>
+    <script src="{{jsUri}}"></script>
+</body>
+</html>
