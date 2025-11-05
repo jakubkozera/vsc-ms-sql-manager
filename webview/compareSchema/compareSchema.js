@@ -65,7 +65,7 @@
                 break;
                 
             case 'databasesForConnection':
-                populateDatabaseList(message.databases);
+                populateDatabaseList(message.databases, message.autoSelect);
                 break;
                 
             case 'comparisonStarted':
@@ -152,7 +152,7 @@
         });
     }
 
-    function populateDatabaseList(databases) {
+    function populateDatabaseList(databases, autoSelect) {
         targetDatabaseMenu.innerHTML = '';
         
         databases.forEach(db => {
@@ -162,6 +162,15 @@
             item.textContent = db;
             targetDatabaseMenu.appendChild(item);
         });
+        
+        // Auto-select if only one database
+        if (autoSelect && databases.length === 1) {
+            selectedTargetDatabase = databases[0];
+            targetDatabaseBtn.textContent = databases[0];
+            targetDatabaseBtn.disabled = false;
+            compareButton.disabled = !selectedTargetConnection || !selectedTargetDatabase;
+            targetDatabaseMenu.querySelector('.dropdown-item')?.classList.add('selected');
+        }
     }
 
     function showLoading() {
@@ -180,11 +189,23 @@
         if (changes.length === 0) {
             emptyState.classList.remove('hidden');
             resultsSection.style.display = 'none';
+            document.getElementById('comparisonSection').style.display = 'none';
+            document.getElementById('editorContainer').style.display = 'none';
             return;
         }
         
         emptyState.classList.add('hidden');
         resultsSection.style.display = 'flex';
+        document.getElementById('comparisonSection').style.display = 'block';
+        document.getElementById('editorContainer').style.display = 'grid';
+        
+        // Force layout recalculation for Monaco editors after they become visible
+        if (leftEditor && rightEditor) {
+            setTimeout(() => {
+                leftEditor.layout();
+                rightEditor.layout();
+            }, 50);
+        }
         
         renderChanges();
     }

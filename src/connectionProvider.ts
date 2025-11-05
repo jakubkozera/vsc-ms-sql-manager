@@ -905,7 +905,9 @@ export class ConnectionProvider {
 
             const results = await Promise.all(attemptPromises);
             for (const res of results) {
-                if (res) discovered.push(res);
+                if (res) {
+                    discovered.push(res);
+                }
             }
 
             if (discovered.length > 0) {

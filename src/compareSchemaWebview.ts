@@ -16,6 +16,7 @@ export class CompareSchemaWebview {
     private sourceDatabase: string;
     private targetConnectionId: string;
     private targetDatabase: string;
+    private definitionsCache: Map<string, string> = new Map();
 
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -156,7 +157,8 @@ export class CompareSchemaWebview {
             
             this.panel?.webview.postMessage({
                 command: 'databasesForConnection',
-                databases: databases
+                databases: databases,
+                autoSelect: databases.length === 1
             });
         } catch (error) {
             this.outputChannel.appendLine(`[CompareSchema] Error getting databases for connection: ${error}`);
@@ -172,6 +174,9 @@ export class CompareSchemaWebview {
         this.targetConnectionId = targetConnectionId;
         this.targetDatabase = targetDatabase;
         
+        // Clear cache for new comparison
+        this.definitionsCache.clear();
+        
         this.outputChannel.appendLine(`[CompareSchema] Comparing ${this.sourceDatabase} with ${targetDatabase} (connection: ${targetConnectionId}`);
         
         this.panel?.webview.postMessage({
@@ -181,12 +186,15 @@ export class CompareSchemaWebview {
         try {
             const changes = await this.detectSchemaChanges(targetConnectionId, targetDatabase);
             
+            this.outputChannel.appendLine(`[CompareSchema] Comparison complete: ${changes.length} changes found`);
+            this.outputChannel.appendLine(`[CompareSchema] Sending results to webview...`);
+            
             this.panel?.webview.postMessage({
                 command: 'comparisonResult',
                 changes: changes
             });
             
-            this.outputChannel.appendLine(`[CompareSchema] Comparison complete: ${changes.length} changes found`);
+            this.outputChannel.appendLine(`[CompareSchema] Results sent to webview`);
         } catch (error) {
             this.outputChannel.appendLine(`[CompareSchema] Comparison error: ${error}`);
             this.panel?.webview.postMessage({
@@ -202,27 +210,67 @@ export class CompareSchemaWebview {
         // Get schema information for both databases
         const sourceSchema = await this.getSchemaInfo(this.sourceConnectionId, this.sourceDatabase);
         const targetSchema = await this.getSchemaInfo(targetConnectionId, targetDatabase);
+        
+        // Cache all definitions upfront
+        this.outputChannel.appendLine(`[CompareSchema] Caching object definitions...`);
+        await this.cacheAllDefinitions(sourceSchema, targetSchema);
+        this.outputChannel.appendLine(`[CompareSchema] Cached ${this.definitionsCache.size} object definitions`);
 
-        // Compare tables
+        // Compare tables (includes column, index, and constraint changes)
         changes.push(...this.compareTables(sourceSchema.tables, targetSchema.tables));
         
-        // Compare columns
-        changes.push(...this.compareColumns(sourceSchema.columns, targetSchema.columns));
+        // Detect table changes by comparing columns, indexes, and constraints
+        const columnChanges = this.compareColumns(sourceSchema.columns, targetSchema.columns);
+        const indexChanges = this.compareIndexes(sourceSchema.indexes, targetSchema.indexes);
+        const constraintChanges = this.compareConstraints(sourceSchema.constraints, targetSchema.constraints);
+        
+        // Mark tables as changed if they have column/index/constraint differences
+        const tablesWithChanges = new Set<string>();
+        [...columnChanges, ...indexChanges, ...constraintChanges].forEach(change => {
+            const match = change.objectName.match(/^(.+?)\./); // Extract table name
+            if (match) {
+                tablesWithChanges.add(match[0].slice(0, -1)); // Remove trailing dot
+            }
+        });
+        
+        // Add table change entries for tables with structural changes
+        tablesWithChanges.forEach(tableName => {
+            // Only add if table exists in both (not already marked as add/delete)
+            const sourceHas = sourceSchema.tables.some((t: any) => `${t.schema}.${t.name}` === tableName);
+            const targetHas = targetSchema.tables.some((t: any) => `${t.schema}.${t.name}` === tableName);
+            if (sourceHas && targetHas && !changes.some(c => c.objectName === tableName && c.objectType === 'table')) {
+                changes.push({
+                    objectType: 'table',
+                    objectName: tableName,
+                    changeType: 'change',
+                    description: 'Table structure has changed'
+                });
+            }
+        });
         
         // Compare views
-        changes.push(...this.compareViews(sourceSchema.views, targetSchema.views));
+        const viewChanges = await this.compareViews(sourceSchema.views, targetSchema.views);
+        if (viewChanges && viewChanges.length > 0) {
+            changes.push(...viewChanges);
+        }
         
         // Compare stored procedures
-        changes.push(...this.compareProcedures(sourceSchema.procedures, targetSchema.procedures));
+        const procedureChanges = await this.compareProcedures(sourceSchema.procedures, targetSchema.procedures);
+        if (procedureChanges && procedureChanges.length > 0) {
+            changes.push(...procedureChanges);
+        }
         
         // Compare functions
-        changes.push(...this.compareFunctions(sourceSchema.functions, targetSchema.functions));
+        const functionChanges = await this.compareFunctions(sourceSchema.functions, targetSchema.functions);
+        if (functionChanges && functionChanges.length > 0) {
+            changes.push(...functionChanges);
+        }
         
-        // Compare indexes
-        changes.push(...this.compareIndexes(sourceSchema.indexes, targetSchema.indexes));
-
-        // Compare constraints
-        changes.push(...this.compareConstraints(sourceSchema.constraints, targetSchema.constraints));
+        // Compare triggers
+        const triggerChanges = await this.compareTriggers(sourceSchema.triggers, targetSchema.triggers);
+        if (triggerChanges && triggerChanges.length > 0) {
+            changes.push(...triggerChanges);
+        }
 
         return changes;
     }
@@ -231,7 +279,10 @@ export class CompareSchemaWebview {
         const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
 
         try {
+            this.outputChannel.appendLine(`[CompareSchema] Getting schema info for ${database}`);
+            
             // Get tables
+            this.outputChannel.appendLine(`[CompareSchema] Fetching tables...`);
             const tablesQuery = `
                 SELECT 
                     TABLE_SCHEMA as [schema],
@@ -241,8 +292,10 @@ export class CompareSchemaWebview {
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             `;
             const tablesResult = await dbPool.request().query(tablesQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${tablesResult.recordset.length} tables`);
 
             // Get columns
+            this.outputChannel.appendLine(`[CompareSchema] Fetching columns...`);
             const columnsQuery = `
                 SELECT 
                     TABLE_SCHEMA as [schema],
@@ -256,8 +309,10 @@ export class CompareSchemaWebview {
                 ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
             `;
             const columnsResult = await dbPool.request().query(columnsQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${columnsResult.recordset.length} columns`);
 
             // Get views
+            this.outputChannel.appendLine(`[CompareSchema] Fetching views...`);
             const viewsQuery = `
                 SELECT 
                     TABLE_SCHEMA as [schema],
@@ -266,8 +321,10 @@ export class CompareSchemaWebview {
                 ORDER BY TABLE_SCHEMA, TABLE_NAME
             `;
             const viewsResult = await dbPool.request().query(viewsQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${viewsResult.recordset.length} views`);
 
             // Get stored procedures
+            this.outputChannel.appendLine(`[CompareSchema] Fetching procedures...`);
             const proceduresQuery = `
                 SELECT 
                     ROUTINE_SCHEMA as [schema],
@@ -277,8 +334,10 @@ export class CompareSchemaWebview {
                 ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
             `;
             const proceduresResult = await dbPool.request().query(proceduresQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${proceduresResult.recordset.length} procedures`);
 
             // Get functions
+            this.outputChannel.appendLine(`[CompareSchema] Fetching functions...`);
             const functionsQuery = `
                 SELECT 
                     ROUTINE_SCHEMA as [schema],
@@ -288,8 +347,10 @@ export class CompareSchemaWebview {
                 ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
             `;
             const functionsResult = await dbPool.request().query(functionsQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${functionsResult.recordset.length} functions`);
 
             // Get indexes
+            this.outputChannel.appendLine(`[CompareSchema] Fetching indexes...`);
             const indexesQuery = `
                 SELECT 
                     SCHEMA_NAME(t.schema_id) as [schema],
@@ -303,8 +364,10 @@ export class CompareSchemaWebview {
                 ORDER BY t.name, i.name
             `;
             const indexesResult = await dbPool.request().query(indexesQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${indexesResult.recordset.length} indexes`);
 
             // Get constraints
+            this.outputChannel.appendLine(`[CompareSchema] Fetching constraints...`);
             const constraintsQuery = `
                 SELECT 
                     tc.TABLE_SCHEMA as [schema],
@@ -315,8 +378,26 @@ export class CompareSchemaWebview {
                 ORDER BY tc.TABLE_SCHEMA, tc.TABLE_NAME, tc.CONSTRAINT_NAME
             `;
             const constraintsResult = await dbPool.request().query(constraintsQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${constraintsResult.recordset.length} constraints`);
+
+            // Get triggers
+            this.outputChannel.appendLine(`[CompareSchema] Fetching triggers...`);
+            const triggersQuery = `
+                SELECT 
+                    SCHEMA_NAME(tab.schema_id) as [schema],
+                    tab.name as tableName,
+                    trig.name as name,
+                    trig.is_disabled as isDisabled
+                FROM sys.triggers trig
+                INNER JOIN sys.tables tab ON trig.parent_id = tab.object_id
+                WHERE trig.parent_class = 1
+                ORDER BY trig.name
+            `;
+            const triggersResult = await dbPool.request().query(triggersQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${triggersResult.recordset.length} triggers`);
 
             await dbPool.close();
+            this.outputChannel.appendLine(`[CompareSchema] Schema info fetch completed for ${database}`);
 
             return {
                 tables: tablesResult.recordset,
@@ -325,7 +406,8 @@ export class CompareSchemaWebview {
                 procedures: proceduresResult.recordset,
                 functions: functionsResult.recordset,
                 indexes: indexesResult.recordset,
-                constraints: constraintsResult.recordset
+                constraints: constraintsResult.recordset,
+                triggers: triggersResult.recordset
             };
         } catch (error) {
             await dbPool.close();
@@ -335,13 +417,13 @@ export class CompareSchemaWebview {
 
     private compareTables(sourceTables: any[], targetTables: any[]): SchemaChange[] {
         const changes: SchemaChange[] = [];
-        const sourceTableNames = new Set(sourceTables.map(t => `${t.schema}.${t.name}`));
-        const targetTableNames = new Set(targetTables.map(t => `${t.schema}.${t.name}`));
+        const sourceTableMap = new Map(sourceTables.map(t => [`${t.schema}.${t.name}`, t]));
+        const targetTableMap = new Map(targetTables.map(t => [`${t.schema}.${t.name}`, t]));
 
         // Tables in source but not in target (deleted)
         sourceTables.forEach(table => {
             const fullName = `${table.schema}.${table.name}`;
-            if (!targetTableNames.has(fullName)) {
+            if (!targetTableMap.has(fullName)) {
                 changes.push({
                     objectType: 'table',
                     objectName: fullName,
@@ -354,7 +436,7 @@ export class CompareSchemaWebview {
         // Tables in target but not in source (added)
         targetTables.forEach(table => {
             const fullName = `${table.schema}.${table.name}`;
-            if (!sourceTableNames.has(fullName)) {
+            if (!sourceTableMap.has(fullName)) {
                 changes.push({
                     objectType: 'table',
                     objectName: fullName,
@@ -444,16 +526,20 @@ export class CompareSchemaWebview {
         return changes;
     }
 
-    private compareViews(sourceViews: any[], targetViews: any[]): SchemaChange[] {
-        return this.compareSimpleObjects(sourceViews, targetViews, 'view');
+    private async compareViews(sourceViews: any[], targetViews: any[]): Promise<SchemaChange[]> {
+        return await this.compareSimpleObjects(sourceViews, targetViews, 'view');
     }
 
-    private compareProcedures(sourceProcedures: any[], targetProcedures: any[]): SchemaChange[] {
-        return this.compareSimpleObjects(sourceProcedures, targetProcedures, 'procedure');
+    private async compareProcedures(sourceProcedures: any[], targetProcedures: any[]): Promise<SchemaChange[]> {
+        return await this.compareSimpleObjects(sourceProcedures, targetProcedures, 'procedure');
     }
 
-    private compareFunctions(sourceFunctions: any[], targetFunctions: any[]): SchemaChange[] {
-        return this.compareSimpleObjects(sourceFunctions, targetFunctions, 'function');
+    private async compareFunctions(sourceFunctions: any[], targetFunctions: any[]): Promise<SchemaChange[]> {
+        return await this.compareSimpleObjects(sourceFunctions, targetFunctions, 'function');
+    }
+
+    private async compareTriggers(sourceTriggers: any[], targetTriggers: any[]): Promise<SchemaChange[]> {
+        return await this.compareSimpleObjects(sourceTriggers, targetTriggers, 'trigger');
     }
 
     private compareIndexes(sourceIndexes: any[], targetIndexes: any[]): SchemaChange[] {
@@ -544,15 +630,15 @@ export class CompareSchemaWebview {
         return changes;
     }
 
-    private compareSimpleObjects(sourceObjects: any[], targetObjects: any[], objectType: SchemaChange['objectType']): SchemaChange[] {
+    private async compareSimpleObjects(sourceObjects: any[], targetObjects: any[], objectType: SchemaChange['objectType']): Promise<SchemaChange[]> {
         const changes: SchemaChange[] = [];
-        const sourceNames = new Set(sourceObjects.map(o => `${o.schema}.${o.name}`));
-        const targetNames = new Set(targetObjects.map(o => `${o.schema}.${o.name}`));
+        const sourceMap = new Map(sourceObjects.map(o => [`${o.schema}.${o.name}`, o]));
+        const targetMap = new Map(targetObjects.map(o => [`${o.schema}.${o.name}`, o]));
 
         // Objects in source but not in target (deleted)
         sourceObjects.forEach(obj => {
             const fullName = `${obj.schema}.${obj.name}`;
-            if (!targetNames.has(fullName)) {
+            if (!targetMap.has(fullName)) {
                 changes.push({
                     objectType: objectType,
                     objectName: fullName,
@@ -565,7 +651,7 @@ export class CompareSchemaWebview {
         // Objects in target but not in source (added)
         targetObjects.forEach(obj => {
             const fullName = `${obj.schema}.${obj.name}`;
-            if (!sourceNames.has(fullName)) {
+            if (!sourceMap.has(fullName)) {
                 changes.push({
                     objectType: objectType,
                     objectName: fullName,
@@ -575,7 +661,115 @@ export class CompareSchemaWebview {
             }
         });
 
+        // Objects in both - check for changes by comparing definitions
+        for (const obj of targetObjects) {
+            const fullName = `${obj.schema}.${obj.name}`;
+            if (sourceMap.has(fullName)) {
+                // Object exists in both - compare definitions
+                const hasChanged = await this.hasObjectDefinitionChanged(
+                    objectType,
+                    obj.schema,
+                    obj.name
+                );
+                
+                if (hasChanged) {
+                    changes.push({
+                        objectType: objectType,
+                        objectName: fullName,
+                        changeType: 'change',
+                        description: `${objectType.charAt(0).toUpperCase() + objectType.slice(1)} definition has changed`
+                    });
+                }
+            }
+        }
+
         return changes;
+    }
+
+    private async cacheAllDefinitions(sourceSchema: any, targetSchema: any) {
+        // Create one pool per database for efficiency
+        const sourcePool = await this.connectionProvider.createDbPool(this.sourceConnectionId, this.sourceDatabase);
+        const targetPool = await this.connectionProvider.createDbPool(this.targetConnectionId, this.targetDatabase);
+        
+        try {
+            // Cache all table definitions from source
+            for (const table of sourceSchema.tables) {
+                const key = `source:table:${table.schema}.${table.name}`;
+                try {
+                    const def = await this.getTableDefinitionWithPool(sourcePool, table.schema, table.name);
+                    this.definitionsCache.set(key, def);
+                } catch (error) {
+                    this.outputChannel.appendLine(`[CompareSchema] Error caching source table ${table.schema}.${table.name}: ${error}`);
+                }
+            }
+            
+            // Cache all table definitions from target
+            for (const table of targetSchema.tables) {
+                const key = `target:table:${table.schema}.${table.name}`;
+                try {
+                    const def = await this.getTableDefinitionWithPool(targetPool, table.schema, table.name);
+                    this.definitionsCache.set(key, def);
+                } catch (error) {
+                    this.outputChannel.appendLine(`[CompareSchema] Error caching target table ${table.schema}.${table.name}: ${error}`);
+                }
+            }
+        } finally {
+            await sourcePool.close();
+            await targetPool.close();
+        }
+    }
+    
+    private async getTableDefinitionWithPool(pool: any, schema: string, tableName: string): Promise<string> {
+        // Get columns
+        const columnsQuery = `
+            SELECT 
+                c.COLUMN_NAME,
+                c.DATA_TYPE,
+                c.CHARACTER_MAXIMUM_LENGTH,
+                c.NUMERIC_PRECISION,
+                c.NUMERIC_SCALE,
+                c.DATETIME_PRECISION,
+                c.IS_NULLABLE,
+                c.COLUMN_DEFAULT,
+                c.ORDINAL_POSITION
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            WHERE c.TABLE_SCHEMA = '${schema}' AND c.TABLE_NAME = '${tableName}'
+            ORDER BY c.ORDINAL_POSITION
+        `;
+        
+        const columnsResult = await pool.request().query(columnsQuery);
+        
+        // Build CREATE TABLE statement
+        let sql = `CREATE TABLE [${schema}].[${tableName}] (\n`;
+        
+        // Add columns
+        const columns = columnsResult.recordset;
+        sql += columns.map((col: any) => {
+            let colDef = `  [${col.COLUMN_NAME}] ${col.DATA_TYPE.toUpperCase()}`;
+            
+            // Add length/precision
+            if (col.CHARACTER_MAXIMUM_LENGTH && col.CHARACTER_MAXIMUM_LENGTH > 0) {
+                colDef += col.CHARACTER_MAXIMUM_LENGTH === -1 ? '(MAX)' : `(${col.CHARACTER_MAXIMUM_LENGTH})`;
+            } else if (col.DATA_TYPE.toLowerCase() === 'decimal' || col.DATA_TYPE.toLowerCase() === 'numeric') {
+                colDef += ` (${col.NUMERIC_PRECISION}, ${col.NUMERIC_SCALE})`;
+            } else if (col.DATETIME_PRECISION !== null && ['datetime2', 'datetimeoffset', 'time'].includes(col.DATA_TYPE.toLowerCase())) {
+                colDef += ` (${col.DATETIME_PRECISION})`;
+            }
+            
+            // Add NULL/NOT NULL
+            colDef += col.IS_NULLABLE === 'YES' ? ' NULL' : ' NOT NULL';
+            
+            return colDef;
+        }).join(',\n');
+        
+        sql += '\n);';
+        
+        return sql;
+    }
+
+    private getCachedDefinition(source: 'source' | 'target', objectType: string, schema: string, name: string): string | undefined {
+        const key = `${source}:${objectType}:${schema}.${name}`;
+        return this.definitionsCache.get(key);
     }
 
     private async getSchemaDetailsForDiff(change: SchemaChange) {
@@ -589,64 +783,67 @@ export class CompareSchemaWebview {
             const schema = parts[0];
             const name = parts.length > 1 ? parts[1] : parts[0];
 
-            if (objectType === 'table') {
+            if (objectType === 'trigger') {
                 if (change.changeType === 'delete') {
-                    originalSchema = await this.getTableDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'trigger', schema, name) || `-- Trigger ${schema}.${name} not found`;
+                    modifiedSchema = `-- Trigger deleted from target database`;
+                } else if (change.changeType === 'add') {
+                    originalSchema = `-- Trigger does not exist in source database`;
+                    modifiedSchema = this.getCachedDefinition('target', 'trigger', schema, name) || `-- Trigger ${schema}.${name} not found`;
+                } else {
+                    originalSchema = this.getCachedDefinition('source', 'trigger', schema, name) || `-- Trigger ${schema}.${name} not found`;
+                    modifiedSchema = this.getCachedDefinition('target', 'trigger', schema, name) || `-- Trigger ${schema}.${name} not found`;
+                }
+            } else if (objectType === 'table') {
+                if (change.changeType === 'delete') {
+                    originalSchema = this.getCachedDefinition('source', 'table', schema, name) || `-- Table ${schema}.${name} not found`;
                     modifiedSchema = `-- Table deleted from target database`;
                 } else if (change.changeType === 'add') {
                     originalSchema = `-- Table does not exist in source database`;
-                    modifiedSchema = await this.getTableDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    modifiedSchema = this.getCachedDefinition('target', 'table', schema, name) || `-- Table ${schema}.${name} not found`;
                 } else {
-                    originalSchema = await this.getTableDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
-                    modifiedSchema = await this.getTableDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'table', schema, name) || `-- Table ${schema}.${name} not found`;
+                    modifiedSchema = this.getCachedDefinition('target', 'table', schema, name) || `-- Table ${schema}.${name} not found`;
                 }
             } else if (objectType === 'column') {
                 // For columns, get table definition from both databases
                 const tableName = parts.length > 2 ? parts[1] : schema;
                 const tableSchema = parts.length > 2 ? schema : 'dbo';
                 
-                if (change.changeType === 'delete') {
-                    originalSchema = await this.getTableDefinition(this.sourceConnectionId, this.sourceDatabase, tableSchema, tableName);
-                    modifiedSchema = await this.getTableDefinition(this.targetConnectionId, this.targetDatabase, tableSchema, tableName);
-                } else if (change.changeType === 'add') {
-                    originalSchema = await this.getTableDefinition(this.sourceConnectionId, this.sourceDatabase, tableSchema, tableName);
-                    modifiedSchema = await this.getTableDefinition(this.targetConnectionId, this.targetDatabase, tableSchema, tableName);
-                } else {
-                    originalSchema = await this.getTableDefinition(this.sourceConnectionId, this.sourceDatabase, tableSchema, tableName);
-                    modifiedSchema = await this.getTableDefinition(this.targetConnectionId, this.targetDatabase, tableSchema, tableName);
-                }
+                originalSchema = this.getCachedDefinition('source', 'table', tableSchema, tableName) || `-- Table ${tableSchema}.${tableName} not found`;
+                modifiedSchema = this.getCachedDefinition('target', 'table', tableSchema, tableName) || `-- Table ${tableSchema}.${tableName} not found`;
             } else if (objectType === 'view') {
                 if (change.changeType === 'delete') {
-                    originalSchema = await this.getViewDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'view', schema, name) || `-- View ${schema}.${name} not found`;
                     modifiedSchema = `-- View deleted from target database`;
                 } else if (change.changeType === 'add') {
                     originalSchema = `-- View does not exist in source database`;
-                    modifiedSchema = await this.getViewDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    modifiedSchema = this.getCachedDefinition('target', 'view', schema, name) || `-- View ${schema}.${name} not found`;
                 } else {
-                    originalSchema = await this.getViewDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
-                    modifiedSchema = await this.getViewDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'view', schema, name) || `-- View ${schema}.${name} not found`;
+                    modifiedSchema = this.getCachedDefinition('target', 'view', schema, name) || `-- View ${schema}.${name} not found`;
                 }
             } else if (objectType === 'procedure') {
                 if (change.changeType === 'delete') {
-                    originalSchema = await this.getProcedureDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'procedure', schema, name) || `-- Procedure ${schema}.${name} not found`;
                     modifiedSchema = `-- Procedure deleted from target database`;
                 } else if (change.changeType === 'add') {
                     originalSchema = `-- Procedure does not exist in source database`;
-                    modifiedSchema = await this.getProcedureDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    modifiedSchema = this.getCachedDefinition('target', 'procedure', schema, name) || `-- Procedure ${schema}.${name} not found`;
                 } else {
-                    originalSchema = await this.getProcedureDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
-                    modifiedSchema = await this.getProcedureDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'procedure', schema, name) || `-- Procedure ${schema}.${name} not found`;
+                    modifiedSchema = this.getCachedDefinition('target', 'procedure', schema, name) || `-- Procedure ${schema}.${name} not found`;
                 }
             } else if (objectType === 'function') {
                 if (change.changeType === 'delete') {
-                    originalSchema = await this.getFunctionDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'function', schema, name) || `-- Function ${schema}.${name} not found`;
                     modifiedSchema = `-- Function deleted from target database`;
                 } else if (change.changeType === 'add') {
                     originalSchema = `-- Function does not exist in source database`;
-                    modifiedSchema = await this.getFunctionDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    modifiedSchema = this.getCachedDefinition('target', 'function', schema, name) || `-- Function ${schema}.${name} not found`;
                 } else {
-                    originalSchema = await this.getFunctionDefinition(this.sourceConnectionId, this.sourceDatabase, schema, name);
-                    modifiedSchema = await this.getFunctionDefinition(this.targetConnectionId, this.targetDatabase, schema, name);
+                    originalSchema = this.getCachedDefinition('source', 'function', schema, name) || `-- Function ${schema}.${name} not found`;
+                    modifiedSchema = this.getCachedDefinition('target', 'function', schema, name) || `-- Function ${schema}.${name} not found`;
                 }
             } else {
                 originalSchema = `-- ${change.objectType}: ${change.objectName}\n${change.description || ''}`;
@@ -669,35 +866,156 @@ export class CompareSchemaWebview {
         }
     }
 
+    private async hasObjectDefinitionChanged(objectType: string, schema: string, name: string): Promise<boolean> {
+        // For now, skip definition comparison to avoid creating too many connections
+        // This can be optimized later by caching definitions or using a single connection
+        return false;
+    }
+
     private async getTableDefinition(connectionId: string, database: string, schema: string, tableName: string): Promise<string> {
         const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
         
         try {
-            const query = `
+            // Get columns
+            const columnsQuery = `
                 SELECT 
-                    'CREATE TABLE [' + TABLE_SCHEMA + '].[' + TABLE_NAME + '] (' + CHAR(13) + CHAR(10) +
-                    STRING_AGG(
-                        '    [' + COLUMN_NAME + '] ' + 
-                        DATA_TYPE + 
-                        CASE 
-                            WHEN CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN '(' + CAST(CHARACTER_MAXIMUM_LENGTH AS VARCHAR) + ')'
-                            WHEN NUMERIC_PRECISION IS NOT NULL THEN '(' + CAST(NUMERIC_PRECISION AS VARCHAR) + ',' + CAST(NUMERIC_SCALE AS VARCHAR) + ')'
-                            ELSE ''
-                        END +
-                        CASE WHEN IS_NULLABLE = 'NO' THEN ' NOT NULL' ELSE ' NULL' END +
-                        CASE WHEN COLUMN_DEFAULT IS NOT NULL THEN ' DEFAULT ' + COLUMN_DEFAULT ELSE '' END,
-                        ',' + CHAR(13) + CHAR(10)
-                    ) WITHIN GROUP (ORDER BY ORDINAL_POSITION) +
-                    CHAR(13) + CHAR(10) + ');' as definition
-                FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA = '${schema}' AND TABLE_NAME = '${tableName}'
-                GROUP BY TABLE_SCHEMA, TABLE_NAME
+                    c.COLUMN_NAME,
+                    c.DATA_TYPE,
+                    c.CHARACTER_MAXIMUM_LENGTH,
+                    c.NUMERIC_PRECISION,
+                    c.NUMERIC_SCALE,
+                    c.DATETIME_PRECISION,
+                    c.IS_NULLABLE,
+                    c.COLUMN_DEFAULT,
+                    c.ORDINAL_POSITION
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                WHERE c.TABLE_SCHEMA = '${schema}' AND c.TABLE_NAME = '${tableName}'
+                ORDER BY c.ORDINAL_POSITION
             `;
             
-            const result = await dbPool.request().query(query);
+            const columnsResult = await dbPool.request().query(columnsQuery);
+            
+            // Get constraints (PK, FK, CHECK, etc.)
+            const constraintsQuery = `
+                SELECT 
+                    tc.CONSTRAINT_NAME,
+                    tc.CONSTRAINT_TYPE,
+                    kcu.COLUMN_NAME,
+                    rc.UNIQUE_CONSTRAINT_NAME,
+                    kcu2.TABLE_SCHEMA AS FK_TABLE_SCHEMA,
+                    kcu2.TABLE_NAME AS FK_TABLE_NAME,
+                    kcu2.COLUMN_NAME AS FK_COLUMN_NAME,
+                    rc.DELETE_RULE,
+                    rc.UPDATE_RULE
+                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
+                    ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc 
+                    ON tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu2 
+                    ON rc.UNIQUE_CONSTRAINT_NAME = kcu2.CONSTRAINT_NAME
+                WHERE tc.TABLE_SCHEMA = '${schema}' AND tc.TABLE_NAME = '${tableName}'
+                ORDER BY tc.CONSTRAINT_TYPE, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
+            `;
+            
+            const constraintsResult = await dbPool.request().query(constraintsQuery);
+            
+            // Get indexes
+            const indexesQuery = `
+                SELECT 
+                    i.name AS INDEX_NAME,
+                    i.type_desc AS INDEX_TYPE,
+                    i.is_unique AS IS_UNIQUE,
+                    c.name AS COLUMN_NAME,
+                    ic.is_descending_key AS IS_DESCENDING
+                FROM sys.indexes i
+                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                INNER JOIN sys.tables t ON i.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = '${schema}' AND t.name = '${tableName}'
+                    AND i.is_primary_key = 0 AND i.is_unique_constraint = 0
+                ORDER BY i.name, ic.key_ordinal
+            `;
+            
+            const indexesResult = await dbPool.request().query(indexesQuery);
+            
             await dbPool.close();
             
-            return result.recordset[0]?.definition || `-- Table ${schema}.${tableName} not found`;
+            // Build CREATE TABLE statement
+            let sql = `CREATE TABLE [${schema}].[${tableName}] (\n`;
+            
+            // Add columns
+            const columns = columnsResult.recordset;
+            sql += columns.map((col: any) => {
+                let colDef = ` [${col.COLUMN_NAME}] ${col.DATA_TYPE.toUpperCase()}`;
+                
+                // Add length/precision
+                if (col.CHARACTER_MAXIMUM_LENGTH && col.CHARACTER_MAXIMUM_LENGTH > 0) {
+                    colDef += col.CHARACTER_MAXIMUM_LENGTH === -1 ? ' (MAX)' : ` (${col.CHARACTER_MAXIMUM_LENGTH})`;
+                } else if (col.DATA_TYPE.toLowerCase() === 'decimal' || col.DATA_TYPE.toLowerCase() === 'numeric') {
+                    colDef += ` (${col.NUMERIC_PRECISION}, ${col.NUMERIC_SCALE})`;
+                } else if (col.DATETIME_PRECISION !== null && ['datetime2', 'datetimeoffset', 'time'].includes(col.DATA_TYPE.toLowerCase())) {
+                    colDef += ` (${col.DATETIME_PRECISION})`;
+                }
+                
+                // Add NULL/NOT NULL
+                colDef += col.IS_NULLABLE === 'YES' ? ' NULL' : ' NOT NULL';
+                
+                return colDef;
+            }).join(',\n');
+            
+            // Group constraints by type
+            const constraints = constraintsResult.recordset;
+            const pkConstraints = constraints.filter((c: any) => c.CONSTRAINT_TYPE === 'PRIMARY KEY');
+            const fkConstraints = constraints.filter((c: any) => c.CONSTRAINT_TYPE === 'FOREIGN KEY');
+            
+            // Add PRIMARY KEY
+            if (pkConstraints.length > 0) {
+                const pkName = pkConstraints[0].CONSTRAINT_NAME;
+                const pkColumns = pkConstraints.map((c: any) => `[${c.COLUMN_NAME}] ASC`).join(', ');
+                sql += `,\n CONSTRAINT [${pkName}] PRIMARY KEY CLUSTERED (${pkColumns})`;
+            }
+            
+            // Add FOREIGN KEYS
+            const groupedFKs = new Map<string, any[]>();
+            fkConstraints.forEach((fk: any) => {
+                if (!groupedFKs.has(fk.CONSTRAINT_NAME)) {
+                    groupedFKs.set(fk.CONSTRAINT_NAME, []);
+                }
+                groupedFKs.get(fk.CONSTRAINT_NAME)!.push(fk);
+            });
+            
+            groupedFKs.forEach((fks, fkName) => {
+                const fkColumns = fks.map((f: any) => `[${f.COLUMN_NAME}]`).join(', ');
+                const refTable = `[${fks[0].FK_TABLE_SCHEMA}].[${fks[0].FK_TABLE_NAME}]`;
+                const refColumns = fks.map((f: any) => `[${f.FK_COLUMN_NAME}]`).join(', ');
+                const deleteRule = fks[0].DELETE_RULE === 'CASCADE' ? ' ON DELETE CASCADE' : '';
+                sql += `,\n CONSTRAINT [${fkName}] FOREIGN KEY (${fkColumns}) REFERENCES ${refTable} (${refColumns})${deleteRule}`;
+            });
+            
+            sql += '\n);\nGO';
+            
+            // Add indexes
+            const groupedIndexes = new Map<string, any[]>();
+            indexesResult.recordset.forEach((idx: any) => {
+                if (!groupedIndexes.has(idx.INDEX_NAME)) {
+                    groupedIndexes.set(idx.INDEX_NAME, []);
+                }
+                groupedIndexes.get(idx.INDEX_NAME)!.push(idx);
+            });
+            
+            groupedIndexes.forEach((indexes, indexName) => {
+                const indexType = indexes[0].INDEX_TYPE;
+                const isUnique = indexes[0].IS_UNIQUE ? 'UNIQUE ' : '';
+                const indexColumns = indexes.map((i: any) => 
+                    `[${i.COLUMN_NAME}] ${i.IS_DESCENDING ? 'DESC' : 'ASC'}`
+                ).join(', ');
+                
+                sql += `\n\nCREATE ${isUnique}NONCLUSTERED INDEX [${indexName}]\n ON [${schema}].[${tableName}](${indexColumns});\nGO`;
+            });
+            
+            return sql;
         } catch (error) {
             await dbPool.close();
             throw error;
@@ -758,6 +1076,28 @@ export class CompareSchemaWebview {
             await dbPool.close();
             
             return result.recordset[0]?.ROUTINE_DEFINITION || `-- Function ${schema}.${functionName} not found`;
+        } catch (error) {
+            await dbPool.close();
+            throw error;
+        }
+    }
+
+    private async getTriggerDefinition(connectionId: string, database: string, schema: string, triggerName: string): Promise<string> {
+        const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+        
+        try {
+            const query = `
+                SELECT m.definition
+                FROM sys.triggers trig
+                INNER JOIN sys.sql_modules m ON trig.object_id = m.object_id
+                INNER JOIN sys.tables tab ON trig.parent_id = tab.object_id
+                WHERE SCHEMA_NAME(tab.schema_id) = '${schema}' AND trig.name = '${triggerName}'
+            `;
+            
+            const result = await dbPool.request().query(query);
+            await dbPool.close();
+            
+            return result.recordset[0]?.definition || `-- Trigger ${schema}.${triggerName} not found`;
         } catch (error) {
             await dbPool.close();
             throw error;
