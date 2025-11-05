@@ -31,6 +31,19 @@
                 <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z" />
             </svg>
         </button>
+        <button onclick="toggleSettingsPanel()" data-tooltip="Diagram Settings">
+            <svg xmlns="http://www.w3.org/2000/svg" width="45" height="45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                <path d="M4 6l8 0" />
+                <path d="M16 6l4 0" />
+                <path d="M8 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                <path d="M4 12l2 0" />
+                <path d="M10 12l10 0" />
+                <path d="M17 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                <path d="M4 18l11 0" />
+                <path d="M19 18l1 0" />
+            </svg>
+        </button>
         <div class="toolbar-divider"></div>
         <button onclick="exportAsSVG()" data-tooltip="Export to SVG">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -55,6 +68,68 @@
         </div>
         <div class="filter-list" id="filterList">
             <!-- Table checkboxes will be inserted here -->
+        </div>
+    </div>
+    
+    <div id="settingsPanel" class="settings-panel">
+        <div class="settings-header">
+            <span>Diagram Settings</span>
+            <span style="cursor: pointer;" onclick="toggleSettingsPanel()">✕</span>
+        </div>
+        <div class="settings-content">
+            <div class="settings-group">
+                <h3>Display Options</h3>
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="showDatatypes" checked onchange="updateDiagramSettings()">
+                    <span>Show Data Types</span>
+                </label>
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="showKeys" checked onchange="updateDiagramSettings()">
+                    <span>Show Keys (PK/FK)</span>
+                </label>
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="showReferences" checked onchange="updateDiagramSettings()">
+                    <span>Show Table References</span>
+                </label>
+            </div>
+            
+            <div class="settings-group">
+                <h3>Relationship Styling</h3>
+                <div class="settings-item">
+                    <label>Line Color</label>
+                    <input type="color" id="lineColor" value="#4fc3f7" onchange="updateDiagramSettings()">
+                </div>
+                <div class="settings-item">
+                    <label>Arrow Color</label>
+                    <input type="color" id="arrowColor" value="#4fc3f7" onchange="updateDiagramSettings()">
+                </div>
+                <div class="settings-item">
+                    <label>Arrow Head Style</label>
+                    <select id="arrowHeadStyle" onchange="updateDiagramSettings()">
+                        <option value="arrow">Arrow</option>
+                        <option value="triangle">Triangle</option>
+                        <option value="circle">Circle</option>
+                        <option value="diamond">Diamond</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+                <div class="settings-item">
+                    <label>Line Style</label>
+                    <select id="lineStyle" onchange="updateDiagramSettings()">
+                        <option value="solid">Solid</option>
+                        <option value="dashed">Dashed</option>
+                        <option value="dotted">Dotted</option>
+                    </select>
+                </div>
+                <div class="settings-item">
+                    <label>Line Width</label>
+                    <input type="number" id="lineWidth" min="1" max="5" step="0.5" value="2" onchange="updateDiagramSettings()">
+                </div>
+                <div class="settings-item">
+                    <label>Head Width</label>
+                    <input type="number" id="headWidth" min="0.5" max="3" step="0.1" value="1" onchange="updateDiagramSettings()">
+                </div>
+            </div>
         </div>
     </div>
     

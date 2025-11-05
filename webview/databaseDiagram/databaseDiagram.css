@@ -69,10 +69,8 @@ body {
 }
 
 .relationship-line {
-    stroke: var(--vscode-charts-blue, #4fc3f7);
-    stroke-width: 2;
     fill: none;
-    marker-end: url(#arrowhead);
+    /* stroke, stroke-width, stroke-dasharray, and marker-end are set dynamically via JS */
 }
 
 .toolbar {
@@ -249,4 +247,132 @@ body {
 
 .filter-item.hidden {
     display: none;
+}
+
+/* Settings Panel */
+.settings-panel {
+    position: absolute;
+    top: 60px;
+    left: 10px;
+    width: 320px;
+    max-height: calc(100vh - 80px);
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    z-index: 1001;
+    display: none;
+    flex-direction: column;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.settings-panel.visible {
+    display: flex;
+}
+
+.settings-header {
+    padding: 10px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    background: var(--vscode-editor-background);
+    z-index: 1;
+}
+
+.settings-content {
+    padding: 10px;
+    flex: 1;
+    overflow-y: auto;
+    max-height: calc(100vh - 140px);
+}
+
+.settings-group {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.settings-group:last-child {
+    border-bottom: none;
+}
+
+.settings-group h3 {
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: var(--vscode-foreground);
+}
+
+.settings-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.settings-checkbox input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.settings-checkbox span {
+    font-size: 13px;
+}
+
+.settings-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 12px;
+}
+
+.settings-item label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--vscode-foreground);
+}
+
+.settings-item input[type="color"] {
+    width: 100%;
+    height: 35px;
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 2px;
+    background: var(--vscode-input-background);
+    cursor: pointer;
+    padding: 2px;
+}
+
+.settings-item input[type="number"] {
+    width: 100%;
+    padding: 5px 8px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 2px;
+    font-family: var(--vscode-font-family);
+    font-size: 13px;
+}
+
+.settings-item input[type="number"]:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+}
+
+.settings-item select {
+    width: 100%;
+    padding: 5px 8px;
+    background: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 2px;
+    font-family: var(--vscode-font-family);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.settings-item select:focus {
+    outline: 1px solid var(--vscode-focusBorder);
 }

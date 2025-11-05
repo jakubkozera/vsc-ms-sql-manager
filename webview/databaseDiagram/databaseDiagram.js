@@ -5,6 +5,19 @@ console.log('[Diagram] VS Code API initialized');
 const tables = TABLES_DATA;
 const relationships = RELATIONSHIPS_DATA;
 
+// Diagram settings
+let diagramSettings = {
+    showDatatypes: true,
+    showKeys: true,
+    showReferences: true,
+    lineColor: '#4fc3f7',
+    arrowColor: '#4fc3f7',
+    arrowHeadStyle: 'arrow',
+    lineStyle: 'solid',
+    lineWidth: 2,
+    headWidth: 1
+};
+
 console.log('Tables loaded:', tables);
 console.log('Relationships loaded:', relationships);
 console.log('Tables count:', tables ? tables.length : 0);
@@ -33,18 +46,84 @@ const svg = d3.select('#diagram')
     .attr('width', width)
     .attr('height', height);
 
-// Define arrowhead marker
-svg.append('defs').append('marker')
-    .attr('id', 'arrowhead')
-    .attr('viewBox', '-0 -5 10 10')
-    .attr('refX', 8)
-    .attr('refY', 0)
-    .attr('orient', 'auto')
-    .attr('markerWidth', 8)
-    .attr('markerHeight', 8)
-    .append('path')
-    .attr('d', 'M 0,-5 L 10,0 L 0,5')
-    .attr('fill', '#4fc3f7');
+// Define arrowhead markers (will be updated based on settings)
+const defs = svg.append('defs');
+
+function updateArrowheadMarkers() {
+    defs.selectAll('marker').remove();
+    
+    const markerColor = diagramSettings.arrowColor;
+    const arrowStyle = diagramSettings.arrowHeadStyle;
+    const headScale = diagramSettings.headWidth;
+    
+    if (arrowStyle === 'arrow') {
+        // Open arrow - two lines forming >
+        const baseSize = 8;
+        const scaledSize = baseSize * headScale;
+        defs.append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '0 0 10 10')
+            .attr('refX', 9)
+            .attr('refY', 5)
+            .attr('orient', 'auto')
+            .attr('markerWidth', scaledSize)
+            .attr('markerHeight', scaledSize)
+            .append('path')
+            .attr('d', 'M 0,0 L 10,5 L 0,10')
+            .attr('fill', 'none')
+            .attr('stroke', markerColor)
+            .attr('stroke-width', 2)
+            .attr('stroke-linecap', 'round')
+            .attr('stroke-linejoin', 'round');
+    } else if (arrowStyle === 'triangle') {
+        const baseSize = 8;
+        const scaledSize = baseSize * headScale;
+        defs.append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '-0 -5 10 10')
+            .attr('refX', 8)
+            .attr('refY', 0)
+            .attr('orient', 'auto')
+            .attr('markerWidth', scaledSize)
+            .attr('markerHeight', scaledSize)
+            .append('path')
+            .attr('d', 'M 0,-5 L 10,0 L 0,5')
+            .attr('fill', markerColor);
+    } else if (arrowStyle === 'circle') {
+        const baseSize = 8;
+        const scaledSize = baseSize * headScale;
+        defs.append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '0 0 10 10')
+            .attr('refX', 5)
+            .attr('refY', 5)
+            .attr('orient', 'auto')
+            .attr('markerWidth', scaledSize)
+            .attr('markerHeight', scaledSize)
+            .append('circle')
+            .attr('cx', 5)
+            .attr('cy', 5)
+            .attr('r', 4)
+            .attr('fill', markerColor);
+    } else if (arrowStyle === 'diamond') {
+        const baseSize = 8;
+        const scaledSize = baseSize * headScale;
+        defs.append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '0 0 10 10')
+            .attr('refX', 5)
+            .attr('refY', 5)
+            .attr('orient', 'auto')
+            .attr('markerWidth', scaledSize)
+            .attr('markerHeight', scaledSize)
+            .append('path')
+            .attr('d', 'M 5,0 L 10,5 L 5,10 L 0,5 Z')
+            .attr('fill', markerColor);
+    }
+    // For 'none', we don't add any marker
+}
+
+updateArrowheadMarkers();
 
 // Create container for zoom/pan
 const container = svg.append('g');
@@ -192,32 +271,8 @@ tables.forEach((table, index) => {
     filterList.appendChild(item);
 });
 
-// Draw relationships
+// Create relationship and table groups
 const relationshipGroup = container.append('g').attr('class', 'relationships');
-
-relationships.forEach(rel => {
-    const fromTable = tableMap.get(rel.from);
-    const toTable = tableMap.get(rel.to);
-
-    if (fromTable && toTable) {
-        // Calculate connection points
-        const x1 = fromTable.x + fromTable.width;
-        const y1 = fromTable.y + fromTable.height / 2;
-        const x2 = toTable.x;
-        const y2 = toTable.y + toTable.height / 2;
-
-        // Draw curved line
-        const midX = (x1 + x2) / 2;
-        
-        relationshipGroup.append('path')
-            .attr('class', 'relationship-line')
-            .attr('d', `M ${x1},${y1} C ${midX},${y1} ${midX},${y2} ${x2},${y2}`)
-            .append('title')
-            .text(`${rel.name}: ${rel.fromColumn} → ${rel.toColumn}`);
-    }
-});
-
-// Draw tables
 const tableGroup = container.append('g').attr('class', 'tables');
 
 // Define drag behavior once
@@ -238,8 +293,9 @@ const drag = d3.drag()
         updateRelationships();
     });
 
-// Initial draw of tables
+// Initial draw of tables and relationships
 drawTables();
+updateRelationships();
 
 function drawTables() {
     // Clear existing tables
@@ -284,8 +340,8 @@ function drawTables() {
             const iconSize = 16;
             let currentX = iconStartX;
 
-            // Show key indicator - one icon for PK, FK, or both
-            if (column.isPrimaryKey || column.isForeignKey) {
+            // Show key indicator - one icon for PK, FK, or both (only if showKeys is enabled)
+            if (diagramSettings.showKeys && (column.isPrimaryKey || column.isForeignKey)) {
                 const keyIcon = tableG.append('g')
                     .attr('transform', `translate(${currentX}, ${y - 8})`);
                 
@@ -334,14 +390,16 @@ function drawTables() {
                 .attr('y', y)
                 .text(`${column.name}`);
 
-            // Column type (right-aligned)
-            tableG.append('text')
-                .attr('class', 'column-text')
-                .attr('x', table.width - 10)
-                .attr('y', y)
-                .attr('text-anchor', 'end')
-                .style('opacity', 0.7)
-                .text(`${column.type}`);
+            // Column type (right-aligned) - only if showDatatypes is enabled
+            if (diagramSettings.showDatatypes) {
+                tableG.append('text')
+                    .attr('class', 'column-text')
+                    .attr('x', table.width - 10)
+                    .attr('y', y)
+                    .attr('text-anchor', 'end')
+                    .style('opacity', 0.7)
+                    .text(`${column.type}`);
+            }
         });
     });
 }
@@ -360,6 +418,11 @@ function getColumnYPosition(table, columnName) {
 function updateRelationships() {
     // Redraw all relationship lines based on current table positions
     relationshipGroup.selectAll('path').remove();
+    
+    // Skip drawing if references are hidden
+    if (!diagramSettings.showReferences) {
+        return;
+    }
     
     relationships.forEach(rel => {
         const fromTable = tableMap.get(rel.from);
@@ -389,10 +452,25 @@ function updateRelationships() {
             
             // Bezier curve for smooth connections
             const midX = (x1 + x2) / 2;
-            relationshipGroup.append('path')
+            const line = relationshipGroup.append('path')
                 .attr('class', 'relationship-line')
                 .attr('d', `M ${x1},${y1} C ${midX},${y1} ${midX},${y2} ${x2},${y2}`)
-                .append('title')
+                .attr('stroke', diagramSettings.lineColor)
+                .attr('stroke-width', diagramSettings.lineWidth);
+            
+            // Apply line style
+            if (diagramSettings.lineStyle === 'dashed') {
+                line.attr('stroke-dasharray', '8,4');
+            } else if (diagramSettings.lineStyle === 'dotted') {
+                line.attr('stroke-dasharray', '2,4');
+            }
+            
+            // Add marker only if arrowHeadStyle is not 'none'
+            if (diagramSettings.arrowHeadStyle !== 'none') {
+                line.attr('marker-end', 'url(#arrowhead)');
+            }
+            
+            line.append('title')
                 .text(`${rel.name}: ${rel.fromColumn} → ${rel.toColumn}`);
         }
     });
@@ -437,7 +515,10 @@ function fitToScreen() {
 
 // Initial fit to screen only if we have tables
 if (tables && tables.length > 0) {
-    setTimeout(() => fitToScreen(), 100);
+    setTimeout(() => {
+        updateRelationships(); // Ensure relationships are drawn
+        fitToScreen();
+    }, 100);
 }
 
 // Filter panel functions
@@ -580,6 +661,30 @@ function redrawDiagram() {
     updateRelationships();
 }
 
+// Settings panel functions
+function toggleSettingsPanel() {
+    const panel = document.getElementById('settingsPanel');
+    panel.classList.toggle('visible');
+}
+function updateDiagramSettings() {
+    // Read settings from UI
+    diagramSettings.showDatatypes = document.getElementById('showDatatypes').checked;
+    diagramSettings.showKeys = document.getElementById('showKeys').checked;
+    diagramSettings.showReferences = document.getElementById('showReferences').checked;
+    diagramSettings.lineColor = document.getElementById('lineColor').value;
+    diagramSettings.arrowColor = document.getElementById('arrowColor').value;
+    diagramSettings.arrowHeadStyle = document.getElementById('arrowHeadStyle').value;
+    diagramSettings.lineStyle = document.getElementById('lineStyle').value;
+    diagramSettings.lineWidth = parseFloat(document.getElementById('lineWidth').value);
+    diagramSettings.headWidth = parseFloat(document.getElementById('headWidth').value);
+    
+    // Update arrow markers
+    updateArrowheadMarkers();
+    
+    // Redraw the entire diagram
+    redrawDiagram();
+}
+
 // Export function
 function exportAsSVG() {
     console.log('[Export] SVG export function called');
@@ -628,6 +733,44 @@ function exportAsSVG() {
         };
         
         applyComputedStyles(svgElement, svgClone);
+        
+        // Apply current diagram settings to the clone
+        // Update colors and styles based on current settings
+        const cloneRelationships = svgClone.querySelectorAll('.relationship-line');
+        cloneRelationships.forEach(rel => {
+            rel.setAttribute('stroke', diagramSettings.lineColor);
+            rel.setAttribute('stroke-width', diagramSettings.lineWidth);
+            
+            // Apply line style
+            if (diagramSettings.lineStyle === 'dashed') {
+                rel.setAttribute('stroke-dasharray', '8,4');
+            } else if (diagramSettings.lineStyle === 'dotted') {
+                rel.setAttribute('stroke-dasharray', '2,4');
+            }
+            
+            if (diagramSettings.arrowHeadStyle === 'none') {
+                rel.removeAttribute('marker-end');
+            }
+        });
+        
+        // Update marker colors in defs
+        const cloneDefs = svgClone.querySelector('defs');
+        if (cloneDefs) {
+            const markers = cloneDefs.querySelectorAll('marker');
+            markers.forEach(marker => {
+                const paths = marker.querySelectorAll('path');
+                const circles = marker.querySelectorAll('circle');
+                paths.forEach(p => {
+                    if (p.getAttribute('fill') && p.getAttribute('fill') !== 'none') {
+                        p.setAttribute('fill', diagramSettings.arrowColor);
+                    }
+                    if (p.getAttribute('stroke')) {
+                        p.setAttribute('stroke', diagramSettings.arrowColor);
+                    }
+                });
+                circles.forEach(c => c.setAttribute('fill', diagramSettings.arrowColor));
+            });
+        }
         
         // Get the bounding box of visible content
         const bounds = container.node().getBBox();
