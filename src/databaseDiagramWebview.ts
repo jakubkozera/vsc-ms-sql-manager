@@ -39,6 +39,28 @@ export class DatabaseDiagramWebview {
         // Set HTML content
         this.panel.webview.html = this.getWebviewContent(database, schema);
 
+        // Set panel icon (light/dark)
+        try {
+            const lightIcon = path.join(this.context.extensionPath, 'resources', 'icons', 'database-diagram-icon.svg');
+            const darkIcon = path.join(this.context.extensionPath, 'resources', 'icons', 'database-diagram-icon-dark.svg');
+
+            const setIcon = (kind: vscode.ColorThemeKind) => {
+                try {
+                    if (kind === vscode.ColorThemeKind.Light) {
+                        this.panel!.iconPath = vscode.Uri.file(lightIcon);
+                    } else {
+                        this.panel!.iconPath = vscode.Uri.file(darkIcon);
+                    }
+                } catch (e) {}
+            };
+
+            setIcon(vscode.window.activeColorTheme.kind);
+            const themeDisposable = vscode.window.onDidChangeActiveColorTheme(e => setIcon(e.kind));
+            this.context.subscriptions.push(themeDisposable);
+        } catch (e) {
+            // ignore
+        }
+
         // Handle messages from webview
         this.panel.webview.onDidReceiveMessage(
             async message => {
