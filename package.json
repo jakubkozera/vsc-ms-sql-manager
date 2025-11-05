@@ -276,6 +276,11 @@
         "icon": "$(type-hierarchy)"
       },
       {
+        "command": "mssqlManager.compareSchema",
+        "title": "Compare Schema",
+        "icon": "$(diff)"
+      },
+      {
         "command": "mssqlManager.generateDatabaseScripts",
         "title": "Generate Scripts...",
         "icon": "$(file-text)"
@@ -527,6 +532,11 @@
           "group": "2_manage@4"
         },
         {
+          "command": "mssqlManager.compareSchema",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "2_manage@5"
+        },
+        {
           "command": "mssqlManager.generateDatabaseScripts",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
           "group": "2_script@1"
@@ -617,6 +627,11 @@
           "group": "2_manage@4"
         },
         {
+          "command": "mssqlManager.compareSchema",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "2_manage@5"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
           "group": "3_refresh@1"
@@ -625,6 +640,11 @@
           "command": "mssqlManager.showDatabaseDiagram",
           "when": "view == mssqlManager.explorer && viewItem == database",
           "group": "1_query@3"
+        },
+        {
+          "command": "mssqlManager.compareSchema",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@4"
         },
         {
           "command": "mssqlManager.generateDatabaseScripts",
@@ -884,6 +904,10 @@
         },
         {
           "command": "mssqlManager.showDatabaseDiagram",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.compareSchema",
           "when": "false"
         }
       ]

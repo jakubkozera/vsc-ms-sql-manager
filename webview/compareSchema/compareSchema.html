@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compare Database Schema</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/editor/editor.main.css">
+    <link rel="stylesheet" href="compareSchema.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-section">
+                <span class="header-label">Source</span>
+                <div class="custom-dropdown" id="source-dropdown">
+                    <button class="dropdown-trigger" id="sourceDatabase" disabled>-</button>
+                </div>
+            </div>
+            <div class="header-section">
+                <span class="header-label">Target Connection</span>
+                <div class="custom-dropdown" id="target-connection-dropdown">
+                    <button class="dropdown-trigger" id="targetConnectionSelect">Select connection...</button>
+                    <div class="dropdown-menu" id="targetConnectionMenu"></div>
+                </div>
+            </div>
+            <div class="header-section">
+                <span class="header-label">Target Database</span>
+                <div class="custom-dropdown" id="target-database-dropdown">
+                    <button class="dropdown-trigger" id="targetDatabaseSelect" disabled>Select database...</button>
+                    <div class="dropdown-menu" id="targetDatabaseMenu"></div>
+                </div>
+            </div>
+            <button id="compareButton" class="compare-button" disabled>Compare</button>
+        </div>
+
+        <div id="loadingIndicator" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Comparing schemas...</p>
+        </div>
+
+        <div id="resultsSection" class="content" style="display: none;">
+            <div class="table-panel">
+                <div class="table-header">
+                    <div>Type</div>
+                    <div>Source Name</div>
+                    <div></div>
+                    <div>Action</div>
+                    <div>Target Name</div>
+                </div>
+                <div class="table-body" id="changesTableBody">
+                    <!-- Changes will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="comparison-section">Comparison Details</div>
+
+        <div class="editor-container">
+            <div class="editor-wrapper">
+                <div id="leftEditor"></div>
+            </div>
+            <div class="editor-wrapper">
+                <div id="rightEditor"></div>
+            </div>
+        </div>
+
+        <div id="emptyState" class="empty-state hidden">
+            <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            <h3>Schemas are identical</h3>
+            <p>No differences found between the two databases</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    <script src="compareSchema.js"></script>
+</body>
+</html>
