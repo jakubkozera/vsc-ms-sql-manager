@@ -40,6 +40,12 @@ export class DatabaseDiagramWebview {
                     case 'alert':
                         vscode.window.showInformationMessage(message.text);
                         break;
+                    case 'exportDiagram':
+                        await this.handleExport(message.format, message.data, message.defaultFilename);
+                        break;
+                    case 'error':
+                        vscode.window.showErrorMessage(message.message);
+                        break;
                 }
             },
             undefined
@@ -48,6 +54,46 @@ export class DatabaseDiagramWebview {
         this.panel.onDidDispose(() => {
             this.panel = undefined;
         });
+    }
+
+    private async handleExport(format: 'svg' | 'png', data: string, defaultFilename: string) {
+        try {
+            this.outputChannel.appendLine(`[DatabaseDiagram] Handling ${format.toUpperCase()} export...`);
+            
+            // Show save dialog
+            const uri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(defaultFilename),
+                filters: format === 'svg' 
+                    ? { 'SVG Files': ['svg'] }
+                    : { 'PNG Files': ['png'] }
+            });
+
+            if (!uri) {
+                this.outputChannel.appendLine('[DatabaseDiagram] Export cancelled by user');
+                return;
+            }
+
+            this.outputChannel.appendLine(`[DatabaseDiagram] Saving to: ${uri.fsPath}`);
+
+            // Convert data to buffer
+            let buffer: Buffer;
+            if (format === 'svg') {
+                // SVG is already a string
+                buffer = Buffer.from(data, 'utf8');
+            } else {
+                // PNG is base64 encoded
+                buffer = Buffer.from(data, 'base64');
+            }
+
+            // Write file
+            await vscode.workspace.fs.writeFile(uri, buffer);
+
+            this.outputChannel.appendLine(`[DatabaseDiagram] Export successful: ${uri.fsPath}`);
+            vscode.window.showInformationMessage(`Diagram exported successfully to ${uri.fsPath}`);
+        } catch (error) {
+            this.outputChannel.appendLine(`[DatabaseDiagram] Export failed: ${error}`);
+            vscode.window.showErrorMessage(`Failed to export diagram: ${error}`);
+        }
     }
 
     private async loadDatabaseSchema(connectionId: string, database: string): Promise<any> {
@@ -260,39 +306,122 @@ export class DatabaseDiagramWebview {
             marker-end: url(#arrowhead);
         }
 
-        .controls {
+        .toolbar {
             position: absolute;
             top: 10px;
-            right: 10px;
+            left: 50%;
+            transform: translateX(-50%);
             background: var(--vscode-editor-background);
             border: 1px solid var(--vscode-panel-border);
-            padding: 10px;
-            border-radius: 4px;
+            padding: 8px 12px;
+            border-radius: 6px;
             z-index: 1000;
             display: flex;
-            gap: 5px;
+            gap: 4px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
 
-        .controls button {
+        .toolbar button {
             margin: 0;
-            padding: 5px 10px;
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
+            padding: 8px;
+            background: transparent;
+            color: var(--vscode-foreground);
             border: none;
-            border-radius: 2px;
+            border-radius: 4px;
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 5px;
+            justify-content: center;
+            transition: background-color 0.2s;
+            position: relative;
         }
 
-        .controls button:hover {
-            background: var(--vscode-button-hoverBackground);
+        .toolbar button:hover {
+            background: var(--vscode-list-hoverBackground);
         }
 
-        .controls button svg {
-            width: 16px;
-            height: 16px;
+        .toolbar button svg {
+            width: 20px;
+            height: 20px;
+            stroke: currentColor;
+        }
+
+        .toolbar-divider {
+            width: 1px;
+            background: var(--vscode-panel-border);
+            margin: 0 4px;
+        }
+
+        .export-btn-wrapper {
+            position: relative;
+        }
+
+        .export-menu {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            display: none !important;
+            flex-direction: column;
+            min-width: 120px;
+            z-index: 1001;
+        }
+
+        .export-menu.visible {
+            display: flex !important;
+        }
+
+        .export-menu button {
+            padding: 8px 16px;
+            text-align: left;
+            border-radius: 0;
+            background: transparent;
+            justify-content: flex-start;
+            font-size: 13px;
+        }
+
+        .export-menu button:first-child {
+            border-radius: 4px 4px 0 0;
+        }
+
+        .export-menu button:last-child {
+            border-radius: 0 0 4px 4px;
+        }
+
+        .export-menu button:hover {
+            background: var(--vscode-list-hoverBackground);
+        }
+
+        .toolbar button[data-tooltip] {
+            position: relative;
+        }
+
+        .toolbar button[data-tooltip]::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--vscode-editorHoverWidget-background);
+            color: var(--vscode-editorHoverWidget-foreground);
+            border: 1px solid var(--vscode-editorHoverWidget-border);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 1002;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .toolbar button[data-tooltip]:hover::after {
+            opacity: 1;
         }
 
         .filter-panel {
@@ -399,15 +528,42 @@ export class DatabaseDiagramWebview {
     </style>
 </head>
 <body>
-    <div class="controls">
-        <button onclick="resetZoom()">Reset View</button>
-        <button onclick="fitToScreen()">Fit to Screen</button>
-        <button onclick="toggleFilterPanel()">
+    <div class="toolbar">
+        <button onclick="resetZoom()" data-tooltip="Reset View">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+                <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+            </svg>
+        </button>
+        <button onclick="fitToScreen()" data-tooltip="Fit to Screen">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 12v-6a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v6" />
+                <path d="M10 18h-7" />
+                <path d="M21 18h-7" />
+                <path d="M6 15l-3 3l3 3" />
+                <path d="M18 15l3 3l-3 3" />
+            </svg>
+        </button>
+        <div class="toolbar-divider"></div>
+        <button onclick="toggleFilterPanel()" data-tooltip="Filter Tables">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z" />
             </svg>
-            Filter
         </button>
+        <div class="toolbar-divider"></div>
+        <div class="export-btn-wrapper">
+            <button id="exportBtn" onclick="toggleExportMenu()" data-tooltip="Export Diagram">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2" />
+                    <path d="M9 12h12l-3 -3" />
+                    <path d="M18 15l3 -3" />
+                </svg>
+            </button>
+            <div id="exportMenu" class="export-menu">
+                <button onclick="console.log('[Export] SVG button clicked'); exportAsSVG();">SVG</button>
+                <button onclick="console.log('[Export] PNG button clicked'); exportAsPNG();">PNG</button>
+            </div>
+        </div>
     </div>
     
     <div id="filterPanel" class="filter-panel">
@@ -430,6 +586,10 @@ export class DatabaseDiagramWebview {
     <svg id="diagram"></svg>
 
     <script>
+        // Initialize VS Code API
+        const vscode = acquireVsCodeApi();
+        console.log('[Diagram] VS Code API initialized');
+
         const tables = ${tablesJson};
         const relationships = ${relationshipsJson};
 
@@ -821,10 +981,51 @@ export class DatabaseDiagramWebview {
             setTimeout(() => fitToScreen(), 100);
         }
 
+        // Close export menu when clicking outside
+        document.addEventListener('click', (e) => {
+            console.log('[Export] Document clicked, target:', e.target);
+            const exportBtn = document.getElementById('exportBtn');
+            const exportMenu = document.getElementById('exportMenu');
+            
+            if (!exportBtn || !exportMenu) {
+                console.error('[Export] Export button or menu not found');
+                return;
+            }
+            
+            // Don't close if clicking the export button or menu itself
+            if (exportBtn.contains(e.target) || exportMenu.contains(e.target)) {
+                console.log('[Export] Click on export button or menu, ignoring');
+                return;
+            }
+            
+            if (exportMenu.classList.contains('visible')) {
+                console.log('[Export] Closing menu due to outside click');
+                exportMenu.classList.remove('visible');
+            }
+        });
+
         // Filter panel functions
         function toggleFilterPanel() {
             const panel = document.getElementById('filterPanel');
             panel.classList.toggle('visible');
+            // Close export menu if open
+            document.getElementById('exportMenu').classList.remove('visible');
+        }
+
+        function toggleExportMenu() {
+            if (event) event.stopPropagation();
+            console.log('[Export] Toggle export menu called');
+            const menu = document.getElementById('exportMenu');
+            if (!menu) {
+                console.error('[Export] Export menu element not found!');
+                return;
+            }
+            const wasVisible = menu.classList.contains('visible');
+            menu.classList.toggle('visible');
+            const isVisible = menu.classList.contains('visible');
+            console.log('[Export] Menu visibility toggled:', wasVisible, '->', isVisible);
+            console.log('[Export] Menu classes:', menu.className);
+            console.log('[Export] Menu display style:', window.getComputedStyle(menu).display);
         }
 
         function filterTableList() {
@@ -959,6 +1160,164 @@ export class DatabaseDiagramWebview {
             // Redraw tables and relationships
             drawTables();
             updateRelationships();
+        }
+
+        // Export functions
+        function exportAsSVG() {
+            console.log('[Export] SVG export function called');
+            if (event) event.stopPropagation();
+            const menu = document.getElementById('exportMenu');
+            if (menu) {
+                menu.classList.remove('visible');
+                console.log('[Export] Menu hidden');
+            }
+            
+            try {
+                console.log('[Export] Starting SVG export...');
+                // Clone the SVG
+                const svgElement = document.getElementById('diagram');
+                if (!svgElement) {
+                    console.error('[Export] SVG element not found!');
+                    return;
+                }
+                console.log('[Export] SVG element found, cloning...');
+                const svgClone = svgElement.cloneNode(true);
+                
+                // Get the bounding box of visible content
+                const bounds = container.node().getBBox();
+                
+                // Set viewBox to show only visible tables
+                svgClone.setAttribute('viewBox', \`\${bounds.x - 20} \${bounds.y - 20} \${bounds.width + 40} \${bounds.height + 40}\`);
+                svgClone.setAttribute('width', bounds.width + 40);
+                svgClone.setAttribute('height', bounds.height + 40);
+                
+                // Serialize to string
+                console.log('[Export] Serializing SVG...');
+                const serializer = new XMLSerializer();
+                let svgString = serializer.serializeToString(svgClone);
+                console.log('[Export] SVG serialized, length:', svgString.length);
+                
+                // Add XML declaration
+                svgString = '<?xml version="1.0" encoding="UTF-8"?>\\n' + svgString;
+                
+                // Send to VS Code extension host for saving
+                console.log('[Export] Sending SVG data to extension host...');
+                vscode.postMessage({
+                    command: 'exportDiagram',
+                    format: 'svg',
+                    data: svgString,
+                    defaultFilename: \`database-diagram-\${Date.now()}.svg\`
+                });
+                
+                console.log('[Export] SVG export message sent');
+            } catch (error) {
+                console.error('[Export] Error exporting SVG:', error);
+                vscode.postMessage({
+                    command: 'error',
+                    message: 'Failed to export SVG: ' + error.message
+                });
+            }
+        }
+
+        function exportAsPNG() {
+            console.log('[Export] PNG export function called');
+            if (event) event.stopPropagation();
+            const menu = document.getElementById('exportMenu');
+            if (menu) {
+                menu.classList.remove('visible');
+                console.log('[Export] Menu hidden');
+            }
+            
+            try {
+                console.log('[Export] Starting PNG export...');
+                // Get SVG element
+                const svgElement = document.getElementById('diagram');
+                if (!svgElement) {
+                    console.error('[Export] SVG element not found!');
+                    return;
+                }
+                console.log('[Export] SVG element found, cloning...');
+                const svgClone = svgElement.cloneNode(true);
+                
+                // Get the bounding box of visible content
+                const bounds = container.node().getBBox();
+                
+                // Set viewBox and dimensions
+                svgClone.setAttribute('viewBox', \`\${bounds.x - 20} \${bounds.y - 20} \${bounds.width + 40} \${bounds.height + 40}\`);
+                const width = bounds.width + 40;
+                const height = bounds.height + 40;
+                svgClone.setAttribute('width', width);
+                svgClone.setAttribute('height', height);
+                
+                // Serialize SVG
+                const serializer = new XMLSerializer();
+                const svgString = serializer.serializeToString(svgClone);
+                
+                // Create canvas
+                console.log('[Export] Creating canvas:', width * 2, 'x', height * 2);
+                const canvas = document.createElement('canvas');
+                canvas.width = width * 2; // 2x for better quality
+                canvas.height = height * 2;
+                const ctx = canvas.getContext('2d');
+                ctx.scale(2, 2);
+                console.log('[Export] Canvas created and scaled');
+                
+                // Create image from SVG
+                const img = new Image();
+                const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                console.log('[Export] SVG blob created, size:', svgBlob.size);
+                const url = URL.createObjectURL(svgBlob);
+                console.log('[Export] Blob URL created:', url);
+                
+                img.onload = () => {
+                    console.log('[Export] Image loaded successfully');
+                    // Fill background with VS Code dark theme color
+                    ctx.fillStyle = '#1e1e1e';
+                    ctx.fillRect(0, 0, width, height);
+                    
+                    // Draw image
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Convert to PNG and download via extension host
+                    console.log('[Export] Converting canvas to data URL...');
+                    const dataUrl = canvas.toDataURL('image/png');
+                    console.log('[Export] Data URL created, length:', dataUrl.length);
+                    
+                    // Extract base64 data (remove "data:image/png;base64," prefix)
+                    const base64Data = dataUrl.split(',')[1];
+                    
+                    // Send to VS Code extension host for saving
+                    console.log('[Export] Sending PNG data to extension host...');
+                    vscode.postMessage({
+                        command: 'exportDiagram',
+                        format: 'png',
+                        data: base64Data,
+                        defaultFilename: \`database-diagram-\${Date.now()}.png\`
+                    });
+                    
+                    // Cleanup
+                    URL.revokeObjectURL(url);
+                    console.log('[Export] PNG export message sent');
+                };
+                
+                img.onerror = (error) => {
+                    console.error('[Export] Error loading SVG for PNG export:', error);
+                    URL.revokeObjectURL(url);
+                    vscode.postMessage({
+                        command: 'error',
+                        message: 'Failed to export PNG: ' + error
+                    });
+                };
+                
+                img.src = url;
+                
+            } catch (error) {
+                console.error('[Export] Error exporting PNG:', error);
+                vscode.postMessage({
+                    command: 'error',
+                    message: 'Failed to export PNG: ' + error.message
+                });
+            }
         }
     </script>
 </body>
