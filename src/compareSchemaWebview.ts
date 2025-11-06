@@ -822,6 +822,34 @@ export class CompareSchemaWebview {
         return indexesMap;
     }
 
+    // Fetch all schema data for a single database in parallel
+    private async fetchAllSchemaData(pool: any, dbName: string): Promise<{
+        columns: Map<string, any[]>;
+        constraints: Map<string, any[]>;
+        indexes: Map<string, any[]>;
+        views: Map<string, string>;
+        procedures: Map<string, string>;
+        functions: Map<string, string>;
+        triggers: Map<string, string>;
+    }> {
+        this.outputChannel.appendLine(`[CompareSchema] Fetching all schema data for ${dbName} in parallel...`);
+        
+        // Execute all queries in parallel using Promise.all
+        const [columns, constraints, indexes, views, procedures, functions, triggers] = await Promise.all([
+            this.getAllTablesColumns(pool),
+            this.getAllTablesConstraints(pool),
+            this.getAllTablesIndexes(pool),
+            this.getAllViewsDefinitions(pool),
+            this.getAllProceduresDefinitions(pool),
+            this.getAllFunctionsDefinitions(pool),
+            this.getAllTriggersDefinitions(pool)
+        ]);
+        
+        this.outputChannel.appendLine(`[CompareSchema] Completed fetching all schema data for ${dbName}`);
+        
+        return { columns, constraints, indexes, views, procedures, functions, triggers };
+    }
+
     private async cacheAllDefinitions(sourceSchema: any, targetSchema: any) {
         // Use ensureConnectionAndGetDbPool to reuse existing connections
         const sourcePool = await this.connectionProvider.ensureConnectionAndGetDbPool(this.sourceConnectionId, this.sourceDatabase);
@@ -829,21 +857,17 @@ export class CompareSchemaWebview {
         
         // Note: We don't close these pools as they are managed by ConnectionProvider and may be reused
         try {
-            // Fetch all table-related data in bulk for source database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all columns for source tables...`);
-            const sourceColumnsMap = await this.getAllTablesColumns(sourcePool);
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all constraints for source tables...`);
-            const sourceConstraintsMap = await this.getAllTablesConstraints(sourcePool);
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all indexes for source tables...`);
-            const sourceIndexesMap = await this.getAllTablesIndexes(sourcePool);
+            // Fetch all schema data for BOTH databases in parallel
+            this.outputChannel.appendLine(`[CompareSchema] Fetching schema data for both databases in parallel...`);
+            const startTime = Date.now();
             
-            // Fetch all table-related data in bulk for target database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all columns for target tables...`);
-            const targetColumnsMap = await this.getAllTablesColumns(targetPool);
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all constraints for target tables...`);
-            const targetConstraintsMap = await this.getAllTablesConstraints(targetPool);
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all indexes for target tables...`);
-            const targetIndexesMap = await this.getAllTablesIndexes(targetPool);
+            const [sourceData, targetData] = await Promise.all([
+                this.fetchAllSchemaData(sourcePool, this.sourceDatabase),
+                this.fetchAllSchemaData(targetPool, this.targetDatabase)
+            ]);
+            
+            const fetchTime = Date.now() - startTime;
+            this.outputChannel.appendLine(`[CompareSchema] Fetched all data in ${fetchTime}ms`);
             
             // Cache all table definitions from source
             this.outputChannel.appendLine(`[CompareSchema] Building table definitions for ${sourceSchema.tables.length} source tables...`);
@@ -851,9 +875,9 @@ export class CompareSchemaWebview {
                 const key = `source:table:${table.schema}.${table.name}`;
                 const tableKey = `${table.schema}.${table.name}`;
                 try {
-                    const columns = sourceColumnsMap.get(tableKey) || [];
-                    const constraints = sourceConstraintsMap.get(tableKey) || [];
-                    const indexes = sourceIndexesMap.get(tableKey) || [];
+                    const columns = sourceData.columns.get(tableKey) || [];
+                    const constraints = sourceData.constraints.get(tableKey) || [];
+                    const indexes = sourceData.indexes.get(tableKey) || [];
                     
                     const def = this.buildTableDefinition(table.schema, table.name, columns, constraints, indexes);
                     this.definitionsCache.set(key, def);
@@ -868,9 +892,9 @@ export class CompareSchemaWebview {
                 const key = `target:table:${table.schema}.${table.name}`;
                 const tableKey = `${table.schema}.${table.name}`;
                 try {
-                    const columns = targetColumnsMap.get(tableKey) || [];
-                    const constraints = targetConstraintsMap.get(tableKey) || [];
-                    const indexes = targetIndexesMap.get(tableKey) || [];
+                    const columns = targetData.columns.get(tableKey) || [];
+                    const constraints = targetData.constraints.get(tableKey) || [];
+                    const indexes = targetData.indexes.get(tableKey) || [];
                     
                     const def = this.buildTableDefinition(table.schema, table.name, columns, constraints, indexes);
                     this.definitionsCache.set(key, def);
@@ -879,44 +903,12 @@ export class CompareSchemaWebview {
                 }
             }
             
-            // Fetch all view definitions in bulk for source database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all view definitions for source...`);
-            const sourceViewsMap = await this.getAllViewsDefinitions(sourcePool);
-            
-            // Fetch all view definitions in bulk for target database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all view definitions for target...`);
-            const targetViewsMap = await this.getAllViewsDefinitions(targetPool);
-            
-            // Fetch all procedure definitions in bulk for source database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all procedure definitions for source...`);
-            const sourceProceduresMap = await this.getAllProceduresDefinitions(sourcePool);
-            
-            // Fetch all procedure definitions in bulk for target database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all procedure definitions for target...`);
-            const targetProceduresMap = await this.getAllProceduresDefinitions(targetPool);
-            
-            // Fetch all function definitions in bulk for source database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all function definitions for source...`);
-            const sourceFunctionsMap = await this.getAllFunctionsDefinitions(sourcePool);
-            
-            // Fetch all function definitions in bulk for target database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all function definitions for target...`);
-            const targetFunctionsMap = await this.getAllFunctionsDefinitions(targetPool);
-            
-            // Fetch all trigger definitions in bulk for source database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all trigger definitions for source...`);
-            const sourceTriggersMap = await this.getAllTriggersDefinitions(sourcePool);
-            
-            // Fetch all trigger definitions in bulk for target database
-            this.outputChannel.appendLine(`[CompareSchema] Fetching all trigger definitions for target...`);
-            const targetTriggersMap = await this.getAllTriggersDefinitions(targetPool);
-            
             // Cache view definitions from source
             this.outputChannel.appendLine(`[CompareSchema] Caching ${sourceSchema.views.length} source view definitions...`);
             for (const view of sourceSchema.views) {
                 const key = `source:view:${view.schema}.${view.name}`;
                 const viewKey = `${view.schema}.${view.name}`;
-                const def = sourceViewsMap.get(viewKey) || `-- View ${viewKey} not found`;
+                const def = sourceData.views.get(viewKey) || `-- View ${viewKey} not found`;
                 this.definitionsCache.set(key, def);
             }
             
@@ -925,7 +917,7 @@ export class CompareSchemaWebview {
             for (const view of targetSchema.views) {
                 const key = `target:view:${view.schema}.${view.name}`;
                 const viewKey = `${view.schema}.${view.name}`;
-                const def = targetViewsMap.get(viewKey) || `-- View ${viewKey} not found`;
+                const def = targetData.views.get(viewKey) || `-- View ${viewKey} not found`;
                 this.definitionsCache.set(key, def);
             }
             
@@ -934,7 +926,7 @@ export class CompareSchemaWebview {
             for (const proc of sourceSchema.procedures) {
                 const key = `source:procedure:${proc.schema}.${proc.name}`;
                 const procKey = `${proc.schema}.${proc.name}`;
-                const def = sourceProceduresMap.get(procKey) || `-- Procedure ${procKey} not found`;
+                const def = sourceData.procedures.get(procKey) || `-- Procedure ${procKey} not found`;
                 this.definitionsCache.set(key, def);
             }
             
@@ -943,7 +935,7 @@ export class CompareSchemaWebview {
             for (const proc of targetSchema.procedures) {
                 const key = `target:procedure:${proc.schema}.${proc.name}`;
                 const procKey = `${proc.schema}.${proc.name}`;
-                const def = targetProceduresMap.get(procKey) || `-- Procedure ${procKey} not found`;
+                const def = targetData.procedures.get(procKey) || `-- Procedure ${procKey} not found`;
                 this.definitionsCache.set(key, def);
             }
             
@@ -952,7 +944,7 @@ export class CompareSchemaWebview {
             for (const func of sourceSchema.functions) {
                 const key = `source:function:${func.schema}.${func.name}`;
                 const funcKey = `${func.schema}.${func.name}`;
-                const def = sourceFunctionsMap.get(funcKey) || `-- Function ${funcKey} not found`;
+                const def = sourceData.functions.get(funcKey) || `-- Function ${funcKey} not found`;
                 this.definitionsCache.set(key, def);
             }
             
@@ -961,7 +953,7 @@ export class CompareSchemaWebview {
             for (const func of targetSchema.functions) {
                 const key = `target:function:${func.schema}.${func.name}`;
                 const funcKey = `${func.schema}.${func.name}`;
-                const def = targetFunctionsMap.get(funcKey) || `-- Function ${funcKey} not found`;
+                const def = targetData.functions.get(funcKey) || `-- Function ${funcKey} not found`;
                 this.definitionsCache.set(key, def);
             }
             
@@ -970,7 +962,7 @@ export class CompareSchemaWebview {
             for (const trigger of sourceSchema.triggers) {
                 const key = `source:trigger:${trigger.schema}.${trigger.name}`;
                 const triggerKey = `${trigger.schema}.${trigger.name}`;
-                const def = sourceTriggersMap.get(triggerKey) || `-- Trigger ${triggerKey} not found`;
+                const def = sourceData.triggers.get(triggerKey) || `-- Trigger ${triggerKey} not found`;
                 this.definitionsCache.set(key, def);
             }
             
@@ -979,7 +971,7 @@ export class CompareSchemaWebview {
             for (const trigger of targetSchema.triggers) {
                 const key = `target:trigger:${trigger.schema}.${trigger.name}`;
                 const triggerKey = `${trigger.schema}.${trigger.name}`;
-                const def = targetTriggersMap.get(triggerKey) || `-- Trigger ${triggerKey} not found`;
+                const def = targetData.triggers.get(triggerKey) || `-- Trigger ${triggerKey} not found`;
                 this.definitionsCache.set(key, def);
             }
         } catch (error) {
