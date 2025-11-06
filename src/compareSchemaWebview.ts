@@ -248,7 +248,8 @@ export class CompareSchemaWebview {
     }
 
     private async getSchemaInfo(connectionId: string, database: string) {
-        const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+        // Use ensureConnectionAndGetDbPool to reuse existing connections
+        const dbPool = await this.connectionProvider.ensureConnectionAndGetDbPool(connectionId, database);
 
         try {
             this.outputChannel.appendLine(`[CompareSchema] Getting schema info for ${database}`);
@@ -368,7 +369,7 @@ export class CompareSchemaWebview {
             const triggersResult = await dbPool.request().query(triggersQuery);
             this.outputChannel.appendLine(`[CompareSchema] Found ${triggersResult.recordset.length} triggers`);
 
-            await dbPool.close();
+            // Don't close pool - it's managed by ConnectionProvider and may be reused
             this.outputChannel.appendLine(`[CompareSchema] Schema info fetch completed for ${database}`);
 
             return {
@@ -382,7 +383,7 @@ export class CompareSchemaWebview {
                 triggers: triggersResult.recordset
             };
         } catch (error) {
-            await dbPool.close();
+            this.outputChannel.appendLine(`[CompareSchema] Error getting schema info: ${error}`);
             throw error;
         }
     }
@@ -688,10 +689,11 @@ export class CompareSchemaWebview {
     }
 
     private async cacheAllDefinitions(sourceSchema: any, targetSchema: any) {
-        // Create one pool per database for efficiency
-        const sourcePool = await this.connectionProvider.createDbPool(this.sourceConnectionId, this.sourceDatabase);
-        const targetPool = await this.connectionProvider.createDbPool(this.targetConnectionId, this.targetDatabase);
+        // Use ensureConnectionAndGetDbPool to reuse existing connections
+        const sourcePool = await this.connectionProvider.ensureConnectionAndGetDbPool(this.sourceConnectionId, this.sourceDatabase);
+        const targetPool = await this.connectionProvider.ensureConnectionAndGetDbPool(this.targetConnectionId, this.targetDatabase);
         
+        // Note: We don't close these pools as they are managed by ConnectionProvider and may be reused
         try {
             // Cache all table definitions from source
             for (const table of sourceSchema.tables) {
@@ -802,10 +804,11 @@ export class CompareSchemaWebview {
                     this.outputChannel.appendLine(`[CompareSchema] Error caching target trigger ${trigger.schema}.${trigger.name}: ${error}`);
                 }
             }
-        } finally {
-            await sourcePool.close();
-            await targetPool.close();
+        } catch (error) {
+            this.outputChannel.appendLine(`[CompareSchema] Error caching definitions: ${error}`);
+            throw error;
         }
+        // Don't close pools - they are managed by ConnectionProvider and may be reused
     }
     
     private async getViewDefinition(pool: any, schema: string, viewName: string): Promise<string> {

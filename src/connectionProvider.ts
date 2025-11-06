@@ -427,6 +427,27 @@ export class ConnectionProvider {
         });
     }
 
+    // Ensure connection is active and return pool for specific database
+    // This method will reuse existing connections or activate them if needed
+    async ensureConnectionAndGetDbPool(connectionId: string, database: string): Promise<DBPool> {
+        // First check if we already have a DB pool for this specific database
+        const key = `${connectionId}::${database}`;
+        const existing = this.dbPools.get(key);
+        if (existing && existing.connected) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Reusing existing DB pool for ${connectionId} -> ${database}`);
+            return existing;
+        }
+
+        // Check if main connection is active
+        if (!this.isConnectionActive(connectionId)) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Connection ${connectionId} not active, activating...`);
+            await this.connectToSavedById(connectionId);
+        }
+
+        // Now create DB pool
+        return await this.createDbPool(connectionId, database);
+    }
+
     // Create or return an existing connection pool scoped to a specific database for a given connectionId
     async createDbPool(connectionId: string, database: string): Promise<DBPool> {
         const key = `${connectionId}::${database}`;
