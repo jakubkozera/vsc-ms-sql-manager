@@ -7,7 +7,8 @@
     let groupedChanges = {
         tables: [],
         views: [],
-        programmability: []
+        programmability: [],
+        users: []
     };
 
     // DOM elements
@@ -220,7 +221,8 @@
         groupedChanges = {
             tables: [],
             views: [],
-            programmability: []
+            programmability: [],
+            users: []
         };
         
         changes.forEach(change => {
@@ -232,6 +234,8 @@
                 groupedChanges.views.push(change);
             } else if (['procedure', 'function', 'trigger'].includes(type)) {
                 groupedChanges.programmability.push(change);
+            } else if (type === 'user') {
+                groupedChanges.users.push(change);
             }
         });
     }
@@ -252,6 +256,11 @@
         // Render Programmability group
         if (groupedChanges.programmability.length > 0) {
             changesTree.appendChild(createGroupElement('Programmability', groupedChanges.programmability, 'code'));
+        }
+
+        // Render Users group
+        if (groupedChanges.users.length > 0) {
+            changesTree.appendChild(createGroupElement('Users', groupedChanges.users, 'user'));
         }
     }
 
@@ -309,6 +318,11 @@
                 return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="16 18 22 12 16 6"></polyline>
                     <polyline points="8 6 2 12 8 18"></polyline>
+                </svg>`;
+            case 'user':
+                return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
                 </svg>`;
             default:
                 return '';

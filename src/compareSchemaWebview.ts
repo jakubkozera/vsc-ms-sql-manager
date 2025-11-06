@@ -3,7 +3,7 @@ import * as path from 'path';
 import { ConnectionProvider } from './connectionProvider';
 
 export interface SchemaChange {
-    objectType: 'table' | 'column' | 'view' | 'procedure' | 'function' | 'trigger' | 'index' | 'constraint';
+    objectType: 'table' | 'column' | 'view' | 'procedure' | 'function' | 'trigger' | 'index' | 'constraint' | 'user';
     objectName: string;
     changeType: 'add' | 'change' | 'delete';
     description?: string;
@@ -244,6 +244,12 @@ export class CompareSchemaWebview {
             changes.push(...triggerChanges);
         }
 
+        // Compare database users
+        const userChanges = await this.compareUsers(sourceSchema.users, targetSchema.users);
+        if (userChanges && userChanges.length > 0) {
+            changes.push(...userChanges);
+        }
+
         return changes;
     }
 
@@ -369,6 +375,24 @@ export class CompareSchemaWebview {
             const triggersResult = await dbPool.request().query(triggersQuery);
             this.outputChannel.appendLine(`[CompareSchema] Found ${triggersResult.recordset.length} triggers`);
 
+            // Get database users
+            this.outputChannel.appendLine(`[CompareSchema] Fetching database users...`);
+            const usersQuery = `
+                SELECT 
+                    dp.name as name,
+                    dp.type_desc as type,
+                    sp.name as loginName,
+                    dp.default_schema_name as defaultSchema
+                FROM sys.database_principals dp
+                LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+                WHERE dp.type IN ('S', 'U', 'G')  -- S=SQL user, U=Windows user, G=Windows group
+                    AND dp.name NOT IN ('dbo', 'guest', 'INFORMATION_SCHEMA', 'sys', 'public')
+                    AND dp.principal_id > 4  -- Exclude system users
+                ORDER BY dp.name
+            `;
+            const usersResult = await dbPool.request().query(usersQuery);
+            this.outputChannel.appendLine(`[CompareSchema] Found ${usersResult.recordset.length} database users`);
+
             // Don't close pool - it's managed by ConnectionProvider and may be reused
             this.outputChannel.appendLine(`[CompareSchema] Schema info fetch completed for ${database}`);
 
@@ -380,7 +404,8 @@ export class CompareSchemaWebview {
                 functions: functionsResult.recordset,
                 indexes: indexesResult.recordset,
                 constraints: constraintsResult.recordset,
-                triggers: triggersResult.recordset
+                triggers: triggersResult.recordset,
+                users: usersResult.recordset
             };
         } catch (error) {
             this.outputChannel.appendLine(`[CompareSchema] Error getting schema info: ${error}`);
@@ -535,6 +560,62 @@ export class CompareSchemaWebview {
 
     private async compareTriggers(sourceTriggers: any[], targetTriggers: any[]): Promise<SchemaChange[]> {
         return await this.compareSimpleObjects(sourceTriggers, targetTriggers, 'trigger');
+    }
+
+    private async compareUsers(sourceUsers: any[], targetUsers: any[]): Promise<SchemaChange[]> {
+        const changes: SchemaChange[] = [];
+        const sourceMap = new Map(sourceUsers.map(u => [u.name, u]));
+        const targetMap = new Map(targetUsers.map(u => [u.name, u]));
+
+        this.outputChannel.appendLine(`[CompareSchema] Comparing users: ${sourceUsers.length} source, ${targetUsers.length} target`);
+
+        // Users in source but not in target (deleted)
+        sourceUsers.forEach(user => {
+            if (!targetMap.has(user.name)) {
+                changes.push({
+                    objectType: 'user',
+                    objectName: user.name,
+                    changeType: 'delete',
+                    description: `User exists in source but not in target`
+                });
+            }
+        });
+
+        // Users in target but not in source (added)
+        targetUsers.forEach(user => {
+            if (!sourceMap.has(user.name)) {
+                changes.push({
+                    objectType: 'user',
+                    objectName: user.name,
+                    changeType: 'add',
+                    description: `User exists in target but not in source`
+                });
+            }
+        });
+
+        // Users in both - check for changes by comparing definitions
+        for (const user of targetUsers) {
+            if (sourceMap.has(user.name)) {
+                // User exists in both - compare definitions
+                this.outputChannel.appendLine(`[CompareSchema] Checking user ${user.name} for changes...`);
+                const hasChanged = await this.hasObjectDefinitionChanged('user', '', user.name);
+                
+                if (hasChanged) {
+                    this.outputChannel.appendLine(`[CompareSchema] Change detected in user ${user.name}`);
+                    changes.push({
+                        objectType: 'user',
+                        objectName: user.name,
+                        changeType: 'change',
+                        description: `User definition has changed`
+                    });
+                } else {
+                    this.outputChannel.appendLine(`[CompareSchema] No change in user ${user.name}`);
+                }
+            }
+        }
+
+        this.outputChannel.appendLine(`[CompareSchema] Found ${changes.length} user changes`);
+        return changes;
     }
 
     private compareIndexes(sourceIndexes: any[], targetIndexes: any[]): SchemaChange[] {
@@ -831,23 +912,25 @@ export class CompareSchemaWebview {
         procedures: Map<string, string>;
         functions: Map<string, string>;
         triggers: Map<string, string>;
+        users: Map<string, string>;
     }> {
         this.outputChannel.appendLine(`[CompareSchema] Fetching all schema data for ${dbName} in parallel...`);
         
         // Execute all queries in parallel using Promise.all
-        const [columns, constraints, indexes, views, procedures, functions, triggers] = await Promise.all([
+        const [columns, constraints, indexes, views, procedures, functions, triggers, users] = await Promise.all([
             this.getAllTablesColumns(pool),
             this.getAllTablesConstraints(pool),
             this.getAllTablesIndexes(pool),
             this.getAllViewsDefinitions(pool),
             this.getAllProceduresDefinitions(pool),
             this.getAllFunctionsDefinitions(pool),
-            this.getAllTriggersDefinitions(pool)
+            this.getAllTriggersDefinitions(pool),
+            this.getAllUsersDefinitions(pool)
         ]);
         
         this.outputChannel.appendLine(`[CompareSchema] Completed fetching all schema data for ${dbName}`);
         
-        return { columns, constraints, indexes, views, procedures, functions, triggers };
+        return { columns, constraints, indexes, views, procedures, functions, triggers, users };
     }
 
     private async cacheAllDefinitions(sourceSchema: any, targetSchema: any) {
@@ -974,6 +1057,22 @@ export class CompareSchemaWebview {
                 const def = targetData.triggers.get(triggerKey) || `-- Trigger ${triggerKey} not found`;
                 this.definitionsCache.set(key, def);
             }
+            
+            // Cache user definitions from source
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${sourceSchema.users.length} source user definitions...`);
+            for (const user of sourceSchema.users) {
+                const key = `source:user:${user.name}`;
+                const def = sourceData.users.get(user.name) || `-- User ${user.name} not found`;
+                this.definitionsCache.set(key, def);
+            }
+            
+            // Cache user definitions from target
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${targetSchema.users.length} target user definitions...`);
+            for (const user of targetSchema.users) {
+                const key = `target:user:${user.name}`;
+                const def = targetData.users.get(user.name) || `-- User ${user.name} not found`;
+                this.definitionsCache.set(key, def);
+            }
         } catch (error) {
             this.outputChannel.appendLine(`[CompareSchema] Error caching definitions: ${error}`);
             throw error;
@@ -1083,6 +1182,48 @@ export class CompareSchemaWebview {
         for (const row of result.recordset) {
             const key = `${row.schema_name}.${row.trigger_name}`;
             definitionsMap.set(key, row.definition || `-- Trigger ${key} definition not found`);
+        }
+        
+        return definitionsMap;
+    }
+
+    // Fetch all database user definitions in a single query
+    private async getAllUsersDefinitions(pool: any): Promise<Map<string, string>> {
+        const query = `
+            SELECT 
+                dp.name as user_name,
+                dp.type_desc as type,
+                sp.name as login_name,
+                dp.default_schema_name as default_schema
+            FROM sys.database_principals dp
+            LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+            WHERE dp.type IN ('S', 'U', 'G')  -- S=SQL user, U=Windows user, G=Windows group
+                AND dp.name NOT IN ('dbo', 'guest', 'INFORMATION_SCHEMA', 'sys', 'public')
+                AND dp.principal_id > 4  -- Exclude system users
+            ORDER BY dp.name
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Map by userName
+        const definitionsMap = new Map<string, string>();
+        for (const row of result.recordset) {
+            const key = row.user_name;
+            let definition = `CREATE USER [${row.user_name}]`;
+            
+            if (row.login_name) {
+                definition += ` FOR LOGIN [${row.login_name}]`;
+            } else {
+                definition += ` WITHOUT LOGIN`;
+            }
+            
+            if (row.default_schema && row.default_schema !== 'dbo') {
+                definition += ` WITH DEFAULT_SCHEMA = [${row.default_schema}]`;
+            }
+            
+            definition += ';\nGO';
+            
+            definitionsMap.set(key, definition);
         }
         
         return definitionsMap;
@@ -1254,7 +1395,10 @@ export class CompareSchemaWebview {
     }
 
     private getCachedDefinition(source: 'source' | 'target', objectType: string, schema: string, name: string): string | undefined {
-        const key = `${source}:${objectType}:${schema}.${name}`;
+        // For users, schema is empty string, so use name directly
+        const key = objectType === 'user' 
+            ? `${source}:${objectType}:${name}`
+            : `${source}:${objectType}:${schema}.${name}`;
         return this.definitionsCache.get(key);
     }
 
@@ -1330,6 +1474,18 @@ export class CompareSchemaWebview {
                 } else {
                     originalSchema = this.getCachedDefinition('source', 'function', schema, name) || `-- Function ${schema}.${name} not found`;
                     modifiedSchema = this.getCachedDefinition('target', 'function', schema, name) || `-- Function ${schema}.${name} not found`;
+                }
+            } else if (objectType === 'user') {
+                // For users, name is the full key (no schema)
+                if (change.changeType === 'delete') {
+                    originalSchema = this.getCachedDefinition('source', 'user', '', objectName) || `-- User ${objectName} not found`;
+                    modifiedSchema = `-- User deleted from target database`;
+                } else if (change.changeType === 'add') {
+                    originalSchema = `-- User does not exist in source database`;
+                    modifiedSchema = this.getCachedDefinition('target', 'user', '', objectName) || `-- User ${objectName} not found`;
+                } else {
+                    originalSchema = this.getCachedDefinition('source', 'user', '', objectName) || `-- User ${objectName} not found`;
+                    modifiedSchema = this.getCachedDefinition('target', 'user', '', objectName) || `-- User ${objectName} not found`;
                 }
             } else {
                 originalSchema = `-- ${change.objectType}: ${change.objectName}\n${change.description || ''}`;
