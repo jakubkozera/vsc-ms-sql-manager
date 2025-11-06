@@ -688,6 +688,140 @@ export class CompareSchemaWebview {
         return changes;
     }
 
+    // Fetch all columns for all tables in a single query
+    private async getAllTablesColumns(pool: any): Promise<Map<string, any[]>> {
+        const query = `
+            SELECT 
+                c.TABLE_SCHEMA,
+                c.TABLE_NAME,
+                c.COLUMN_NAME,
+                c.DATA_TYPE,
+                c.CHARACTER_MAXIMUM_LENGTH,
+                c.NUMERIC_PRECISION,
+                c.NUMERIC_SCALE,
+                c.DATETIME_PRECISION,
+                c.IS_NULLABLE,
+                c.COLUMN_DEFAULT,
+                c.ORDINAL_POSITION
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            WHERE c.TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Group columns by table
+        const columnsMap = new Map<string, any[]>();
+        for (const row of result.recordset) {
+            const tableKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
+            if (!columnsMap.has(tableKey)) {
+                columnsMap.set(tableKey, []);
+            }
+            columnsMap.get(tableKey)!.push(row);
+        }
+        
+        return columnsMap;
+    }
+
+    // Fetch all constraints for all tables in a single query
+    private async getAllTablesConstraints(pool: any): Promise<Map<string, any[]>> {
+        const query = `
+            SELECT 
+                tc.TABLE_SCHEMA,
+                tc.TABLE_NAME,
+                tc.CONSTRAINT_NAME,
+                tc.CONSTRAINT_TYPE,
+                kcu.COLUMN_NAME,
+                kcu.ORDINAL_POSITION,
+                rc.UPDATE_RULE,
+                rc.DELETE_RULE,
+                ccu.TABLE_SCHEMA AS REFERENCED_TABLE_SCHEMA,
+                ccu.TABLE_NAME AS REFERENCED_TABLE_NAME,
+                ccu.COLUMN_NAME AS REFERENCED_COLUMN_NAME,
+                cc.CHECK_CLAUSE,
+                ic.is_descending_key
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+            LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
+                ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME 
+                AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+                AND tc.TABLE_NAME = kcu.TABLE_NAME
+            LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc 
+                ON tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                AND tc.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
+            LEFT JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu 
+                ON rc.UNIQUE_CONSTRAINT_NAME = ccu.CONSTRAINT_NAME
+            LEFT JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+                ON tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+            LEFT JOIN sys.index_columns ic
+                ON OBJECT_ID('[' + tc.TABLE_SCHEMA + '].[' + tc.TABLE_NAME + ']') = ic.object_id
+                AND COL_NAME(ic.object_id, ic.column_id) = kcu.COLUMN_NAME
+                AND ic.index_id = (
+                    SELECT i.index_id 
+                    FROM sys.indexes i
+                    WHERE i.object_id = OBJECT_ID('[' + tc.TABLE_SCHEMA + '].[' + tc.TABLE_NAME + ']')
+                    AND i.name = tc.CONSTRAINT_NAME
+                )
+            WHERE tc.TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY tc.TABLE_SCHEMA, tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Group constraints by table
+        const constraintsMap = new Map<string, any[]>();
+        for (const row of result.recordset) {
+            const tableKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
+            if (!constraintsMap.has(tableKey)) {
+                constraintsMap.set(tableKey, []);
+            }
+            constraintsMap.get(tableKey)!.push(row);
+        }
+        
+        return constraintsMap;
+    }
+
+    // Fetch all indexes for all tables in a single query
+    private async getAllTablesIndexes(pool: any): Promise<Map<string, any[]>> {
+        const query = `
+            SELECT 
+                SCHEMA_NAME(t.schema_id) AS TABLE_SCHEMA,
+                t.name AS TABLE_NAME,
+                i.name AS INDEX_NAME,
+                i.type_desc AS INDEX_TYPE,
+                i.is_unique,
+                i.is_primary_key,
+                i.is_unique_constraint,
+                COL_NAME(ic.object_id, ic.column_id) AS COLUMN_NAME,
+                ic.is_descending_key,
+                ic.is_included_column,
+                ic.key_ordinal
+            FROM sys.indexes i
+            INNER JOIN sys.index_columns ic 
+                ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            INNER JOIN sys.tables t 
+                ON i.object_id = t.object_id
+            WHERE i.is_primary_key = 0
+                AND i.is_unique_constraint = 0
+                AND i.type > 0
+                AND SCHEMA_NAME(t.schema_id) NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY SCHEMA_NAME(t.schema_id), t.name, i.name, ic.key_ordinal, ic.index_column_id
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Group indexes by table
+        const indexesMap = new Map<string, any[]>();
+        for (const row of result.recordset) {
+            const tableKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
+            if (!indexesMap.has(tableKey)) {
+                indexesMap.set(tableKey, []);
+            }
+            indexesMap.get(tableKey)!.push(row);
+        }
+        
+        return indexesMap;
+    }
+
     private async cacheAllDefinitions(sourceSchema: any, targetSchema: any) {
         // Use ensureConnectionAndGetDbPool to reuse existing connections
         const sourcePool = await this.connectionProvider.ensureConnectionAndGetDbPool(this.sourceConnectionId, this.sourceDatabase);
@@ -695,11 +829,33 @@ export class CompareSchemaWebview {
         
         // Note: We don't close these pools as they are managed by ConnectionProvider and may be reused
         try {
+            // Fetch all table-related data in bulk for source database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all columns for source tables...`);
+            const sourceColumnsMap = await this.getAllTablesColumns(sourcePool);
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all constraints for source tables...`);
+            const sourceConstraintsMap = await this.getAllTablesConstraints(sourcePool);
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all indexes for source tables...`);
+            const sourceIndexesMap = await this.getAllTablesIndexes(sourcePool);
+            
+            // Fetch all table-related data in bulk for target database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all columns for target tables...`);
+            const targetColumnsMap = await this.getAllTablesColumns(targetPool);
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all constraints for target tables...`);
+            const targetConstraintsMap = await this.getAllTablesConstraints(targetPool);
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all indexes for target tables...`);
+            const targetIndexesMap = await this.getAllTablesIndexes(targetPool);
+            
             // Cache all table definitions from source
+            this.outputChannel.appendLine(`[CompareSchema] Building table definitions for ${sourceSchema.tables.length} source tables...`);
             for (const table of sourceSchema.tables) {
                 const key = `source:table:${table.schema}.${table.name}`;
+                const tableKey = `${table.schema}.${table.name}`;
                 try {
-                    const def = await this.getTableDefinitionWithPool(sourcePool, table.schema, table.name);
+                    const columns = sourceColumnsMap.get(tableKey) || [];
+                    const constraints = sourceConstraintsMap.get(tableKey) || [];
+                    const indexes = sourceIndexesMap.get(tableKey) || [];
+                    
+                    const def = this.buildTableDefinition(table.schema, table.name, columns, constraints, indexes);
                     this.definitionsCache.set(key, def);
                 } catch (error) {
                     this.outputChannel.appendLine(`[CompareSchema] Error caching source table ${table.schema}.${table.name}: ${error}`);
@@ -707,10 +863,16 @@ export class CompareSchemaWebview {
             }
             
             // Cache all table definitions from target
+            this.outputChannel.appendLine(`[CompareSchema] Building table definitions for ${targetSchema.tables.length} target tables...`);
             for (const table of targetSchema.tables) {
                 const key = `target:table:${table.schema}.${table.name}`;
+                const tableKey = `${table.schema}.${table.name}`;
                 try {
-                    const def = await this.getTableDefinitionWithPool(targetPool, table.schema, table.name);
+                    const columns = targetColumnsMap.get(tableKey) || [];
+                    const constraints = targetConstraintsMap.get(tableKey) || [];
+                    const indexes = targetIndexesMap.get(tableKey) || [];
+                    
+                    const def = this.buildTableDefinition(table.schema, table.name, columns, constraints, indexes);
                     this.definitionsCache.set(key, def);
                 } catch (error) {
                     this.outputChannel.appendLine(`[CompareSchema] Error caching target table ${table.schema}.${table.name}: ${error}`);
@@ -860,95 +1022,17 @@ export class CompareSchemaWebview {
         return result.recordset.length > 0 ? result.recordset[0].definition : `-- Trigger ${schema}.${triggerName} not found`;
     }
     
-    private async getTableDefinitionWithPool(pool: any, schema: string, tableName: string): Promise<string> {
-        // Get columns
-        const columnsQuery = `
-            SELECT 
-                c.COLUMN_NAME,
-                c.DATA_TYPE,
-                c.CHARACTER_MAXIMUM_LENGTH,
-                c.NUMERIC_PRECISION,
-                c.NUMERIC_SCALE,
-                c.DATETIME_PRECISION,
-                c.IS_NULLABLE,
-                c.COLUMN_DEFAULT,
-                c.ORDINAL_POSITION
-            FROM INFORMATION_SCHEMA.COLUMNS c
-            WHERE c.TABLE_SCHEMA = '${schema}' AND c.TABLE_NAME = '${tableName}'
-            ORDER BY c.ORDINAL_POSITION
-        `;
-        
-        const columnsResult = await pool.request().query(columnsQuery);
-        
-        // Get constraints (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK)
-        const constraintsQuery = `
-            SELECT 
-                tc.CONSTRAINT_NAME,
-                tc.CONSTRAINT_TYPE,
-                kcu.COLUMN_NAME,
-                rc.UPDATE_RULE,
-                rc.DELETE_RULE,
-                ccu.TABLE_SCHEMA AS REFERENCED_TABLE_SCHEMA,
-                ccu.TABLE_NAME AS REFERENCED_TABLE_NAME,
-                ccu.COLUMN_NAME AS REFERENCED_COLUMN_NAME,
-                cc.CHECK_CLAUSE,
-                ic.is_descending_key
-            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-            LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
-                ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME 
-                AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
-                AND tc.TABLE_NAME = kcu.TABLE_NAME
-            LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc 
-                ON tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
-                AND tc.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
-            LEFT JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu 
-                ON rc.UNIQUE_CONSTRAINT_NAME = ccu.CONSTRAINT_NAME
-            LEFT JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
-                ON tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
-            LEFT JOIN sys.index_columns ic
-                ON OBJECT_ID('[${schema}].[${tableName}]') = ic.object_id
-                AND COL_NAME(ic.object_id, ic.column_id) = kcu.COLUMN_NAME
-                AND ic.index_id = (
-                    SELECT i.index_id FROM sys.indexes i
-                    WHERE i.object_id = OBJECT_ID('[${schema}].[${tableName}]')
-                    AND i.name = tc.CONSTRAINT_NAME
-                )
-            WHERE tc.TABLE_SCHEMA = '${schema}' 
-                AND tc.TABLE_NAME = '${tableName}'
-            ORDER BY tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
-        `;
-        
-        const constraintsResult = await pool.request().query(constraintsQuery);
-        
-        // Get indexes (non-constraint indexes)
-        const indexesQuery = `
-            SELECT 
-                i.name AS INDEX_NAME,
-                i.type_desc AS INDEX_TYPE,
-                i.is_unique,
-                i.is_primary_key,
-                i.is_unique_constraint,
-                COL_NAME(ic.object_id, ic.column_id) AS COLUMN_NAME,
-                ic.is_descending_key,
-                ic.is_included_column,
-                ic.key_ordinal
-            FROM sys.indexes i
-            INNER JOIN sys.index_columns ic 
-                ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-            WHERE i.object_id = OBJECT_ID('[${schema}].[${tableName}]')
-                AND i.is_primary_key = 0
-                AND i.is_unique_constraint = 0
-                AND i.type > 0
-            ORDER BY i.name, ic.key_ordinal, ic.index_column_id
-        `;
-        
-        const indexesResult = await pool.request().query(indexesQuery);
-        
+    private buildTableDefinition(
+        schema: string, 
+        tableName: string, 
+        columns: any[], 
+        constraints: any[], 
+        indexes: any[]
+    ): string {
         // Build CREATE TABLE statement
         let sql = `CREATE TABLE [${schema}].[${tableName}] (\n`;
         
         // Add columns
-        const columns = columnsResult.recordset;
         const columnDefs = columns.map((col: any) => {
             let colDef = ` [${col.COLUMN_NAME}] ${col.DATA_TYPE.toUpperCase()}`;
             
@@ -970,7 +1054,6 @@ export class CompareSchemaWebview {
         sql += columnDefs.join(',\n');
         
         // Process constraints
-        const constraints = constraintsResult.recordset;
         const groupedConstraints: { [key: string]: any[] } = {};
         
         constraints.forEach((c: any) => {
@@ -1016,7 +1099,6 @@ export class CompareSchemaWebview {
         sql += '\n);\nGO\n';
         
         // Add indexes
-        const indexes = indexesResult.recordset;
         const groupedIndexes: { [key: string]: any[] } = {};
         
         indexes.forEach((idx: any) => {
