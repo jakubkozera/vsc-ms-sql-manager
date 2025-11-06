@@ -879,98 +879,221 @@ export class CompareSchemaWebview {
                 }
             }
             
+            // Fetch all view definitions in bulk for source database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all view definitions for source...`);
+            const sourceViewsMap = await this.getAllViewsDefinitions(sourcePool);
+            
+            // Fetch all view definitions in bulk for target database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all view definitions for target...`);
+            const targetViewsMap = await this.getAllViewsDefinitions(targetPool);
+            
+            // Fetch all procedure definitions in bulk for source database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all procedure definitions for source...`);
+            const sourceProceduresMap = await this.getAllProceduresDefinitions(sourcePool);
+            
+            // Fetch all procedure definitions in bulk for target database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all procedure definitions for target...`);
+            const targetProceduresMap = await this.getAllProceduresDefinitions(targetPool);
+            
+            // Fetch all function definitions in bulk for source database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all function definitions for source...`);
+            const sourceFunctionsMap = await this.getAllFunctionsDefinitions(sourcePool);
+            
+            // Fetch all function definitions in bulk for target database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all function definitions for target...`);
+            const targetFunctionsMap = await this.getAllFunctionsDefinitions(targetPool);
+            
+            // Fetch all trigger definitions in bulk for source database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all trigger definitions for source...`);
+            const sourceTriggersMap = await this.getAllTriggersDefinitions(sourcePool);
+            
+            // Fetch all trigger definitions in bulk for target database
+            this.outputChannel.appendLine(`[CompareSchema] Fetching all trigger definitions for target...`);
+            const targetTriggersMap = await this.getAllTriggersDefinitions(targetPool);
+            
             // Cache view definitions from source
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${sourceSchema.views.length} source view definitions...`);
             for (const view of sourceSchema.views) {
                 const key = `source:view:${view.schema}.${view.name}`;
-                try {
-                    const def = await this.getViewDefinition(sourcePool, view.schema, view.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching source view ${view.schema}.${view.name}: ${error}`);
-                }
+                const viewKey = `${view.schema}.${view.name}`;
+                const def = sourceViewsMap.get(viewKey) || `-- View ${viewKey} not found`;
+                this.definitionsCache.set(key, def);
             }
             
             // Cache view definitions from target
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${targetSchema.views.length} target view definitions...`);
             for (const view of targetSchema.views) {
                 const key = `target:view:${view.schema}.${view.name}`;
-                try {
-                    const def = await this.getViewDefinition(targetPool, view.schema, view.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching target view ${view.schema}.${view.name}: ${error}`);
-                }
+                const viewKey = `${view.schema}.${view.name}`;
+                const def = targetViewsMap.get(viewKey) || `-- View ${viewKey} not found`;
+                this.definitionsCache.set(key, def);
             }
             
             // Cache procedure definitions from source
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${sourceSchema.procedures.length} source procedure definitions...`);
             for (const proc of sourceSchema.procedures) {
                 const key = `source:procedure:${proc.schema}.${proc.name}`;
-                try {
-                    const def = await this.getProcedureDefinition(sourcePool, proc.schema, proc.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching source procedure ${proc.schema}.${proc.name}: ${error}`);
-                }
+                const procKey = `${proc.schema}.${proc.name}`;
+                const def = sourceProceduresMap.get(procKey) || `-- Procedure ${procKey} not found`;
+                this.definitionsCache.set(key, def);
             }
             
             // Cache procedure definitions from target
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${targetSchema.procedures.length} target procedure definitions...`);
             for (const proc of targetSchema.procedures) {
                 const key = `target:procedure:${proc.schema}.${proc.name}`;
-                try {
-                    const def = await this.getProcedureDefinition(targetPool, proc.schema, proc.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching target procedure ${proc.schema}.${proc.name}: ${error}`);
-                }
+                const procKey = `${proc.schema}.${proc.name}`;
+                const def = targetProceduresMap.get(procKey) || `-- Procedure ${procKey} not found`;
+                this.definitionsCache.set(key, def);
             }
             
             // Cache function definitions from source
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${sourceSchema.functions.length} source function definitions...`);
             for (const func of sourceSchema.functions) {
                 const key = `source:function:${func.schema}.${func.name}`;
-                try {
-                    const def = await this.getFunctionDefinition(sourcePool, func.schema, func.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching source function ${func.schema}.${func.name}: ${error}`);
-                }
+                const funcKey = `${func.schema}.${func.name}`;
+                const def = sourceFunctionsMap.get(funcKey) || `-- Function ${funcKey} not found`;
+                this.definitionsCache.set(key, def);
             }
             
             // Cache function definitions from target
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${targetSchema.functions.length} target function definitions...`);
             for (const func of targetSchema.functions) {
                 const key = `target:function:${func.schema}.${func.name}`;
-                try {
-                    const def = await this.getFunctionDefinition(targetPool, func.schema, func.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching target function ${func.schema}.${func.name}: ${error}`);
-                }
+                const funcKey = `${func.schema}.${func.name}`;
+                const def = targetFunctionsMap.get(funcKey) || `-- Function ${funcKey} not found`;
+                this.definitionsCache.set(key, def);
             }
             
             // Cache trigger definitions from source
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${sourceSchema.triggers.length} source trigger definitions...`);
             for (const trigger of sourceSchema.triggers) {
                 const key = `source:trigger:${trigger.schema}.${trigger.name}`;
-                try {
-                    const def = await this.getTriggerDefinition(sourcePool, trigger.schema, trigger.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching source trigger ${trigger.schema}.${trigger.name}: ${error}`);
-                }
+                const triggerKey = `${trigger.schema}.${trigger.name}`;
+                const def = sourceTriggersMap.get(triggerKey) || `-- Trigger ${triggerKey} not found`;
+                this.definitionsCache.set(key, def);
             }
             
             // Cache trigger definitions from target
+            this.outputChannel.appendLine(`[CompareSchema] Caching ${targetSchema.triggers.length} target trigger definitions...`);
             for (const trigger of targetSchema.triggers) {
                 const key = `target:trigger:${trigger.schema}.${trigger.name}`;
-                try {
-                    const def = await this.getTriggerDefinition(targetPool, trigger.schema, trigger.name);
-                    this.definitionsCache.set(key, def);
-                } catch (error) {
-                    this.outputChannel.appendLine(`[CompareSchema] Error caching target trigger ${trigger.schema}.${trigger.name}: ${error}`);
-                }
+                const triggerKey = `${trigger.schema}.${trigger.name}`;
+                const def = targetTriggersMap.get(triggerKey) || `-- Trigger ${triggerKey} not found`;
+                this.definitionsCache.set(key, def);
             }
         } catch (error) {
             this.outputChannel.appendLine(`[CompareSchema] Error caching definitions: ${error}`);
             throw error;
         }
         // Don't close pools - they are managed by ConnectionProvider and may be reused
+    }
+
+    // Fetch all view definitions in a single query
+    private async getAllViewsDefinitions(pool: any): Promise<Map<string, string>> {
+        const query = `
+            SELECT 
+                s.name AS schema_name,
+                v.name AS view_name,
+                sm.definition
+            FROM sys.sql_modules sm
+            INNER JOIN sys.views v ON sm.object_id = v.object_id
+            INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
+            WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY s.name, v.name
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Map by schema.viewName
+        const definitionsMap = new Map<string, string>();
+        for (const row of result.recordset) {
+            const key = `${row.schema_name}.${row.view_name}`;
+            definitionsMap.set(key, row.definition || `-- View ${key} definition not found`);
+        }
+        
+        return definitionsMap;
+    }
+
+    // Fetch all procedure definitions in a single query
+    private async getAllProceduresDefinitions(pool: any): Promise<Map<string, string>> {
+        const query = `
+            SELECT 
+                s.name AS schema_name,
+                p.name AS procedure_name,
+                sm.definition
+            FROM sys.sql_modules sm
+            INNER JOIN sys.procedures p ON sm.object_id = p.object_id
+            INNER JOIN sys.schemas s ON p.schema_id = s.schema_id
+            WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY s.name, p.name
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Map by schema.procedureName
+        const definitionsMap = new Map<string, string>();
+        for (const row of result.recordset) {
+            const key = `${row.schema_name}.${row.procedure_name}`;
+            definitionsMap.set(key, row.definition || `-- Procedure ${key} definition not found`);
+        }
+        
+        return definitionsMap;
+    }
+
+    // Fetch all function definitions in a single query
+    private async getAllFunctionsDefinitions(pool: any): Promise<Map<string, string>> {
+        const query = `
+            SELECT 
+                s.name AS schema_name,
+                o.name AS function_name,
+                sm.definition
+            FROM sys.sql_modules sm
+            INNER JOIN sys.objects o ON sm.object_id = o.object_id
+            INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
+            WHERE o.type IN ('FN', 'IF', 'TF')
+                AND s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY s.name, o.name
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Map by schema.functionName
+        const definitionsMap = new Map<string, string>();
+        for (const row of result.recordset) {
+            const key = `${row.schema_name}.${row.function_name}`;
+            definitionsMap.set(key, row.definition || `-- Function ${key} definition not found`);
+        }
+        
+        return definitionsMap;
+    }
+
+    // Fetch all trigger definitions in a single query
+    private async getAllTriggersDefinitions(pool: any): Promise<Map<string, string>> {
+        const query = `
+            SELECT 
+                s.name AS schema_name,
+                t.name AS trigger_name,
+                sm.definition
+            FROM sys.sql_modules sm
+            INNER JOIN sys.triggers t ON sm.object_id = t.object_id
+            INNER JOIN sys.tables tb ON t.parent_id = tb.object_id
+            INNER JOIN sys.schemas s ON tb.schema_id = s.schema_id
+            WHERE t.parent_class = 1
+                AND s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
+            ORDER BY s.name, t.name
+        `;
+        
+        const result = await pool.request().query(query);
+        
+        // Map by schema.triggerName
+        const definitionsMap = new Map<string, string>();
+        for (const row of result.recordset) {
+            const key = `${row.schema_name}.${row.trigger_name}`;
+            definitionsMap.set(key, row.definition || `-- Trigger ${key} definition not found`);
+        }
+        
+        return definitionsMap;
     }
     
     private async getViewDefinition(pool: any, schema: string, viewName: string): Promise<string> {
