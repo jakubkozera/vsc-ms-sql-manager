@@ -9,28 +9,32 @@
 </head>
 <body>
     <div class="container">
+        <!-- Header with database selection -->
         <div class="header">
-            <div class="header-section">
-                <span class="header-label">Source</span>
-                <div class="custom-dropdown" id="source-dropdown">
-                    <button class="dropdown-trigger" id="sourceDatabase" disabled>-</button>
+            <div class="database-selector">
+                <div class="header-section">
+                    <span class="header-label">Source</span>
+                    <div class="custom-dropdown" id="source-dropdown">
+                        <button class="dropdown-trigger" id="sourceDatabase" disabled>-</button>
+                    </div>
                 </div>
-            </div>
-            <div class="header-section">
-                <span class="header-label">Target Connection</span>
-                <div class="custom-dropdown" id="target-connection-dropdown">
-                    <button class="dropdown-trigger" id="targetConnectionSelect">Select connection...</button>
-                    <div class="dropdown-menu" id="targetConnectionMenu"></div>
+                <span class="into-text">compared to</span>
+                <div class="header-section">
+                    <span class="header-label">Target Connection</span>
+                    <div class="custom-dropdown" id="target-connection-dropdown">
+                        <button class="dropdown-trigger" id="targetConnectionSelect">Select connection...</button>
+                        <div class="dropdown-menu" id="targetConnectionMenu"></div>
+                    </div>
                 </div>
-            </div>
-            <div class="header-section">
-                <span class="header-label">Target Database</span>
-                <div class="custom-dropdown" id="target-database-dropdown">
-                    <button class="dropdown-trigger" id="targetDatabaseSelect" disabled>Select database...</button>
-                    <div class="dropdown-menu" id="targetDatabaseMenu"></div>
+                <div class="header-section">
+                    <span class="header-label">Target Database</span>
+                    <div class="custom-dropdown" id="target-database-dropdown">
+                        <button class="dropdown-trigger" id="targetDatabaseSelect" disabled>Select database...</button>
+                        <div class="dropdown-menu" id="targetDatabaseMenu"></div>
+                    </div>
                 </div>
+                <button id="compareButton" class="compare-button" disabled>Compare</button>
             </div>
-            <button id="compareButton" class="compare-button" disabled>Compare</button>
         </div>
 
         <div id="loadingIndicator" class="loading hidden">
@@ -38,29 +42,45 @@
             <p>Comparing schemas...</p>
         </div>
 
-        <div id="resultsSection" class="content" style="display: none;">
-            <div class="table-panel">
-                <div class="table-header">
-                    <div>Type</div>
-                    <div>Source Name</div>
-                    <div></div>
-                    <div>Action</div>
-                    <div>Target Name</div>
+        <!-- Main content area with sidebar and diff view -->
+        <div id="resultsSection" class="results-layout" style="display: none;">
+            <!-- Sidebar with grouped changes -->
+            <div class="changes-sidebar" id="changesSidebar">
+                <div class="sidebar-header">
+                    <h4>Schema Changes</h4>
+                    <button id="collapseSidebarBtn" class="collapse-sidebar-btn" title="Collapse sidebar" onclick="toggleSidebar()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 7l-5 5l5 5" />
+                            <path d="M17 7l-5 5l5 5" />
+                        </svg>
+                    </button>
                 </div>
-                <div class="table-body" id="changesTableBody">
-                    <!-- Changes will be populated here -->
+                <div class="changes-tree" id="changesTree">
+                    <!-- Changes grouped by type will be populated here -->
                 </div>
             </div>
-        </div>
 
-        <div class="comparison-section" id="comparisonSection" style="display: none;">Comparison Details</div>
+            <!-- Diff viewer area -->
+            <div class="diff-viewer">
+                <button id="expandSidebarBtn" class="expand-sidebar-btn" title="Show changes" onclick="toggleSidebar()" style="display: none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 7l-5 5l5 5" />
+                        <path d="M11 7l-5 5l5 5" />
+                    </svg>
+                </button>
+                <div class="diff-header" id="diffHeader" style="display: none;">
+                    <h3 id="selectedObjectName"></h3>
+                </div>
+                
+                <div class="editor-container" id="editorContainer" style="display: none;"></div>
 
-        <div class="editor-container" id="editorContainer" style="display: none;">
-            <div class="editor-wrapper">
-                <div id="leftEditor"></div>
-            </div>
-            <div class="editor-wrapper">
-                <div id="rightEditor"></div>
+                <div id="emptyDiffState" class="empty-diff-state">
+                    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                        <polyline points="13 2 13 9 20 9"></polyline>
+                    </svg>
+                    <p>Select an object to view differences</p>
+                </div>
             </div>
         </div>
 
