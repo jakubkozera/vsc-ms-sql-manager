@@ -388,6 +388,32 @@ body {
     position: relative;
 }
 
+.comparison-info {
+    padding: 8px 16px;
+    background: var(--vscode-sideBar-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.comparison-sources {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.source-info, .target-info {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#sourceConnectionInfo, #targetConnectionInfo {
+    font-weight: 600;
+    color: var(--vscode-editor-foreground);
+}
+
 .diff-header {
     padding: 12px 16px;
     background: var(--vscode-sideBar-background);

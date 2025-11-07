@@ -36,6 +36,9 @@
     const diffHeader = document.getElementById('diffHeader');
     const editorContainer = document.getElementById('editorContainer');
     const emptyDiffState = document.getElementById('emptyDiffState');
+    const comparisonInfo = document.getElementById('comparisonInfo');
+    const sourceConnectionInfo = document.getElementById('sourceConnectionInfo');
+    const targetConnectionInfo = document.getElementById('targetConnectionInfo');
     
     let selectedSourceConnection = null;
     let selectedSourceDatabase = null;
@@ -283,6 +286,9 @@
                 
             case 'comparisonStarted':
                 showLoading();
+                actualSourceDatabase = message.sourceDatabase;
+                actualTargetDatabase = message.targetDatabase;
+                updateComparisonInfo();
                 break;
                 
             case 'comparisonResult':
@@ -461,6 +467,9 @@
         emptyState.classList.add('hidden');
         resultsSection.style.display = 'flex';
         
+        // Show comparison info
+        comparisonInfo.style.display = 'block';
+        
         // Group changes by type
         groupChangesByType(changes);
         
@@ -472,6 +481,33 @@
             setTimeout(() => {
                 diffEditor.layout();
             }, 50);
+        }
+    }
+    
+    let actualSourceDatabase = null;
+    let actualTargetDatabase = null;
+    
+    function updateComparisonInfo() {
+        if (selectedSourceConnection && selectedTargetConnection) {
+            const sourceConn = allConnections.find(c => c.id === selectedSourceConnection);
+            const targetConn = allConnections.find(c => c.id === selectedTargetConnection);
+            
+            let sourceText = sourceConn ? sourceConn.name : 'Unknown';
+            let targetText = targetConn ? targetConn.name : 'Unknown';
+            
+            // Add database info - use actual database names that will be used in comparison
+            if (actualSourceDatabase) {
+                sourceText += '.' + actualSourceDatabase;
+            }
+            
+            if (actualTargetDatabase) {
+                targetText += '.' + actualTargetDatabase;
+            }
+            
+            sourceConnectionInfo.textContent = sourceText;
+            targetConnectionInfo.textContent = targetText;
+            
+            comparisonInfo.style.display = 'block';
         }
     }
 

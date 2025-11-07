@@ -239,7 +239,9 @@ export class CompareSchemaWebview {
         this.outputChannel.appendLine(`[CompareSchema] Comparing ${this.sourceDatabase || 'database'} (${sourceConnectionId}) with ${this.targetDatabase || 'database'} (${targetConnectionId})`);
         
         this.panel?.webview.postMessage({
-            command: 'comparisonStarted'
+            command: 'comparisonStarted',
+            sourceDatabase: this.sourceDatabase,
+            targetDatabase: this.targetDatabase
         });
 
         try {
