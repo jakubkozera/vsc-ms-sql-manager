@@ -1,57 +1,75 @@
-# ms-sql-manager README
-
-This is the README for your extension "ms-sql-manager". After writing up a brief description, we recommend including the following sections.
-
-## Features
-
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
 # MS SQL Manager for VS Code
 
 A comprehensive VS Code extension for managing Microsoft SQL Server databases with connection management, schema browsing, and query execution capabilities.
 
 ## Features
 
-### 🔌 Connection Management
-- **Interactive Connection Form**: Dedicated webview form for creating connections
-- **Connection Testing**: Test connections before saving them
-- **Multiple Authentication Types**: SQL Server Auth, Windows Auth, Azure AD support
-- **Connection Profiles**: Save and reuse connection configurations
-- **Secure Credentials**: Passwords not stored, prompted when needed
-- **Status Indicator**: Real-time connection status in VS Code status bar
-- **Quick Connect**: Manage and connect to saved connections
+### 🔌 MS SQL Server Connection
+Comprehensive connection management system for Microsoft SQL Server databases with support for multiple authentication methods and connection profiles.
 
-### 🌳 Schema Explorer
-- Browse connected SQL Server instances
-- Navigate databases, tables, views, stored procedures, and functions
-- Tree view in VS Code sidebar
-- Right-click context menus for quick actions
+![Connection Management](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/connection-management.png)
 
-### ⚡ Query Execution
-- Execute T-SQL queries from `.sql` files
-- Run selected text or entire file
-- Support for multiple statement execution (GO statements)
-- Real-time query progress indication
+**Key Features:**
+- **Interactive Connection Form**: Dedicated webview form for creating and testing connections
+- **Multiple Authentication Types**: SQL Server Authentication, Windows Authentication, and Azure AD
+- **Connection Profiles**: Save and reuse connection configurations securely  
+- **Server Groups**: Organize connections into logical groups for better management
+- **Connection Testing**: Validate connections before saving them
+- **Secure Credential Storage**: Passwords handled securely without permanent storage
 
-### 📊 Results Viewer
-- Custom webview for displaying query results
-- Sortable columns with visual indicators
-- Support for NULL values and different data types
-- Export results to CSV
-- Execution time and row count statistics
+### ⚡ SQL Runner
+Advanced SQL query execution engine with comprehensive T-SQL support and real-time results display.
 
-### 🛠️ Additional Features
-- Generate SELECT scripts for tables
-- Comprehensive error handling and logging
-- Output channel for debugging and monitoring
-- TypeScript implementation with full type safety
+![SQL Runner](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/sql-runner.png)
 
-## Installation
+**Key Features:**
+- **Enhanced SQL Editor**: Custom editor with syntax highlighting for `.sql` files
+- **Flexible Execution**: Run selected text, current statement, or entire file
+- **GO Statement Support**: Proper handling of batch separators
+- **Query History**: Track, organize, and rerun previous queries with pin/unpin functionality
+- **Real-time Progress**: Live execution progress and performance metrics
+- **Results Export**: Export query results to CSV format
+- **Keyboard Shortcuts**: Execute with F5 or Ctrl+Shift+E
 
-1. Clone or download this extension
-2. Install dependencies: `npm install`
-3. Compile the extension: `npm run compile`
-4. Press `F5` to launch a new VS Code window with the extension loaded
+### 🔍 Schema Compare
+Professional schema comparison tool for analyzing differences between database structures and generating synchronization scripts.
+
+![Schema Compare](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/schema-compare.png)
+
+**Key Features:**
+- **Side-by-side Comparison**: Visual comparison of database schemas
+- **Object-level Analysis**: Compare tables, views, stored procedures, and functions
+- **Difference Highlighting**: Clear visualization of schema differences
+- **Synchronization Scripts**: Generate T-SQL scripts to synchronize schemas
+- **Selective Sync**: Choose which objects to include in synchronization
+- **Cross-database Support**: Compare schemas across different databases
+
+### 📊 Database Diagrams
+Interactive database visualization tool for understanding table relationships and database structure.
+
+![Database Diagrams](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/database-diagrams.png)
+
+**Key Features:**
+- **Interactive Diagrams**: Visual representation of database tables and relationships
+- **Relationship Mapping**: Automatic detection and display of foreign key relationships
+- **Zoom and Pan**: Navigate large database schemas with ease
+- **Table Details**: View column information, data types, and constraints
+- **Export Options**: Save diagrams for documentation purposes
+- **Real-time Updates**: Diagrams reflect current database structure
+
+### 📝 Generate SQL Scripts
+Comprehensive script generation system for creating T-SQL scripts for various database operations.
+
+![Generate SQL Scripts](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/generate-scripts.png)
+
+**Key Features:**
+- **Object Scripting**: Generate CREATE, ALTER, and DROP scripts for database objects
+- **Stored Procedure Management**: Complete lifecycle management with script generation
+- **Data Export Scripts**: Generate INSERT scripts with data
+- **Batch Operations**: Script multiple objects simultaneously
+- **Flexible Output**: Send scripts to new editor, file, or clipboard
+- **Template Support**: Customizable script templates for consistent formatting
+
 
 ## Usage
 
@@ -119,19 +137,7 @@ Query results appear in a dedicated webview panel with features:
 | `MS SQL Manager: Refresh` | Refresh schema explorer |
 | `Generate SELECT Script` | Create SELECT statement for selected table |
 
-## Configuration
 
-The extension supports these VS Code settings:
-
-```json
-{
-  "mssqlManager.connections": [],
-  "mssqlManager.queryTimeout": 30000
-}
-```
-
-- `connections`: Array of saved connection profiles (managed automatically)
-- `queryTimeout`: Query execution timeout in milliseconds (default: 30 seconds)
 
 ## Architecture
 
@@ -199,62 +205,3 @@ This extension is built following VS Code extension best practices:
 
 This project is provided as-is for educational and development purposes.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
-
-## Requirements
-
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**

@@ -32,6 +32,7 @@ jobs:
           npm install -g @vscode/vsce
           vsce package
 
+
       - name: Publish to VS Code Marketplace
         if: success()
         run: vsce publish -p ${{ secrets.VSCE_PAT }}
