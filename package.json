@@ -4,7 +4,7 @@
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution",
   "version": "0.2.0",
   "publisher": "jakubkozera",
-  "icon": "csharp-dev-tools.png",
+  "icon": "ms-sql-manager.png",
   "sponsor": {
     "url": "https://github.com/sponsors/jakubkozera"
   },
