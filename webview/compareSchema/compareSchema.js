@@ -28,6 +28,7 @@
     
     const connectButton = document.getElementById('connectButton');
     const compareButton = document.getElementById('compareButton');
+    const swapButton = document.getElementById('swapButton');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const resultsSection = document.getElementById('resultsSection');
     const emptyState = document.getElementById('emptyState');
@@ -137,6 +138,81 @@
         }
     });
     
+    // Swap button click - swap source and target
+    swapButton.addEventListener('click', () => {
+        // Store current source values
+        const tempSourceConnection = selectedSourceConnection;
+        const tempSourceDatabase = selectedSourceDatabase;
+        const tempSourceConnectionText = sourceConnectionBtn.textContent;
+        const tempSourceDatabaseText = sourceDatabaseBtn.textContent;
+        const tempSourceDatabaseVisible = sourceDatabaseDropdown.style.display !== 'none';
+        
+        // Move target to source
+        selectedSourceConnection = selectedTargetConnection;
+        selectedSourceDatabase = selectedTargetDatabase;
+        sourceConnectionBtn.textContent = targetConnectionBtn.textContent;
+        sourceDatabaseBtn.textContent = targetDatabaseBtn.textContent;
+        
+        // Update source database dropdown visibility
+        if (selectedSourceConnection) {
+            const sourceConn = allConnections.find(c => c.id === selectedSourceConnection);
+            if (sourceConn && sourceConn.connectionType === 'server') {
+                sourceDatabaseLabel.style.display = 'inline-block';
+                sourceDatabaseDropdown.style.display = 'inline-block';
+                sourceDatabaseBtn.disabled = false;
+            } else {
+                sourceDatabaseLabel.style.display = 'none';
+                sourceDatabaseDropdown.style.display = 'none';
+            }
+        }
+        
+        // Move source to target
+        selectedTargetConnection = tempSourceConnection;
+        selectedTargetDatabase = tempSourceDatabase;
+        targetConnectionBtn.textContent = tempSourceConnectionText;
+        targetDatabaseBtn.textContent = tempSourceDatabaseText;
+        
+        // Update target database dropdown visibility
+        if (selectedTargetConnection) {
+            const targetConn = allConnections.find(c => c.id === selectedTargetConnection);
+            if (targetConn && targetConn.connectionType === 'server') {
+                targetDatabaseLabel.style.display = 'inline-block';
+                targetDatabaseDropdown.style.display = 'inline-block';
+                targetDatabaseBtn.disabled = false;
+            } else {
+                targetDatabaseLabel.style.display = 'none';
+                targetDatabaseDropdown.style.display = 'none';
+            }
+        }
+        
+        // Update selected states in dropdown menus
+        updateDropdownSelections();
+        
+        checkIfReadyToCompare();
+    });
+    
+    function updateDropdownSelections() {
+        // Update source connection dropdown selection
+        sourceConnectionMenu.querySelectorAll('.dropdown-item').forEach(item => {
+            item.classList.toggle('selected', item.dataset.value === selectedSourceConnection);
+        });
+        
+        // Update source database dropdown selection
+        sourceDatabaseMenu.querySelectorAll('.dropdown-item').forEach(item => {
+            item.classList.toggle('selected', item.dataset.value === selectedSourceDatabase);
+        });
+        
+        // Update target connection dropdown selection
+        targetConnectionMenu.querySelectorAll('.dropdown-item').forEach(item => {
+            item.classList.toggle('selected', item.dataset.value === selectedTargetConnection);
+        });
+        
+        // Update target database dropdown selection
+        targetDatabaseMenu.querySelectorAll('.dropdown-item').forEach(item => {
+            item.classList.toggle('selected', item.dataset.value === selectedTargetDatabase);
+        });
+    }
+    
     function checkIfReadyToCompare() {
         const sourceReady = selectedSourceConnection && (selectedSourceDatabase || !needsDatabaseForConnection(selectedSourceConnection));
         const targetReady = selectedTargetConnection && (selectedTargetDatabase || !needsDatabaseForConnection(selectedTargetConnection));
@@ -146,9 +222,11 @@
         if (ready) {
             compareButton.style.display = 'inline-flex';
             compareButton.disabled = false;
+            swapButton.style.display = 'inline-flex';
         } else {
             compareButton.style.display = 'none';
             compareButton.disabled = true;
+            swapButton.style.display = 'none';
         }
         
         return ready;
