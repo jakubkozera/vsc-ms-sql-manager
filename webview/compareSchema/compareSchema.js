@@ -312,6 +312,11 @@
                 // Update connections list and refresh dropdowns while preserving selections
                 allConnections = message.connections;
                 updateConnectionDropdowns();
+                
+                // Auto-select new connection if provided and needed
+                if (message.autoSelectConnectionId) {
+                    autoSelectConnectionIfNeeded(message.autoSelectConnectionId);
+                }
                 break;
         }
     });
@@ -439,6 +444,91 @@
                 targetConnectionBtn.textContent = 'Select connection...';
                 targetDatabaseLabel.style.display = 'none';
                 targetDatabaseDropdown.style.display = 'none';
+            }
+        }
+        
+        checkIfReadyToCompare();
+    }
+    
+    function autoSelectConnectionIfNeeded(connectionId) {
+        const connection = allConnections.find(c => c.id === connectionId);
+        if (!connection) return;
+        
+        // If neither source nor target is selected, select as source
+        if (!selectedSourceConnection && !selectedTargetConnection) {
+            selectConnection('source', connection);
+        }
+        // If only source is selected and target is not, select as target
+        else if (selectedSourceConnection && !selectedTargetConnection) {
+            selectConnection('target', connection);
+        }
+        // If only target is selected and source is not, select as source
+        else if (!selectedSourceConnection && selectedTargetConnection) {
+            selectConnection('source', connection);
+        }
+        // If both are selected, don't auto-select anything
+    }
+    
+    function selectConnection(type, connection) {
+        if (type === 'source') {
+            selectedSourceConnection = connection.id;
+            sourceConnectionBtn.textContent = connection.name;
+            
+            // Update dropdown selection
+            sourceConnectionMenu.querySelectorAll('.dropdown-item').forEach(item => {
+                item.classList.toggle('selected', item.dataset.value === connection.id);
+            });
+            
+            if (connection.connectionType === 'server') {
+                // Show database selector for server connections
+                sourceDatabaseLabel.style.display = 'inline-block';
+                sourceDatabaseDropdown.style.display = 'inline-block';
+                sourceDatabaseBtn.disabled = false;
+                sourceDatabaseBtn.textContent = 'Select database...';
+                selectedSourceDatabase = null;
+                sourceDatabaseMenu.innerHTML = '';
+                
+                vscode.postMessage({
+                    command: 'getDatabasesForConnection',
+                    connectionId: selectedSourceConnection,
+                    target: 'source'
+                });
+            } else {
+                // Hide database selector for direct database connections
+                sourceDatabaseLabel.style.display = 'none';
+                sourceDatabaseDropdown.style.display = 'none';
+                selectedSourceDatabase = null;
+                sourceDatabaseBtn.textContent = 'Select database...';
+            }
+        } else if (type === 'target') {
+            selectedTargetConnection = connection.id;
+            targetConnectionBtn.textContent = connection.name;
+            
+            // Update dropdown selection
+            targetConnectionMenu.querySelectorAll('.dropdown-item').forEach(item => {
+                item.classList.toggle('selected', item.dataset.value === connection.id);
+            });
+            
+            if (connection.connectionType === 'server') {
+                // Show database selector for server connections
+                targetDatabaseLabel.style.display = 'inline-block';
+                targetDatabaseDropdown.style.display = 'inline-block';
+                targetDatabaseBtn.disabled = false;
+                targetDatabaseBtn.textContent = 'Select database...';
+                selectedTargetDatabase = null;
+                targetDatabaseMenu.innerHTML = '';
+                
+                vscode.postMessage({
+                    command: 'getDatabasesForConnection',
+                    connectionId: selectedTargetConnection,
+                    target: 'target'
+                });
+            } else {
+                // Hide database selector for direct database connections
+                targetDatabaseLabel.style.display = 'none';
+                targetDatabaseDropdown.style.display = 'none';
+                selectedTargetDatabase = null;
+                targetDatabaseBtn.textContent = 'Select database...';
             }
         }
         

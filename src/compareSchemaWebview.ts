@@ -17,6 +17,7 @@ export class CompareSchemaWebview {
     private targetConnectionId: string;
     private targetDatabase: string;
     private definitionsCache: Map<string, string> = new Map();
+    private lastKnownConnections: Set<string> = new Set();
 
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -112,6 +113,9 @@ export class CompareSchemaWebview {
             // Get list of active connections only
             const connections = await this.getActiveConnectionsList();
             
+            // Initialize known connections set
+            this.lastKnownConnections = new Set(connections.map(c => c.id));
+            
             this.panel?.webview.postMessage({
                 command: 'init',
                 sourceConnectionId: this.sourceConnectionId,
@@ -128,13 +132,35 @@ export class CompareSchemaWebview {
         try {
             const connections = await this.getActiveConnectionsList();
             
+            // Check if there are any new connections that should be auto-selected
+            const newConnectionId = this.findNewConnectionToSelect(connections);
+            
             this.panel?.webview.postMessage({
                 command: 'connectionsUpdated',
-                connections: connections
+                connections: connections,
+                autoSelectConnectionId: newConnectionId
             });
         } catch (error) {
             this.outputChannel.appendLine(`[CompareSchema] Error refreshing connections: ${error}`);
         }
+    }
+    
+    private findNewConnectionToSelect(connections: Array<{id: string, name: string, connectionType: string}>): string | undefined {
+        if (connections.length === 0) return undefined;
+        
+        // Find connections that are new (not in lastKnownConnections)
+        const newConnections = connections.filter(c => !this.lastKnownConnections.has(c.id));
+        
+        // Update the known connections set
+        this.lastKnownConnections = new Set(connections.map(c => c.id));
+        
+        // If there are new connections, return the first one for auto-selection
+        if (newConnections.length > 0) {
+            this.outputChannel.appendLine(`[CompareSchema] Found new connection for auto-selection: ${newConnections[0].name}`);
+            return newConnections[0].id;
+        }
+        
+        return undefined;
     }
 
     // Register this webview to receive connection change notifications
