@@ -219,13 +219,13 @@
         
         const ready = sourceReady && targetReady;
         
+        // Compare button is always visible, just control disabled state
+        compareButton.disabled = !ready;
+        
+        // Swap button only shows when both are selected
         if (ready) {
-            compareButton.style.display = 'inline-flex';
-            compareButton.disabled = false;
             swapButton.style.display = 'inline-flex';
         } else {
-            compareButton.style.display = 'none';
-            compareButton.disabled = true;
             swapButton.style.display = 'none';
         }
         
