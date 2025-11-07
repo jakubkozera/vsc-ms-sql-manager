@@ -588,6 +588,21 @@ export class ConnectionProvider {
         }
         return result;
     }
+    
+    getActiveConnections(): { id: string; name: string; connectionType: string }[] {
+        const result = [];
+        for (const [id, connection] of this.activeConnections) {
+            const config = this.activeConfigs.get(id);
+            if (config) {
+                result.push({ 
+                    id, 
+                    name: config.name,
+                    connectionType: config.connectionType || 'server'
+                });
+            }
+        }
+        return result;
+    }
 
     setActiveConnection(connectionId: string): boolean {
         if (this.activeConnections.has(connectionId)) {

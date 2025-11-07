@@ -11,6 +11,9 @@ export function registerDatabaseCommands(
     
     const diagramWebview = new DatabaseDiagramWebview(connectionProvider, outputChannel, context);
     const compareSchemaWebview = new CompareSchemaWebview(connectionProvider, outputChannel, context);
+    
+    // Register Compare Schema webview to receive connection updates
+    compareSchemaWebview.registerForConnectionUpdates();
 
     const showDatabaseDiagram = vscode.commands.registerCommand(
         'mssqlManager.showDatabaseDiagram',

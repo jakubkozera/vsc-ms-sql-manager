@@ -13,27 +13,57 @@
         <div class="header">
             <div class="database-selector">
                 <div class="header-section">
-                    <span class="header-label">Source</span>
-                    <div class="custom-dropdown" id="source-dropdown">
-                        <button class="dropdown-trigger" id="sourceDatabase" disabled>-</button>
+                    <span class="header-label">Source:</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">
+                        <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                        <path d="M4 20l3.5 -3.5" />
+                        <path d="M15 4l-3.5 3.5" />
+                        <path d="M20 9l-3.5 3.5" />
+                    </svg>
+                    <div class="custom-dropdown" id="source-connection-dropdown">
+                        <button class="dropdown-trigger" id="sourceConnectionSelect">Select connection...</button>
+                        <div class="dropdown-menu" id="sourceConnectionMenu"></div>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" id="sourceDatabaseLabel" style="vertical-align: middle; margin-left: 8px; display: none;">
+                        <path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+                        <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+                        <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+                    </svg>
+                    <div class="custom-dropdown" id="source-database-dropdown" style="display: none;">
+                        <button class="dropdown-trigger" id="sourceDatabaseSelect" disabled>Select database...</button>
+                        <div class="dropdown-menu" id="sourceDatabaseMenu"></div>
                     </div>
                 </div>
-                <span class="into-text">compared to</span>
+                
                 <div class="header-section">
-                    <span class="header-label">Target Connection</span>
+                    <span class="header-label">Target:</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">
+                        <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                        <path d="M4 20l3.5 -3.5" />
+                        <path d="M15 4l-3.5 3.5" />
+                        <path d="M20 9l-3.5 3.5" />
+                    </svg>
                     <div class="custom-dropdown" id="target-connection-dropdown">
                         <button class="dropdown-trigger" id="targetConnectionSelect">Select connection...</button>
                         <div class="dropdown-menu" id="targetConnectionMenu"></div>
                     </div>
-                </div>
-                <div class="header-section">
-                    <span class="header-label">Target Database</span>
-                    <div class="custom-dropdown" id="target-database-dropdown">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" id="targetDatabaseLabel" style="vertical-align: middle; margin-left: 8px; display: none;">
+                        <path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+                        <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+                        <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+                    </svg>
+                    <div class="custom-dropdown" id="target-database-dropdown" style="display: none;">
                         <button class="dropdown-trigger" id="targetDatabaseSelect" disabled>Select database...</button>
                         <div class="dropdown-menu" id="targetDatabaseMenu"></div>
                     </div>
                 </div>
-                <button id="compareButton" class="compare-button" disabled>Compare</button>
+                
+                <button id="connectButton" class="toolbar-button secondary" title="Manage Connections">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5z" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5z" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" /></svg>
+                    Connect
+                </button>
+                
+                <button id="compareButton" class="compare-button" disabled style="display: none;">Compare</button>
             </div>
         </div>
 

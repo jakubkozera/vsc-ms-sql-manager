@@ -55,24 +55,53 @@ body {
     display: flex;
     align-items: center;
     gap: 16px;
+    flex-wrap: wrap;
 }
 
 .header-section {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
 }
 
 .header-label {
     font-size: 13px;
     color: var(--vscode-sideBar-foreground);
     white-space: nowrap;
+    font-weight: 600;
 }
 
-.into-text {
-    color: var(--vscode-descriptionForeground);
+.toolbar-button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 6px 16px;
+    cursor: pointer;
+    border-radius: 2px;
+    font-family: var(--vscode-font-family);
     font-size: 13px;
-    margin: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.1s;
+}
+
+.toolbar-button:hover:not(:disabled) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.toolbar-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.toolbar-button.secondary {
+    background-color: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+}
+
+.toolbar-button.secondary:hover:not(:disabled) {
+    background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
 .compare-button {
@@ -86,6 +115,9 @@ body {
     outline: none;
     margin-left: auto;
     transition: background-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .compare-button:hover:not(:disabled) {

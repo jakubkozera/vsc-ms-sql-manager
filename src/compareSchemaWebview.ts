@@ -29,11 +29,16 @@ export class CompareSchemaWebview {
         this.targetDatabase = '';
     }
 
-    async show(connectionId: string, database: string) {
-        this.sourceConnectionId = connectionId;
-        this.sourceDatabase = database;
+    async show(connectionId?: string, database?: string) {
+        // Store optional initial source connection
+        if (connectionId) {
+            this.sourceConnectionId = connectionId;
+        }
+        if (database) {
+            this.sourceDatabase = database;
+        }
         
-        this.outputChannel.appendLine(`[CompareSchema] Opening comparison for database: ${database}`);
+        this.outputChannel.appendLine(`[CompareSchema] Opening comparison view`);
 
         // Get webview paths
         const webviewPath = path.join(this.context.extensionPath, 'webview', 'compareSchema');
@@ -44,7 +49,7 @@ export class CompareSchemaWebview {
         } else {
             this.panel = vscode.window.createWebviewPanel(
                 'compareSchema',
-                `Compare Schema: ${database}`,
+                `Compare Schema`,
                 vscode.ViewColumn.One,
                 {
                     enableScripts: true,
@@ -52,6 +57,12 @@ export class CompareSchemaWebview {
                     localResourceRoots: [vscode.Uri.file(webviewPath)]
                 }
             );
+            
+            // Set icon for the webview panel (different for light/dark themes)
+            this.panel.iconPath = {
+                light: vscode.Uri.file(path.join(this.context.extensionPath, 'resources', 'icons', 'compare-light.svg')),
+                dark: vscode.Uri.file(path.join(this.context.extensionPath, 'resources', 'icons', 'compare-dark.svg'))
+            };
 
             // Load HTML content
             const htmlPath = path.join(webviewPath, 'compareSchema.html');
@@ -67,14 +78,20 @@ export class CompareSchemaWebview {
             this.panel.webview.onDidReceiveMessage(
                 async message => {
                     switch (message.command) {
+                        case 'refreshConnections':
+                            await this.refreshConnectionsList();
+                            break;
                         case 'ready':
                             await this.initializeWebview();
                             break;
                         case 'getDatabasesForConnection':
-                            await this.getDatabasesForConnection(message.connectionId);
+                            await this.getDatabasesForConnection(message.connectionId, message.target);
+                            break;
+                        case 'manageConnections':
+                            vscode.commands.executeCommand('mssqlManager.manageConnections');
                             break;
                         case 'compareSchemas':
-                            await this.compareSchemas(message.targetConnectionId, message.targetDatabase);
+                            await this.compareSchemas(message.sourceConnectionId, message.sourceDatabase, message.targetConnectionId, message.targetDatabase);
                             break;
                         case 'getSchemaDetails':
                             await this.getSchemaDetailsForDiff(message.change);
@@ -92,11 +109,12 @@ export class CompareSchemaWebview {
 
     private async initializeWebview() {
         try {
-            // Get list of all connections
-            const connections = await this.getConnectionList();
+            // Get list of active connections only
+            const connections = await this.getActiveConnectionsList();
             
             this.panel?.webview.postMessage({
                 command: 'init',
+                sourceConnectionId: this.sourceConnectionId,
                 sourceDatabase: this.sourceDatabase,
                 connections: connections
             });
@@ -106,22 +124,46 @@ export class CompareSchemaWebview {
         }
     }
 
-    private async getConnectionList(): Promise<Array<{id: string, name: string}>> {
+    private async refreshConnectionsList() {
         try {
-            const connections = await this.connectionProvider.getSavedConnectionsList();
-            return connections.map(conn => ({
+            const connections = await this.getActiveConnectionsList();
+            
+            this.panel?.webview.postMessage({
+                command: 'connectionsUpdated',
+                connections: connections
+            });
+        } catch (error) {
+            this.outputChannel.appendLine(`[CompareSchema] Error refreshing connections: ${error}`);
+        }
+    }
+
+    // Register this webview to receive connection change notifications
+    public registerForConnectionUpdates() {
+        this.connectionProvider.addConnectionChangeCallback(() => {
+            if (this.panel && this.panel.visible) {
+                this.refreshConnectionsList();
+            }
+        });
+    }
+
+    private async getActiveConnectionsList(): Promise<Array<{id: string, name: string, connectionType: string}>> {
+        try {
+            // Get only active connections (ones that are already connected)
+            const activeConnections = this.connectionProvider.getActiveConnections();
+            return activeConnections.map(conn => ({
                 id: conn.id,
-                name: conn.name
+                name: conn.name,
+                connectionType: conn.connectionType || 'server'
             }));
         } catch (error) {
-            this.outputChannel.appendLine(`[CompareSchema] Error getting connection list: ${error}`);
+            this.outputChannel.appendLine(`[CompareSchema] Error getting active connections: ${error}`);
             throw error;
         }
     }
 
-    private async getDatabasesForConnection(connectionId: string) {
+    private async getDatabasesForConnection(connectionId: string, target: string) {
         try {
-            this.outputChannel.appendLine(`[CompareSchema] Getting databases for connection: ${connectionId}`);
+            this.outputChannel.appendLine(`[CompareSchema] Getting databases for connection: ${connectionId} (${target})`);
             
             // Check if connection is active
             if (!this.connectionProvider.isConnectionActive(connectionId)) {
@@ -158,7 +200,8 @@ export class CompareSchemaWebview {
             this.panel?.webview.postMessage({
                 command: 'databasesForConnection',
                 databases: databases,
-                autoSelect: databases.length === 1
+                autoSelect: databases.length === 1,
+                target: target
             });
         } catch (error) {
             this.outputChannel.appendLine(`[CompareSchema] Error getting databases for connection: ${error}`);
@@ -169,22 +212,38 @@ export class CompareSchemaWebview {
         }
     }
 
-    private async compareSchemas(targetConnectionId: string, targetDatabase: string) {
-        // Store target info for later use
+    private async compareSchemas(sourceConnectionId: string, sourceDatabase: string | null, targetConnectionId: string, targetDatabase: string | null) {
+        // Store connection info for later use
+        this.sourceConnectionId = sourceConnectionId;
         this.targetConnectionId = targetConnectionId;
-        this.targetDatabase = targetDatabase;
+        
+        // For direct database connections, get database name from connection config
+        const sourceConfig = this.connectionProvider.getConnectionConfig(sourceConnectionId);
+        const targetConfig = this.connectionProvider.getConnectionConfig(targetConnectionId);
+        
+        if (sourceConfig?.connectionType === 'database') {
+            this.sourceDatabase = sourceConfig.database;
+        } else {
+            this.sourceDatabase = sourceDatabase || '';
+        }
+        
+        if (targetConfig?.connectionType === 'database') {
+            this.targetDatabase = targetConfig.database;
+        } else {
+            this.targetDatabase = targetDatabase || '';
+        }
         
         // Clear cache for new comparison
         this.definitionsCache.clear();
         
-        this.outputChannel.appendLine(`[CompareSchema] Comparing ${this.sourceDatabase} with ${targetDatabase} (connection: ${targetConnectionId}`);
+        this.outputChannel.appendLine(`[CompareSchema] Comparing ${this.sourceDatabase || 'database'} (${sourceConnectionId}) with ${this.targetDatabase || 'database'} (${targetConnectionId})`);
         
         this.panel?.webview.postMessage({
             command: 'comparisonStarted'
         });
 
         try {
-            const changes = await this.detectSchemaChanges(targetConnectionId, targetDatabase);
+            const changes = await this.detectSchemaChanges();
             
             this.outputChannel.appendLine(`[CompareSchema] Comparison complete: ${changes.length} changes found`);
             this.outputChannel.appendLine(`[CompareSchema] Sending results to webview...`);
@@ -204,12 +263,12 @@ export class CompareSchemaWebview {
         }
     }
 
-    private async detectSchemaChanges(targetConnectionId: string, targetDatabase: string): Promise<SchemaChange[]> {
+    private async detectSchemaChanges(): Promise<SchemaChange[]> {
         const changes: SchemaChange[] = [];
 
         // Get schema information for both databases
         const sourceSchema = await this.getSchemaInfo(this.sourceConnectionId, this.sourceDatabase);
-        const targetSchema = await this.getSchemaInfo(targetConnectionId, targetDatabase);
+        const targetSchema = await this.getSchemaInfo(this.targetConnectionId, this.targetDatabase);
         
         // Cache all definitions upfront
         this.outputChannel.appendLine(`[CompareSchema] Caching object definitions...`);

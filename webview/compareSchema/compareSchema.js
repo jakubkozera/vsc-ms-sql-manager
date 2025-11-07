@@ -12,11 +12,21 @@
     };
 
     // DOM elements
-    const sourceDatabaseElement = document.getElementById('sourceDatabase');
+    const sourceConnectionBtn = document.getElementById('sourceConnectionSelect');
+    const sourceConnectionMenu = document.getElementById('sourceConnectionMenu');
+    const sourceDatabaseBtn = document.getElementById('sourceDatabaseSelect');
+    const sourceDatabaseMenu = document.getElementById('sourceDatabaseMenu');
+    const sourceDatabaseLabel = document.getElementById('sourceDatabaseLabel');
+    const sourceDatabaseDropdown = document.getElementById('source-database-dropdown');
+    
     const targetConnectionBtn = document.getElementById('targetConnectionSelect');
     const targetConnectionMenu = document.getElementById('targetConnectionMenu');
     const targetDatabaseBtn = document.getElementById('targetDatabaseSelect');
     const targetDatabaseMenu = document.getElementById('targetDatabaseMenu');
+    const targetDatabaseLabel = document.getElementById('targetDatabaseLabel');
+    const targetDatabaseDropdown = document.getElementById('target-database-dropdown');
+    
+    const connectButton = document.getElementById('connectButton');
     const compareButton = document.getElementById('compareButton');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const resultsSection = document.getElementById('resultsSection');
@@ -26,41 +36,134 @@
     const editorContainer = document.getElementById('editorContainer');
     const emptyDiffState = document.getElementById('emptyDiffState');
     
+    let selectedSourceConnection = null;
+    let selectedSourceDatabase = null;
     let selectedTargetConnection = null;
     let selectedTargetDatabase = null;
 
-    // Setup dropdown handlers
+    // Setup dropdown handlers for SOURCE
+    setupDropdown(sourceConnectionBtn, sourceConnectionMenu, (item) => {
+        selectedSourceConnection = item.dataset.value;
+        sourceConnectionBtn.textContent = item.textContent;
+        
+        const connection = allConnections.find(c => c.id === selectedSourceConnection);
+        
+        if (connection && connection.connectionType === 'server') {
+            // Show database selector for server connections
+            sourceDatabaseLabel.style.display = 'inline-block';
+            sourceDatabaseDropdown.style.display = 'inline-block';
+            sourceDatabaseBtn.disabled = false;
+            sourceDatabaseBtn.textContent = 'Select database...';
+            selectedSourceDatabase = null;
+            sourceDatabaseMenu.innerHTML = '';
+            
+            vscode.postMessage({
+                command: 'getDatabasesForConnection',
+                connectionId: selectedSourceConnection,
+                target: 'source'
+            });
+        } else {
+            // Hide database selector for direct database connections
+            sourceDatabaseLabel.style.display = 'none';
+            sourceDatabaseDropdown.style.display = 'none';
+            selectedSourceDatabase = null;
+            sourceDatabaseBtn.textContent = 'Select database...';
+        }
+        
+        checkIfReadyToCompare();
+    });
+    
+    setupDropdown(sourceDatabaseBtn, sourceDatabaseMenu, (item) => {
+        selectedSourceDatabase = item.dataset.value;
+        sourceDatabaseBtn.textContent = item.textContent;
+        checkIfReadyToCompare();
+    });
+    
+    // Setup dropdown handlers for TARGET
     setupDropdown(targetConnectionBtn, targetConnectionMenu, (item) => {
         selectedTargetConnection = item.dataset.value;
         targetConnectionBtn.textContent = item.textContent;
-        targetDatabaseBtn.disabled = false;
-        targetDatabaseBtn.textContent = 'Select database...';
-        selectedTargetDatabase = null;
-        targetDatabaseMenu.innerHTML = '';
-        compareButton.disabled = true;
         
-        vscode.postMessage({
-            command: 'getDatabasesForConnection',
-            connectionId: selectedTargetConnection
-        });
+        const connection = allConnections.find(c => c.id === selectedTargetConnection);
+        
+        if (connection && connection.connectionType === 'server') {
+            // Show database selector for server connections
+            targetDatabaseLabel.style.display = 'inline-block';
+            targetDatabaseDropdown.style.display = 'inline-block';
+            targetDatabaseBtn.disabled = false;
+            targetDatabaseBtn.textContent = 'Select database...';
+            selectedTargetDatabase = null;
+            targetDatabaseMenu.innerHTML = '';
+            
+            vscode.postMessage({
+                command: 'getDatabasesForConnection',
+                connectionId: selectedTargetConnection,
+                target: 'target'
+            });
+        } else {
+            // Hide database selector for direct database connections
+            targetDatabaseLabel.style.display = 'none';
+            targetDatabaseDropdown.style.display = 'none';
+            selectedTargetDatabase = null;
+            targetDatabaseBtn.textContent = 'Select database...';
+        }
+        
+        checkIfReadyToCompare();
     });
     
     setupDropdown(targetDatabaseBtn, targetDatabaseMenu, (item) => {
         selectedTargetDatabase = item.dataset.value;
         targetDatabaseBtn.textContent = item.textContent;
-        compareButton.disabled = !selectedTargetConnection || !selectedTargetDatabase;
+        checkIfReadyToCompare();
+    });
+    
+    // Connect button - opens connection management webview
+    connectButton.addEventListener('click', () => {
+        vscode.postMessage({
+            command: 'manageConnections'
+        });
     });
 
     // Compare button click
     compareButton.addEventListener('click', () => {
-        if (selectedTargetConnection && selectedTargetDatabase) {
+        if (isReadyToCompare()) {
             vscode.postMessage({
                 command: 'compareSchemas',
+                sourceConnectionId: selectedSourceConnection,
+                sourceDatabase: selectedSourceDatabase,
                 targetConnectionId: selectedTargetConnection,
                 targetDatabase: selectedTargetDatabase
             });
         }
     });
+    
+    function checkIfReadyToCompare() {
+        const sourceReady = selectedSourceConnection && (selectedSourceDatabase || !needsDatabaseForConnection(selectedSourceConnection));
+        const targetReady = selectedTargetConnection && (selectedTargetDatabase || !needsDatabaseForConnection(selectedTargetConnection));
+        
+        const ready = sourceReady && targetReady;
+        
+        if (ready) {
+            compareButton.style.display = 'inline-flex';
+            compareButton.disabled = false;
+        } else {
+            compareButton.style.display = 'none';
+            compareButton.disabled = true;
+        }
+        
+        return ready;
+    }
+    
+    function isReadyToCompare() {
+        return checkIfReadyToCompare();
+    }
+    
+    function needsDatabaseForConnection(connectionId) {
+        const connection = allConnections.find(c => c.id === connectionId);
+        return connection && connection.connectionType === 'server';
+    }
+    
+    let allConnections = [];
 
     // Handle messages from extension
     window.addEventListener('message', event => {
@@ -68,12 +171,36 @@
         
         switch (message.command) {
             case 'init':
-                sourceDatabaseElement.textContent = message.sourceDatabase;
-                populateConnectionList(message.connections);
+                allConnections = message.connections;
+                populateConnectionList(sourceConnectionMenu, message.connections);
+                populateConnectionList(targetConnectionMenu, message.connections);
+                
+                // Auto-select source if provided
+                if (message.sourceConnectionId && message.sourceDatabase) {
+                    const sourceConn = allConnections.find(c => c.id === message.sourceConnectionId);
+                    if (sourceConn) {
+                        selectedSourceConnection = message.sourceConnectionId;
+                        sourceConnectionBtn.textContent = sourceConn.name;
+                        
+                        if (sourceConn.connectionType === 'server') {
+                            selectedSourceDatabase = message.sourceDatabase;
+                            sourceDatabaseBtn.textContent = message.sourceDatabase;
+                            sourceDatabaseLabel.style.display = 'inline-block';
+                            sourceDatabaseDropdown.style.display = 'inline-block';
+                            sourceDatabaseBtn.disabled = false;
+                        }
+                    }
+                }
+                
+                checkIfReadyToCompare();
                 break;
                 
             case 'databasesForConnection':
-                populateDatabaseList(message.databases, message.autoSelect);
+                if (message.target === 'source') {
+                    populateDatabaseList(sourceDatabaseMenu, message.databases, message.autoSelect, 'source');
+                } else {
+                    populateDatabaseList(targetDatabaseMenu, message.databases, message.autoSelect, 'target');
+                }
                 break;
                 
             case 'comparisonStarted':
@@ -95,6 +222,12 @@
                 
             case 'schemaDetails':
                 updateDiffEditor(message.originalSchema, message.modifiedSchema);
+                break;
+                
+            case 'connectionsUpdated':
+                // Update connections list and refresh dropdowns while preserving selections
+                allConnections = message.connections;
+                updateConnectionDropdowns();
                 break;
         }
     });
@@ -148,37 +281,84 @@
         });
     }
 
-    function populateConnectionList(connections) {
-        targetConnectionMenu.innerHTML = '';
+    function populateConnectionList(menuElement, connections) {
+        menuElement.innerHTML = '';
         
         connections.forEach(conn => {
             const item = document.createElement('div');
             item.className = 'dropdown-item';
             item.dataset.value = conn.id;
             item.textContent = conn.name;
-            targetConnectionMenu.appendChild(item);
+            menuElement.appendChild(item);
         });
     }
 
-    function populateDatabaseList(databases, autoSelect) {
-        targetDatabaseMenu.innerHTML = '';
+    function populateDatabaseList(menuElement, databases, autoSelect, target) {
+        menuElement.innerHTML = '';
         
         databases.forEach(db => {
             const item = document.createElement('div');
             item.className = 'dropdown-item';
             item.dataset.value = db;
             item.textContent = db;
-            targetDatabaseMenu.appendChild(item);
+            menuElement.appendChild(item);
         });
         
         // Auto-select if only one database
         if (autoSelect && databases.length === 1) {
-            selectedTargetDatabase = databases[0];
-            targetDatabaseBtn.textContent = databases[0];
-            targetDatabaseBtn.disabled = false;
-            compareButton.disabled = !selectedTargetConnection || !selectedTargetDatabase;
-            targetDatabaseMenu.querySelector('.dropdown-item')?.classList.add('selected');
+            if (target === 'source') {
+                selectedSourceDatabase = databases[0];
+                sourceDatabaseBtn.textContent = databases[0];
+                sourceDatabaseBtn.disabled = false;
+            } else {
+                selectedTargetDatabase = databases[0];
+                targetDatabaseBtn.textContent = databases[0];
+                targetDatabaseBtn.disabled = false;
+            }
+            
+            checkIfReadyToCompare();
+            menuElement.querySelector('.dropdown-item')?.classList.add('selected');
         }
+    }
+    
+    function updateConnectionDropdowns() {
+        // Store current selections
+        const currentSourceConn = selectedSourceConnection;
+        const currentTargetConn = selectedTargetConnection;
+        
+        // Repopulate both connection dropdowns
+        populateConnectionList(sourceConnectionMenu, allConnections);
+        populateConnectionList(targetConnectionMenu, allConnections);
+        
+        // Restore source selection if it still exists
+        if (currentSourceConn) {
+            const sourceStillExists = allConnections.find(c => c.id === currentSourceConn);
+            if (sourceStillExists) {
+                sourceConnectionMenu.querySelector(`[data-value="${currentSourceConn}"]`)?.classList.add('selected');
+            } else {
+                // Connection no longer exists, clear selection
+                selectedSourceConnection = null;
+                sourceConnectionBtn.textContent = 'Select connection...';
+                sourceDatabaseLabel.style.display = 'none';
+                sourceDatabaseDropdown.style.display = 'none';
+            }
+        }
+        
+        // Restore target selection if it still exists
+        if (currentTargetConn) {
+            const targetStillExists = allConnections.find(c => c.id === currentTargetConn);
+            if (targetStillExists) {
+                targetConnectionMenu.querySelector(`[data-value="${currentTargetConn}"]`)?.classList.add('selected');
+            } else {
+                // Connection no longer exists, clear selection
+                selectedTargetConnection = null;
+                targetConnectionBtn.textContent = 'Select connection...';
+                targetDatabaseLabel.style.display = 'none';
+                targetDatabaseDropdown.style.display = 'none';
+            }
+        }
+        
+        checkIfReadyToCompare();
     }
 
     function showLoading() {
