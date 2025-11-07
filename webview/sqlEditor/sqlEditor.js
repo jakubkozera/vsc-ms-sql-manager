@@ -1846,11 +1846,11 @@ function extractTablesFromQuery(query) {
     // Patterns: FROM schema.table alias, FROM [schema].[table] alias, FROM table alias, JOIN schema.table alias, etc.
     const patterns = [
         // Pattern for bracketed identifiers: FROM [schema].[table] alias or FROM [table] alias
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi,
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
         // Pattern for schema.table with alias (must have dot)
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?/gi,
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
         // Pattern for just table name with alias (no schema)
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s*$)/gi
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi
     ];
     
     patterns.forEach((pattern, patternIndex) => {

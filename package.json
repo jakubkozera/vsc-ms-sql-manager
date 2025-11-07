@@ -2,12 +2,21 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "jakubkozera",
+  "icon": "csharp-dev-tools.png",
+  "sponsor": {
+    "url": "https://github.com/sponsors/jakubkozera"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jakubkozera/vsc-ms-sql-manager.git"
+  },
   "engines": {
     "vscode": "^1.105.0"
   },
   "categories": [
+    "Programming Languages",
     "Other"
   ],
   "activationEvents": [
