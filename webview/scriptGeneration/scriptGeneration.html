@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src vscode-resource: 'unsafe-inline'; script-src 'unsafe-inline';">
+    <title>Generate SQL Scripts</title>
+    <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+    <div class="wizard-container">
+        <div class="wizard-header">
+            <h2>Generate SQL Scripts</h2>
+            <div class="database-path" id="databasePath">Database: Loading...</div>
+        </div>
+
+        <div class="wizard-content">
+            <!-- Step 1: Select Objects -->
+            <div class="wizard-section">
+                <h3>Select Database Objects</h3>
+                <div class="wizard-section-content">
+                    <div class="objects-panel">
+                        <div class="objects-header">
+                            <input type="text" class="search-box" placeholder="Search objects..." id="searchBox">
+                            <button class="select-all-btn" id="selectAllBtn">Select All Objects</button>
+                        </div>
+                        <div class="objects-list" id="objectsList">
+                            <!-- Tables -->
+                            <div class="object-category">
+                                <div class="category-header" onclick="toggleCategoryExpand(this)">
+                                    <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6" /></svg>
+                                    <input type="checkbox" class="checkbox category-checkbox" id="selectAllTables"
+                                        onclick="event.stopPropagation(); selectCategory(this, 'tables');">
+                                    <span>Tables <span id="tablesCount">(0)</span></span>
+                                </div>
+                                <div class="category-items" id="tablesList"></div>
+                            </div>
+
+                            <!-- Views -->
+                            <div class="object-category">
+                                <div class="category-header" onclick="toggleCategoryExpand(this)">
+                                    <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6" /></svg>
+                                    <input type="checkbox" class="checkbox category-checkbox" id="selectAllViews"
+                                        onclick="event.stopPropagation(); selectCategory(this, 'views');">
+                                    <span>Views <span id="viewsCount">(0)</span></span>
+                                </div>
+                                <div class="category-items" id="viewsList"></div>
+                            </div>
+
+                            <!-- Stored Procedures -->
+                            <div class="object-category">
+                                <div class="category-header" onclick="toggleCategoryExpand(this)">
+                                    <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6" /></svg>
+                                    <input type="checkbox" class="checkbox category-checkbox" id="selectAllProcedures"
+                                        onclick="event.stopPropagation(); selectCategory(this, 'procedures');">
+                                    <span>Stored Procedures <span id="proceduresCount">(0)</span></span>
+                                </div>
+                                <div class="category-items" id="proceduresList"></div>
+                            </div>
+
+                            <!-- Functions -->
+                            <div class="object-category">
+                                <div class="category-header" onclick="toggleCategoryExpand(this)">
+                                    <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6l6 -6" /></svg>
+                                    <input type="checkbox" class="checkbox category-checkbox" id="selectAllFunctions"
+                                        onclick="event.stopPropagation(); selectCategory(this, 'functions');">
+                                    <span>Functions <span id="functionsCount">(0)</span></span>
+                                </div>
+                                <div class="category-items" id="functionsList"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats" id="statsDisplay">0 objects selected</div>
+                </div>
+            </div>
+
+            <!-- Step 2: Script Type -->
+            <div class="wizard-section">
+                <h3>Script Type</h3>
+                <div class="wizard-section-content">
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="scriptType" value="schema" checked onchange="updateScriptType()">
+                            <div class="radio-label">
+                                <div class="radio-title">Schema only</div>
+                                <div class="radio-description">Export only database structure (CREATE statements)</div>
+                            </div>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="scriptType" value="data" onchange="updateScriptType()">
+                            <div class="radio-label">
+                                <div class="radio-title">Data only</div>
+                                <div class="radio-description">Export only INSERT statements with table data</div>
+                            </div>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="scriptType" value="schemaAndData" onchange="updateScriptType()">
+                            <div class="radio-label">
+                                <div class="radio-title">Schema and Data</div>
+                                <div class="radio-description">Combine both schema creation and data insertion</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Output Destination -->
+            <div class="wizard-section">
+                <h3>Output Destination</h3>
+                <div class="wizard-section-content">
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="destination" value="editor" checked>
+                            <div class="radio-label">
+                                <div class="radio-title">Open in Editor</div>
+                                <div class="radio-description">Open the generated script in a new SQL editor window</div>
+                            </div>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="destination" value="file">
+                            <div class="radio-label">
+                                <div class="radio-title">Save to File</div>
+                                <div class="radio-description">Save the script to a .sql file on disk</div>
+                            </div>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="destination" value="clipboard">
+                            <div class="radio-label">
+                                <div class="radio-title">Copy to Clipboard</div>
+                                <div class="radio-description">Copy the generated script to clipboard</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Advanced Options -->
+            <div class="wizard-section">
+                <h3>Advanced Options</h3>
+                <div class="wizard-section-content">
+                    <div class="checkbox-group">
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="includeIfExists" checked>
+                            <span>Include IF EXISTS checks</span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="includeDropStatements">
+                            <span>Include DROP statements</span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="scriptPermissions">
+                            <span>Script object permissions</span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="scriptExtendedProperties">
+                            <span>Script extended properties</span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="sortByDependencies" checked>
+                            <span>Sort objects by dependencies</span>
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="includeUseDatabase" checked>
+                            <span>Include USE [Database] statement</span>
+                        </label>
+                    </div>
+
+                    <div class="batch-size-container" id="batchSizeContainer">
+                        <label for="batchSize">INSERT batch size (rows per statement):</label>
+                        <input type="number" id="batchSize" value="1000" min="1" max="1000" step="100">
+                        <span class="input-hint">Maximum 1000 rows per INSERT statement</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="wizard-footer">
+            <button class="btn btn-secondary" onclick="cancel()">Cancel</button>
+            <button class="btn btn-primary" onclick="generate()" id="generateButton">Generate Script</button>
+        </div>
+    </div>
+
+    <script>
+        const vscode = acquireVsCodeApi();
+        let databaseObjects = {
+            tables: [],
+            views: [],
+            procedures: [],
+            functions: []
+        };
+
+        window.addEventListener('message', event => {
+            const message = event.data;
+            switch (message.command) {
+                case 'init':
+                    document.getElementById('databasePath').textContent = `Database: ${message.serverName} / ${message.databaseName}`;
+                    databaseObjects = message.objects;
+                    populateObjects();
+                    break;
+            }
+        });
+
+        function populateObjects() {
+            populateCategory('tables', databaseObjects.tables, 'tablesList', 'tablesCount');
+            populateCategory('views', databaseObjects.views, 'viewsList', 'viewsCount');
+            populateCategory('procedures', databaseObjects.procedures, 'proceduresList', 'proceduresCount');
+            populateCategory('functions', databaseObjects.functions, 'functionsList', 'functionsCount');
+        }
+
+        function populateCategory(category, objects, listId, countId) {
+            const listElement = document.getElementById(listId);
+            const countElement = document.getElementById(countId);
+            
+            countElement.textContent = `(${objects.length})`;
+            
+            if (objects.length === 0) {
+                return;
+            }
+
+            listElement.innerHTML = '';
+            objects.forEach(obj => {
+                const div = document.createElement('div');
+                div.className = 'object-item';
+                div.onclick = function() { toggleItem(this); };
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'checkbox item-checkbox';
+                checkbox.value = `${obj.schema}.${obj.name}`;
+                checkbox.dataset.category = category;
+                checkbox.dataset.rowCount = obj.rowCount || 0;
+                checkbox.onclick = function(e) { e.stopPropagation(); updateStats(); updateCategoryCheckbox(); };
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'object-name';
+                nameSpan.textContent = `${obj.schema}.${obj.name}`;
+                
+                div.appendChild(checkbox);
+                div.appendChild(nameSpan);
+                
+                if (obj.rowCount !== undefined && obj.rowCount !== null) {
+                    const rowCountSpan = document.createElement('span');
+                    rowCountSpan.className = 'row-count';
+                    rowCountSpan.textContent = `${obj.rowCount.toLocaleString()} rows`;
+                    div.appendChild(rowCountSpan);
+                }
+                
+                listElement.appendChild(div);
+            });
+        }
+
+        function toggleCategoryExpand(header) {
+            const icon = header.querySelector('.expand-icon');
+            const items = header.nextElementSibling;
+            
+            icon.classList.toggle('expanded');
+            items.classList.toggle('expanded');
+        }
+
+        function toggleItem(item) {
+            const checkbox = item.querySelector('.item-checkbox');
+            checkbox.checked = !checkbox.checked;
+            item.classList.toggle('selected', checkbox.checked);
+            updateStats();
+            updateCategoryCheckbox();
+        }
+
+        function selectCategory(checkbox, category) {
+            const items = document.querySelectorAll(`.object-item input[data-category="${category}"]`);
+            items.forEach(item => {
+                item.checked = checkbox.checked;
+                item.closest('.object-item').classList.toggle('selected', checkbox.checked);
+            });
+            updateStats();
+        }
+
+        function updateCategoryCheckbox() {
+            ['tables', 'views', 'procedures', 'functions'].forEach(category => {
+                const categoryCheckbox = document.getElementById(`selectAll${category.charAt(0).toUpperCase() + category.slice(1)}`);
+                const categoryCheckboxes = document.querySelectorAll(`.object-item input[data-category="${category}"]`);
+                
+                if (categoryCheckboxes.length > 0) {
+                    const allChecked = Array.from(categoryCheckboxes).every(cb => cb.checked);
+                    categoryCheckbox.checked = allChecked;
+                }
+            });
+        }
+
+        function updateStats() {
+            const selected = document.querySelectorAll('.item-checkbox:checked').length;
+            document.getElementById('statsDisplay').textContent = `${selected} object${selected !== 1 ? 's' : ''} selected`;
+        }
+
+        function updateScriptType() {
+            const scriptType = document.querySelector('input[name="scriptType"]:checked').value;
+            const batchSizeContainer = document.getElementById('batchSizeContainer');
+            
+            if (scriptType === 'data' || scriptType === 'schemaAndData') {
+                batchSizeContainer.style.display = 'block';
+            } else {
+                batchSizeContainer.style.display = 'none';
+            }
+        }
+
+        document.getElementById('selectAllBtn').addEventListener('click', function() {
+            const allChecked = document.querySelectorAll('.item-checkbox:checked').length === document.querySelectorAll('.item-checkbox').length;
+            document.querySelectorAll('.item-checkbox, .category-checkbox').forEach(checkbox => {
+                checkbox.checked = !allChecked;
+                const item = checkbox.closest('.object-item');
+                if (item) {
+                    item.classList.toggle('selected', !allChecked);
+                }
+            });
+            updateStats();
+        });
+
+        document.getElementById('searchBox').addEventListener('input', function(e) {
+            const search = e.target.value.toLowerCase();
+            document.querySelectorAll('.object-item').forEach(item => {
+                const name = item.querySelector('.object-name').textContent.toLowerCase();
+                item.style.display = name.includes(search) ? 'flex' : 'none';
+            });
+        });
+
+        function cancel() {
+            vscode.postMessage({
+                command: 'cancel'
+            });
+        }
+
+        function generate() {
+            const selectedObjects = {
+                tables: [],
+                views: [],
+                procedures: [],
+                functions: []
+            };
+
+            document.querySelectorAll('.item-checkbox:checked').forEach(cb => {
+                const category = cb.dataset.category;
+                const [schema, name] = cb.value.split('.');
+                selectedObjects[category].push({
+                    schema: schema,
+                    name: name,
+                    rowCount: parseInt(cb.dataset.rowCount) || 0
+                });
+            });
+
+            const totalSelected = selectedObjects.tables.length + 
+                                 selectedObjects.views.length + 
+                                 selectedObjects.procedures.length + 
+                                 selectedObjects.functions.length;
+
+            if (totalSelected === 0) {
+                vscode.postMessage({
+                    command: 'error',
+                    message: 'Please select at least one database object to script.'
+                });
+                return;
+            }
+
+            const options = {
+                scriptType: document.querySelector('input[name="scriptType"]:checked').value,
+                destination: document.querySelector('input[name="destination"]:checked').value,
+                includeIfExists: document.getElementById('includeIfExists').checked,
+                includeDropStatements: document.getElementById('includeDropStatements').checked,
+                scriptPermissions: document.getElementById('scriptPermissions').checked,
+                scriptExtendedProperties: document.getElementById('scriptExtendedProperties').checked,
+                sortByDependencies: document.getElementById('sortByDependencies').checked,
+                includeUseDatabase: document.getElementById('includeUseDatabase').checked,
+                batchSize: parseInt(document.getElementById('batchSize').value) || 1000
+            };
+
+            vscode.postMessage({
+                command: 'generate',
+                selectedObjects: selectedObjects,
+                options: options
+            });
+        }
+
+        updateScriptType();
+    </script>
+</body>
+</html>

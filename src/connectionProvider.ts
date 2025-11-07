@@ -427,6 +427,27 @@ export class ConnectionProvider {
         });
     }
 
+    // Ensure connection is active and return pool for specific database
+    // This method will reuse existing connections or activate them if needed
+    async ensureConnectionAndGetDbPool(connectionId: string, database: string): Promise<DBPool> {
+        // First check if we already have a DB pool for this specific database
+        const key = `${connectionId}::${database}`;
+        const existing = this.dbPools.get(key);
+        if (existing && existing.connected) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Reusing existing DB pool for ${connectionId} -> ${database}`);
+            return existing;
+        }
+
+        // Check if main connection is active
+        if (!this.isConnectionActive(connectionId)) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Connection ${connectionId} not active, activating...`);
+            await this.connectToSavedById(connectionId);
+        }
+
+        // Now create DB pool
+        return await this.createDbPool(connectionId, database);
+    }
+
     // Create or return an existing connection pool scoped to a specific database for a given connectionId
     async createDbPool(connectionId: string, database: string): Promise<DBPool> {
         const key = `${connectionId}::${database}`;
@@ -563,6 +584,21 @@ export class ConnectionProvider {
             const config = this.activeConfigs.get(id);
             if (config) {
                 result.push({ id, config, connection });
+            }
+        }
+        return result;
+    }
+    
+    getActiveConnections(): { id: string; name: string; connectionType: string }[] {
+        const result = [];
+        for (const [id, connection] of this.activeConnections) {
+            const config = this.activeConfigs.get(id);
+            if (config) {
+                result.push({ 
+                    id, 
+                    name: config.name,
+                    connectionType: config.connectionType || 'server'
+                });
             }
         }
         return result;
@@ -905,7 +941,9 @@ export class ConnectionProvider {
 
             const results = await Promise.all(attemptPromises);
             for (const res of results) {
-                if (res) discovered.push(res);
+                if (res) {
+                    discovered.push(res);
+                }
             }
 
             if (discovered.length > 0) {

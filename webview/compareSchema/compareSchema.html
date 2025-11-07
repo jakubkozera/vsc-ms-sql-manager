@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compare Database Schema</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/editor/editor.main.css">
+    <link rel="stylesheet" href="compareSchema.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header with database selection -->
+        <div class="header">
+            <div class="database-selector">
+                <button id="compareButton" class="compare-button" disabled>Compare</button>
+                
+                <div class="header-section">
+                    <span class="header-label">Source:</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">
+                        <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                        <path d="M4 20l3.5 -3.5" />
+                        <path d="M15 4l-3.5 3.5" />
+                        <path d="M20 9l-3.5 3.5" />
+                    </svg>
+                    <div class="custom-dropdown" id="source-connection-dropdown">
+                        <button class="dropdown-trigger" id="sourceConnectionSelect">Select connection...</button>
+                        <div class="dropdown-menu" id="sourceConnectionMenu"></div>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" id="sourceDatabaseLabel" style="vertical-align: middle; margin-left: 8px; display: none;">
+                        <path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+                        <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+                        <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+                    </svg>
+                    <div class="custom-dropdown" id="source-database-dropdown" style="display: none;">
+                        <button class="dropdown-trigger" id="sourceDatabaseSelect" disabled>Select database...</button>
+                        <div class="dropdown-menu" id="sourceDatabaseMenu"></div>
+                    </div>
+                </div>
+                
+                <button id="swapButton" class="swap-button" title="Swap Source and Target" style="display: none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 3l4 4l-4 4" />
+                        <path d="M10 7l10 0" />
+                        <path d="M8 13l-4 4l4 4" />
+                        <path d="M4 17l9 0" />
+                    </svg>
+                </button>
+                
+                <div class="header-section">
+                    <span class="header-label">Target:</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">
+                        <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                        <path d="M4 20l3.5 -3.5" />
+                        <path d="M15 4l-3.5 3.5" />
+                        <path d="M20 9l-3.5 3.5" />
+                    </svg>
+                    <div class="custom-dropdown" id="target-connection-dropdown">
+                        <button class="dropdown-trigger" id="targetConnectionSelect">Select connection...</button>
+                        <div class="dropdown-menu" id="targetConnectionMenu"></div>
+                    </div>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" id="targetDatabaseLabel" style="vertical-align: middle; margin-left: 8px; display: none;">
+                        <path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+                        <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+                        <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+                    </svg>
+                    <div class="custom-dropdown" id="target-database-dropdown" style="display: none;">
+                        <button class="dropdown-trigger" id="targetDatabaseSelect" disabled>Select database...</button>
+                        <div class="dropdown-menu" id="targetDatabaseMenu"></div>
+                    </div>
+                </div>
+                
+                <button id="connectButton" class="toolbar-button secondary" title="Manage Connections">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5z" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5z" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" /></svg>
+                    Connect
+                </button>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Comparing schemas...</p>
+        </div>
+
+        <!-- Main content area with sidebar and diff view -->
+        <div id="resultsSection" class="results-layout" style="display: none;">
+            <!-- Sidebar with grouped changes -->
+            <div class="changes-sidebar" id="changesSidebar">
+                <div class="sidebar-header">
+                    <h4>Schema Changes</h4>
+                    <button id="collapseSidebarBtn" class="collapse-sidebar-btn" title="Collapse sidebar" onclick="toggleSidebar()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 7l-5 5l5 5" />
+                            <path d="M17 7l-5 5l5 5" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="changes-tree" id="changesTree">
+                    <!-- Changes grouped by type will be populated here -->
+                </div>
+            </div>
+
+            <!-- Diff viewer area -->
+            <div class="diff-viewer">
+                <button id="expandSidebarBtn" class="expand-sidebar-btn" title="Show changes" onclick="toggleSidebar()" style="display: none;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 7l-5 5l5 5" />
+                        <path d="M11 7l-5 5l5 5" />
+                    </svg>
+                </button>
+                <div class="comparison-info" id="comparisonInfo" style="display: none;">
+                    <div class="comparison-sources">
+                        <span class="source-info">Source: <span id="sourceConnectionInfo"></span></span>
+                        <span class="target-info">Target: <span id="targetConnectionInfo"></span></span>
+                    </div>
+                </div>
+                <div class="diff-header" id="diffHeader" style="display: none;">
+                    <h3 id="selectedObjectName"></h3>
+                </div>
+                
+                <div class="editor-container" id="editorContainer" style="display: none;"></div>
+
+                <div id="emptyDiffState" class="empty-diff-state">
+                    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                        <polyline points="13 2 13 9 20 9"></polyline>
+                    </svg>
+                    <p>Select an object to view differences</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="emptyState" class="empty-state hidden">
+            <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            <h3>Schemas are identical</h3>
+            <p>No differences found between the two databases</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    <script src="compareSchema.js"></script>
+</body>
+</html>
