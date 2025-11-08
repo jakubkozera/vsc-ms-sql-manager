@@ -7,7 +7,7 @@ A comprehensive VS Code extension for managing Microsoft SQL Server databases wi
 ### 🔌 MS SQL Server Connection
 Comprehensive connection management system for Microsoft SQL Server databases with support for multiple authentication methods and connection profiles.
 
-![Connection Management](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/connection-management.png)
+![Connection Management](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/sql-server-connection.png)
 
 **Key Features:**
 - **Interactive Connection Form**: Dedicated webview form for creating and testing connections
