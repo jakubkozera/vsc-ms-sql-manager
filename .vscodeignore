@@ -2,6 +2,10 @@
 .vscode-test/**
 out/**
 node_modules/**
+!node_modules/msnodesqlv8/**
+node_modules/msnodesqlv8/test/**
+node_modules/msnodesqlv8/samples/**
+node_modules/msnodesqlv8/*.md
 src/**
 .gitignore
 .yarnrc
