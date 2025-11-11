@@ -5,7 +5,19 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.2] - 2024-11-08
+## [0.2.3] - 2025-11-11
+
+### Fixed
+- **Editable Result Sets**: Fixed critical issue with "Revert" and "Revert All" functionality in pending changes
+  - Fixed infinite loop between `updatePendingChangesCount()` and `renderPendingChanges()` functions
+  - **Revert operations now properly restore original values in the data and refresh table display**
+  - Removed recursive function calls that caused "Maximum call stack size exceeded" errors
+  - Pending changes UI now correctly hides when all changes are reverted
+  - Cell modifications are properly cleared and original formatting restored
+  - Row deletion markings are correctly removed on revert
+
+
+## [0.2.2] - 2025-11-08
 
 ### Fixed
 - **Windows Authentication Support**: Fixed critical issue where Windows Authentication connections failed after installing from marketplace
@@ -22,12 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native binaries are platform-specific and must be built on the target platform
 - See `WINDOWS_AUTH_FIX.md` for detailed information about the fix
 
-## [0.2.1] - 2024-11-08
+## [0.2.1] - 2025-11-08
 
 ### Fixed
 - Initial attempt to fix Windows Authentication - incomplete (did not address platform-specific build issue)
 
-## [0.2.0] - 2024-11-07
+## [0.2.0] - 2025-11-07
 
 ### Added
 - Initial release of MS SQL Manager extension
