@@ -5198,6 +5198,12 @@ window.sortTopOperations = function(column) {
     console.log('Sort by:', column);
 };
 
+// Make pending changes functions available globally
+window.revertAllChanges = revertAllChanges;
+window.commitAllChanges = commitAllChanges;
+window.previewUpdateStatements = previewUpdateStatements;
+window.revertChange = revertChange;
+
 // ===== EDITABLE RESULT SETS FUNCTIONS =====
 
 /**
@@ -5491,6 +5497,11 @@ function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, 
 
     // Update pending changes tab badge
     updatePendingChangesCount();
+    
+    // Re-render pending changes if currently viewing
+    if (currentTab === 'pendingChanges') {
+        renderPendingChanges();
+    }
 }
 
 /**
@@ -5567,6 +5578,61 @@ function markRowForDeletion(table, rowIndex) {
 }
 
 /**
+ * Remove visual deletion marking from a row
+ */
+function unmarkRowForDeletion(table, rowIndex) {
+    const tbody = table.querySelector('.ag-grid-tbody');
+    if (!tbody) return;
+    
+    const rows = tbody.querySelectorAll('tr');
+    if (rowIndex < rows.length) {
+        const row = rows[rowIndex];
+        row.classList.remove('row-marked-for-deletion');
+        
+        // Reset all cells in the row to normal styling
+        row.querySelectorAll('td').forEach(cell => {
+            cell.style.backgroundColor = '';
+            cell.style.textDecoration = '';
+            cell.style.color = '';
+        });
+    }
+}
+
+/**
+ * Refresh the display of a specific result set table
+ */
+function refreshResultSetTable(resultSetIndex) {
+    if (!lastResults || !lastResults[resultSetIndex]) {
+        console.warn(`[REFRESH] No data for result set ${resultSetIndex}`);
+        return;
+    }
+
+    const resultSetContainers = document.querySelectorAll('.result-set-container');
+    if (resultSetIndex >= resultSetContainers.length) {
+        console.warn(`[REFRESH] Result set container ${resultSetIndex} not found`);
+        return;
+    }
+
+    const container = resultSetContainers[resultSetIndex];
+    const tableContainer = container.querySelector('.result-set-table');
+    
+    if (!tableContainer) {
+        console.warn(`[REFRESH] Table container not found for result set ${resultSetIndex}`);
+        return;
+    }
+
+    console.log(`[REFRESH] Refreshing result set ${resultSetIndex} with ${lastResults[resultSetIndex].length} rows`);
+    
+    // Determine if single result set mode
+    const isSingleResultSet = lastResults.length === 1 && !currentQueryPlan;
+    
+    // Re-initialize the table with updated data
+    const metadata = resultSetMetadata[resultSetIndex];
+    initAgGridTable(lastResults[resultSetIndex], tableContainer, isSingleResultSet, resultSetIndex, metadata);
+}
+
+/**
+/**
  * Update the pending changes count badge
  */
 function updatePendingChangesCount() {
@@ -5597,37 +5663,6 @@ function updatePendingChangesCount() {
             }
         }
     }
-    
-    // Re-render pending changes panel if it's visible
-    if (currentTab === 'pendingChanges') {
-        renderPendingChanges();
-    }
-}
-
-/**
- * Render the pending changes panel
- */
-function updatePendingChangesCount() {
-    const badge = document.getElementById('pendingChangesCount');
-    const tab = document.querySelector('[data-tab="pendingChanges"]');
-    
-    if (badge && tab) {
-        const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
-        badge.textContent = totalChanges;
-        badge.style.display = totalChanges > 0 ? 'inline-block' : 'none';
-        
-        // Show/hide the entire Pending Changes tab
-        if (totalChanges > 0) {
-            tab.style.display = '';
-        } else {
-            tab.style.display = 'none';
-            // If currently viewing pending changes tab, switch to results
-            const currentTabContent = document.querySelector('.tab-content[style*="display: block"], .tab-content[style=""]');
-            if (currentTabContent && currentTabContent.id === 'pendingChangesContent') {
-                switchTab('results');
-            }
-        }
-    }
 }
 
 function renderPendingChanges() {
@@ -5635,9 +5670,6 @@ function renderPendingChanges() {
     if (!container) return;
 
     const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
-
-    // Update badge count
-    updatePendingChangesCount();
 
     if (totalChanges === 0) {
         container.innerHTML = '<div class="no-pending-changes">No pending changes</div>';
@@ -5733,7 +5765,48 @@ function revertChange(resultSetIndex, changeIndex) {
     const changes = pendingChanges.get(resultSetIndex);
     if (!changes || changeIndex >= changes.length) return;
 
-    // Remove the change
+    const change = changes[changeIndex];
+    console.log(`[EDIT] Reverting single change: ${change.columnName || 'DELETE'} in row ${change.rowIndex}`);
+
+    // Revert the data change
+    if (change.type === 'DELETE') {
+        // For DELETE, remove visual marking
+        const table = document.querySelectorAll('.result-set-table .ag-grid-table')[resultSetIndex];
+        if (table) {
+            unmarkRowForDeletion(table, change.rowIndex);
+        }
+    } else {
+        // For UPDATE, revert data value
+        const data = lastResults && lastResults[resultSetIndex] ? lastResults[resultSetIndex] : null;
+        if (data && data[change.rowIndex]) {
+            console.log(`[EDIT] Reverting ${change.columnName} from ${data[change.rowIndex][change.columnName]} to ${change.oldValue}`);
+            data[change.rowIndex][change.columnName] = change.oldValue;
+            
+            // Remove cell-modified class from the specific cell
+            const tableContainer = document.querySelectorAll('.result-set-table')[resultSetIndex];
+            if (tableContainer) {
+                const table = tableContainer.querySelector('.ag-grid-table');
+                if (table) {
+                    const tbody = table.querySelector('.ag-grid-tbody');
+                    const row = tbody?.querySelector(`tr[data-row-index="${change.rowIndex}"]`);
+                    if (row) {
+                        const cells = row.querySelectorAll('td');
+                        // Find column index from columnDefs
+                        const colDefs = Object.keys(data[change.rowIndex]);
+                        const colIndex = colDefs.indexOf(change.columnName);
+                        if (colIndex >= 0 && colIndex + 1 < cells.length) { // +1 because first cell is row number
+                            cells[colIndex + 1].classList.remove('cell-modified');
+                        }
+                    }
+                }
+            }
+            
+            // Refresh the table display
+            refreshResultSetTable(resultSetIndex);
+        }
+    }
+
+    // Remove the change from pending list
     changes.splice(changeIndex, 1);
     
     // If no more changes for this result set, remove the key
@@ -5741,7 +5814,8 @@ function revertChange(resultSetIndex, changeIndex) {
         pendingChanges.delete(resultSetIndex);
     }
     
-    // Update UI - refresh the pending changes panel
+    // Update UI
+    updatePendingChangesCount();
     renderPendingChanges();
 }
 
@@ -5894,17 +5968,73 @@ function revertAllChanges() {
 }
 
 function executeRevertAll() {
-    // Clear pending changes
+    console.log('[EDIT] Executing revert all changes');
+    
+    // Store changes to revert before clearing
+    const changesToRevert = new Map(pendingChanges);
+    
+    // Clear pending changes first
     pendingChanges.clear();
+    
+    // Revert data changes and refresh table displays
+    changesToRevert.forEach((changes, resultSetIndex) => {
+        console.log(`[EDIT] Reverting ${changes.length} changes for result set ${resultSetIndex}`);
+        
+        changes.forEach(change => {
+            if (change.type === 'DELETE') {
+                // For DELETE changes, just remove the visual deletion marking
+                // The data is still there, we just need to unmark it
+                const table = document.querySelectorAll('.result-set-table .ag-grid-table')[resultSetIndex];
+                if (table) {
+                    unmarkRowForDeletion(table, change.rowIndex);
+                }
+            } else {
+                // For UPDATE changes, revert the data value
+                const data = lastResults && lastResults[resultSetIndex] ? lastResults[resultSetIndex] : null;
+                if (data && data[change.rowIndex]) {
+                    console.log(`[EDIT] Reverting ${change.columnName} from ${data[change.rowIndex][change.columnName]} to ${change.oldValue}`);
+                    data[change.rowIndex][change.columnName] = change.oldValue;
+                }
+            }
+        });
+        
+        // Refresh the table display for this result set
+        refreshResultSetTable(resultSetIndex);
+    });
     
     // Remove all cell-modified classes
     document.querySelectorAll('.cell-modified').forEach(cell => {
         cell.classList.remove('cell-modified');
     });
     
+    // Remove row deletion markings
+    document.querySelectorAll('.row-marked-for-deletion').forEach(row => {
+        row.classList.remove('row-marked-for-deletion');
+        row.querySelectorAll('td').forEach(cell => {
+            cell.style.backgroundColor = '';
+            cell.style.textDecoration = '';
+            cell.style.color = '';
+        });
+    });
+    
+    console.log('[EDIT] All changes reverted successfully');
+    
     // Update UI
     updatePendingChangesCount();
-    renderPendingChanges();
+    
+    // Switch to results tab if currently on pending changes
+    if (currentTab === 'pendingChanges') {
+        document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
+        currentTab = 'results';
+        
+        document.getElementById('resultsContent').style.display = 'block';
+        document.getElementById('messagesContent').style.display = 'none';
+        document.getElementById('pendingChangesContent').style.display = 'none';
+        document.getElementById('queryPlanContent').style.display = 'none';
+        document.getElementById('planTreeContent').style.display = 'none';
+        document.getElementById('topOperationsContent').style.display = 'none';
+    }
 }
 
 /**
