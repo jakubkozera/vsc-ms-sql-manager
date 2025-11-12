@@ -397,8 +397,11 @@ export class ConnectionProvider {
 
                 progress.report({ message: `Connecting to ${config.server}...` });
                 
+                // Get query timeout setting from VS Code configuration
+                const queryTimeout = vscode.workspace.getConfiguration('mssqlManager').get<number>('queryTimeout', 0);
+                
                 // Create and test connection using dbClient strategy (mssql or msnodesqlv8 depending on auth)
-                const newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate });
+                const newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate, queryTimeout });
                 await newConnection.connect();
 
                 progress.report({ message: 'Verifying connection...' });
@@ -480,7 +483,10 @@ export class ConnectionProvider {
             };
         }
 
-        const pool = await createPoolForConfig(sqlConfig);
+        // Get query timeout setting from VS Code configuration
+        const queryTimeout = vscode.workspace.getConfiguration('mssqlManager').get<number>('queryTimeout', 0);
+        
+        const pool = await createPoolForConfig({ ...sqlConfig, queryTimeout });
         await pool.connect();
 
         // Test with a simple query
@@ -901,7 +907,10 @@ export class ConnectionProvider {
                 let pool: any = null;
                 try {
                     const attempt = (async () => {
-                        pool = await createPoolForConfig({ ...cfg, authType: 'windows', useConnectionString: true, connectionString: cfg.connectionString });
+                        // Get query timeout setting from VS Code configuration
+                        const queryTimeout = vscode.workspace.getConfiguration('mssqlManager').get<number>('queryTimeout', 0);
+                        
+                        pool = await createPoolForConfig({ ...cfg, authType: 'windows', useConnectionString: true, connectionString: cfg.connectionString, queryTimeout });
                         await pool.connect();
                         await pool.request().query('SELECT 1 as test');
                     })();

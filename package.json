@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -940,6 +940,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show row count and size information for tables in the database explorer tree."
+        },
+        "mssqlManager.queryTimeout": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Query execution timeout in seconds. Set to 0 for no timeout (infinite)."
         }
       }
     }

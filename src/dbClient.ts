@@ -37,7 +37,6 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         let msnv8: any;
         try {
             // use eval to hide from bundlers
-            // eslint-disable-next-line no-eval
             const req: any = eval('require');
             msnv8 = req('msnodesqlv8');
         } catch (err) {
@@ -67,12 +66,27 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                             if (closed) {
                                 return reject(new Error('Connection closed'));
                             }
-                            msnv8.query(connectionString, sqlText, (err: any, rows: any) => {
-                                if (err) { return reject(err); }
-                                // Normalize result to match mssql result shape
-                                const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                            });
+                            
+                            // Set timeout based on configuration (0 means no timeout)
+                            const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
+                            const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
+                            
+                            if (timeoutMs > 0) {
+                                msnv8.query(connectionString, sqlText, queryOptions, (err: any, rows: any) => {
+                                    if (err) { return reject(err); }
+                                    // Normalize result to match mssql result shape
+                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
+                                });
+                            } else {
+                                // No timeout
+                                msnv8.query(connectionString, sqlText, (err: any, rows: any) => {
+                                    if (err) { return reject(err); }
+                                    // Normalize result to match mssql result shape
+                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
+                                });
+                            }
                         });
                     },
                     execute(proc: string /*, params? */) {
@@ -80,11 +94,25 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                         const execSql = `EXEC ${proc}`;
                         return new Promise((resolve, reject) => {
                             if (closed) { return reject(new Error('Connection closed')); }
-                            msnv8.query(connectionString, execSql, (err: any, rows: any) => {
-                                if (err) { return reject(err); }
-                                const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                            });
+                            
+                            // Set timeout based on configuration (0 means no timeout)
+                            const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
+                            const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
+                            
+                            if (timeoutMs > 0) {
+                                msnv8.query(connectionString, execSql, queryOptions, (err: any, rows: any) => {
+                                    if (err) { return reject(err); }
+                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
+                                });
+                            } else {
+                                // No timeout
+                                msnv8.query(connectionString, execSql, (err: any, rows: any) => {
+                                    if (err) { return reject(err); }
+                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
+                                });
+                            }
                         });
                     }
                 } as DBRequest;
@@ -95,7 +123,6 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
     }
 
     // Default: use mssql ConnectionPool for SQL auth or other types
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mssql = require('mssql');
 
     const mssqlConfig: any = {};
@@ -108,11 +135,20 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
             encrypt: cfg.encrypt !== false,
             trustServerCertificate: cfg.trustServerCertificate !== false
         };
-        if (cfg.port) mssqlConfig.port = cfg.port;
+        if (cfg.port) {
+            mssqlConfig.port = cfg.port;
+        }
         if (cfg.authType === 'sql') {
             mssqlConfig.user = cfg.username;
             mssqlConfig.password = cfg.password;
         }
+    }
+
+    // Set request timeout based on configuration (0 means no timeout)
+    if (cfg.queryTimeout > 0) {
+        mssqlConfig.requestTimeout = cfg.queryTimeout * 1000; // Convert seconds to milliseconds
+    } else {
+        mssqlConfig.requestTimeout = 0; // No timeout
     }
 
     const poolInstance = new mssql.ConnectionPool(mssqlConfig);
