@@ -319,6 +319,9 @@ require(['vs/editor/editor.main'], function () {
     } catch (e) {
         console.error('[GoToDef] Failed to register inside require callback', e);
     }
+
+    // Add global keyboard listener for CTRL+C to copy table selections
+    setupGlobalKeyboardHandlers();
 });
 
 // Toolbar buttons
@@ -4316,6 +4319,148 @@ function handleContextMenuAction(action) {
         }).catch(err => {
             console.error('[CONTEXT-MENU] Failed to copy:', err);
         });
+    }
+}
+
+// Setup global keyboard handlers for copy functionality
+function setupGlobalKeyboardHandlers() {
+    document.addEventListener('keydown', (e) => {
+        // Handle CTRL+C (or CMD+C on Mac)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            // Check if cursor is in Monaco editor
+            if (isMonacoEditorFocused()) {
+                // Let Monaco handle the copy operation
+                console.log('[KEYBOARD] CTRL+C ignored - Monaco editor has focus');
+                return;
+            }
+            
+            // Check if we have any table selection
+            if (globalSelection && globalSelection.selections && globalSelection.selections.length > 0) {
+                // Prevent default copy behavior
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Copy the selection
+                copySelectionToClipboard();
+                console.log('[KEYBOARD] CTRL+C handled - copied table selection');
+            }
+        }
+    });
+}
+
+// Check if Monaco editor currently has focus
+function isMonacoEditorFocused() {
+    if (!editor) return false;
+    
+    // Check if the editor container or any of its elements has focus
+    const editorElement = document.getElementById('editor');
+    if (!editorElement) return false;
+    
+    // Check if the focused element is within the editor container
+    const focusedElement = document.activeElement;
+    if (!focusedElement) return false;
+    
+    // Monaco creates various internal elements, check if any of them is focused
+    return editorElement.contains(focusedElement) || 
+           focusedElement === editorElement ||
+           focusedElement.classList.contains('monaco-editor') ||
+           focusedElement.closest('.monaco-editor') !== null ||
+           editor.hasTextFocus();
+}
+
+// Copy current table selection to clipboard using CTRL+C
+function copySelectionToClipboard() {
+    if (!globalSelection || !globalSelection.selections || globalSelection.selections.length === 0) {
+        console.log('[COPY] No selection to copy');
+        return;
+    }
+    
+    let textToCopy = '';
+    
+    try {
+        switch (globalSelection.type) {
+            case 'cell':
+                if (globalSelection.selections.length > 1) {
+                    // Copy all selected cells (tab-separated on same row, newline for different rows)
+                    const cellsByRow = {};
+                    globalSelection.selections.forEach(sel => {
+                        if (!cellsByRow[sel.rowIndex]) cellsByRow[sel.rowIndex] = [];
+                        cellsByRow[sel.rowIndex].push({ col: sel.columnIndex, val: sel.cellValue });
+                    });
+                    
+                    textToCopy = Object.keys(cellsByRow).sort((a, b) => a - b).map(rowIdx => {
+                        return cellsByRow[rowIdx].sort((a, b) => a.col - b.col).map(cell => {
+                            return cell.val === null ? 'NULL' : String(cell.val);
+                        }).join('\t');
+                    }).join('\n');
+                } else {
+                    // Single cell
+                    const cellValue = globalSelection.selections[0].cellValue;
+                    textToCopy = cellValue === null ? 'NULL' : String(cellValue);
+                }
+                break;
+                
+            case 'row':
+                // For rows, check if we have multiple distinct rows
+                const uniqueRowIndices = [...new Set(globalSelection.selections.map(sel => sel.rowIndex))];
+                
+                if (uniqueRowIndices.length > 1) {
+                    // Copy all selected rows (multiple distinct rows)
+                    textToCopy = uniqueRowIndices.sort((a, b) => a - b).map(rowIndex => {
+                        const row = globalSelection.data[rowIndex];
+                        return globalSelection.columnDefs.map(col => {
+                            const val = row[col.field];
+                            return val === null ? 'NULL' : String(val);
+                        }).join('\t');
+                    }).join('\n');
+                } else {
+                    // Single row (even though selections array has multiple items for each column)
+                    const row = globalSelection.data[uniqueRowIndices[0]];
+                    textToCopy = globalSelection.columnDefs.map(col => {
+                        const val = row[col.field];
+                        return val === null ? 'NULL' : String(val);
+                    }).join('\t');
+                }
+                break;
+                
+            case 'column':
+                // For columns, check if we have multiple distinct columns
+                const uniqueColumnIndices = [...new Set(globalSelection.selections.map(sel => sel.columnIndex))];
+                
+                if (uniqueColumnIndices.length > 1) {
+                    // Copy all selected columns (multiple distinct columns, tab-separated)
+                    const columnValues = globalSelection.data.map(row => {
+                        return uniqueColumnIndices.sort((a, b) => a - b).map(colIndex => {
+                            const colField = globalSelection.columnDefs[colIndex].field;
+                            const val = row[colField];
+                            return val === null ? 'NULL' : String(val);
+                        }).join('\t');
+                    }).join('\n');
+                    textToCopy = columnValues;
+                } else {
+                    // Single column (even though selections array has multiple items for each row)
+                    const colField = globalSelection.columnDefs[uniqueColumnIndices[0]].field;
+                    textToCopy = globalSelection.data.map(row => {
+                        const val = row[colField];
+                        return val === null ? 'NULL' : String(val);
+                    }).join('\n');
+                }
+                break;
+                
+            default:
+                console.log('[COPY] Unknown selection type:', globalSelection.type);
+                return;
+        }
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            console.log('[COPY] Successfully copied selection to clipboard:', globalSelection.type, globalSelection.selections.length, 'items');
+        }).catch(err => {
+            console.error('[COPY] Failed to copy to clipboard:', err);
+        });
+        
+    } catch (error) {
+        console.error('[COPY] Error while preparing text for clipboard:', error);
     }
 }
 
