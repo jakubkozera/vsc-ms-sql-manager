@@ -940,6 +940,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show row count and size information for tables in the database explorer tree."
+        },
+        "mssqlManager.queryTimeout": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Query execution timeout in seconds. Set to 0 for no timeout (infinite)."
         }
       }
     }
