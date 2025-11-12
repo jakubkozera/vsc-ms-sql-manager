@@ -37,7 +37,6 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         let msnv8: any;
         try {
             // use eval to hide from bundlers
-            // eslint-disable-next-line no-eval
             const req: any = eval('require');
             msnv8 = req('msnodesqlv8');
         } catch (err) {
@@ -124,7 +123,6 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
     }
 
     // Default: use mssql ConnectionPool for SQL auth or other types
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mssql = require('mssql');
 
     const mssqlConfig: any = {};
@@ -137,7 +135,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
             encrypt: cfg.encrypt !== false,
             trustServerCertificate: cfg.trustServerCertificate !== false
         };
-        if (cfg.port) mssqlConfig.port = cfg.port;
+        if (cfg.port) {
+            mssqlConfig.port = cfg.port;
+        }
         if (cfg.authType === 'sql') {
             mssqlConfig.user = cfg.username;
             mssqlConfig.password = cfg.password;

@@ -14,6 +14,10 @@ let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
 
+// Query execution timer
+let queryStartTime = null;
+let queryTimerInterval = null;
+
 // Editable result sets support
 let resultSetMetadata = []; // Metadata for each result set
 let originalQuery = ''; // Original SELECT query for UPDATE generation
@@ -2256,7 +2260,16 @@ function showLoading() {
     const cancelButton = document.getElementById('cancelButton');
     const resizer = document.getElementById('resizer');
     
-    resultsContent.innerHTML = '<div class="loading">Executing query...</div>';
+    // Create loading content with spinner and timer
+    const loadingHtml = `
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <div>Executing query...</div>
+            <div class="loading-timer" id="loadingTimer">00:00</div>
+        </div>
+    `;
+    
+    resultsContent.innerHTML = loadingHtml;
     resultsContainer.classList.add('visible');
     resizer.classList.add('visible');
     
@@ -2277,12 +2290,49 @@ function showLoading() {
     // Ensure results container is visible and messages is hidden
     document.getElementById('resultsContent').style.display = 'block';
     document.getElementById('messagesContent').style.display = 'none';
+    
+    // Start the timer
+    startLoadingTimer();
+}
+
+function startLoadingTimer() {
+    queryStartTime = Date.now();
+    
+    // Clear any existing timer
+    if (queryTimerInterval) {
+        clearInterval(queryTimerInterval);
+    }
+    
+    // Update timer every 100ms for smooth display
+    queryTimerInterval = setInterval(() => {
+        const elapsed = Date.now() - queryStartTime;
+        const seconds = Math.floor(elapsed / 1000);
+        const milliseconds = Math.floor((elapsed % 1000) / 100);
+        
+        const timerElement = document.getElementById('loadingTimer');
+        if (timerElement) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            const timeString = `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds}`;
+            timerElement.textContent = timeString;
+        }
+    }, 100);
+}
+
+function stopLoadingTimer() {
+    if (queryTimerInterval) {
+        clearInterval(queryTimerInterval);
+        queryTimerInterval = null;
+    }
 }
 
 function showResults(resultSets, executionTime, rowsAffected, messages, planXml) {
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
+    
+    // Stop the loading timer
+    stopLoadingTimer();
     
     lastResults = resultSets;
     lastMessages = messages || [];
@@ -3599,6 +3649,9 @@ function showError(error, messages) {
     const statusLabel = document.getElementById('statusLabel');
     const resizer = document.getElementById('resizer');
     
+    // Stop the loading timer
+    stopLoadingTimer();
+    
     lastResults = [];
     lastMessages = messages || [{ type: 'error', text: error }];
     
@@ -4445,6 +4498,9 @@ function showQueryPlan(planXml, executionTime, messages, resultSets) {
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
     const resizer = document.getElementById('resizer');
+    
+    // Stop the loading timer
+    stopLoadingTimer();
     
     // Enable buttons
     executeButton.disabled = false;
