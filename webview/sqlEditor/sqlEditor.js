@@ -4670,14 +4670,16 @@ function updateAggregationStats() {
     // Collect all values from selections
     const numericValues = [];
     const allValues = [];
+    let nullCount = 0;
     
     // Handle different selection types
     if (globalSelection.type === 'cell' || globalSelection.type === 'row' || globalSelection.type === 'column') {
         for (const selection of globalSelection.selections) {
             const value = selection.cellValue;
             
-            // Skip null/undefined
+            // Count null/undefined values
             if (value === null || value === undefined) {
+                nullCount++;
                 continue;
             }
             
@@ -4695,6 +4697,11 @@ function updateAggregationStats() {
     
     // Always show count
     let statsText = `Count: ${allValues.length}`;
+    
+    // Add NULL count if there are any NULL values
+    if (nullCount > 0) {
+        statsText += ` | NULL: ${nullCount}`;
+    }
     
     // If we have numeric values, calculate statistics
     if (numericValues.length > 0) {
