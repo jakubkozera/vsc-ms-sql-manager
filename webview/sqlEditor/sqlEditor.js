@@ -3871,7 +3871,6 @@ function createContextMenu(cellData) {
     
     // Determine labels based on selection
     const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
-    const selectionCount = globalSelection.selections ? globalSelection.selections.length : 0;
     
     let cellLabel = 'Copy Cell';
     let rowLabel = 'Copy Row';
@@ -3880,12 +3879,19 @@ function createContextMenu(cellData) {
     
     if (hasMultipleSelections) {
         if (globalSelection.type === 'cell') {
+            const selectionCount = globalSelection.selections.length;
             cellLabel = `Copy ${selectionCount} Cells`;
         } else if (globalSelection.type === 'row') {
-            rowLabel = `Copy ${selectionCount} Rows`;
-            rowHeaderLabel = `Copy ${selectionCount} Rows with Headers`;
+            // Count unique row indices for proper row count
+            const uniqueRowIndices = [...new Set(globalSelection.selections.map(sel => sel.rowIndex))];
+            const rowCount = uniqueRowIndices.length;
+            rowLabel = `Copy ${rowCount} Rows`;
+            rowHeaderLabel = `Copy ${rowCount} Rows with Headers`;
         } else if (globalSelection.type === 'column') {
-            columnLabel = `Copy ${selectionCount} Columns`;
+            // Count unique column indices for proper column count
+            const uniqueColumnIndices = [...new Set(globalSelection.selections.map(sel => sel.columnIndex))];
+            const columnCount = uniqueColumnIndices.length;
+            columnLabel = `Copy ${columnCount} Columns`;
         }
     }
     
@@ -3924,17 +3930,20 @@ function createRowContextMenu(metadata, resultSetIndex) {
     menu.style.display = 'none';
     
     // Determine labels based on selection
-    const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
-    const selectionCount = globalSelection.selections ? globalSelection.selections.length : 0;
-    
     let rowLabel = 'Copy Row';
     let rowHeaderLabel = 'Copy Row with Headers';
     let deleteLabel = 'Delete Row';
     
-    if (hasMultipleSelections && globalSelection.type === 'row') {
-        rowLabel = `Copy ${selectionCount} Rows`;
-        rowHeaderLabel = `Copy ${selectionCount} Rows with Headers`;
-        deleteLabel = `Delete ${selectionCount} Rows`;
+    if (globalSelection && globalSelection.selections && globalSelection.type === 'row') {
+        // Count unique row indices for proper row count
+        const uniqueRowIndices = [...new Set(globalSelection.selections.map(sel => sel.rowIndex))];
+        const rowCount = uniqueRowIndices.length;
+        
+        if (rowCount > 1) {
+            rowLabel = `Copy ${rowCount} Rows`;
+            rowHeaderLabel = `Copy ${rowCount} Rows with Headers`;
+            deleteLabel = `Delete ${rowCount} Rows`;
+        }
     }
     
     // Check if delete should be available (single table only)
@@ -3982,16 +3991,19 @@ function createColumnHeaderContextMenu() {
     menu.style.display = 'none';
     
     // Determine labels based on selection
-    const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
-    const selectionCount = globalSelection.selections ? globalSelection.selections.length : 0;
-    
     let columnLabel = 'Copy Column';
     let columnHeaderLabel = 'Copy Column with Header';
     let distinctLabel = 'Copy Distinct Values';
     
-    if (hasMultipleSelections && globalSelection.type === 'column') {
-        columnLabel = `Copy ${selectionCount} Columns`;
-        columnHeaderLabel = `Copy ${selectionCount} Columns with Headers`;
+    if (globalSelection && globalSelection.selections && globalSelection.type === 'column') {
+        // Count unique column indices for proper column count
+        const uniqueColumnIndices = [...new Set(globalSelection.selections.map(sel => sel.columnIndex))];
+        const columnCount = uniqueColumnIndices.length;
+        
+        if (columnCount > 1) {
+            columnLabel = `Copy ${columnCount} Columns`;
+            columnHeaderLabel = `Copy ${columnCount} Columns with Headers`;
+        }
     }
     
     menu.innerHTML = `
@@ -4157,12 +4169,9 @@ function handleContextMenuAction(action) {
     const { table, rowIndex, columnIndex, columnDefs, data } = contextMenuData;
     let textToCopy = '';
     
-    // Check if we have multiple selections
-    const hasMultipleSelections = globalSelection.selections && globalSelection.selections.length > 1;
-    
     switch (action) {
         case 'copy-cell':
-            if (hasMultipleSelections && globalSelection.type === 'cell') {
+            if (globalSelection && globalSelection.selections && globalSelection.selections.length > 1 && globalSelection.type === 'cell') {
                 // Copy all selected cells (tab-separated on same row, newline for different rows)
                 const cellsByRow = {};
                 globalSelection.selections.forEach(sel => {
@@ -4182,15 +4191,27 @@ function handleContextMenuAction(action) {
             break;
             
         case 'copy-row':
-            if (hasMultipleSelections && globalSelection.type === 'row') {
-                // Copy all selected rows
-                textToCopy = globalSelection.selections.map(sel => {
-                    const row = data[sel.rowIndex];
-                    return columnDefs.map(col => {
+            if (globalSelection && globalSelection.selections && globalSelection.type === 'row') {
+                // For rows, check if we have multiple distinct rows
+                const uniqueRowIndices = [...new Set(globalSelection.selections.map(sel => sel.rowIndex))];
+                
+                if (uniqueRowIndices.length > 1) {
+                    // Copy all selected rows (multiple distinct rows)
+                    textToCopy = uniqueRowIndices.sort((a, b) => a - b).map(rowIndex => {
+                        const row = data[rowIndex];
+                        return columnDefs.map(col => {
+                            const val = row[col.field];
+                            return val === null ? 'NULL' : String(val);
+                        }).join('\t');
+                    }).join('\n');
+                } else {
+                    // Single row (even though selections array has multiple items for each column)
+                    const row = data[uniqueRowIndices[0]];
+                    textToCopy = columnDefs.map(col => {
                         const val = row[col.field];
                         return val === null ? 'NULL' : String(val);
                     }).join('\t');
-                }).join('\n');
+                }
             } else {
                 const row = data[rowIndex];
                 textToCopy = columnDefs.map(col => {
@@ -4202,16 +4223,29 @@ function handleContextMenuAction(action) {
             
         case 'copy-row-header':
             const headers = columnDefs.map(col => col.headerName).join('\t');
-            if (hasMultipleSelections && globalSelection.type === 'row') {
-                // Copy all selected rows with header
-                const rowsData = globalSelection.selections.map(sel => {
-                    const row = data[sel.rowIndex];
-                    return columnDefs.map(col => {
+            if (globalSelection && globalSelection.selections && globalSelection.type === 'row') {
+                // For rows, check if we have multiple distinct rows
+                const uniqueRowIndices = [...new Set(globalSelection.selections.map(sel => sel.rowIndex))];
+                
+                if (uniqueRowIndices.length > 1) {
+                    // Copy all selected rows with header (multiple distinct rows)
+                    const rowsData = uniqueRowIndices.sort((a, b) => a - b).map(rowIndex => {
+                        const row = data[rowIndex];
+                        return columnDefs.map(col => {
+                            const val = row[col.field];
+                            return val === null ? 'NULL' : String(val);
+                        }).join('\t');
+                    }).join('\n');
+                    textToCopy = headers + '\n' + rowsData;
+                } else {
+                    // Single row with header
+                    const row = data[uniqueRowIndices[0]];
+                    const rowData = columnDefs.map(col => {
                         const val = row[col.field];
                         return val === null ? 'NULL' : String(val);
                     }).join('\t');
-                }).join('\n');
-                textToCopy = headers + '\n' + rowsData;
+                    textToCopy = headers + '\n' + rowData;
+                }
             } else {
                 const rowData = columnDefs.map(col => {
                     const val = data[rowIndex][col.field];
@@ -4222,16 +4256,28 @@ function handleContextMenuAction(action) {
             break;
             
         case 'copy-column':
-            if (hasMultipleSelections && globalSelection.type === 'column') {
-                // Copy all selected columns (tab-separated)
-                const columnValues = data.map(row => {
-                    return globalSelection.selections.map(sel => {
-                        const colField = columnDefs[sel.columnIndex].field;
+            if (globalSelection && globalSelection.selections && globalSelection.type === 'column') {
+                // For columns, check if we have multiple distinct columns
+                const uniqueColumnIndices = [...new Set(globalSelection.selections.map(sel => sel.columnIndex))];
+                
+                if (uniqueColumnIndices.length > 1) {
+                    // Copy all selected columns (multiple distinct columns, tab-separated)
+                    const columnValues = data.map(row => {
+                        return uniqueColumnIndices.sort((a, b) => a - b).map(colIndex => {
+                            const colField = columnDefs[colIndex].field;
+                            const val = row[colField];
+                            return val === null ? 'NULL' : String(val);
+                        }).join('\t');
+                    }).join('\n');
+                    textToCopy = columnValues;
+                } else {
+                    // Single column (even though selections array has multiple items for each row)
+                    const colField = columnDefs[uniqueColumnIndices[0]].field;
+                    textToCopy = data.map(row => {
                         const val = row[colField];
                         return val === null ? 'NULL' : String(val);
-                    }).join('\t');
-                }).join('\n');
-                textToCopy = columnValues;
+                    }).join('\n');
+                }
             } else {
                 const colField = columnDefs[columnIndex].field;
                 textToCopy = data.map(row => {
