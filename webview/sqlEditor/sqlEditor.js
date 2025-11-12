@@ -2601,6 +2601,14 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         rowNumTh.style.maxWidth = '50px';
         rowNumTh.style.borderBottom = '1px solid var(--vscode-panel-border, #3c3c3c)';
         rowNumTh.style.padding = '8px';
+        rowNumTh.style.cursor = 'pointer';
+        rowNumTh.style.userSelect = 'none';
+        
+        // Add click handler to select all columns
+        rowNumTh.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectAllColumns(colDefs, containerEl, data);
+        });
         
         console.log('[AG-GRID] Row number header created with class:', rowNumTh.className);
         tr.appendChild(rowNumTh);
@@ -4569,6 +4577,45 @@ function applyColumnHighlightGlobal(containerEl, colIndex) {
     columnCells.forEach(cell => {
         cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
     });
+}
+
+// Select all columns when clicking on row number header "#"
+function selectAllColumns(colDefs, containerEl, data) {
+    console.log('[SELECTION] Selecting all columns');
+    
+    // Clear all existing selections
+    clearAllSelections();
+    
+    // Create selection for all columns
+    const allColumnSelections = [];
+    for (let colIndex = 0; colIndex < colDefs.length; colIndex++) {
+        // Add all cells from this column
+        for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
+            allColumnSelections.push({
+                rowIndex: rowIndex,
+                columnIndex: colIndex,
+                cellValue: data[rowIndex][colDefs[colIndex].field]
+            });
+        }
+        
+        // Apply highlighting for this column
+        applyColumnHighlightGlobal(containerEl, colIndex);
+    }
+    
+    // Set global selection state for all columns
+    globalSelection = {
+        type: 'column',
+        tableContainer: containerEl,
+        selections: allColumnSelections,
+        data: data,
+        columnDefs: colDefs,
+        lastClickedIndex: null // No specific last clicked since we selected all
+    };
+    
+    // Update aggregation stats
+    updateAggregationStats();
+    
+    console.log('[SELECTION] Selected all', colDefs.length, 'columns with', allColumnSelections.length, 'total cells');
 }
 
 function applyRowHighlightGlobal(containerEl, rowIndex) {
