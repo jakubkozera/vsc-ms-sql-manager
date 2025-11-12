@@ -8,7 +8,8 @@ export function registerConnectionCommands(
     connectionProvider: ConnectionProvider,
     unifiedTreeProvider: UnifiedTreeProvider,
     outputChannel: vscode.OutputChannel,
-    treeView?: vscode.TreeView<any>
+    treeView?: vscode.TreeView<any>,
+    sqlEditorProvider?: any
 ): vscode.Disposable[] {
     const connectCommand = vscode.commands.registerCommand('mssqlManager.connect', async () => {
         await connectionProvider.connect();
@@ -335,30 +336,66 @@ export function registerConnectionCommands(
                 fs.mkdirSync(storagePath, { recursive: true });
             }
 
-            // Find next available query filename
-            let queryNumber = 0;
-            let queryFileName = 'query.sql';
-            let queryFilePath = path.join(storagePath, queryFileName);
+            // First, check if there's already an empty SQL file we can reuse
+            let queryFilePath: string | null = null;
+            let reusingFile = false;
 
-            while (fs.existsSync(queryFilePath)) {
-                queryNumber++;
-                queryFileName = `query (${queryNumber}).sql`;
-                queryFilePath = path.join(storagePath, queryFileName);
+            // Look for existing query files and check if any are empty
+            const files = fs.readdirSync(storagePath);
+            const sqlFiles = files.filter(f => f.endsWith('.sql')).sort();
+            
+            for (const sqlFile of sqlFiles) {
+                const filePath = path.join(storagePath, sqlFile);
+                try {
+                    const content = fs.readFileSync(filePath, 'utf8');
+                    if (content.trim().length === 0) {
+                        // Found an empty file, reuse it
+                        queryFilePath = filePath;
+                        reusingFile = true;
+                        outputChannel.appendLine(`[New Query] Reusing empty file: ${sqlFile}`);
+                        break;
+                    }
+                } catch (error) {
+                    // If we can't read the file, skip it
+                    continue;
+                }
             }
 
-            // Create empty query content
-            const initialContent = '';
-            
-            // Write the content to the file
-            const uri = vscode.Uri.file(queryFilePath);
-            await vscode.workspace.fs.writeFile(uri, Buffer.from(initialContent, 'utf8'));
+            // If no empty file found, create a new one
+            if (!queryFilePath) {
+                let queryNumber = 0;
+                let queryFileName = 'query.sql';
+                queryFilePath = path.join(storagePath, queryFileName);
 
-            outputChannel.appendLine(`[New Query] Created file: ${queryFilePath}`);
+                while (fs.existsSync(queryFilePath)) {
+                    queryNumber++;
+                    queryFileName = `query (${queryNumber}).sql`;
+                    queryFilePath = path.join(storagePath, queryFileName);
+                }
+
+                // Create empty query content
+                const initialContent = '';
+                
+                // Write the content to the file
+                const uri = vscode.Uri.file(queryFilePath);
+                await vscode.workspace.fs.writeFile(uri, Buffer.from(initialContent, 'utf8'));
+                outputChannel.appendLine(`[New Query] Created new file: ${path.basename(queryFilePath)}`);
+            }
 
             // Open the file with the custom SQL editor
+            const uri = vscode.Uri.file(queryFilePath);
             await vscode.commands.executeCommand('vscode.openWith', uri, 'mssqlManager.sqlEditor');
 
             outputChannel.appendLine(`[New Query] Opened query file in SQL Editor`);
+
+            // Force connection update for existing files (when reusing empty files)
+            if (reusingFile && sqlEditorProvider) {
+                // Add a small delay to ensure webview is fully loaded
+                setTimeout(() => {
+                    const databaseName = connectionItem.database || (connectionItem.database ? undefined : 'master');
+                    sqlEditorProvider.forceConnectionUpdate(uri, connectionId, databaseName);
+                }, 100);
+            }
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

@@ -8,6 +8,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private disposedWebviews: Set<vscode.Webview> = new Set();
     // Track the last selected connection id per webview so we can preserve selection
     private webviewSelectedConnection = new Map<vscode.Webview, string | null>();
+    // Track webview to document URI mapping for connection updates
+    private webviewToDocument = new Map<vscode.Webview, vscode.Uri>();
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -31,6 +33,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         // Set initial HTML content
         webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
+
+        // Track webview to document mapping
+        this.webviewToDocument.set(webviewPanel.webview, document.uri);
 
         // Update webview content when document changes
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(e => {
@@ -210,6 +215,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         webviewPanel.onDidDispose(() => {
             changeDocumentSubscription.dispose();
             this.disposedWebviews.add(webviewPanel.webview);
+            this.webviewToDocument.delete(webviewPanel.webview);
         });
 
         // Listen for connection changes
@@ -247,6 +253,23 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             .replace(/{{cspSource}}/g, webview.cspSource);
 
         return html;
+    }
+
+    public forceConnectionUpdate(fileUri: vscode.Uri, connectionId: string, databaseName?: string): void {
+        // Find webview for this file and update its connection
+        for (const [webview, uri] of this.webviewToDocument.entries()) {
+            if (uri.toString() === fileUri.toString() && !this.disposedWebviews.has(webview)) {
+                // Set the preferred connection for this webview
+                const compositeId = databaseName ? `${connectionId}::${databaseName}` : connectionId;
+                this.webviewSelectedConnection.set(webview, compositeId);
+                
+                // Update connections list to reflect the change
+                this.updateConnectionsList(webview);
+                
+                this.outputChannel.appendLine(`[SqlEditorProvider] Forced connection update for ${fileUri.fsPath} to ${compositeId}`);
+                break;
+            }
+        }
     }
 
     private async updateConnectionsList(webview: vscode.Webview) {

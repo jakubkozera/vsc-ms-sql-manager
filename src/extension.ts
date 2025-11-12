@@ -84,7 +84,8 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel,
         treeView,
         historyManager,
-        historyTreeProvider
+        historyTreeProvider,
+        sqlEditorProvider
     );
 
     // Add output channel to subscriptions
