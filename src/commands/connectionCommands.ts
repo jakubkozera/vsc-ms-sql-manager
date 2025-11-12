@@ -310,6 +310,21 @@ export function registerConnectionCommands(
                 unifiedTreeProvider.refresh();
             }
 
+            // Always set this connection as active (even if it was already active)
+            // This ensures that the editor dropdown will show the correct connection
+            connectionProvider.setActiveConnection(connectionId);
+
+            // Set preferred connection for the next editor that opens
+            // For ServerConnectionNode, we don't have a specific database, so just set the connection
+            if (connectionItem.database) {
+                // ConnectionNode - has specific database
+                connectionProvider.setNextEditorPreferredDatabase(connectionId, connectionItem.database);
+            } else {
+                // ServerConnectionNode - set as preferred connection without specific database
+                // This will still update the connection dropdown in the editor
+                connectionProvider.setNextEditorPreferredDatabase(connectionId, 'master');
+            }
+
             // Get extension storage path
             const storagePath = context.globalStorageUri.fsPath;
             const fs = await import('fs');
