@@ -704,7 +704,7 @@ export class BackupExportWebview {
                 <div class="help-text">Optional description of the backup</div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="advancedOptionsSection">
                 <label>Advanced Options</label>
                 <div class="checkbox-group">
                     <div class="checkbox-item">
@@ -856,6 +856,7 @@ export class BackupExportWebview {
             const pathInput = document.getElementById('backupPath');
             const formatHelp = document.getElementById('formatHelp');
             const pathHelp = document.getElementById('pathHelp');
+            const advancedOptionsSection = document.getElementById('advancedOptionsSection');
             
             // Update path extension if user hasn't manually modified it
             const currentPath = pathInput.value;
@@ -869,10 +870,21 @@ export class BackupExportWebview {
                 pathInput.placeholder = 'C:\\backup\\database_backup.bak';
                 formatHelp.textContent = 'BAK: Full database backup including schema, data, and transaction logs';
                 pathHelp.textContent = 'Choose where to save the backup file (.bak extension)';
-            } else {
+                
+                // Show Advanced Options for BAK (compression, checksum, etc.)
+                if (advancedOptionsSection) {
+                    advancedOptionsSection.style.display = 'block';
+                }
+                
+            } else { // BACPAC
                 pathInput.placeholder = 'C:\\export\\database_export.bacpac';
                 formatHelp.textContent = 'BACPAC: Logical export of database schema and data (portable format)';
                 pathHelp.textContent = 'Choose where to save the export file (.bacpac extension)';
+                
+                // Hide Advanced Options for BACPAC (not applicable to SqlPackage export)
+                if (advancedOptionsSection) {
+                    advancedOptionsSection.style.display = 'none';
+                }
             }
         }
 
@@ -920,6 +932,7 @@ export class BackupExportWebview {
         });
 
         // Initialize
+        updateFormatOptions(); // Set initial UI state
         vscode.postMessage({ type: 'ready' });
     </script>
 </body>
