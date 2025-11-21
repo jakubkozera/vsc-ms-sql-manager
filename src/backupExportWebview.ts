@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as child_process from 'child_process';
+import * as os from 'os';
 import { ConnectionProvider } from './connectionProvider';
 
 export class BackupExportWebview {
@@ -11,6 +13,95 @@ export class BackupExportWebview {
         private outputChannel: vscode.OutputChannel,
         private context: vscode.ExtensionContext
     ) {}
+
+    private async findSqlPackage(): Promise<string> {
+        const platform = os.platform();
+        const isWindows = platform === 'win32';
+        const sqlPackageName = isWindows ? 'sqlpackage.exe' : 'sqlpackage';
+        
+        // Common paths where SqlPackage might be installed
+        const commonPaths = [
+            // Windows paths
+            'C:\\Program Files\\Microsoft SQL Server\\150\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft SQL Server\\160\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files (x86)\\Microsoft SQL Server\\150\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files (x86)\\Microsoft SQL Server\\160\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\IDE\\Extensions\\Microsoft\\SQLDB\\DAC\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\Common7\\IDE\\Extensions\\Microsoft\\SQLDB\\DAC\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\Extensions\\Microsoft\\SQLDB\\DAC\\SqlPackage.exe',
+            // macOS/Linux paths (when installed via .NET tool)
+            '/usr/local/bin/sqlpackage',
+            path.join(os.homedir(), '.dotnet/tools/sqlpackage')
+        ];
+        
+        // First try PATH
+        try {
+            const result = child_process.execSync(isWindows ? 'where sqlpackage' : 'which sqlpackage', 
+                { encoding: 'utf8', timeout: 5000 });
+            const sqlPackagePath = result.trim().split('\n')[0];
+            if (fs.existsSync(sqlPackagePath)) {
+                return sqlPackagePath;
+            }
+        } catch (error) {
+            // SqlPackage not found in PATH
+        }
+        
+        // Try common installation paths
+        for (const sqlPackagePath of commonPaths) {
+            if (fs.existsSync(sqlPackagePath)) {
+                return sqlPackagePath;
+            }
+        }
+        
+        // If not found, return the command name and let the OS handle it
+        return sqlPackageName;
+    }
+
+    private async checkDotNetInstallation(): Promise<boolean> {
+        try {
+            child_process.execSync('dotnet --version', { encoding: 'utf8', timeout: 5000 });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    private async autoInstallSqlPackage(): Promise<boolean> {
+        try {
+            this.outputChannel.appendLine('[BackupExportWebview] .NET detected. Attempting to install SqlPackage automatically...');
+            
+            // Show progress to user
+            await this.panel?.webview.postMessage({
+                type: 'progress',
+                message: 'Installing SqlPackage tool...'
+            });
+            
+            const result = child_process.execSync('dotnet tool install -g microsoft.sqlpackage', 
+                { encoding: 'utf8', timeout: 60000 });
+            
+            this.outputChannel.appendLine(`[BackupExportWebview] SqlPackage installation result: ${result}`);
+            
+            // Verify installation
+            const sqlPackagePath = await this.findSqlPackage();
+            try {
+                child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                this.outputChannel.appendLine('[BackupExportWebview] SqlPackage installed successfully!');
+                
+                await this.panel?.webview.postMessage({
+                    type: 'progress',
+                    message: 'SqlPackage installed successfully. Continuing with export...'
+                });
+                
+                return true;
+            } catch (verifyError) {
+                this.outputChannel.appendLine(`[BackupExportWebview] SqlPackage verification failed: ${verifyError}`);
+                return false;
+            }
+        } catch (error: any) {
+            this.outputChannel.appendLine(`[BackupExportWebview] SqlPackage installation failed: ${error.message}`);
+            return false;
+        }
+    }
 
     async show(connectionId: string, database: string): Promise<void> {
         // Check if connection supports backup export (exclude Azure)
@@ -93,6 +184,7 @@ export class BackupExportWebview {
         const result = await vscode.window.showSaveDialog({
             filters: {
                 'SQL Server Backup Files': ['bak'],
+                'Data-tier Application Files': ['bacpac'],
                 'All Files': ['*']
             },
             defaultUri: vscode.Uri.file(path.join(require('os').homedir(), 'database_backup.bak'))
@@ -112,7 +204,7 @@ export class BackupExportWebview {
             throw new Error('Connection configuration not found');
         }
 
-        // Get suggested backup path
+        // Get suggested backup path (default to .bak)
         const suggestedPath = path.join(
             require('os').homedir(),
             `${database}_${new Date().toISOString().slice(0, 10)}.bak`
@@ -139,8 +231,11 @@ export class BackupExportWebview {
             }
 
             // Validate file extension
-            if (!options.backupPath.toLowerCase().endsWith('.bak')) {
-                throw new Error('Backup file must have .bak extension');
+            const fileFormat = options.fileFormat || 'bak';
+            const expectedExt = fileFormat === 'bak' ? '.bak' : '.bacpac';
+            
+            if (!options.backupPath.toLowerCase().endsWith(expectedExt)) {
+                throw new Error(`File must have ${expectedExt} extension for ${fileFormat.toUpperCase()} format`);
             }
 
             // Validate directory exists
@@ -164,8 +259,12 @@ export class BackupExportWebview {
                 message: 'Creating database backup...'
             });
 
-            // Execute backup
-            await this.executeBackup(connectionId, database, options);
+            // Execute backup/export
+            if (fileFormat === 'bacpac') {
+                await this.executeBacpacExport(connectionId, database, options);
+            } else {
+                await this.executeBackup(connectionId, database, options);
+            }
 
             // Send success message
             await this.panel?.webview.postMessage({
@@ -232,6 +331,136 @@ export class BackupExportWebview {
         }
 
         await request.query(backupCommand);
+    }
+
+    private async executeBacpacExport(connectionId: string, database: string, options: any): Promise<void> {
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        if (!config) {
+            throw new Error('Connection configuration not found');
+        }
+
+        // Find SqlPackage executable
+        let sqlPackagePath = await this.findSqlPackage();
+        
+        // Check if SqlPackage is available
+        try {
+            child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+        } catch (error) {
+            const platform = os.platform();
+            
+            if (platform === 'win32') {
+                throw new Error('SqlPackage not found. Please install SQL Server Data Tools (SSDT) or SQL Server Management Studio (SSMS).');
+            } else {
+                // Check if .NET is installed
+                const dotNetInstalled = await this.checkDotNetInstallation();
+                if (!dotNetInstalled) {
+                    throw new Error('SqlPackage requires .NET SDK. Please install .NET SDK from https://dotnet.microsoft.com/download, then restart VS Code.');
+                }
+                
+                // Try to auto-install SqlPackage
+                const installed = await this.autoInstallSqlPackage();
+                if (!installed) {
+                    throw new Error('Failed to automatically install SqlPackage. Please run manually: dotnet tool install -g microsoft.sqlpackage');
+                }
+                
+                // Update sqlPackagePath after installation
+                sqlPackagePath = await this.findSqlPackage();
+                
+                // Verify again
+                try {
+                    child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                } catch (verifyError) {
+                    throw new Error('SqlPackage installation verification failed. Please ensure ~/.dotnet/tools is in your PATH and restart VS Code.');
+                }
+            }
+        }
+
+        // Build SqlPackage.exe command for BACPAC export
+        const sqlPackageArgs = [
+            '/Action:Export',
+            `/TargetFile:${options.backupPath}`,
+            `/SourceDatabaseName:${database}`,
+            `/SourceServerName:${config.server}`
+        ];
+
+        // Add authentication
+        if (config.authType === 'windows') {
+            // Windows authentication is used by default when no credentials are specified
+        } else {
+            sqlPackageArgs.push(`/SourceUser:${config.username}`);
+            if (config.password) {
+                sqlPackageArgs.push(`/SourcePassword:${config.password}`);
+            }
+        }
+
+        // Add port if specified
+        if (config.port && config.port !== 1433) {
+            sqlPackageArgs[3] = `/SourceServerName:${config.server},${config.port}`;
+        }
+
+        this.outputChannel.appendLine(`[BackupExportWebview] Executing SqlPackage at: ${sqlPackagePath}`);
+        this.outputChannel.appendLine(`[BackupExportWebview] Args: ${sqlPackageArgs.join(' ')}`);
+
+        try {
+            
+            await new Promise((resolve, reject) => {
+                const sqlPackage = child_process.spawn(sqlPackagePath, sqlPackageArgs, {
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+
+                let output = '';
+                let errorOutput = '';
+
+                sqlPackage.stdout?.on('data', (data) => {
+                    output += data.toString();
+                    this.outputChannel.append(data.toString());
+                });
+
+                sqlPackage.stderr?.on('data', (data) => {
+                    errorOutput += data.toString();
+                    this.outputChannel.append(data.toString());
+                });
+
+                sqlPackage.on('close', (code) => {
+                    if (code === 0) {
+                        this.outputChannel.appendLine(`[BackupExportWebview] BACPAC export completed successfully`);
+                        resolve(void 0);
+                    } else {
+                        const errorMsg = `SqlPackage.exe failed with exit code ${code}. Error: ${errorOutput || output}`;
+                        this.outputChannel.appendLine(`[BackupExportWebview] ${errorMsg}`);
+                        reject(new Error(errorMsg));
+                    }
+                });
+
+                sqlPackage.on('error', (error) => {
+                    const platform = os.platform();
+                    let installInstructions = '';
+                    
+                    if (platform === 'win32') {
+                        installInstructions = '\n\nInstallation options for Windows:\n' +
+                            '1. Install SQL Server Management Studio (SSMS)\n' +
+                            '2. Install SQL Server Data Tools (SSDT)\n' +
+                            '3. Install via dotnet tool: dotnet tool install -g microsoft.sqlpackage';
+                    } else if (platform === 'darwin') {
+                        installInstructions = '\n\nInstallation for macOS:\n' +
+                            '1. Install .NET SDK from https://dotnet.microsoft.com/download\n' +
+                            '2. Run: dotnet tool install -g microsoft.sqlpackage\n' +
+                            '3. Ensure ~/.dotnet/tools is in your PATH';
+                    } else {
+                        installInstructions = '\n\nInstallation for Linux:\n' +
+                            '1. Install .NET SDK from https://dotnet.microsoft.com/download\n' +
+                            '2. Run: dotnet tool install -g microsoft.sqlpackage\n' +
+                            '3. Ensure ~/.dotnet/tools is in your PATH';
+                    }
+                    
+                    const errorMsg = `Failed to execute SqlPackage: ${error.message}${installInstructions}`;
+                    this.outputChannel.appendLine(`[BackupExportWebview] ${errorMsg}`);
+                    reject(new Error(errorMsg));
+                });
+            });
+        } catch (error: any) {
+            throw new Error(`BACPAC export failed: ${error.message}`);
+        }
     }
 
     private getWebviewContent(connectionId: string, database: string): string {
@@ -446,12 +675,21 @@ export class BackupExportWebview {
 
         <form id="exportForm">
             <div class="form-group">
-                <label for="backupPath">Backup File Path *</label>
+                <label for="fileFormat">File Format *</label>
+                <select id="fileFormat" onchange="updateFormatOptions()">
+                    <option value="bak">BAK - Database Backup (.bak)</option>
+                    <option value="bacpac">BACPAC - Data-tier Application (.bacpac)</option>
+                </select>
+                <div class="help-text" id="formatHelp">Choose backup format: BAK for full backup or BACPAC for data export</div>
+            </div>
+
+            <div class="form-group">
+                <label for="backupPath">Output File Path *</label>
                 <div class="path-input-group">
                     <input type="text" id="backupPath" required placeholder="C:\\backup\\database_backup.bak">
                     <button type="button" id="selectPathBtn">Browse...</button>
                 </div>
-                <div class="help-text">Choose where to save the backup file (.bak extension)</div>
+                <div class="help-text" id="pathHelp">Choose where to save the file (.bak or .bacpac extension)</div>
             </div>
 
             <div class="form-group">
@@ -544,6 +782,7 @@ export class BackupExportWebview {
 
             const formData = new FormData(form);
             const options = {
+                fileFormat: document.getElementById('fileFormat').value,
                 backupPath: document.getElementById('backupPath').value.trim(),
                 backupName: document.getElementById('backupName').value.trim(),
                 description: document.getElementById('description').value.trim(),
@@ -560,8 +799,11 @@ export class BackupExportWebview {
                 return;
             }
 
-            if (!options.backupPath.toLowerCase().endsWith('.bak')) {
-                showMessage('Backup file must have .bak extension', 'error');
+            const fileFormat = document.getElementById('fileFormat').value;
+            const expectedExt = fileFormat === 'bak' ? '.bak' : '.bacpac';
+            
+            if (!options.backupPath.toLowerCase().endsWith(expectedExt)) {
+                showMessage('File must have ' + expectedExt + ' extension for ' + fileFormat.toUpperCase() + ' format', 'error');
                 return;
             }
 
@@ -607,6 +849,31 @@ export class BackupExportWebview {
 
         function hideProgress() {
             progressSection.classList.remove('visible');
+        }
+
+        function updateFormatOptions() {
+            const format = document.getElementById('fileFormat').value;
+            const pathInput = document.getElementById('backupPath');
+            const formatHelp = document.getElementById('formatHelp');
+            const pathHelp = document.getElementById('pathHelp');
+            
+            // Update path extension if user hasn't manually modified it
+            const currentPath = pathInput.value;
+            if (currentPath) {
+                const pathWithoutExt = currentPath.replace(/\.(bak|bacpac)$/i, '');
+                const newExtension = format === 'bak' ? '.bak' : '.bacpac';
+                pathInput.value = pathWithoutExt + newExtension;
+            }
+            
+            if (format === 'bak') {
+                pathInput.placeholder = 'C:\\backup\\database_backup.bak';
+                formatHelp.textContent = 'BAK: Full database backup including schema, data, and transaction logs';
+                pathHelp.textContent = 'Choose where to save the backup file (.bak extension)';
+            } else {
+                pathInput.placeholder = 'C:\\export\\database_export.bacpac';
+                formatHelp.textContent = 'BACPAC: Logical export of database schema and data (portable format)';
+                pathHelp.textContent = 'Choose where to save the export file (.bacpac extension)';
+            }
         }
 
         function showMessage(message, type) {

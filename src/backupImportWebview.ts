@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as child_process from 'child_process';
+import * as os from 'os';
 import { ConnectionProvider } from './connectionProvider';
 
 export class BackupImportWebview {
@@ -20,6 +22,95 @@ export class BackupImportWebview {
         this.outputChannel = outputChannel;
         this.context = context;
         this.onDatabaseImported = onDatabaseImported;
+    }
+
+    private async findSqlPackage(): Promise<string> {
+        const platform = os.platform();
+        const isWindows = platform === 'win32';
+        const sqlPackageName = isWindows ? 'sqlpackage.exe' : 'sqlpackage';
+        
+        // Common paths where SqlPackage might be installed
+        const commonPaths = [
+            // Windows paths
+            'C:\\Program Files\\Microsoft SQL Server\\150\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft SQL Server\\160\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files (x86)\\Microsoft SQL Server\\150\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files (x86)\\Microsoft SQL Server\\160\\DAC\\bin\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\IDE\\Extensions\\Microsoft\\SQLDB\\DAC\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\Common7\\IDE\\Extensions\\Microsoft\\SQLDB\\DAC\\SqlPackage.exe',
+            'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\Extensions\\Microsoft\\SQLDB\\DAC\\SqlPackage.exe',
+            // macOS/Linux paths (when installed via .NET tool)
+            '/usr/local/bin/sqlpackage',
+            path.join(os.homedir(), '.dotnet/tools/sqlpackage')
+        ];
+        
+        // First try PATH
+        try {
+            const result = child_process.execSync(isWindows ? 'where sqlpackage' : 'which sqlpackage', 
+                { encoding: 'utf8', timeout: 5000 });
+            const sqlPackagePath = result.trim().split('\n')[0];
+            if (fs.existsSync(sqlPackagePath)) {
+                return sqlPackagePath;
+            }
+        } catch (error) {
+            // SqlPackage not found in PATH
+        }
+        
+        // Try common installation paths
+        for (const sqlPackagePath of commonPaths) {
+            if (fs.existsSync(sqlPackagePath)) {
+                return sqlPackagePath;
+            }
+        }
+        
+        // If not found, return the command name and let the OS handle it
+        return sqlPackageName;
+    }
+
+    private async checkDotNetInstallation(): Promise<boolean> {
+        try {
+            child_process.execSync('dotnet --version', { encoding: 'utf8', timeout: 5000 });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    private async autoInstallSqlPackage(): Promise<boolean> {
+        try {
+            this.outputChannel.appendLine('[BackupImportWebview] .NET detected. Attempting to install SqlPackage automatically...');
+            
+            // Show progress to user
+            await this.panel?.webview.postMessage({
+                type: 'progress',
+                message: 'Installing SqlPackage tool...'
+            });
+            
+            const result = child_process.execSync('dotnet tool install -g microsoft.sqlpackage', 
+                { encoding: 'utf8', timeout: 60000 });
+            
+            this.outputChannel.appendLine(`[BackupImportWebview] SqlPackage installation result: ${result}`);
+            
+            // Verify installation
+            const sqlPackagePath = await this.findSqlPackage();
+            try {
+                child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                this.outputChannel.appendLine('[BackupImportWebview] SqlPackage installed successfully!');
+                
+                await this.panel?.webview.postMessage({
+                    type: 'progress',
+                    message: 'SqlPackage installed successfully. Continuing with import...'
+                });
+                
+                return true;
+            } catch (verifyError) {
+                this.outputChannel.appendLine(`[BackupImportWebview] SqlPackage verification failed: ${verifyError}`);
+                return false;
+            }
+        } catch (error: any) {
+            this.outputChannel.appendLine(`[BackupImportWebview] SqlPackage installation failed: ${error.message}`);
+            return false;
+        }
     }
 
     async show(connectionId: string): Promise<void> {
@@ -85,7 +176,7 @@ export class BackupImportWebview {
     private async handleWebviewMessage(message: any, connectionId: string): Promise<void> {
         switch (message.type) {
             case 'selectBackupFile':
-                await this.handleSelectBackupFile();
+                await this.handleSelectBackupFile(message.fileFormat);
                 break;
             case 'analyzeBackup':
                 await this.handleAnalyzeBackup(message.backupPath, connectionId);
@@ -123,14 +214,23 @@ export class BackupImportWebview {
         }
     }
 
-    private async handleSelectBackupFile(): Promise<void> {
+    private async handleSelectBackupFile(fileFormat?: string): Promise<void> {
+        const format = fileFormat || 'bak';
+        
+        // Create filters based on selected format
+        const filters: { [name: string]: string[] } = {};
+        
+        if (format === 'bacpac') {
+            filters['Data-tier Application Files (*.bacpac)'] = ['bacpac'];
+        } else {
+            filters['SQL Server Backup Files (*.bak)'] = ['bak'];
+        }
+        filters['All Files (*.*)'] = ['*'];
+        
         const result = await vscode.window.showOpenDialog({
-            filters: {
-                'SQL Server Backup Files': ['bak'],
-                'All Files': ['*']
-            },
+            filters: filters,
             canSelectMany: false,
-            openLabel: 'Select Backup File'
+            openLabel: format === 'bacpac' ? 'Select BACPAC File' : 'Select Backup File'
         });
 
         if (result && result.length > 0) {
@@ -260,8 +360,11 @@ export class BackupImportWebview {
             }
 
             // Validate file extension
-            if (!options.backupPath.toLowerCase().endsWith('.bak')) {
-                throw new Error('Backup file must have .bak extension');
+            const fileFormat = options.fileFormat || 'bak';
+            const expectedExt = fileFormat === 'bak' ? '.bak' : '.bacpac';
+            
+            if (!options.backupPath.toLowerCase().endsWith(expectedExt)) {
+                throw new Error(`File must have ${expectedExt} extension for ${fileFormat.toUpperCase()} format`);
             }
 
             // Send progress update
@@ -288,8 +391,12 @@ export class BackupImportWebview {
                 message: 'Restoring database backup...'
             });
 
-            // Execute restore
-            await this.executeRestore(connectionId, options);
+            // Execute restore/import
+            if (fileFormat === 'bacpac') {
+                await this.executeBacpacImport(connectionId, options);
+            } else {
+                await this.executeRestore(connectionId, options);
+            }
 
             // Send success message
             await this.panel?.webview.postMessage({
@@ -312,7 +419,7 @@ export class BackupImportWebview {
                 }
             }, 2000);
 
-            this.outputChannel.appendLine(`[BackupImportWebview] Restore completed successfully: ${options.targetDatabase}`);
+            this.outputChannel.appendLine(`[BackupImportWebview] Restore command executed successfully`);
 
         } catch (error: any) {
             this.outputChannel.appendLine(`[BackupImportWebview] Restore failed: ${error.message}`);
@@ -320,6 +427,144 @@ export class BackupImportWebview {
                 type: 'error',
                 message: `Restore failed: ${error.message}`
             });
+        }
+    }
+
+    private async executeBacpacImport(connectionId: string, options: any): Promise<void> {
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        if (!config) {
+            throw new Error('Connection configuration not found');
+        }
+
+        // Find SqlPackage executable
+        let sqlPackagePath = await this.findSqlPackage();
+        
+        // Check if SqlPackage is available
+        try {
+            child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+        } catch (error) {
+            const platform = os.platform();
+            
+            if (platform === 'win32') {
+                throw new Error('SqlPackage not found. Please install SQL Server Data Tools (SSDT) or SQL Server Management Studio (SSMS).');
+            } else {
+                // Check if .NET is installed
+                const dotNetInstalled = await this.checkDotNetInstallation();
+                if (!dotNetInstalled) {
+                    throw new Error('SqlPackage requires .NET SDK. Please install .NET SDK from https://dotnet.microsoft.com/download, then restart VS Code.');
+                }
+                
+                // Try to auto-install SqlPackage
+                const installed = await this.autoInstallSqlPackage();
+                if (!installed) {
+                    throw new Error('Failed to automatically install SqlPackage. Please run manually: dotnet tool install -g microsoft.sqlpackage');
+                }
+                
+                // Update sqlPackagePath after installation
+                sqlPackagePath = await this.findSqlPackage();
+                
+                // Verify again
+                try {
+                    child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                } catch (verifyError) {
+                    throw new Error('SqlPackage installation verification failed. Please ensure ~/.dotnet/tools is in your PATH and restart VS Code.');
+                }
+            }
+        }
+
+        // For BACPAC import, we need to create/replace the target database
+        const targetDbName = options.targetDatabase.trim();
+
+        // Build SqlPackage.exe command for BACPAC import
+        const sqlPackageArgs = [
+            '/Action:Import',
+            `/SourceFile:${options.backupPath}`,
+            `/TargetDatabaseName:${targetDbName}`,
+            `/TargetServerName:${config.server}`
+        ];
+
+        // Add authentication
+        if (config.authType === 'windows') {
+            // Windows authentication is used by default when no credentials are specified
+        } else {
+            sqlPackageArgs.push(`/TargetUser:${config.username}`);
+            if (config.password) {
+                sqlPackageArgs.push(`/TargetPassword:${config.password}`);
+            }
+        }
+
+        // Add port if specified
+        if (config.port && config.port !== 1433) {
+            sqlPackageArgs[3] = `/TargetServerName:${config.server},${config.port}`;
+        }
+
+        // Add timeout
+        if (options.timeout) {
+            sqlPackageArgs.push(`/TargetTimeout:${Math.floor(options.timeout / 1000)}`);
+        }
+
+        this.outputChannel.appendLine(`[BackupImportWebview] Executing SqlPackage at: ${sqlPackagePath}`);
+        this.outputChannel.appendLine(`[BackupImportWebview] Args: ${sqlPackageArgs.join(' ')}`);
+
+        try {
+            
+            await new Promise((resolve, reject) => {
+                const sqlPackage = child_process.spawn(sqlPackagePath, sqlPackageArgs, {
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+
+                let output = '';
+                let errorOutput = '';
+
+                sqlPackage.stdout?.on('data', (data) => {
+                    output += data.toString();
+                    this.outputChannel.append(data.toString());
+                });
+
+                sqlPackage.stderr?.on('data', (data) => {
+                    errorOutput += data.toString();
+                    this.outputChannel.append(data.toString());
+                });
+
+                sqlPackage.on('close', (code) => {
+                    if (code === 0) {
+                        this.outputChannel.appendLine(`[BackupImportWebview] BACPAC import completed successfully`);
+                        resolve(void 0);
+                    } else {
+                        const errorMsg = `SqlPackage.exe failed with exit code ${code}. Error: ${errorOutput || output}`;
+                        this.outputChannel.appendLine(`[BackupImportWebview] ${errorMsg}`);
+                        reject(new Error(errorMsg));
+                    }
+                });
+
+                sqlPackage.on('error', (error) => {
+                    const platform = os.platform();
+                    let installInstructions = '';
+                    
+                    if (platform === 'win32') {
+                        installInstructions = '\n\nInstallation options for Windows:\n' +
+                            '1. Install SQL Server Management Studio (SSMS)\n' +
+                            '2. Install SQL Server Data Tools (SSDT)\n' +
+                            '3. Install via dotnet tool: dotnet tool install -g microsoft.sqlpackage';
+                    } else if (platform === 'darwin') {
+                        installInstructions = '\n\nInstallation for macOS:\n' +
+                            '1. Install .NET SDK from https://dotnet.microsoft.com/download\n' +
+                            '2. Run: dotnet tool install -g microsoft.sqlpackage\n' +
+                            '3. Ensure ~/.dotnet/tools is in your PATH';
+                    } else {
+                        installInstructions = '\n\nInstallation for Linux:\n' +
+                            '1. Install .NET SDK from https://dotnet.microsoft.com/download\n' +
+                            '2. Run: dotnet tool install -g microsoft.sqlpackage\n' +
+                            '3. Ensure ~/.dotnet/tools is in your PATH';
+                    }
+                    
+                    const errorMsg = `Failed to execute SqlPackage: ${error.message}${installInstructions}`;
+                    this.outputChannel.appendLine(`[BackupImportWebview] ${errorMsg}`);
+                    reject(new Error(errorMsg));
+                });
+            });
+        } catch (error: any) {
+            throw new Error(`BACPAC import failed: ${error.message}`);
         }
     }
 
@@ -849,13 +1094,22 @@ export class BackupImportWebview {
 
         <form id="importForm">
             <div class="form-group">
-                <label for="backupPath">Backup File (.bak) *</label>
+                <label for="fileFormat">File Format *</label>
+                <select id="fileFormat" onchange="updateFormatOptions()">
+                    <option value="bak">BAK - Database Backup (.bak)</option>
+                    <option value="bacpac">BACPAC - Data-tier Application (.bacpac)</option>
+                </select>
+                <div class="help-text" id="formatHelp">Choose file format: BAK for restore or BACPAC for import</div>
+            </div>
+
+            <div class="form-group">
+                <label for="backupPath">Source File *</label>
                 <div class="file-input-group">
-                    <input type="text" id="backupPath" required placeholder="C:\\backup\\database_backup.bak">
+                    <input type="text" id="backupPath" required placeholder="C:\\\\backup\\\\database_backup.bak">
                     <button type="button" id="selectFileBtn">Browse...</button>
                     <button type="button" id="analyzeBtn" disabled>Analyze</button>
                 </div>
-                <div class="help-text">Select the .bak file to restore from</div>
+                <div class="help-text" id="pathHelp">Select the .bak file to restore from</div>
                 <div id="backupInfoSection" style="display: none;" class="info-section">
                     <strong>Backup Information:</strong><br>
                     <span id="backupInfo">No backup analyzed yet</span>
@@ -903,13 +1157,13 @@ export class BackupImportWebview {
 
             <div class="form-group" id="existingDatabaseGroup" style="display: none;">
                 <label for="existingDatabases">Select Database to Replace *</label>
-                <select id="existingDatabases" required>
+                <select id="existingDatabases">
                     <option value="">-- Select existing database --</option>
                 </select>
                 <div class="help-text">Choose which existing database to replace with the backup</div>
             </div>
 
-            <div class="advanced-section">
+            <div class="advanced-section" id="advancedSection">
                 <button type="button" class="collapsible-header" id="advancedToggle">
                     <svg class="collapsible-icon collapsed" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M6 9l6 6l6 -6" />
@@ -918,7 +1172,7 @@ export class BackupImportWebview {
                 </button>
                 
                 <div class="collapsible-content" id="advancedContent">
-                    <div class="form-group">
+                    <div class="form-group" id="restoreOptionsSection">
                         <label>Restore Options</label>
                         <div class="checkbox-group">
                             <div class="checkbox-item">
@@ -939,7 +1193,7 @@ export class BackupImportWebview {
                         </div>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="fileRelocationSection">
                         <label>File Relocation (Optional)</label>
                         <div class="form-row">
                             <div>
@@ -954,10 +1208,6 @@ export class BackupImportWebview {
                         <div class="help-text">Specify new locations for data and log files if needed</div>
                     </div>
                 </div>
-            </div>
-
-            <div class="progress" id="progressSection">
-                <strong>Progress:</strong> <span id="progressMessage">Working...</span>
             </div>
 
             <div class="message" id="messageSection">
@@ -1005,8 +1255,6 @@ export class BackupImportWebview {
         const analyzeBtn = document.getElementById('analyzeBtn');
         const importBtn = document.getElementById('importBtn');
         const cancelBtn = document.getElementById('cancelBtn');
-        const progressSection = document.getElementById('progressSection');
-        const progressMessage = document.getElementById('progressMessage');
         const messageSection = document.getElementById('messageSection');
         const messageText = document.getElementById('messageText');
         const existingDatabases = document.getElementById('existingDatabases');
@@ -1053,7 +1301,6 @@ export class BackupImportWebview {
             e.preventDefault();
             
             hideMessage();
-            hideProgress();
 
             // Get target database based on current mode
             let targetDatabase = '';
@@ -1064,6 +1311,7 @@ export class BackupImportWebview {
             }
 
             const options = {
+                fileFormat: document.getElementById('fileFormat').value,
                 backupPath: document.getElementById('backupPath').value.trim(),
                 targetDatabase: targetDatabase,
                 replace: currentTargetMode === 'existing', // Always true for existing mode
@@ -1087,19 +1335,23 @@ export class BackupImportWebview {
                 return;
             }
 
-            if (!options.backupPath.toLowerCase().endsWith('.bak')) {
-                showMessage('Backup file must have .bak extension', 'error');
+            const fileFormat = document.getElementById('fileFormat').value;
+            const expectedExt = fileFormat === 'bak' ? '.bak' : '.bacpac';
+            
+            if (!options.backupPath.toLowerCase().endsWith(expectedExt)) {
+                showMessage('File must have ' + expectedExt + ' extension for ' + fileFormat.toUpperCase() + ' format', 'error');
                 return;
             }
 
-            // If creating a new database (not replacing), require file relocation
-            if (currentTargetMode === 'new' && (!options.relocateData || !options.relocateLog)) {
-                showMessage('File relocation paths are required when creating a new database. Please specify data and log file paths in Advanced Options.', 'error');
+            // If creating a new database (not replacing) with BAK format, require file relocation
+            // BACPAC imports don't need file relocation as SqlPackage handles file placement automatically
+            if (currentTargetMode === 'new' && fileFormat === 'bak' && (!options.relocateData || !options.relocateLog)) {
+                showMessage('File relocation paths are required when creating a new database from BAK file. Please specify data and log file paths in Advanced Options.', 'error');
                 return;
             }
 
             setImporting(true);
-            showProgress('Preparing restore...');
+            // showProgress replaced by backdrop loader in setImporting
 
             vscode.postMessage({
                 type: 'importBackup',
@@ -1108,7 +1360,11 @@ export class BackupImportWebview {
         }
 
         function handleSelectFile() {
-            vscode.postMessage({ type: 'selectBackupFile' });
+            const currentFormat = document.getElementById('fileFormat')?.value || 'bak';
+            vscode.postMessage({ 
+                type: 'selectBackupFile',
+                fileFormat: currentFormat
+            });
         }
 
         function handleAnalyzeBackup() {
@@ -1118,13 +1374,16 @@ export class BackupImportWebview {
                 return;
             }
 
-            if (!backupPath.toLowerCase().endsWith('.bak')) {
-                showMessage('Backup file must have .bak extension', 'error');
+            const format = document.getElementById('fileFormat').value;
+            const expectedExt = format === 'bak' ? '.bak' : '.bacpac';
+            
+            if (!backupPath.toLowerCase().endsWith(expectedExt)) {
+                showMessage('File must have ' + expectedExt + ' extension for ' + format.toUpperCase() + ' format', 'error');
                 return;
             }
 
             hideMessage();
-            showProgress('Analyzing backup file...');
+            showBackdrop('Analyzing backup file...', 'This may take a moment...');
             vscode.postMessage({
                 type: 'analyzeBackup',
                 backupPath: backupPath
@@ -1200,10 +1459,6 @@ export class BackupImportWebview {
                 newDatabaseGroup.style.display = 'block';
                 existingDatabaseGroup.style.display = 'none';
                 
-                // Update form requirements
-                targetDatabaseInput.setAttribute('required', 'true');
-                existingDatabases.removeAttribute('required');
-                
                 // Clear existing database selection
                 existingDatabases.value = '';
                 
@@ -1216,10 +1471,6 @@ export class BackupImportWebview {
                 // Show/hide relevant groups
                 newDatabaseGroup.style.display = 'none';
                 existingDatabaseGroup.style.display = 'block';
-                
-                // Update form requirements
-                existingDatabases.setAttribute('required', 'true');
-                targetDatabaseInput.removeAttribute('required');
                 
                 // Clear new database name
                 targetDatabaseInput.value = '';
@@ -1323,22 +1574,110 @@ export class BackupImportWebview {
             }
         }
 
-        function showProgress(message) {
-            progressMessage.textContent = message;
-            progressSection.classList.add('visible');
-        }
-
-        function hideProgress() {
-            progressSection.classList.remove('visible');
+        function updateFormatOptions() {
+            const format = document.getElementById('fileFormat')?.value;
+            const pathInput = document.getElementById('backupPath');
+            const formatHelp = document.getElementById('formatHelp');
+            const pathHelp = document.getElementById('pathHelp');
+            
+            // Get references to format-specific elements
+            const restoreOptionsSection = document.getElementById('restoreOptionsSection');
+            const fileRelocationSection = document.getElementById('fileRelocationSection');
+            const advancedSection = document.getElementById('advancedSection');
+            
+            if (!format || !pathInput) {
+                return; // Exit early if essential elements are not found
+            }
+            
+            // Update path extension if user hasn't manually modified it
+            const currentPath = pathInput.value;
+            if (currentPath) {
+                const pathWithoutExt = currentPath.replace(/\.(bak|bacpac)$/i, '');
+                const newExtension = format === 'bak' ? '.bak' : '.bacpac';
+                pathInput.value = pathWithoutExt + newExtension;
+            }
+            
+            if (format === 'bak') {
+                // BAK restore configuration
+                pathInput.placeholder = 'C:\\\\backup\\\\database_backup.bak';
+                if (formatHelp) {
+                    formatHelp.textContent = 'BAK: Database backup for restore operation - supports full backup/restore with transaction logs';
+                }
+                if (pathHelp) {
+                    pathHelp.textContent = 'Select the .bak file to restore from';
+                }
+                
+                // Show BAK-specific options
+                if (advancedSection) {
+                    advancedSection.style.display = 'block';
+                }
+                if (restoreOptionsSection) {
+                    restoreOptionsSection.style.display = 'block';
+                    // Update restore options help text for BAK
+                    const restoreHelp = restoreOptionsSection.querySelector('.help-text');
+                    if (restoreHelp) {
+                        restoreHelp.textContent = 'Checksum verifies backup integrity. No recovery leaves database in restoring state for log shipping.';
+                    }
+                }
+                
+                if (fileRelocationSection) {
+                    fileRelocationSection.style.display = 'block';
+                    // Update file relocation help text for BAK
+                    const fileRelocationHelp = fileRelocationSection.querySelector('.help-text');
+                    if (fileRelocationHelp) {
+                        fileRelocationHelp.textContent = 'Specify new locations for data and log files when creating a new database (required for new databases)';
+                    }
+                }
+                
+                // Update button text for BAK
+                const importBtn = document.getElementById('importBtn');
+                if (importBtn) {
+                    importBtn.textContent = 'Restore Database';
+                }
+                
+            } else { // BACPAC
+                // BACPAC import configuration
+                pathInput.placeholder = 'C:\\\\export\\\\database_export.bacpac';
+                if (formatHelp) {
+                    formatHelp.textContent = 'BACPAC: Data-tier application import - schema and data only (no transaction logs)';
+                }
+                if (pathHelp) {
+                    pathHelp.textContent = 'Select the .bacpac file to import from';
+                }
+                
+                // Hide BAK-specific options that don't apply to BACPAC
+                if (advancedSection) {
+                    advancedSection.style.display = 'none';
+                }
+                if (restoreOptionsSection) {
+                    restoreOptionsSection.style.display = 'none';
+                }
+                
+                if (fileRelocationSection) {
+                    fileRelocationSection.style.display = 'none';
+                }
+                
+                // Update button text for BACPAC
+                const importBtn = document.getElementById('importBtn');
+                if (importBtn) {
+                    importBtn.textContent = 'Import BACPAC';
+                }
+            }
         }
 
         function showMessage(message, type) {
-            messageText.textContent = message;
-            messageSection.className = 'message visible ' + type;
+            if (messageText) {
+                messageText.textContent = message;
+            }
+            if (messageSection) {
+                messageSection.className = 'message visible ' + type;
+            }
         }
 
         function hideMessage() {
-            messageSection.classList.remove('visible');
+            if (messageSection) {
+                messageSection.classList.remove('visible');
+            }
         }
 
         function populateDatabases(databases) {
@@ -1357,8 +1696,10 @@ export class BackupImportWebview {
             
             switch (message.type) {
                 case 'initialData':
-                    document.getElementById('connectionName').textContent = message.data.connectionName;
-                    document.getElementById('serverName').textContent = message.data.serverName;
+                    const connectionNameEl = document.getElementById('connectionName');
+                    const serverNameEl = document.getElementById('serverName');
+                    if (connectionNameEl) connectionNameEl.textContent = message.data.connectionName;
+                    if (serverNameEl) serverNameEl.textContent = message.data.serverName;
                     // Request list of existing databases and default paths
                     vscode.postMessage({ type: 'listDatabases' });
                     vscode.postMessage({ type: 'getDefaultDataPath' });
@@ -1371,6 +1712,18 @@ export class BackupImportWebview {
                     
                 case 'backupFileSelected':
                     backupPathInput.value = message.path;
+                    
+                    // Auto-detect file format based on extension
+                    const fileExtension = message.path.toLowerCase();
+                    const fileFormatSelect = document.getElementById('fileFormat');
+                    if (fileExtension.endsWith('.bacpac')) {
+                        fileFormatSelect.value = 'bacpac';
+                    } else if (fileExtension.endsWith('.bak')) {
+                        fileFormatSelect.value = 'bak';
+                    }
+                    
+                    // Update format options and handle path change
+                    updateFormatOptions();
                     handleBackupPathChange();
                     break;
 
@@ -1390,7 +1743,7 @@ export class BackupImportWebview {
                     
                     backupInfo.innerHTML = infoText;
                     backupInfoSection.style.display = 'block';
-                    hideProgress();
+                    hideBackdrop(); // Hide analyze progress
                     
                     // Suggest a name if target is empty
                     if (!targetDatabaseInput.value.trim()) {
@@ -1429,6 +1782,10 @@ export class BackupImportWebview {
         });
 
         // Initialize
+        // Wait for DOM to be fully loaded before setting up UI
+        setTimeout(() => {
+            updateFormatOptions(); // Set initial UI state based on default format
+        }, 100);
         vscode.postMessage({ type: 'ready' });
     </script>
 </body>
