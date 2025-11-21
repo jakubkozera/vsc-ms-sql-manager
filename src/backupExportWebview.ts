@@ -492,12 +492,32 @@ export class BackupExportWebview {
             font-size: 24px;
         }
 
-        .info-section {
+        .connection-info {
             background: var(--vscode-editor-inactiveSelectionBackground);
             padding: 15px;
             border-radius: 6px;
             margin-bottom: 20px;
             border-left: 4px solid var(--vscode-textLink-foreground);
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .connection-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .connection-item svg {
+            color: var(--vscode-textLink-foreground);
+            flex-shrink: 0;
+        }
+
+        .connection-item span {
+            font-weight: 500;
         }
 
         .form-group {
@@ -667,10 +687,33 @@ export class BackupExportWebview {
     <div class="container">
         <h1>Export Database Backup</h1>
         
-        <div class="info-section">
-            <strong>Connection:</strong> <span id="connectionName">Loading...</span><br>
-            <strong>Server:</strong> <span id="serverName">Loading...</span><br>
-            <strong>Database:</strong> <span id="databaseName">Loading...</span>
+        <div class="connection-info">
+            <div class="connection-item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054z" />
+                    <path d="M4 20l3.5 -3.5" />
+                    <path d="M15 4l-3.5 3.5" />
+                    <path d="M20 9l-3.5 3.5" />
+                </svg>
+                <span id="connectionName">Loading...</span>
+            </div>
+            <div class="connection-item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 4m0 3a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z" />
+                    <path d="M3 12m0 3a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z" />
+                    <path d="M7 8l0 .01" />
+                    <path d="M7 16l0 .01" />
+                </svg>
+                <span id="serverName">Loading...</span>
+            </div>
+            <div class="connection-item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+                    <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+                    <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+                </svg>
+                <span id="databaseName">Loading...</span>
+            </div>
         </div>
 
         <form id="exportForm">
