@@ -76,7 +76,7 @@ export class BackupExportWebview {
                 message: 'Installing SqlPackage tool...'
             });
             
-            const result = child_process.execSync('dotnet tool install -g microsoft.sqlpackage', 
+            const result = child_process.execSync('dotnet tool install -g microsoft.sqlpackage --allow-roll-forward', 
                 { encoding: 'utf8', timeout: 60000 });
             
             this.outputChannel.appendLine(`[BackupExportWebview] SqlPackage installation result: ${result}`);
@@ -346,33 +346,28 @@ export class BackupExportWebview {
         try {
             child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
         } catch (error) {
-            const platform = os.platform();
-            
-            if (platform === 'win32') {
-                throw new Error('SqlPackage not found. Please install SQL Server Data Tools (SSDT) or SQL Server Management Studio (SSMS).');
-            } else {
-                // Check if .NET is installed
-                const dotNetInstalled = await this.checkDotNetInstallation();
-                if (!dotNetInstalled) {
-                    throw new Error('SqlPackage requires .NET SDK. Please install .NET SDK from https://dotnet.microsoft.com/download, then restart VS Code.');
-                }
-                
-                // Try to auto-install SqlPackage
-                const installed = await this.autoInstallSqlPackage();
-                if (!installed) {
-                    throw new Error('Failed to automatically install SqlPackage. Please run manually: dotnet tool install -g microsoft.sqlpackage');
-                }
-                
-                // Update sqlPackagePath after installation
-                sqlPackagePath = await this.findSqlPackage();
-                
-                // Verify again
-                try {
-                    child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
-                } catch (verifyError) {
-                    throw new Error('SqlPackage installation verification failed. Please ensure ~/.dotnet/tools is in your PATH and restart VS Code.');
-                }
+            // Check if .NET is installed
+            const dotNetInstalled = await this.checkDotNetInstallation();
+            if (!dotNetInstalled) {
+                throw new Error('SqlPackage requires .NET SDK. Please install .NET SDK from https://dotnet.microsoft.com/download, then restart VS Code.');
             }
+            
+            // Try to auto-install SqlPackage
+            const installed = await this.autoInstallSqlPackage();
+            if (!installed) {
+                throw new Error('Failed to automatically install SqlPackage. Please run manually: dotnet tool install -g microsoft.sqlpackage --allow-roll-forward');
+            }
+            
+            // Update sqlPackagePath after installation
+            sqlPackagePath = await this.findSqlPackage();
+            
+            // Verify again
+            try {
+                child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+            } catch (verifyError) {
+                throw new Error('SqlPackage installation verification failed. Please ensure ~/.dotnet/tools is in your PATH and restart VS Code.');
+            }
+            
         }
 
         // Build SqlPackage.exe command for BACPAC export
@@ -440,16 +435,16 @@ export class BackupExportWebview {
                         installInstructions = '\n\nInstallation options for Windows:\n' +
                             '1. Install SQL Server Management Studio (SSMS)\n' +
                             '2. Install SQL Server Data Tools (SSDT)\n' +
-                            '3. Install via dotnet tool: dotnet tool install -g microsoft.sqlpackage';
+                            '3. Install via dotnet tool: dotnet tool install -g microsoft.sqlpackage --allow-roll-forward';
                     } else if (platform === 'darwin') {
                         installInstructions = '\n\nInstallation for macOS:\n' +
                             '1. Install .NET SDK from https://dotnet.microsoft.com/download\n' +
-                            '2. Run: dotnet tool install -g microsoft.sqlpackage\n' +
+                            '2. Run: dotnet tool install -g microsoft.sqlpackage --allow-roll-forward\n' +
                             '3. Ensure ~/.dotnet/tools is in your PATH';
                     } else {
                         installInstructions = '\n\nInstallation for Linux:\n' +
                             '1. Install .NET SDK from https://dotnet.microsoft.com/download\n' +
-                            '2. Run: dotnet tool install -g microsoft.sqlpackage\n' +
+                            '2. Run: dotnet tool install -g microsoft.sqlpackage --allow-roll-forward\n' +
                             '3. Ensure ~/.dotnet/tools is in your PATH';
                     }
                     
