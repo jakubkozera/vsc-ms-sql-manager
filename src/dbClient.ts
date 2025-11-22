@@ -25,8 +25,13 @@ function buildMsNodeSqlv8ConnectionString(cfg: any) {
     const server = cfg.server || cfg.dataSource || 'localhost';
     const database = cfg.database || 'master';
 
-    // If server contains backslash instance name, leave as-is
-    return `Driver={${driver}};Server=${server};Database=${database};Trusted_Connection=Yes;`;
+    // Build connection string with SSL settings optimized for SQL Server Express
+    let connectionString = `Driver={${driver}};Server=${server};Database=${database};Trusted_Connection=Yes;`;
+    
+    // Add SSL settings for SQL Server Express compatibility
+    connectionString += 'Encrypt=No;TrustServerCertificate=Yes;';
+    
+    return connectionString;
 }
 
 export async function createPoolForConfig(cfg: any): Promise<DBPool> {
@@ -132,8 +137,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         mssqlConfig.server = cfg.server;
         mssqlConfig.database = cfg.database || 'master';
         mssqlConfig.options = {
-            encrypt: cfg.encrypt !== false,
-            trustServerCertificate: cfg.trustServerCertificate !== false
+            encrypt: cfg.encrypt === true, // Default to false for SQL Server Express
+            trustServerCertificate: cfg.trustServerCertificate !== false,
+            enableArithAbort: true // Required for some SQL Server versions
         };
         if (cfg.port) {
             mssqlConfig.port = cfg.port;

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as child_process from 'child_process';
+import * as childProcess from 'child_process';
 import * as os from 'os';
 import { ConnectionProvider } from './connectionProvider';
 
@@ -36,7 +36,7 @@ export class BackupExportWebview {
         
         // First try PATH
         try {
-            const result = child_process.execSync(isWindows ? 'where sqlpackage' : 'which sqlpackage', 
+            const result = childProcess.execSync(isWindows ? 'where sqlpackage' : 'which sqlpackage', 
                 { encoding: 'utf8', timeout: 5000 });
             const sqlPackagePath = result.trim().split('\n')[0];
             if (fs.existsSync(sqlPackagePath)) {
@@ -59,7 +59,7 @@ export class BackupExportWebview {
 
     private async checkDotNetInstallation(): Promise<boolean> {
         try {
-            child_process.execSync('dotnet --version', { encoding: 'utf8', timeout: 5000 });
+            childProcess.execSync('dotnet --version', { encoding: 'utf8', timeout: 5000 });
             return true;
         } catch (error) {
             return false;
@@ -76,7 +76,7 @@ export class BackupExportWebview {
                 message: 'Installing SqlPackage tool...'
             });
             
-            const result = child_process.execSync('dotnet tool install -g microsoft.sqlpackage --allow-roll-forward', 
+            const result = childProcess.execSync('dotnet tool install -g microsoft.sqlpackage --allow-roll-forward', 
                 { encoding: 'utf8', timeout: 60000 });
             
             this.outputChannel.appendLine(`[BackupExportWebview] SqlPackage installation result: ${result}`);
@@ -84,7 +84,7 @@ export class BackupExportWebview {
             // Verify installation
             const sqlPackagePath = await this.findSqlPackage();
             try {
-                child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                childProcess.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
                 this.outputChannel.appendLine('[BackupExportWebview] SqlPackage installed successfully!');
                 
                 await this.panel?.webview.postMessage({
@@ -204,11 +204,8 @@ export class BackupExportWebview {
             throw new Error('Connection configuration not found');
         }
 
-        // Get suggested backup path (default to .bak)
-        const suggestedPath = path.join(
-            require('os').homedir(),
-            `${database}_${new Date().toISOString().slice(0, 10)}.bak`
-        );
+        // Get suggested backup path with SQL Server Express compatibility
+        const suggestedPath = await this.getSuggestedBackupPath(database, connectionId);
 
         await this.panel?.webview.postMessage({
             type: 'initialData',
@@ -219,6 +216,100 @@ export class BackupExportWebview {
                 suggestedPath: suggestedPath
             }
         });
+    }
+
+    private async getSqlServerDefaultBackupPath(connectionId: string): Promise<string | null> {
+        try {
+            const pool = await this.connectionProvider.ensureConnectionAndGetDbPool(connectionId, 'master');
+            const request = pool.request();
+            
+            // Get SQL Server default backup directory
+            const result = await request.query(`
+                DECLARE @BackupDirectory NVARCHAR(4000)
+                EXEC master.dbo.xp_instance_regread 
+                    N'HKEY_LOCAL_MACHINE', 
+                    N'SOFTWARE\\Microsoft\\MSSQLServer\\MSSQLServer', 
+                    N'BackupDirectory', 
+                    @BackupDirectory OUTPUT
+                SELECT @BackupDirectory as BackupDirectory
+            `);
+            
+            if (result.recordset && result.recordset.length > 0 && result.recordset[0].BackupDirectory) {
+                this.outputChannel.appendLine(`[BackupExportWebview] Found SQL Server default backup path: ${result.recordset[0].BackupDirectory}`);
+                return result.recordset[0].BackupDirectory;
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`[BackupExportWebview] Could not get SQL Server default backup path: ${error}`);
+        }
+        return null;
+    }
+
+    private async getSuggestedBackupPath(database: string, connectionId?: string): Promise<string> {
+        const timestamp = new Date().toISOString().slice(0, 10);
+        const filename = `${database}_${timestamp}.bak`;
+        
+        // Try to get SQL Server's default backup directory first
+        let sqlServerBackupDir: string | null = null;
+        if (connectionId) {
+            sqlServerBackupDir = await this.getSqlServerDefaultBackupPath(connectionId);
+        }
+        
+        // Try different locations in order of preference for SQL Server Express
+        const candidatePaths = [
+            // SQL Server default backup directory (most likely to work)
+            ...(sqlServerBackupDir ? [path.join(sqlServerBackupDir, filename)] : []),
+            // Common SQL Server backup locations
+            'C:\\Program Files\\Microsoft SQL Server\\MSSQL15.SQLEXPRESS\\MSSQL\\Backup\\' + filename,
+            'C:\\Program Files\\Microsoft SQL Server\\MSSQL14.SQLEXPRESS\\MSSQL\\Backup\\' + filename,
+            'C:\\Program Files\\Microsoft SQL Server\\MSSQL13.SQLEXPRESS\\MSSQL\\Backup\\' + filename,
+            // Temp directory (always writable, will copy from here after backup)
+            path.join(require('os').tmpdir(), filename),
+            // User's Documents folder
+            path.join(require('os').homedir(), 'Documents', 'SQL Server Backups', filename),
+            // User's home directory
+            path.join(require('os').homedir(), filename)
+        ];
+        
+        for (const candidatePath of candidatePaths) {
+            try {
+                const dir = path.dirname(candidatePath);
+                
+                // Skip if directory doesn't exist and we can't create it
+                if (!fs.existsSync(dir)) {
+                    try {
+                        fs.mkdirSync(dir, { recursive: true });
+                    } catch (mkdirError) {
+                        this.outputChannel.appendLine(`[BackupExportWebview] Cannot create directory: ${dir} - ${mkdirError}`);
+                        continue;
+                    }
+                }
+                
+                // For SQL Server backup directories, just check if they exist (SQL Server service should have access)
+                if (candidatePath.includes('Microsoft SQL Server') && candidatePath.includes('Backup')) {
+                    if (fs.existsSync(dir)) {
+                        this.outputChannel.appendLine(`[BackupExportWebview] Using SQL Server backup directory: ${candidatePath}`);
+                        return candidatePath;
+                    }
+                    continue;
+                }
+                
+                // Test if we can write to this location by creating a test file
+                const testFile = path.join(dir, '.write_test_' + Date.now());
+                fs.writeFileSync(testFile, 'test');
+                fs.unlinkSync(testFile);
+                
+                this.outputChannel.appendLine(`[BackupExportWebview] Using backup path: ${candidatePath}`);
+                return candidatePath;
+            } catch (error) {
+                this.outputChannel.appendLine(`[BackupExportWebview] Path not accessible: ${candidatePath} - ${error}`);
+                continue;
+            }
+        }
+        
+        // Fallback to temp directory (should always work)
+        const fallbackPath = path.join(require('os').tmpdir(), filename);
+        this.outputChannel.appendLine(`[BackupExportWebview] Using fallback path: ${fallbackPath}`);
+        return fallbackPath;
     }
 
     private async handleExportBackup(options: any, connectionId: string, database: string): Promise<void> {
@@ -285,9 +376,14 @@ export class BackupExportWebview {
 
     private async executeBackup(connectionId: string, database: string, options: any): Promise<void> {
         const pool = await this.connectionProvider.ensureConnectionAndGetDbPool(connectionId, database);
+        const originalBackupPath = options.backupPath;
+
+        // Get the actual backup path (might be temp if user path is not writable by SQL Server)
+        const actualBackupPath = await this.validateAndPrepareBackupPath(options.backupPath);
+        const needsCopy = actualBackupPath !== originalBackupPath;
 
         // Build BACKUP DATABASE command
-        let backupCommand = `BACKUP DATABASE [${database}] TO DISK = N'${options.backupPath}'`;
+        let backupCommand = `BACKUP DATABASE [${database}] TO DISK = N'${actualBackupPath}'`;
 
         // Add optional parameters
         const backupOptions: string[] = [];
@@ -316,21 +412,239 @@ export class BackupExportWebview {
             backupOptions.push('COPY_ONLY');
         }
 
+        // Add INIT to overwrite existing file (helps with permission issues)
+        backupOptions.push('INIT');
+
         if (backupOptions.length > 0) {
             backupCommand += ` WITH ${backupOptions.join(', ')}`;
         }
 
         this.outputChannel.appendLine(`[BackupExportWebview] Executing backup command: ${backupCommand}`);
-
-        // Execute the backup command
-        const request = pool.request();
-        
-        // Set a longer timeout for backup operations - this is specific to mssql package
-        if ('timeout' in request) {
-            (request as any).timeout = options.timeout || 300000; // 5 minutes default
+        if (needsCopy) {
+            this.outputChannel.appendLine(`[BackupExportWebview] Will copy from ${actualBackupPath} to ${originalBackupPath} after backup`);
         }
 
-        await request.query(backupCommand);
+        try {
+            // Execute the backup command
+            const request = pool.request();
+            
+            // Set a longer timeout for backup operations - this is specific to mssql package
+            if ('timeout' in request) {
+                (request as any).timeout = options.timeout || 300000; // 5 minutes default
+            }
+
+            await request.query(backupCommand);
+            
+            // If we backed up to temp, copy to user location
+            if (needsCopy) {
+                await this.panel?.webview.postMessage({
+                    type: 'progress',
+                    message: 'Copying backup file to your chosen location...'
+                });
+                
+                await this.copyBackupFileToUserLocation(actualBackupPath, originalBackupPath);
+            }
+            
+        } catch (error: any) {
+            // Clean up temp file if backup failed
+            if (needsCopy && fs.existsSync(actualBackupPath)) {
+                try {
+                    fs.unlinkSync(actualBackupPath);
+                } catch (cleanupError) {
+                    this.outputChannel.appendLine(`[BackupExportWebview] Could not clean up temp file: ${cleanupError}`);
+                }
+            }
+            
+            // Handle common SQL Server Express errors - try SqlCmd as fallback
+            if (error.message && error.message.includes('Operating system error 5')) {
+                this.outputChannel.appendLine(`[BackupExportWebview] Standard backup failed with permission error, trying SqlCmd fallback...`);
+                
+                try {
+                    await this.executeBackupWithSqlCmd(connectionId, database, options, originalBackupPath);
+                    return; // Success with SqlCmd
+                } catch (sqlCmdError) {
+                    this.outputChannel.appendLine(`[BackupExportWebview] SqlCmd fallback also failed: ${sqlCmdError}`);
+                    throw new Error(`Access denied to backup location. This is common with SQL Server Express. Try:\n` +
+                        `1. Let the extension auto-select a compatible location\n` +
+                        `2. Run VS Code as Administrator\n` +
+                        `3. Use SQL Server Management Studio instead\n` +
+                        `Original error: ${error.message}\n` +
+                        `SqlCmd fallback error: ${sqlCmdError}`);
+                }
+            } else if (error.message && error.message.includes('Operating system error 3')) {
+                throw new Error(`Path not found. Please ensure the directory exists and is accessible.\n` +
+                    `Original error: ${error.message}`);
+            } else {
+                throw error;
+            }
+        }
+    }
+
+    private async validateAndPrepareBackupPath(backupPath: string): Promise<string> {
+        const backupDir = path.dirname(backupPath);
+        const filename = path.basename(backupPath);
+        
+        // If user selected a location outside of SQL Server directories, 
+        // we'll backup to temp and then copy to user location
+        const isSqlServerPath = backupPath.includes('Microsoft SQL Server') && backupPath.includes('Backup');
+        const tempPath = path.join(require('os').tmpdir(), filename);
+        
+        if (!isSqlServerPath) {
+            try {
+                // Ensure user directory exists
+                if (!fs.existsSync(backupDir)) {
+                    fs.mkdirSync(backupDir, { recursive: true });
+                    this.outputChannel.appendLine(`[BackupExportWebview] Created directory: ${backupDir}`);
+                }
+                
+                // Test write permissions by creating a temporary file
+                const testFile = path.join(backupDir, '.backup_permission_test_' + Date.now());
+                fs.writeFileSync(testFile, 'permission test');
+                fs.unlinkSync(testFile);
+                
+                this.outputChannel.appendLine(`[BackupExportWebview] User path validated, will backup to temp and copy: ${backupPath}`);
+                // Return temp path for SQL Server backup, we'll copy later
+                return tempPath;
+            } catch (error: any) {
+                this.outputChannel.appendLine(`[BackupExportWebview] User path not writable, using temp: ${error.message}`);
+                return tempPath;
+            }
+        }
+        
+        this.outputChannel.appendLine(`[BackupExportWebview] Using SQL Server backup path directly: ${backupPath}`);
+        return backupPath;
+    }
+
+    private async copyBackupFileToUserLocation(tempPath: string, userPath: string): Promise<void> {
+        try {
+            if (fs.existsSync(tempPath) && tempPath !== userPath) {
+                const userDir = path.dirname(userPath);
+                if (!fs.existsSync(userDir)) {
+                    fs.mkdirSync(userDir, { recursive: true });
+                }
+                
+                // Copy file from temp to user location
+                fs.copyFileSync(tempPath, userPath);
+                
+                // Remove temp file
+                fs.unlinkSync(tempPath);
+                
+                this.outputChannel.appendLine(`[BackupExportWebview] Backup file copied to: ${userPath}`);
+            }
+        } catch (error: any) {
+            this.outputChannel.appendLine(`[BackupExportWebview] Warning: Could not copy backup to user location: ${error.message}`);
+            throw new Error(`Backup completed but could not copy to your chosen location. ` +
+                `Backup file is available at: ${tempPath}. You can manually copy it to: ${userPath}`);
+        }
+    }
+
+    private async executeBackupWithSqlCmd(connectionId: string, database: string, options: any, userBackupPath: string): Promise<void> {
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        if (!config) {
+            throw new Error('Connection configuration not found');
+        }
+
+        // Use a very safe path for SqlCmd backup (user's temp directory)
+        const tempBackupPath = path.join(require('os').tmpdir(), `sqlcmd_backup_${Date.now()}.bak`);
+        
+        this.outputChannel.appendLine(`[BackupExportWebview] Attempting SqlCmd backup to: ${tempBackupPath}`);
+
+        // Build SqlCmd command
+        let sqlCmdArgs = ['-S', config.server];
+        
+        if (config.authType === 'sql' && config.username && config.password) {
+            sqlCmdArgs.push('-U', config.username, '-P', config.password);
+        } else {
+            sqlCmdArgs.push('-E'); // Windows authentication
+        }
+
+        // Add database
+        sqlCmdArgs.push('-d', database);
+        
+        // Build backup SQL command
+        let backupSql = `BACKUP DATABASE [${database}] TO DISK = N'${tempBackupPath.replace(/\\/g, '\\\\')}'`;
+        
+        // Add options
+        const backupOptions: string[] = ['INIT']; // Always use INIT for SqlCmd
+        
+        if (options.compression) {
+            backupOptions.push('COMPRESSION');
+        }
+        if (options.checksum) {
+            backupOptions.push('CHECKSUM');
+        }
+        if (options.copyOnly) {
+            backupOptions.push('COPY_ONLY');
+        }
+        
+        if (backupOptions.length > 0) {
+            backupSql += ` WITH ${backupOptions.join(', ')}`;
+        }
+        
+        sqlCmdArgs.push('-Q', backupSql);
+        
+        this.outputChannel.appendLine(`[BackupExportWebview] SqlCmd command: sqlcmd ${sqlCmdArgs.filter(arg => arg !== config.password).join(' ')}`);
+
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const sqlCmd = childProcess.spawn('sqlcmd', sqlCmdArgs, {
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+
+                let output = '';
+                let errorOutput = '';
+
+                sqlCmd.stdout?.on('data', (data) => {
+                    output += data.toString();
+                    this.outputChannel.append(data.toString());
+                });
+
+                sqlCmd.stderr?.on('data', (data) => {
+                    errorOutput += data.toString();
+                    this.outputChannel.append(data.toString());
+                });
+
+                sqlCmd.on('close', (code) => {
+                    if (code === 0) {
+                        this.outputChannel.appendLine(`[BackupExportWebview] SqlCmd backup completed successfully`);
+                        resolve();
+                    } else {
+                        const errorMsg = `SqlCmd failed with exit code ${code}. Error: ${errorOutput || output}`;
+                        this.outputChannel.appendLine(`[BackupExportWebview] ${errorMsg}`);
+                        reject(new Error(errorMsg));
+                    }
+                });
+
+                sqlCmd.on('error', (error) => {
+                    const errorMsg = `Failed to execute SqlCmd: ${error.message}. Make sure SQL Server Command Line Tools are installed.`;
+                    this.outputChannel.appendLine(`[BackupExportWebview] ${errorMsg}`);
+                    reject(new Error(errorMsg));
+                });
+            });
+
+            // Copy from temp to user location
+            if (fs.existsSync(tempBackupPath)) {
+                await this.panel?.webview.postMessage({
+                    type: 'progress',
+                    message: 'Copying backup file to your chosen location...'
+                });
+                
+                await this.copyBackupFileToUserLocation(tempBackupPath, userBackupPath);
+            } else {
+                throw new Error('SqlCmd backup completed but backup file was not created');
+            }
+
+        } catch (error: any) {
+            // Clean up temp file if it exists
+            if (fs.existsSync(tempBackupPath)) {
+                try {
+                    fs.unlinkSync(tempBackupPath);
+                } catch (cleanupError) {
+                    this.outputChannel.appendLine(`[BackupExportWebview] Could not clean up SqlCmd temp file: ${cleanupError}`);
+                }
+            }
+            throw error;
+        }
     }
 
     private async executeBacpacExport(connectionId: string, database: string, options: any): Promise<void> {
@@ -344,7 +658,7 @@ export class BackupExportWebview {
         
         // Check if SqlPackage is available
         try {
-            child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+            childProcess.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
         } catch (error) {
             // Check if .NET is installed
             const dotNetInstalled = await this.checkDotNetInstallation();
@@ -363,7 +677,7 @@ export class BackupExportWebview {
             
             // Verify again
             try {
-                child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                childProcess.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
             } catch (verifyError) {
                 throw new Error('SqlPackage installation verification failed. Please ensure ~/.dotnet/tools is in your PATH and restart VS Code.');
             }
@@ -393,13 +707,20 @@ export class BackupExportWebview {
             sqlPackageArgs[3] = `/SourceServerName:${config.server},${config.port}`;
         }
 
+        // Add SSL/TLS parameters for SQL Server Express compatibility
+        sqlPackageArgs.push('/SourceEncryptConnection:False');
+        sqlPackageArgs.push('/SourceTrustServerCertificate:True');
+        
+        // Add timeout for SqlPackage operations (30 minutes default)
+        sqlPackageArgs.push('/SourceTimeout:1800');
+
         this.outputChannel.appendLine(`[BackupExportWebview] Executing SqlPackage at: ${sqlPackagePath}`);
         this.outputChannel.appendLine(`[BackupExportWebview] Args: ${sqlPackageArgs.join(' ')}`);
 
         try {
             
             await new Promise((resolve, reject) => {
-                const sqlPackage = child_process.spawn(sqlPackagePath, sqlPackageArgs, {
+                const sqlPackage = childProcess.spawn(sqlPackagePath, sqlPackageArgs, {
                     stdio: ['pipe', 'pipe', 'pipe']
                 });
 
@@ -728,6 +1049,9 @@ export class BackupExportWebview {
                     <button type="button" id="selectPathBtn">Browse...</button>
                 </div>
                 <div class="help-text" id="pathHelp">Choose where to save the file (.bak or .bacpac extension)</div>
+                <div class="help-text" style="color: var(--vscode-textPreformat-foreground); font-style: italic; margin-top: 8px;">
+                    🔧 <strong>SQL Server Express Auto-Fix:</strong> The extension will automatically handle permission issues by using SQL Server's backup directory and copying to your chosen location.
+                </div>
             </div>
 
             <div class="form-group">
@@ -905,7 +1229,7 @@ export class BackupExportWebview {
             }
             
             if (format === 'bak') {
-                pathInput.placeholder = 'C:\\backup\\database_backup.bak';
+                pathInput.placeholder = 'C:\\Users\\YourName\\Documents\\database_backup.bak';
                 formatHelp.textContent = 'BAK: Full database backup including schema, data, and transaction logs';
                 pathHelp.textContent = 'Choose where to save the backup file (.bak extension)';
                 
@@ -915,8 +1239,8 @@ export class BackupExportWebview {
                 }
                 
             } else { // BACPAC
-                pathInput.placeholder = 'C:\\export\\database_export.bacpac';
-                formatHelp.textContent = 'BACPAC: Logical export of database schema and data (portable format)';
+                pathInput.placeholder = 'C:\\Users\\YourName\\Documents\\database_export.bacpac';
+                formatHelp.textContent = 'BACPAC: Logical export of database schema and data (portable format). Note: May require additional SSL configuration for SQL Server Express.';
                 pathHelp.textContent = 'Choose where to save the export file (.bacpac extension)';
                 
                 // Hide Advanced Options for BACPAC (not applicable to SqlPackage export)

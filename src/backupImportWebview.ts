@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as child_process from 'child_process';
+import * as childProcess from 'child_process';
 import * as os from 'os';
 import { ConnectionProvider } from './connectionProvider';
 
@@ -46,7 +46,7 @@ export class BackupImportWebview {
         
         // First try PATH
         try {
-            const result = child_process.execSync(isWindows ? 'where sqlpackage' : 'which sqlpackage', 
+            const result = childProcess.execSync(isWindows ? 'where sqlpackage' : 'which sqlpackage', 
                 { encoding: 'utf8', timeout: 5000 });
             const sqlPackagePath = result.trim().split('\n')[0];
             if (fs.existsSync(sqlPackagePath)) {
@@ -69,7 +69,7 @@ export class BackupImportWebview {
 
     private async checkDotNetInstallation(): Promise<boolean> {
         try {
-            child_process.execSync('dotnet --version', { encoding: 'utf8', timeout: 5000 });
+            childProcess.execSync('dotnet --version', { encoding: 'utf8', timeout: 5000 });
             return true;
         } catch (error) {
             return false;
@@ -86,7 +86,7 @@ export class BackupImportWebview {
                 message: 'Installing SqlPackage tool...'
             });
             
-            const result = child_process.execSync('dotnet tool install -g microsoft.sqlpackage --allow-roll-forward', 
+            const result = childProcess.execSync('dotnet tool install -g microsoft.sqlpackage --allow-roll-forward', 
                 { encoding: 'utf8', timeout: 60000 });
             
             this.outputChannel.appendLine(`[BackupImportWebview] SqlPackage installation result: ${result}`);
@@ -94,7 +94,7 @@ export class BackupImportWebview {
             // Verify installation
             const sqlPackagePath = await this.findSqlPackage();
             try {
-                child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                childProcess.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
                 this.outputChannel.appendLine('[BackupImportWebview] SqlPackage installed successfully!');
                 
                 await this.panel?.webview.postMessage({
@@ -192,6 +192,9 @@ export class BackupImportWebview {
                 break;
             case 'getDefaultDataPath':
                 await this.handleGetDefaultDataPath(connectionId);
+                break;
+            case 'autoGenerateFilePaths':
+                await this.handleAutoGenerateFilePaths(message.databaseName, connectionId);
                 break;
             case 'ready':
                 // Webview is ready, send initial data
@@ -326,6 +329,63 @@ export class BackupImportWebview {
         }
     }
 
+    private async handleAutoGenerateFilePaths(databaseName: string, connectionId: string): Promise<void> {
+        try {
+            const pool = await this.connectionProvider.ensureConnectionAndGetDbPool(connectionId, 'master');
+            const request = pool.request();
+            
+            // Get SQL Server default data and log paths
+            const result = await request.query(`
+                SELECT 
+                    SERVERPROPERTY('InstanceDefaultDataPath') as DefaultDataPath,
+                    SERVERPROPERTY('InstanceDefaultLogPath') as DefaultLogPath
+            `);
+
+            let dataPath = result.recordset[0]?.DefaultDataPath;
+            let logPath = result.recordset[0]?.DefaultLogPath;
+
+            // Fallback for LocalDB or SQL Server Express if paths are null
+            if (!dataPath || !logPath) {
+                const localDbResult = await request.query(`
+                    SELECT 
+                        SUBSTRING(physical_name, 1, LEN(physical_name) - CHARINDEX('\\', REVERSE(physical_name))) + '\\' as DataPath
+                    FROM sys.master_files 
+                    WHERE database_id = DB_ID('master') AND type = 0
+                `);
+                const basePath = localDbResult.recordset[0]?.DataPath || 'C:\\Program Files\\Microsoft SQL Server\\MSSQL15.SQLEXPRESS\\MSSQL\\DATA\\';
+                dataPath = basePath;
+                logPath = basePath;
+            }
+
+            // Generate file paths
+            const dataFilePath = dataPath + databaseName + '.mdf';
+            const logFilePath = logPath + databaseName + '_log.ldf';
+
+            this.outputChannel.appendLine(`[BackupImportWebview] Auto-generated file paths for ${databaseName}: Data=${dataFilePath}, Log=${logFilePath}`);
+
+            await this.panel?.webview.postMessage({
+                type: 'filePathsGenerated',
+                dataPath: dataFilePath,
+                logPath: logFilePath,
+                databaseName: databaseName
+            });
+        } catch (error: any) {
+            this.outputChannel.appendLine(`[BackupImportWebview] Error generating file paths: ${error.message}`);
+            
+            // Use fallback paths
+            const fallbackBasePath = 'C:\\Program Files\\Microsoft SQL Server\\MSSQL15.SQLEXPRESS\\MSSQL\\DATA\\';
+            const dataFilePath = fallbackBasePath + databaseName + '.mdf';
+            const logFilePath = fallbackBasePath + databaseName + '_log.ldf';
+            
+            await this.panel?.webview.postMessage({
+                type: 'filePathsGenerated',
+                dataPath: dataFilePath,
+                logPath: logFilePath,
+                databaseName: databaseName
+            });
+        }
+    }
+
     private async sendInitialData(connectionId: string): Promise<void> {
         const config = this.connectionProvider.getConnectionConfig(connectionId);
         if (!config) {
@@ -441,7 +501,7 @@ export class BackupImportWebview {
         
         // Check if SqlPackage is available
         try {
-            child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+            childProcess.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
         } catch (error) {
             const platform = os.platform();
             
@@ -465,7 +525,7 @@ export class BackupImportWebview {
                 
                 // Verify again
                 try {
-                    child_process.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
+                    childProcess.execSync(`"${sqlPackagePath}" /?`, { timeout: 5000 });
                 } catch (verifyError) {
                     throw new Error('SqlPackage installation verification failed. Please ensure ~/.dotnet/tools is in your PATH and restart VS Code.');
                 }
@@ -498,9 +558,16 @@ export class BackupImportWebview {
             sqlPackageArgs[3] = `/TargetServerName:${config.server},${config.port}`;
         }
 
+        // Add SSL/TLS parameters for SQL Server Express compatibility
+        sqlPackageArgs.push('/TargetEncryptConnection:False');
+        sqlPackageArgs.push('/TargetTrustServerCertificate:True');
+
         // Add timeout
         if (options.timeout) {
             sqlPackageArgs.push(`/TargetTimeout:${Math.floor(options.timeout / 1000)}`);
+        } else {
+            // Default timeout for import operations (30 minutes)
+            sqlPackageArgs.push('/TargetTimeout:1800');
         }
 
         this.outputChannel.appendLine(`[BackupImportWebview] Executing SqlPackage at: ${sqlPackagePath}`);
@@ -509,7 +576,7 @@ export class BackupImportWebview {
         try {
             
             await new Promise((resolve, reject) => {
-                const sqlPackage = child_process.spawn(sqlPackagePath, sqlPackageArgs, {
+                const sqlPackage = childProcess.spawn(sqlPackagePath, sqlPackageArgs, {
                     stdio: ['pipe', 'pipe', 'pipe']
                 });
 
@@ -608,8 +675,30 @@ export class BackupImportWebview {
             restoreOptions.push('CONTINUE_AFTER_ERROR');
         }
 
-        // Add file relocation if specified
-        if (options.relocateData || options.relocateLog) {
+        // Add file relocation - always required when creating new database
+        if (!options.replace) {
+            // For new database creation, file relocation is mandatory
+            const logicalDataName = await this.getLogicalFileName(pool, options.backupPath, 'D');
+            const logicalLogName = await this.getLogicalFileName(pool, options.backupPath, 'L');
+            
+            if (!logicalDataName || !logicalLogName) {
+                throw new Error('Could not determine logical file names from backup. The backup file may be corrupted or inaccessible.');
+            }
+            
+            const dataPath = options.relocateData && options.relocateData.trim() !== '' 
+                ? options.relocateData 
+                : `C:\\Program Files\\Microsoft SQL Server\\MSSQL15.SQLEXPRESS\\MSSQL\\DATA\\${options.targetDatabase}.mdf`;
+                
+            const logPath = options.relocateLog && options.relocateLog.trim() !== '' 
+                ? options.relocateLog 
+                : `C:\\Program Files\\Microsoft SQL Server\\MSSQL15.SQLEXPRESS\\MSSQL\\DATA\\${options.targetDatabase}_log.ldf`;
+            
+            restoreOptions.push(`MOVE N'${logicalDataName}' TO N'${dataPath}'`);
+            restoreOptions.push(`MOVE N'${logicalLogName}' TO N'${logPath}'`);
+            
+            this.outputChannel.appendLine(`[BackupImportWebview] File relocation: Data=${dataPath}, Log=${logPath}`);
+        } else {
+            // For database replacement, only add MOVE if explicitly specified
             if (options.relocateData && options.relocateData.trim() !== '') {
                 const logicalDataName = await this.getLogicalFileName(pool, options.backupPath, 'D');
                 if (logicalDataName) {
@@ -1230,18 +1319,21 @@ export class BackupImportWebview {
                     </div>
 
                     <div class="form-group" id="fileRelocationSection">
-                        <label>File Relocation (Optional)</label>
+                        <label>File Relocation (Auto-generated if empty)</label>
                         <div class="form-row">
                             <div>
-                                <label for="relocateData">Data file path</label>
-                                <input type="text" id="relocateData" placeholder="C:\\Data\\MyDatabase.mdf">
+                                <label for="relocateData">Data file path (.mdf)</label>
+                                <input type="text" id="relocateData" placeholder="Auto-generated from SQL Server default paths">
                             </div>
                             <div>
-                                <label for="relocateLog">Log file path</label>
-                                <input type="text" id="relocateLog" placeholder="C:\\Log\\MyDatabase.ldf">
+                                <label for="relocateLog">Log file path (.ldf)</label>
+                                <input type="text" id="relocateLog" placeholder="Auto-generated from SQL Server default paths">
                             </div>
                         </div>
-                        <div class="help-text">Specify new locations for data and log files if needed</div>
+                        <div class="help-text">
+                            ✅ <strong>Auto-Fill:</strong> Leave empty to automatically use SQL Server's default data directory.<br>
+                            📁 <strong>Custom:</strong> Specify custom locations if you want files in specific folders.
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1379,10 +1471,14 @@ export class BackupImportWebview {
                 return;
             }
 
-            // If creating a new database (not replacing) with BAK format, require file relocation
-            // BACPAC imports don't need file relocation as SqlPackage handles file placement automatically
+            // For BAK format, if creating a new database and file paths are not specified,
+            // automatically generate them. BACPAC imports don't need file relocation.
             if (currentTargetMode === 'new' && fileFormat === 'bak' && (!options.relocateData || !options.relocateLog)) {
-                showMessage('File relocation paths are required when creating a new database from BAK file. Please specify data and log file paths in Advanced Options.', 'error');
+                // Auto-generate file paths instead of showing error
+                vscode.postMessage({
+                    type: 'autoGenerateFilePaths',
+                    databaseName: options.targetDatabase
+                });
                 return;
             }
 
@@ -1675,7 +1771,7 @@ export class BackupImportWebview {
                 // BACPAC import configuration
                 pathInput.placeholder = 'C:\\\\export\\\\database_export.bacpac';
                 if (formatHelp) {
-                    formatHelp.textContent = 'BACPAC: Data-tier application import - schema and data only (no transaction logs)';
+                    formatHelp.textContent = 'BACPAC: Data-tier application import - schema and data only (no transaction logs). SSL optimized for SQL Server Express.';
                 }
                 if (pathHelp) {
                     pathHelp.textContent = 'Select the .bacpac file to import from';
@@ -1797,6 +1893,32 @@ export class BackupImportWebview {
                     } else {
                         showDatabaseExistsWarning(false);
                     }
+                    break;
+
+                case 'autoGenerateFilePaths':
+                    // Extension is requesting auto-generation of file paths
+                    vscode.postMessage({
+                        type: 'autoGenerateFilePaths', 
+                        databaseName: message.databaseName
+                    });
+                    break;
+
+                case 'filePathsGenerated':
+                    // Auto-generated file paths received, populate form and retry import
+                    document.getElementById('relocateData').value = message.dataPath;
+                    document.getElementById('relocateLog').value = message.logPath;
+                    
+                    showMessage('File paths automatically generated. Proceeding with restore...', 'info');
+                    
+                    // Expand advanced options to show the generated paths
+                    if (!advancedContent.classList.contains('expanded')) {
+                        toggleAdvancedOptions();
+                    }
+                    
+                    // Retry the import with generated paths
+                    setTimeout(() => {
+                        form.dispatchEvent(new Event('submit'));
+                    }, 1000);
                     break;
                     
                 case 'progress':
