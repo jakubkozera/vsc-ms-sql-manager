@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { DatabaseDiagramWebview } from '../databaseDiagramWebview';
 import { CompareSchemaWebview } from '../compareSchemaWebview';
-import { BackupExportWebview } from '../backupExportWebview';
-import { BackupImportWebview } from '../backupImportWebview';
+import { BackupExportWebview } from '../backupExportWebviewNew';
+import { BackupImportWebview } from '../backupImportWebviewNew';
 
 export function registerDatabaseCommands(
     context: vscode.ExtensionContext,

@@ -126,7 +126,7 @@ export class ConnectionWebview {
             });
 
             // Use our dbClient abstraction which will choose msnodesqlv8 for windows auth
-            const { createPoolForConfig } = await import('./dbClient');
+            const { createPoolForConfig } = await import('./dbClient.js');
 
             const cfg: any = {};
             if (config.useConnectionString && config.connectionString) {
