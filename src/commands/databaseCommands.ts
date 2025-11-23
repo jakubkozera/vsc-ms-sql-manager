@@ -2,15 +2,26 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { DatabaseDiagramWebview } from '../databaseDiagramWebview';
 import { CompareSchemaWebview } from '../compareSchemaWebview';
+import { BackupExportWebview } from '../backupExportWebviewNew';
+import { BackupImportWebview } from '../backupImportWebviewNew';
 
 export function registerDatabaseCommands(
     context: vscode.ExtensionContext,
     connectionProvider: ConnectionProvider,
-    outputChannel: vscode.OutputChannel
+    outputChannel: vscode.OutputChannel,
+    treeProvider?: any
 ): vscode.Disposable[] {
     
     const diagramWebview = new DatabaseDiagramWebview(connectionProvider, outputChannel, context);
     const compareSchemaWebview = new CompareSchemaWebview(connectionProvider, outputChannel, context);
+    
+    // Create refresh callback for backup import
+    const refreshCallback = () => {
+        if (treeProvider) {
+            outputChannel.appendLine('[DatabaseCommands] Refreshing tree view after database import');
+            treeProvider.refresh();
+        }
+    };
     
     // Register Compare Schema webview to receive connection updates
     compareSchemaWebview.registerForConnectionUpdates();
@@ -81,5 +92,61 @@ export function registerDatabaseCommands(
         }
     );
 
-    return [showDatabaseDiagram, compareSchema];
+    const exportBackup = vscode.commands.registerCommand(
+        'mssqlManager.exportBackup',
+        async (node?: any) => {
+            outputChannel.appendLine('[DatabaseCommands] Export backup command triggered');
+
+            if (!node || !node.connectionId) {
+                vscode.window.showErrorMessage('Please select a database or connection from the explorer');
+                return;
+            }
+
+            // If node has database property, use it; otherwise use the connection's database
+            let database = node.database;
+            
+            if (!database) {
+                // For connectionActive/connectionInactive nodes, get database from config
+                const config = connectionProvider.getConnectionConfig(node.connectionId);
+                if (config && config.database) {
+                    database = config.database;
+                } else {
+                    vscode.window.showErrorMessage('No database specified for this connection');
+                    return;
+                }
+            }
+
+            try {
+                // Create new export webview instance for each operation
+                const backupExportWebview = new BackupExportWebview(connectionProvider, outputChannel, context);
+                await backupExportWebview.show(node.connectionId, database);
+            } catch (error: any) {
+                outputChannel.appendLine(`[DatabaseCommands] Error showing backup export: ${error.message}`);
+                vscode.window.showErrorMessage(`Failed to show backup export: ${error.message}`);
+            }
+        }
+    );
+
+    const importBackup = vscode.commands.registerCommand(
+        'mssqlManager.importBackup',
+        async (node?: any) => {
+            outputChannel.appendLine('[DatabaseCommands] Import backup command triggered');
+
+            if (!node || !node.connectionId) {
+                vscode.window.showErrorMessage('Please select a server connection from the explorer');
+                return;
+            }
+
+            try {
+                // Create new import webview instance for each operation
+                const backupImportWebview = new BackupImportWebview(connectionProvider, outputChannel, context, refreshCallback);
+                await backupImportWebview.show(node.connectionId);
+            } catch (error: any) {
+                outputChannel.appendLine(`[DatabaseCommands] Error showing backup import: ${error.message}`);
+                vscode.window.showErrorMessage(`Failed to show backup import: ${error.message}`);
+            }
+        }
+    );
+
+    return [showDatabaseDiagram, compareSchema, exportBackup, importBackup];
 }

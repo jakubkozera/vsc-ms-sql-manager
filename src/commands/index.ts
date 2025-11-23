@@ -66,7 +66,8 @@ export function registerAllCommands(
     const databaseCommands = registerDatabaseCommands(
         context,
         connectionProvider,
-        outputChannel
+        outputChannel,
+        unifiedTreeProvider
     );
 
     const scriptGenerationCommands = registerScriptGenerationCommands(

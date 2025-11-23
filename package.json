@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -293,6 +293,16 @@
         "command": "mssqlManager.generateDatabaseScripts",
         "title": "Generate Scripts...",
         "icon": "$(file-text)"
+      },
+      {
+        "command": "mssqlManager.exportBackup",
+        "title": "Export Backup...",
+        "icon": "$(export)"
+      },
+      {
+        "command": "mssqlManager.importBackup",
+        "title": "Import Backup...",
+        "icon": "$(import)"
       }
     ],
     "viewsContainers": {
@@ -551,6 +561,11 @@
           "group": "2_script@1"
         },
         {
+          "command": "mssqlManager.exportBackup",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "2_script@2"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
           "group": "3_refresh@1"
@@ -641,6 +656,16 @@
           "group": "2_manage@5"
         },
         {
+          "command": "mssqlManager.exportBackup",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "2_manage@6"
+        },
+        {
+          "command": "mssqlManager.importBackup",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "2_manage@7"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
           "group": "3_refresh@1"
@@ -659,6 +684,11 @@
           "command": "mssqlManager.generateDatabaseScripts",
           "when": "view == mssqlManager.explorer && viewItem == database",
           "group": "2_script@1"
+        },
+        {
+          "command": "mssqlManager.exportBackup",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "2_script@2"
         },
         {
           "command": "mssqlManager.refreshNode",
@@ -918,6 +948,14 @@
         {
           "command": "mssqlManager.compareSchema",
           "when": "false"
+        },
+        {
+          "command": "mssqlManager.exportBackup",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.importBackup",
+          "when": "false"
         }
       ]
     },
@@ -965,6 +1003,7 @@
   "devDependencies": {
     "@types/mssql": "^9.1.8",
     "@types/node": "^20.x",
+    "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.105.0",
     "@typescript-eslint/eslint-plugin": "^8.7.0",
     "@typescript-eslint/parser": "^8.7.0",
@@ -972,6 +1011,7 @@
     "@vscode/test-electron": "^2.4.1",
     "copy-webpack-plugin": "^13.0.1",
     "eslint": "^9.11.1",
+    "sinon": "^21.0.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.6.2",
     "webpack": "^5.95.0",
