@@ -5,6 +5,22 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-11-23
+
+### Added
+
+- **Auto Azure Database Discovery & Registration**: Automated discovery and registration of Azure SQL databases
+  - **Azure subscription scanning**: Automatically discovers Azure SQL servers across all accessible subscriptions
+  - **Intelligent database detection**: Identifies all databases within discovered Azure SQL servers
+  - **One-click registration**: Seamlessly adds discovered databases to the Database Explorer with proper connection configuration
+  - **Authentication integration**: Leverages existing Azure CLI authentication for secure server access
+  - **Bulk operations support**: Register multiple databases and servers simultaneously with batch processing
+  - **Connection validation**: Automatically validates connectivity and firewall rules during registration process
+  - **Smart naming**: Generates meaningful connection names based on server and database information
+  - **Progress tracking**: Real-time feedback during discovery and registration operations with detailed logging
+  - **Error handling**: Graceful handling of authentication failures, network issues, and permission problems
+  - **Cache integration**: Utilizes Azure server cache for faster subsequent discovery operations
+
 ## [0.3.2] - 2025-11-23
 
 ### Added
