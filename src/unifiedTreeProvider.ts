@@ -2261,7 +2261,7 @@ export class ServerGroupNode extends TreeNode {
         // Set colored icon - use theme-aware icons
         const isOpen = this.collapsibleState === vscode.TreeItemCollapsibleState.Expanded;
         
-        // Get custom icon SVG if using custom icon
+        // Get custom icon SVG if using custom icon or Azure group
         let customIconSvg: string | undefined;
         if (group.iconType === 'custom' && group.customIconId && connectionProvider) {
             const customIcons = connectionProvider.getCustomIcons();
@@ -2269,12 +2269,29 @@ export class ServerGroupNode extends TreeNode {
             if (customIcon) {
                 customIconSvg = customIcon.svgContent;
             }
+        } else if (group.name === 'Azure') {
+            // Use Azure icon for Azure group (optimized for small size)
+            customIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 96 96">
+                <defs>
+                    <linearGradient id="azure-grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0" stop-color="#114a8b"/>
+                        <stop offset="1" stop-color="#0669bc"/>
+                    </linearGradient>
+                    <linearGradient id="azure-grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0" stop-color="#3ccbf4"/>
+                        <stop offset="1" stop-color="#2892df"/>
+                    </linearGradient>
+                </defs>
+                <path fill="url(#azure-grad1)" d="M33.338 6.544h26.038l-27.03 80.087a4.152 4.152 0 0 1-3.933 2.824H8.149a4.145 4.145 0 0 1-3.928-5.47L29.404 9.368a4.152 4.152 0 0 1 3.934-2.825z"/>
+                <path fill="#0078d4" d="M71.175 60.261h-41.29a1.911 1.911 0 0 0-1.305 3.309l26.532 24.764a4.171 4.171 0 0 0 2.846 1.121h23.38z"/>
+                <path fill="url(#azure-grad2)" d="M66.595 9.364a4.145 4.145 0 0 0-3.928-2.82H33.648a4.146 4.146 0 0 1 3.928 2.82l25.184 74.62a4.146 4.146 0 0 1-3.928 5.472h29.02a4.146 4.146 0 0 0 3.927-5.472z"/>
+            </svg>`;
         }
         
         this.iconPath = createServerGroupIcon(
             group.color || '#0078D4', 
             isOpen, 
-            group.iconType || 'folder',
+            group.name === 'Azure' || group.iconType === 'custom' ? 'custom' : (group.iconType || 'folder'),
             customIconSvg
         );
 

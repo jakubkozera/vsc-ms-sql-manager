@@ -180,7 +180,7 @@ export function registerConnectionCommands(
                 // Synthesize an ADO-style connection string and include credentials (user requested)
                 const parts: string[] = [];
                 if (complete.server) parts.push(`Server=${complete.server}`);
-                if (complete.database) parts.push(`Database=${complete.database}`);
+                if (complete.database && complete.database.trim() !== '') parts.push(`Database=${complete.database}`);
                 if (complete.authType === 'sql') {
                     if (complete.username) parts.push(`User Id=${complete.username}`);
                     if (complete.password) parts.push(`Password=${complete.password}`);
@@ -736,6 +736,33 @@ export function registerConnectionCommands(
         }
     });
 
+    const discoverAzureServersCommand = vscode.commands.registerCommand('mssqlManager.discoverAzureServers', async () => {
+        try {
+            const choice = await vscode.window.showInformationMessage(
+                'This will discover Azure SQL servers across all your subscriptions and add them to the Azure group. Continue?',
+                { modal: true },
+                'Discover Servers'
+            );
+            
+            if (choice === 'Discover Servers') {
+                outputChannel.appendLine('[Azure Discovery] Manual Azure discovery initiated');
+                
+                // Reset the discovery flag to allow re-running
+                const context = (connectionProvider as any).context;
+                await context.globalState.update('mssqlManager.azureDiscoveryDone', false);
+                
+                // Run discovery
+                await connectionProvider.discoverAzureServersOnce();
+                
+                vscode.window.showInformationMessage('Azure SQL server discovery completed. Check the Azure group in the explorer.');
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to discover Azure servers: ${errorMessage}`);
+            outputChannel.appendLine(`Azure discovery failed: ${errorMessage}`);
+        }
+    });
+
     return [
         connectCommand,
         disconnectCommand,
@@ -756,6 +783,7 @@ export function registerConnectionCommands(
         addAzureFirewallRuleCommand,
         openAzurePortalCommand,
         clearAzureServerCacheCommand,
-        showAzureServerCacheCommand
+        showAzureServerCacheCommand,
+        discoverAzureServersCommand
     ];
 }

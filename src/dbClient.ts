@@ -23,10 +23,14 @@ function buildMsNodeSqlv8ConnectionString(cfg: any) {
     // Prefer ODBC Driver 17+ if running on modern systems, fallback to SQL Server Native Client
     const driver = cfg.driver || 'ODBC Driver 17 for SQL Server';
     const server = cfg.server || cfg.dataSource || 'localhost';
-    const database = cfg.database || 'master';
+    const database = cfg.database;
 
     // Build connection string with SSL settings optimized for SQL Server Express
-    let connectionString = `Driver={${driver}};Server=${server};Database=${database};Trusted_Connection=Yes;`;
+    let connectionString = `Driver={${driver}};Server=${server};`;
+    if (database && database.trim() !== '') {
+        connectionString += `Database=${database};`;
+    }
+    connectionString += 'Trusted_Connection=Yes;';
     
     // Add SSL settings for SQL Server Express compatibility
     connectionString += 'Encrypt=No;TrustServerCertificate=Yes;';
@@ -135,7 +139,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         mssqlConfig.connectionString = cfg.connectionString;
     } else {
         mssqlConfig.server = cfg.server;
-        mssqlConfig.database = cfg.database || 'master';
+        if (cfg.database && cfg.database.trim() !== '') {
+            mssqlConfig.database = cfg.database;
+        }
         mssqlConfig.options = {
             encrypt: cfg.encrypt === true, // Default to false for SQL Server Express
             trustServerCertificate: cfg.trustServerCertificate !== false,

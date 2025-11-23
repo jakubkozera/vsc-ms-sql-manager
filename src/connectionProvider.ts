@@ -3,6 +3,7 @@ import { createDatabaseIcon, createServerGroupIcon } from './serverGroupIcon';
 import * as sql from 'mssql';
 import { createPoolForConfig, DBPool } from './dbClient';
 import { analyzeConnectionError, showAzureFirewallSolution } from './utils/azureFirewallHelper';
+import { performAzureDiscovery } from './utils/azureDiscovery';
 
 export interface ServerGroup {
     id: string;
@@ -384,7 +385,7 @@ export class ConnectionProvider {
                 // Build config from individual properties
                 sqlConfig = {
                     server: config.server,
-                    database: config.connectionType === 'server' ? 'master' : config.database,
+                    database: config.connectionType === 'server' ? '' : config.database,
                     options: {
                         encrypt: config.encrypt || true,
                         trustServerCertificate: config.trustServerCertificate || true
@@ -1044,6 +1045,85 @@ export class ConnectionProvider {
             // still mark as done to avoid repeated attempts
             await this.context.globalState.update('mssqlManager.localDiscoveryDone', true);
         }
+    }
+
+    /**
+     * Discovers Azure SQL servers and databases across all accessible subscriptions.
+     * Runs once after the extension is installed/first activated.
+     */
+    async discoverAzureServersOnce(): Promise<void> {
+        try {
+            const alreadyRun = this.context.globalState.get<boolean>('mssqlManager.azureDiscoveryDone', false);
+            if (alreadyRun) {
+                this.outputChannel.appendLine('[ConnectionProvider] Azure discovery already executed, skipping');
+                return;
+            }
+
+            this.outputChannel.appendLine('[ConnectionProvider] Starting one-time Azure SQL Server discovery');
+
+            // Perform Azure discovery
+            const azureConnections = await performAzureDiscovery(this.outputChannel);
+
+            if (azureConnections.length > 0) {
+                // Ensure Azure server group exists
+                let groups = this.getServerGroups();
+                let azureGroup = groups.find(g => g.name === 'Azure');
+                if (!azureGroup) {
+                    azureGroup = { id: `group-azure`, name: 'Azure', color: '#0078D4' };
+                    await this.saveServerGroup(azureGroup);
+                    groups = this.getServerGroups();
+                }
+
+                // Get current saved connections
+                const savedConnections = this.getSavedConnections();
+
+                // Add discovered Azure connections
+                for (const azureConn of azureConnections) {
+                    // Check if connection already exists (by ID or server+database combo)
+                    const exists = savedConnections.find(s => 
+                        s.id === azureConn.id || 
+                        (s.server === azureConn.server && s.database === azureConn.database)
+                    );
+
+                    if (!exists) {
+                        // Assign to Azure group
+                        azureConn.serverGroupId = azureGroup.id;
+                        
+                        // Add to connections list
+                        savedConnections.push(azureConn as ConnectionConfig);
+                        this.outputChannel.appendLine(`[ConnectionProvider] Added discovered Azure connection: ${azureConn.name}`);
+                    } else {
+                        this.outputChannel.appendLine(`[ConnectionProvider] Azure connection already exists: ${azureConn.name}`);
+                    }
+                }
+
+                // Save updated connections
+                await this.context.globalState.update('mssqlManager.connections', savedConnections);
+                this.outputChannel.appendLine(`[ConnectionProvider] Registered ${azureConnections.length} Azure SQL connections`);
+
+                // Notify UI
+                this.notifyConnectionChanged();
+            } else {
+                this.outputChannel.appendLine('[ConnectionProvider] No Azure SQL servers found or Azure CLI not available');
+            }
+
+            // Mark discovery as done
+            await this.context.globalState.update('mssqlManager.azureDiscoveryDone', true);
+            this.outputChannel.appendLine('[ConnectionProvider] Azure discovery finished');
+
+        } catch (error) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Error during Azure discovery: ${error}`);
+            // Still mark as done to avoid repeated attempts
+            await this.context.globalState.update('mssqlManager.azureDiscoveryDone', true);
+        }
+    }
+
+    /**
+     * Resets Azure discovery flag to allow re-running discovery
+     */
+    async resetAzureDiscoveryFlag(): Promise<void> {
+        await this.context.globalState.update('mssqlManager.azureDiscoveryDone', false);
+        this.outputChannel.appendLine('[ConnectionProvider] Azure discovery flag reset');
     }
 
     async connectToSavedById(connectionId: string): Promise<void> {

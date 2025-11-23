@@ -17,6 +17,19 @@ Comprehensive connection management system for Microsoft SQL Server databases wi
 - **Connection Testing**: Validate connections before saving them
 - **Secure Credential Storage**: Passwords handled securely without permanent storage
 
+### ☁️ Azure SQL Discovery
+Automated discovery and connection setup for Azure SQL servers with intelligent authentication guidance.
+
+**Key Features:**
+- **Server-Level Connections**: Creates connections to Azure SQL servers (not specific databases)
+- **Admin Login Discovery**: Automatically discovers and pre-fills SQL Server administrator usernames
+- **Database Enumeration**: Lists all available databases per server in connection metadata
+- **Startup Integration**: Automatically discovers Azure resources when extension loads
+- **Manual Discovery**: On-demand discovery via "Azure: Discover SQL Servers" command
+
+
+
+
 ### ⚡ SQL Runner
 Advanced SQL query execution engine with comprehensive T-SQL support and real-time results display.
 
@@ -155,6 +168,11 @@ The extension is built with a modular architecture:
 - VS Code 1.105.0 or higher
 - Node.js and npm for development
 - Access to Microsoft SQL Server instance
+
+### For Azure SQL Discovery
+- **Azure CLI**: Install and configure Azure CLI (`az login`)
+- **Azure Access**: Valid Azure subscription with SQL Server resources
+- **Permissions**: Read access to Azure SQL resources in your subscriptions
 
 ## Dependencies
 

@@ -30,6 +30,13 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`[Extension] Local discovery error: ${err}`);
     }
     
+    // Run one-time Azure SQL server discovery
+    try {
+        await connectionProvider.discoverAzureServersOnce();
+    } catch (err) {
+        outputChannel.appendLine(`[Extension] Azure discovery error: ${err}`);
+    }
+    
     // Initialize query history
     outputChannel.appendLine('[Extension] Initializing query history...');
     const historyManager = new QueryHistoryManager(context);
