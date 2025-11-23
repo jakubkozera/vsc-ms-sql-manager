@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createDatabaseIcon, createServerGroupIcon } from './serverGroupIcon';
 import * as sql from 'mssql';
 import { createPoolForConfig, DBPool } from './dbClient';
+import { analyzeConnectionError, showAzureFirewallSolution } from './utils/azureFirewallHelper';
 
 export interface ServerGroup {
     id: string;
@@ -433,8 +434,17 @@ export class ConnectionProvider {
                 // Mark connection as failed to prevent retry loops
                 this.failedConnections.add(config.id);
                 
-                // Show error as VS Code notification
-                vscode.window.showErrorMessage(`Failed to connect to ${config.name || config.server}: ${errorMessage}`);
+                // Analyze if this is an Azure SQL firewall error
+                const azureError = analyzeConnectionError(errorMessage);
+                
+                if (azureError.isAzureFirewallError && azureError.serverName && azureError.clientIP) {
+                    // Show intelligent Azure firewall solution options
+                    showAzureFirewallSolution(azureError.serverName, azureError.clientIP);
+                } else {
+                    // Show regular error notification for other types of errors
+                    vscode.window.showErrorMessage(`Failed to connect to ${config.name || config.server}: ${errorMessage}`);
+                }
+                
                 throw error;
             }
         });

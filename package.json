@@ -303,6 +303,16 @@
         "command": "mssqlManager.importBackup",
         "title": "Import Backup...",
         "icon": "$(import)"
+      },
+      {
+        "command": "mssqlManager.addAzureFirewallRule",
+        "title": "Add IP to Azure Firewall",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "mssqlManager.openAzurePortal",
+        "title": "Open Azure Portal",
+        "icon": "$(globe)"
       }
     ],
     "viewsContainers": {
@@ -534,6 +544,16 @@
           "command": "mssqlManager.connectToSaved",
           "when": "view == mssqlManager.explorer && viewItem == connectionFailed",
           "group": "1_connection@2"
+        },
+        {
+          "command": "mssqlManager.addAzureFirewallRule",
+          "when": "view == mssqlManager.explorer && viewItem == connectionFailed",
+          "group": "1_connection@3"
+        },
+        {
+          "command": "mssqlManager.openAzurePortal",
+          "when": "view == mssqlManager.explorer && viewItem == connectionFailed",
+          "group": "1_connection@4"
         },
         {
           "command": "mssqlManager.disconnectConnection",
