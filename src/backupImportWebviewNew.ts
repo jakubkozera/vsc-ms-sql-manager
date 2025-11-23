@@ -118,6 +118,11 @@ export class BackupImportWebview {
                 }
             );
 
+            this.panel.iconPath = {
+                light: vscode.Uri.file(path.join(this.context.extensionPath, 'resources', 'icons', 'import-light.svg')),
+                dark: vscode.Uri.file(path.join(this.context.extensionPath, 'resources', 'icons', 'import-dark.svg'))
+            };
+
             this.panel.webview.html = this.getWebviewContent();
 
             this.panel.onDidDispose(() => {

@@ -140,6 +140,11 @@ export class BackupExportWebview {
                 }
             );
 
+            this.panel.iconPath = {
+                light: vscode.Uri.file(path.join(this.context.extensionPath, 'resources', 'icons', 'export-light.svg')),
+                dark: vscode.Uri.file(path.join(this.context.extensionPath, 'resources', 'icons', 'export-dark.svg'))
+            };
+
             this.panel.webview.html = this.getWebviewContent(connectionId, database);
 
             this.panel.onDidDispose(() => {
