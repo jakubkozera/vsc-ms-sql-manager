@@ -31,6 +31,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             getSavedConnectionsList: sandbox.stub().resolves([]),
             isConnectionActive: sandbox.stub().returns(false),
             isConnectionPending: sandbox.stub().returns(false),
+            isConnectionFailed: sandbox.stub().returns(false),
             hasDatabaseFilter: sandbox.stub().returns(false),
             getDatabaseFilter: sandbox.stub().returns(undefined),
             hasTableFilter: sandbox.stub().returns(false),
@@ -138,6 +139,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             (connectionProvider.getSavedConnectionsList as sinon.SinonStub).resolves(testConnections);
             (connectionProvider.isConnectionActive as sinon.SinonStub).returns(false);
             (connectionProvider.isConnectionPending as sinon.SinonStub).returns(false);
+            (connectionProvider.isConnectionFailed as sinon.SinonStub).returns(false);
             (connectionProvider.hasDatabaseFilter as sinon.SinonStub).returns(false);
 
             const children = await unifiedTreeProvider.getChildren();
@@ -159,6 +161,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             (connectionProvider.getSavedConnectionsList as sinon.SinonStub).resolves(testConnections);
             (connectionProvider.isConnectionActive as sinon.SinonStub).returns(false);
             (connectionProvider.isConnectionPending as sinon.SinonStub).returns(false);
+            (connectionProvider.isConnectionFailed as sinon.SinonStub).returns(false);
             (connectionProvider.hasDatabaseFilter as sinon.SinonStub).returns(false);
 
             const children = await unifiedTreeProvider.getChildren();
@@ -177,6 +180,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             (connectionProvider.getSavedConnectionsList as sinon.SinonStub).resolves(testConnections);
             (connectionProvider.isConnectionActive as sinon.SinonStub).returns(false);
             (connectionProvider.isConnectionPending as sinon.SinonStub).returns(false);
+            (connectionProvider.isConnectionFailed as sinon.SinonStub).returns(false);
 
             const children = await unifiedTreeProvider.getChildren();
 
@@ -198,6 +202,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             (connectionProvider.getSavedConnectionsList as sinon.SinonStub).resolves(testConnections);
             (connectionProvider.isConnectionActive as sinon.SinonStub).returns(false);
             (connectionProvider.isConnectionPending as sinon.SinonStub).returns(false);
+            (connectionProvider.isConnectionFailed as sinon.SinonStub).returns(false);
             (connectionProvider.hasDatabaseFilter as sinon.SinonStub).returns(false);
 
             const serverGroupNode = new ServerGroupNode(testGroup, 2, connectionProvider);
@@ -267,6 +272,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             (connectionProvider.getSavedConnectionsList as sinon.SinonStub).resolves(testConnections);
             (connectionProvider.isConnectionActive as sinon.SinonStub).returns(false);
             (connectionProvider.isConnectionPending as sinon.SinonStub).withArgs('pending1').returns(true);
+            (connectionProvider.isConnectionFailed as sinon.SinonStub).returns(false);
 
             const children = await unifiedTreeProvider.getChildren();
 
@@ -284,6 +290,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             (connectionProvider.getSavedConnectionsList as sinon.SinonStub).resolves(testConnections);
             (connectionProvider.isConnectionActive as sinon.SinonStub).withArgs('active1').returns(true);
             (connectionProvider.isConnectionPending as sinon.SinonStub).returns(false);
+            (connectionProvider.isConnectionFailed as sinon.SinonStub).returns(false);
 
             const children = await unifiedTreeProvider.getChildren();
 
@@ -303,6 +310,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             (connectionProvider.getSavedConnectionsList as sinon.SinonStub).resolves(testConnections);
             (connectionProvider.isConnectionActive as sinon.SinonStub).returns(false);
             (connectionProvider.isConnectionPending as sinon.SinonStub).returns(false);
+            (connectionProvider.isConnectionFailed as sinon.SinonStub).returns(false);
             (connectionProvider.hasDatabaseFilter as sinon.SinonStub).withArgs('filtered1').returns(true);
 
             const children = await unifiedTreeProvider.getChildren();

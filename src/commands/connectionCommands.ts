@@ -28,6 +28,8 @@ export function registerConnectionCommands(
         try {
             if (connectionItem && connectionItem.connectionId) {
                 const connectionId = connectionItem.connectionId;
+                // Clear any previous failure status for manual retry
+                connectionProvider.clearConnectionFailure(connectionId);
                 await connectionProvider.connectToSavedById(connectionId);
                 unifiedTreeProvider.refresh();
                 

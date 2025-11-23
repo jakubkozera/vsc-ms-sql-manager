@@ -64,6 +64,8 @@ export class ConnectionProvider {
     private currentActiveId: string | null = null;
     private onConnectionChangedCallbacks: Array<() => void> = [];
     private pendingConnections: Set<string> = new Set();
+    // Track failed connections to prevent infinite retry loops
+    private failedConnections: Set<string> = new Set();
     // Preferred database for next editor (temporary, cleared after use)
     private nextEditorPreferredDatabase: { connectionId: string; database: string } | null = null;
     // Database filters per connection (keyed by connectionId)
@@ -311,6 +313,9 @@ export class ConnectionProvider {
     }
 
     private async connectToSaved(config: ConnectionConfig): Promise<void> {
+        // Clear any previous failure status
+        this.failedConnections.delete(config.id);
+        
         // Mark as pending and trigger UI update
         this.pendingConnections.add(config.id);
         this.notifyConnectionChanged();
@@ -424,7 +429,12 @@ export class ConnectionProvider {
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
                 this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
-                vscode.window.showErrorMessage(`Failed to connect to ${config.server}: ${errorMessage}`);
+                
+                // Mark connection as failed to prevent retry loops
+                this.failedConnections.add(config.id);
+                
+                // Show error as VS Code notification
+                vscode.window.showErrorMessage(`Failed to connect to ${config.name || config.server}: ${errorMessage}`);
                 throw error;
             }
         });
@@ -672,6 +682,14 @@ export class ConnectionProvider {
 
     isConnectionPending(connectionId: string): boolean {
         return this.pendingConnections.has(connectionId);
+    }
+
+    isConnectionFailed(connectionId: string): boolean {
+        return this.failedConnections.has(connectionId);
+    }
+
+    clearConnectionFailure(connectionId: string): void {
+        this.failedConnections.delete(connectionId);
     }
 
     getActiveConnectionInfo(): ConnectionConfig | null {
@@ -1027,6 +1045,11 @@ export class ConnectionProvider {
         
         if (this.isConnectionPending(connectionId)) {
             this.outputChannel.appendLine(`[ConnectionProvider] Connection to ${connectionId} already in progress, skipping`);
+            return;
+        }
+        
+        if (this.isConnectionFailed(connectionId)) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Connection to ${connectionId} previously failed, skipping auto-retry`);
             return;
         }
         

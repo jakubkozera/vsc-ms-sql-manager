@@ -137,7 +137,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         connection.authType || 'sql',
                         this.connectionProvider.isConnectionActive(connection.id),
                         this.connectionProvider.isConnectionPending(connection.id),
-                        this.connectionProvider.hasDatabaseFilter(connection.id)
+                        this.connectionProvider.hasDatabaseFilter(connection.id),
+                        this.connectionProvider.isConnectionFailed(connection.id)
                     );
                 }
             }
@@ -166,7 +167,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                             connection.id,
                             connection.authType || 'sql',
                             this.connectionProvider.isConnectionActive(connection.id),
-                            this.connectionProvider.isConnectionPending(connection.id)
+                            this.connectionProvider.isConnectionPending(connection.id),
+                            this.connectionProvider.isConnectionFailed(connection.id)
                         );
                     } else if (connection.connectionType === 'server' && element.schema === 'security') {
                         // Parent is a SecurityNode for security-related items
@@ -229,7 +231,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                             conn.authType || 'sql',
                             this.connectionProvider.isConnectionActive(conn.id),
                             this.connectionProvider.isConnectionPending(conn.id),
-                            this.connectionProvider.hasDatabaseFilter(conn.id)
+                            this.connectionProvider.hasDatabaseFilter(conn.id),
+                            this.connectionProvider.isConnectionFailed(conn.id)
                         ));
                     } else {
                         nodes.push(new ConnectionNode(
@@ -239,7 +242,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                             conn.id,
                             conn.authType || 'sql',
                             this.connectionProvider.isConnectionActive(conn.id),
-                            this.connectionProvider.isConnectionPending(conn.id)
+                            this.connectionProvider.isConnectionPending(conn.id),
+                            this.connectionProvider.isConnectionFailed(conn.id)
                         ));
                     }
                 }
@@ -268,7 +272,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                             conn.authType || 'sql',
                             this.connectionProvider.isConnectionActive(conn.id),
                             this.connectionProvider.isConnectionPending(conn.id),
-                            this.connectionProvider.hasDatabaseFilter(conn.id)
+                            this.connectionProvider.hasDatabaseFilter(conn.id),
+                            this.connectionProvider.isConnectionFailed(conn.id)
                         );
                     } else {
                         return new ConnectionNode(
@@ -278,7 +283,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                             conn.id,
                             conn.authType || 'sql',
                             this.connectionProvider.isConnectionActive(conn.id),
-                            this.connectionProvider.isConnectionPending(conn.id)
+                            this.connectionProvider.isConnectionPending(conn.id),
+                            this.connectionProvider.isConnectionFailed(conn.id)
                         );
                     }
                 });
@@ -295,9 +301,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Starting auto-connect to server ${element.connectionId}...`);
                 
                 // Start connection in background (don't await)
+                // Error notifications are now handled in ConnectionProvider
                 this.connectionProvider.connectToSavedById(element.connectionId).catch(error => {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Server auto-connect failed: ${error}`);
-                    vscode.window.showErrorMessage(`Failed to connect to server: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 });
                 
                 return [];
@@ -313,9 +319,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Starting auto-connect to ${element.connectionId}...`);
                 
                 // Start connection in background (don't await)
+                // Error notifications are now handled in ConnectionProvider
                 this.connectionProvider.connectToSavedById(element.connectionId).catch(error => {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connect failed: ${error}`);
-                    vscode.window.showErrorMessage(`Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 });
                 
                 // Return empty immediately - tree will refresh when connection completes
@@ -2299,27 +2305,51 @@ export class ServerConnectionNode extends TreeNode {
         public readonly authType: string,
         public readonly isActive: boolean,
         isPending: boolean = false,
-        public readonly hasFilter: boolean = false
+        public readonly hasFilter: boolean = false,
+        isFailed: boolean = false
     ) {
         // Determine collapsible state - Expanded when active, Collapsed otherwise
         const collapsibleState = isActive 
             ? vscode.TreeItemCollapsibleState.Expanded 
             : vscode.TreeItemCollapsibleState.Collapsed;
+        
+        let displayName = name;
+        if (isPending) {
+            displayName = `${name} (Connecting...)`;
+        } else if (isFailed) {
+            displayName = `${name} (Failed)`;
+        }
             
-        super(
-            isPending ? `${name} (Connecting...)` : name, 
-            collapsibleState
-        );
+        super(displayName, collapsibleState);
         
         this.isPending = isPending;
         this.description = `${server} (Server)${hasFilter ? ' (filtered)' : ''}`;
-        this.tooltip = `Server: ${server}\nAuth: ${authType}${isActive ? '\n(Active)' : isPending ? '\n(Connecting...)' : ''}${hasFilter ? '\n(Filtered)' : ''}\nConnection Type: Server`;
+        
+        let tooltipSuffix = '';
+        if (isActive) {
+            tooltipSuffix = '\n(Active)';
+        } else if (isPending) {
+            tooltipSuffix = '\n(Connecting...)';
+        } else if (isFailed) {
+            tooltipSuffix = '\n(Connection Failed)';
+        }
+        
+        this.tooltip = `Server: ${server}\nAuth: ${authType}${tooltipSuffix}${hasFilter ? '\nFiltered' : ''}\nConnection Type: Server`;
+        
         // Set contextValue based on connection state
-        this.contextValue = isActive ? 'serverConnectionActive' : 'serverConnectionInactive';
+        if (isActive) {
+            this.contextValue = 'serverConnectionActive';
+        } else if (isFailed) {
+            this.contextValue = 'serverConnectionFailed';
+        } else {
+            this.contextValue = 'serverConnectionInactive';
+        }
         
         // Set icon based on connection state
         if (isPending) {
             this.iconPath = createLoadingSpinnerIcon();
+        } else if (isFailed) {
+            this.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('errorForeground'));
         } else if (isActive) {
             this.iconPath = new vscode.ThemeIcon('server-environment', new vscode.ThemeColor('charts.green'));
         } else {
@@ -2413,29 +2443,53 @@ export class ConnectionNode extends TreeNode {
         public readonly connectionId: string,
         public readonly authType: string,
         public readonly isActive: boolean,
-        isPending: boolean = false
+        isPending: boolean = false,
+        isFailed: boolean = false
     ) {
         // Determine collapsible state - Expanded when active, Collapsed otherwise
         const collapsibleState = isActive 
             ? vscode.TreeItemCollapsibleState.Expanded 
             : vscode.TreeItemCollapsibleState.Collapsed;
+        
+        let displayName = name;
+        if (isPending) {
+            displayName = `${name} (Connecting...)`;
+        } else if (isFailed) {
+            displayName = `${name} (Failed)`;
+        }
             
-        super(
-            isPending ? `${name} (Connecting...)` : name, 
-            collapsibleState
-        );
+        super(displayName, collapsibleState);
         
         this.isPending = isPending;
         this.description = `${server}/${database}`;
-        this.tooltip = `Server: ${server}\nDatabase: ${database}\nAuth: ${authType}${isActive ? '\n(Active)' : isPending ? '\n(Connecting...)' : ''}`;
+        
+        let tooltipSuffix = '';
+        if (isActive) {
+            tooltipSuffix = '\n(Active)';
+        } else if (isPending) {
+            tooltipSuffix = '\n(Connecting...)';
+        } else if (isFailed) {
+            tooltipSuffix = '\n(Connection Failed)';
+        }
+        
+        this.tooltip = `Server: ${server}\nDatabase: ${database}\nAuth: ${authType}${tooltipSuffix}`;
+        
         // Set contextValue based on connection state
-        this.contextValue = isActive ? 'connectionActive' : 'connectionInactive';
+        if (isActive) {
+            this.contextValue = 'connectionActive';
+        } else if (isFailed) {
+            this.contextValue = 'connectionFailed';
+        } else {
+            this.contextValue = 'connectionInactive';
+        }
         
         // Set icon based on connection state
         if (isPending) {
             this.iconPath = createLoadingSpinnerIcon();
         } else if (isActive) {
             this.iconPath = createDatabaseIcon(true);
+        } else if (isFailed) {
+            this.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('errorForeground'));
         } else {
             this.iconPath = createDatabaseIcon();
         }

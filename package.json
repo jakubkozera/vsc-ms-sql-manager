@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -501,13 +501,18 @@
           "group": "inline@1"
         },
         {
+          "command": "mssqlManager.connectToSaved",
+          "when": "view == mssqlManager.explorer && viewItem == connectionFailed",
+          "group": "inline@1"
+        },
+        {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
           "group": "inline@2"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
           "group": "inline@3"
         },
         {
@@ -517,12 +522,17 @@
         },
         {
           "command": "mssqlManager.newQuery",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
           "group": "1_connection@1"
         },
         {
           "command": "mssqlManager.connectToSaved",
           "when": "view == mssqlManager.explorer && viewItem == connectionInactive",
+          "group": "1_connection@2"
+        },
+        {
+          "command": "mssqlManager.connectToSaved",
+          "when": "view == mssqlManager.explorer && viewItem == connectionFailed",
           "group": "1_connection@2"
         },
         {
@@ -532,17 +542,17 @@
         },
         {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
           "group": "2_manage@1"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
           "group": "2_manage@2"
         },
         {
           "command": "mssqlManager.copyConnectionString",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
           "group": "2_manage@3"
         },
         {
@@ -586,13 +596,18 @@
           "group": "inline@1"
         },
         {
+          "command": "mssqlManager.connectToSaved",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionFailed",
+          "group": "inline@1"
+        },
+        {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
           "group": "inline@2"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
           "group": "inline@3"
         },
         {
@@ -602,7 +617,7 @@
         },
         {
           "command": "mssqlManager.newQuery",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
           "group": "1_connection@1"
         },
         {
@@ -621,28 +636,33 @@
           "group": "1_connection@2"
         },
         {
+          "command": "mssqlManager.connectToSaved",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionFailed",
+          "group": "1_connection@2"
+        },
+        {
           "command": "mssqlManager.disconnectConnection",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
           "group": "1_connection@2"
         },
         {
           "command": "mssqlManager.filterDatabases",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
           "group": "1_connection@3"
         },
         {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
           "group": "2_manage@1"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
           "group": "2_manage@2"
         },
         {
           "command": "mssqlManager.copyConnectionString",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
           "group": "2_manage@3"
         },
         {
