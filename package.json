@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -313,6 +313,14 @@
         "command": "mssqlManager.openAzurePortal",
         "title": "Open Azure Portal",
         "icon": "$(globe)"
+      },
+      {
+        "command": "mssqlManager.clearAzureServerCache",
+        "title": "Clear Azure Servers Cache"
+      },
+      {
+        "command": "mssqlManager.showAzureServerCache",
+        "title": "Show Azure Servers Cache"
       }
     ],
     "viewsContainers": {

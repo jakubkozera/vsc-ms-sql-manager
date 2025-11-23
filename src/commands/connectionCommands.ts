@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider, ConnectionNode, DatabaseNode, ServerConnectionNode } from '../unifiedTreeProvider';
 import { ServerGroupWebview } from '../serverGroupWebview';
-import { addFirewallRule, openAzurePortalFirewall } from '../utils/azureFirewallHelper';
+import { addFirewallRule, openAzurePortalFirewall, clearAllServerCache, showServerCacheInfo } from '../utils/azureFirewallHelper';
 
 export function registerConnectionCommands(
     context: vscode.ExtensionContext,
@@ -706,6 +706,36 @@ export function registerConnectionCommands(
         }
     });
 
+    const clearAzureServerCacheCommand = vscode.commands.registerCommand('mssqlManager.clearAzureServerCache', async () => {
+        try {
+            const confirmed = await vscode.window.showWarningMessage(
+                'Are you sure you want to clear the Azure servers cache? This will require re-discovery of server locations on next firewall operations.',
+                { modal: true },
+                'Clear Cache'
+            );
+            
+            if (confirmed === 'Clear Cache') {
+                clearAllServerCache();
+                outputChannel.appendLine('[Azure Cache] Azure servers cache cleared');
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to clear cache: ${errorMessage}`);
+            outputChannel.appendLine(`Clear Azure cache failed: ${errorMessage}`);
+        }
+    });
+
+    const showAzureServerCacheCommand = vscode.commands.registerCommand('mssqlManager.showAzureServerCache', async () => {
+        try {
+            showServerCacheInfo();
+            outputChannel.appendLine('[Azure Cache] Showed Azure servers cache info');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to show cache info: ${errorMessage}`);
+            outputChannel.appendLine(`Show Azure cache info failed: ${errorMessage}`);
+        }
+    });
+
     return [
         connectCommand,
         disconnectCommand,
@@ -724,6 +754,8 @@ export function registerConnectionCommands(
         filterDatabasesCommand,
         filterTablesCommand,
         addAzureFirewallRuleCommand,
-        openAzurePortalCommand
+        openAzurePortalCommand,
+        clearAzureServerCacheCommand,
+        showAzureServerCacheCommand
     ];
 }
