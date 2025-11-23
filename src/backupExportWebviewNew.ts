@@ -356,9 +356,11 @@ export class BackupExportWebview {
 
     private async handleExportBackup(connectionId: string, database: string, options: any): Promise<void> {
         try {
+            // Show backdrop loader
             await this.panel?.webview.postMessage({
-                type: 'progress',
-                message: 'Starting backup export...'
+                type: 'showLoader',
+                message: 'Starting backup export...',
+                detail: 'Preparing backup operation...'
             });
 
             if (options.fileFormat === 'bak') {
@@ -367,14 +369,17 @@ export class BackupExportWebview {
                 await this.exportBacpacBackup(connectionId, database, options);
             }
 
-            await this.panel?.webview.postMessage({
-                type: 'success',
-                message: `Backup export completed successfully to: ${options.backupPath}`
-            });
-
         } catch (error: any) {
             this.outputChannel.appendLine(`Backup export error: ${error.message}`);
-            throw error;
+            
+            await this.panel?.webview.postMessage({
+                type: 'hideLoader'
+            });
+            
+            await this.panel?.webview.postMessage({
+                type: 'error',
+                message: `Export failed: ${error.message}`
+            });
         }
     }
 
@@ -386,8 +391,9 @@ export class BackupExportWebview {
             }
 
             await this.panel?.webview.postMessage({
-                type: 'progress',
-                message: 'Creating BAK backup...'
+                type: 'updateLoader',
+                message: 'Creating BAK backup...',
+                detail: 'Executing backup command...'
             });
 
             const originalBackupPath = options.backupPath;
@@ -405,14 +411,30 @@ export class BackupExportWebview {
             // Copy from temp to user location if needed
             if (needsCopy) {
                 await this.panel?.webview.postMessage({
-                    type: 'progress',
-                    message: 'Copying backup file to your chosen location...'
+                    type: 'updateLoader',
+                    message: 'Copying backup file to your chosen location...',
+                    detail: 'Moving file to final destination...'
                 });
                 
                 await this.copyBackupFileToUserLocation(actualBackupPath, originalBackupPath);
             }
 
             this.outputChannel.appendLine(`[BackupExportWebview] Backup completed successfully: ${originalBackupPath}`);
+            
+            // Hide loader and show success message
+            await this.panel?.webview.postMessage({
+                type: 'hideLoader'
+            });
+            
+            await this.panel?.webview.postMessage({
+                type: 'success',
+                message: `Backup export completed successfully to: ${originalBackupPath}`
+            });
+            
+            // Close webview after successful export
+            setTimeout(() => {
+                this.panel?.dispose();
+            }, 2000);
 
         } catch (error: any) {
             this.outputChannel.appendLine(`[BackupExportWebview] Backup failed: ${error.message}`);
@@ -514,8 +536,9 @@ export class BackupExportWebview {
             }
 
             await this.panel?.webview.postMessage({
-                type: 'progress',
-                message: 'Finding SqlPackage.exe...'
+                type: 'updateLoader',
+                message: 'Finding SqlPackage.exe...',
+                detail: 'Locating BACPAC export tools...'
             });
 
             // Find SqlPackage executable
@@ -549,8 +572,9 @@ export class BackupExportWebview {
             }
 
             await this.panel?.webview.postMessage({
-                type: 'progress',
-                message: 'Creating BACPAC export...'
+                type: 'updateLoader',
+                message: 'Creating BACPAC export...',
+                detail: 'Executing SqlPackage export operation...'
             });
 
             // Build SqlPackage.exe command for BACPAC export
@@ -624,6 +648,22 @@ export class BackupExportWebview {
                     reject(new Error(`Failed to start SqlPackage: ${error.message}`));
                 });
             });
+            
+            // Hide loader and show success message
+            await this.panel?.webview.postMessage({
+                type: 'hideLoader'
+            });
+            
+            await this.panel?.webview.postMessage({
+                type: 'success',
+                message: `BACPAC export completed successfully to: ${options.backupPath}`
+            });
+            
+            // Close webview after successful export
+            setTimeout(() => {
+                this.panel?.dispose();
+            }, 2000);
+            
         } catch (error: any) {
             throw new Error(`BACPAC export failed: ${error.message}`);
         }

@@ -297,7 +297,7 @@ function setImporting(importing) {
     if (importing) {
         importBtn.textContent = 'Importing...';
     } else {
-        importBtn.innerHTML = '📥 Import Backup';
+        importBtn.innerHTML = 'Import Backup';
     }
     
     // Disable form inputs during import

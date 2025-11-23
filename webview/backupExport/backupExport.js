@@ -72,7 +72,7 @@ function setExporting(exporting) {
     if (exporting) {
         exportBtn.textContent = 'Exporting...';
     } else {
-        exportBtn.innerHTML = '📤 Export Backup';
+        exportBtn.innerHTML = 'Export Backup';
     }
     
     // Disable form inputs during export
