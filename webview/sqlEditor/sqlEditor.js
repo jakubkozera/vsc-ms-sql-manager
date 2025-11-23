@@ -4702,6 +4702,17 @@ function showExportMenu(headerEl, colDefs, data) {
             </svg>
             Export to Markdown
         </div>
+        <div class="export-menu-item" data-action="xml">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+                <path d="M4 15l4 6" />
+                <path d="M4 21l4 -6" />
+                <path d="M19 15v6h3" />
+                <path d="M11 21v-6l2.5 3l2.5 -3v6" />
+            </svg>
+            Export to XML
+        </div>
     `;
     
     // Position the menu
@@ -4757,6 +4768,9 @@ function handleExport(action, colDefs, data) {
                 break;
             case 'markdown':
                 exportToMarkdown(colDefs, data);
+                break;
+            case 'xml':
+                exportToXml(colDefs, data);
                 break;
             default:
                 console.warn('[EXPORT] Unknown export action:', action);
@@ -4903,6 +4917,47 @@ function exportToMarkdown(colDefs, data) {
         content: markdownData,
         defaultFileName: 'results.md',
         fileType: 'Markdown'
+    });
+}
+
+// Export data as XML
+function exportToXml(colDefs, data) {
+    console.log(`[EXPORT] Exporting ${data.length} rows to XML format`);
+    
+    const escapeXml = (value) => {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+    
+    const sanitizeElementName = (name) => {
+        // Replace invalid XML element name characters with underscores
+        return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^[^a-zA-Z_]/, '_$&');
+    };
+    
+    let xmlData = '<?xml version="1.0" encoding="UTF-8"?>\n<results>\n';
+    
+    data.forEach(row => {
+        xmlData += '  <row>\n';
+        colDefs.forEach(col => {
+            const elementName = sanitizeElementName(col.headerName || col.field);
+            const value = escapeXml(row[col.field]);
+            xmlData += `    <${elementName}>${value}</${elementName}>\n`;
+        });
+        xmlData += '  </row>\n';
+    });
+    
+    xmlData += '</results>';
+    
+    vscode.postMessage({
+        type: 'saveFile',
+        content: xmlData,
+        defaultFileName: 'results.xml',
+        fileType: 'XML'
     });
 }
 

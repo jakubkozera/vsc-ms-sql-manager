@@ -5,6 +5,19 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2025-11-23
+
+### Added
+
+- **XML Export Functionality**: Added XML export option to SQL query results table export menu
+  - **New XML export format**: Export query results as structured XML with proper escaping and formatting
+  - **XML file type support**: Integrated XML file filters and save dialog support
+  - **Enhanced export menu**: Added XML option with dedicated XML file icon to export dropdown
+  - **Proper XML structure**: Results exported with root `<results>` element containing `<row>` elements for each data row
+  - **Safe element naming**: Column names automatically sanitized to create valid XML element names
+  - **XML character escaping**: Proper escaping of special characters (&, <, >, ", ') for valid XML output
+  - **Open file integration**: XML files can be opened directly in VS Code after export via popup action button
+
 ## [0.4.0] - 2025-11-23
 
 ### Added

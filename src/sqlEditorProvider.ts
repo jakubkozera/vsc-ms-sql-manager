@@ -798,6 +798,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     case 'csv': fileExtension = 'csv'; break;
                     case 'excel': fileExtension = 'xlsx'; break;
                     case 'markdown': fileExtension = 'md'; break;
+                    case 'xml': fileExtension = 'xml'; break;
                     default: fileExtension = 'txt';
                 }
             }
@@ -817,6 +818,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
                 case 'markdown':
                     filters['Markdown Files'] = ['md'];
+                    break;
+                case 'xml':
+                    filters['XML Files'] = ['xml'];
                     break;
             }
             filters['All Files'] = ['*'];
