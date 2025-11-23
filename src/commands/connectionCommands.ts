@@ -667,10 +667,10 @@ export function registerConnectionCommands(
             }
 
             outputChannel.appendLine(`[Azure Firewall] Adding firewall rule for ${connection.server} with IP ${clientIP}...`);
-            const success = await addFirewallRule(connection.server, clientIP);
+            const success = await addFirewallRule(connection.server, clientIP, connectionId);
             
             if (success) {
-                vscode.window.showInformationMessage('Firewall rule added successfully! You can now try connecting again.');
+                vscode.window.showInformationMessage('Firewall rule added successfully! Connection will be attempted automatically.');
             }
             
         } catch (error) {

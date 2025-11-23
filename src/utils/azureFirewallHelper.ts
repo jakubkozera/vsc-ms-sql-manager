@@ -121,7 +121,7 @@ export async function installAzureCLI(): Promise<boolean> {
 /**
  * Dodaje regułę firewall dla danego IP do Azure SQL Database
  */
-export async function addFirewallRule(serverName: string, clientIP: string): Promise<boolean> {
+export async function addFirewallRule(serverName: string, clientIP: string, connectionId?: string): Promise<boolean> {
     try {
         // Wyciągnij resource group i server name z pełnej nazwy serwera
         const serverNameOnly = serverName.split('.')[0];
@@ -223,14 +223,41 @@ export async function addFirewallRule(serverName: string, clientIP: string): Pro
                 
                 progress.report({ increment: 100, message: 'Firewall rule created successfully!' });
                 
-                vscode.window.showInformationMessage(
-                    `Firewall rule '${ruleName}' created successfully for IP ${clientIP} in subscription '${foundSubscription.name}'. You can now connect to the database.`,
-                    'Try Connecting Again'
-                ).then(choice => {
-                    if (choice === 'Try Connecting Again') {
-                        vscode.commands.executeCommand('mssqlManager.refresh');
+                // Automatycznie spróbuj ponowić połączenie jeśli mamy connectionId
+                if (connectionId) {
+                    try {
+                        vscode.window.showInformationMessage(
+                            `Firewall rule '${ruleName}' created successfully for IP ${clientIP} in subscription '${foundSubscription.name}'. Attempting to reconnect...`
+                        );
+                        
+                        // Poczekaj chwilę na propagację reguły firewall
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        
+                        // Spróbuj ponowić połączenie
+                        await vscode.commands.executeCommand('mssqlManager.connectToSaved', { connectionId });
+                        
+                        vscode.window.showInformationMessage('Successfully reconnected to the database!');
+                    } catch (reconnectError) {
+                        console.warn('Auto-reconnect failed:', reconnectError);
+                        vscode.window.showInformationMessage(
+                            `Firewall rule created successfully, but auto-reconnect failed. Please try connecting manually.`,
+                            'Try Connecting Again'
+                        ).then(choice => {
+                            if (choice === 'Try Connecting Again') {
+                                vscode.commands.executeCommand('mssqlManager.refresh');
+                            }
+                        });
                     }
-                });
+                } else {
+                    vscode.window.showInformationMessage(
+                        `Firewall rule '${ruleName}' created successfully for IP ${clientIP} in subscription '${foundSubscription.name}'. You can now connect to the database.`,
+                        'Try Connecting Again'
+                    ).then(choice => {
+                        if (choice === 'Try Connecting Again') {
+                            vscode.commands.executeCommand('mssqlManager.refresh');
+                        }
+                    });
+                }
                 
                 return true;
             } catch (error) {
@@ -275,7 +302,7 @@ export function openAzurePortalFirewall(serverName: string): void {
 /**
  * Pokazuje inteligentne opcje rozwiązania problemu z Azure SQL firewall
  */
-export async function showAzureFirewallSolution(serverName: string, clientIP: string): Promise<void> {
+export async function showAzureFirewallSolution(serverName: string, clientIP: string, connectionId?: string): Promise<void> {
     const choice = await vscode.window.showErrorMessage(
         `Azure SQL Server firewall is blocking your IP address ${clientIP}. How would you like to fix this?`,
         {
@@ -289,7 +316,7 @@ export async function showAzureFirewallSolution(serverName: string, clientIP: st
     
     switch (choice) {
         case 'Add IP with Azure CLI':
-            await handleAzureCLIFirewallFix(serverName, clientIP);
+            await handleAzureCLIFirewallFix(serverName, clientIP, connectionId);
             break;
             
         case 'Open Azure Portal':
@@ -305,7 +332,7 @@ export async function showAzureFirewallSolution(serverName: string, clientIP: st
 /**
  * Obsługuje automatyczne dodanie reguły firewall przez Azure CLI
  */
-async function handleAzureCLIFirewallFix(serverName: string, clientIP: string): Promise<void> {
+async function handleAzureCLIFirewallFix(serverName: string, clientIP: string, connectionId?: string): Promise<void> {
     // Sprawdź czy Azure CLI jest zainstalowane
     const isAzInstalled = await checkAzureCLI();
     
@@ -328,5 +355,5 @@ async function handleAzureCLIFirewallFix(serverName: string, clientIP: string): 
     }
     
     // Spróbuj dodać regułę firewall
-    await addFirewallRule(serverName, clientIP);
+    await addFirewallRule(serverName, clientIP, connectionId);
 }

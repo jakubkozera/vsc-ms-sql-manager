@@ -438,8 +438,8 @@ export class ConnectionProvider {
                 const azureError = analyzeConnectionError(errorMessage);
                 
                 if (azureError.isAzureFirewallError && azureError.serverName && azureError.clientIP) {
-                    // Show intelligent Azure firewall solution options
-                    showAzureFirewallSolution(azureError.serverName, azureError.clientIP);
+                    // Show intelligent Azure firewall solution options with connection ID for auto-reconnect
+                    showAzureFirewallSolution(azureError.serverName, azureError.clientIP, config.id);
                 } else {
                     // Show regular error notification for other types of errors
                     vscode.window.showErrorMessage(`Failed to connect to ${config.name || config.server}: ${errorMessage}`);
