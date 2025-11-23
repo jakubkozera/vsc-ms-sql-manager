@@ -321,6 +321,11 @@
       {
         "command": "mssqlManager.showAzureServerCache",
         "title": "Show Azure Servers Cache"
+      },
+      {
+        "command": "mssqlManager.discoverAzureServers",
+        "title": "Discover Azure SQL Servers",
+        "icon": "$(cloud)"
       }
     ],
     "viewsContainers": {
@@ -485,6 +490,11 @@
           "command": "mssqlManager.createServerGroup",
           "when": "view == mssqlManager.explorer",
           "group": "navigation@4"
+        },
+        {
+          "command": "mssqlManager.discoverAzureServers",
+          "when": "view == mssqlManager.explorer",
+          "group": "navigation@5"
         },
         {
           "command": "mssqlManager.refreshQueryHistory",
