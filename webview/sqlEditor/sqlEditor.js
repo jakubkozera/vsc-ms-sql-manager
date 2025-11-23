@@ -4886,23 +4886,97 @@ function exportToCsv(colDefs, data) {
 
 // Export data as Excel (TSV format for Excel compatibility)
 function exportToExcel(colDefs, data) {
-    console.log(`[EXPORT] Exporting ${data.length} rows to Excel format (TSV)`);
+    console.log(`[EXPORT] Exporting ${data.length} rows to Excel format (XLSX)`);
     
-    const headers = colDefs.map(col => col.headerName || col.field).join('\t');
+    try {
+        // Check if SheetJS is available
+        if (typeof XLSX === 'undefined') {
+            // Fallback to CSV if SheetJS is not loaded
+            console.warn('[EXPORT] SheetJS not available, falling back to CSV format');
+            exportToExcelFallback(colDefs, data);
+            return;
+        }
+        
+        // Prepare data for SheetJS
+        const wsData = [];
+        
+        // Add headers
+        const headers = colDefs.map(col => col.headerName || col.field);
+        wsData.push(headers);
+        
+        // Add data rows
+        data.forEach(row => {
+            const rowData = colDefs.map(col => {
+                const value = row[col.field];
+                if (value === null || value === undefined) return '';
+                return value;
+            });
+            wsData.push(rowData);
+        });
+        
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        
+        // Auto-size columns
+        const colWidths = [];
+        for (let i = 0; i < headers.length; i++) {
+            let maxWidth = headers[i].length;
+            for (let j = 1; j < wsData.length; j++) {
+                const cellValue = wsData[j][i];
+                if (cellValue && cellValue.toString().length > maxWidth) {
+                    maxWidth = cellValue.toString().length;
+                }
+            }
+            colWidths.push({ wch: Math.min(maxWidth + 2, 50) }); // Max width 50 chars
+        }
+        ws['!cols'] = colWidths;
+        
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(wb, ws, 'Query Results');
+        
+        // Generate Excel file as base64
+        const xlsxData = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+        
+        vscode.postMessage({
+            type: 'saveFile',
+            content: xlsxData,
+            defaultFileName: 'results.xlsx',
+            fileType: 'Excel',
+            encoding: 'base64'
+        });
+        
+    } catch (error) {
+        console.error('[EXPORT] Excel export failed:', error);
+        // Fallback to CSV
+        exportToExcelFallback(colDefs, data);
+    }
+}
+
+// Fallback function for CSV export when XLSX library is not available
+function exportToExcelFallback(colDefs, data) {
+    console.log(`[EXPORT] Using CSV fallback for Excel export`);
+    
+    const escapeCSV = (value) => {
+        if (value === null || value === undefined) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    };
+    
+    const headers = colDefs.map(col => escapeCSV(col.headerName || col.field)).join(',');
     const rows = data.map(row => 
-        colDefs.map(col => {
-            const value = row[col.field];
-            if (value === null || value === undefined) return '';
-            return String(value).replace(/\t/g, ' ');
-        }).join('\t')
+        colDefs.map(col => escapeCSV(row[col.field])).join(',')
     );
     
-    const tsvData = [headers, ...rows].join('\n');
+    const csvData = [headers, ...rows].join('\n');
     
     vscode.postMessage({
         type: 'saveFile',
-        content: tsvData,
-        defaultFileName: 'results.xlsx',
+        content: csvData,
+        defaultFileName: 'results.csv',
         fileType: 'Excel'
     });
 }

@@ -210,7 +210,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'saveFile':
-                    await this.saveFileToDisk(message.content, message.defaultFileName, message.fileType);
+                    await this.saveFileToDisk(message.content, message.defaultFileName, message.fileType, message.encoding);
                     break;
             }
         });
@@ -785,7 +785,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
-    private async saveFileToDisk(content: string, defaultFileName: string, fileType: string) {
+    private async saveFileToDisk(content: string, defaultFileName: string, fileType: string, encoding?: string) {
         try {
             // Get file extension from filename or determine from file type
             let fileExtension = '';
@@ -815,7 +815,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
                 case 'excel':
                     filters['Excel Files'] = ['xlsx', 'xls'];
-                    filters['Tab Separated Values'] = ['tsv'];
+                    filters['CSV Files (Excel Compatible)'] = ['csv'];
                     break;
                 case 'markdown':
                     filters['Markdown Files'] = ['md'];
@@ -835,8 +835,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             });
 
             if (uri) {
-                // Write the file
-                await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
+                // Write the file with appropriate encoding
+                const buffer = encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+                await vscode.workspace.fs.writeFile(uri, buffer);
                 
                 // Show success message with Open action
                 const action = await vscode.window.showInformationMessage(
