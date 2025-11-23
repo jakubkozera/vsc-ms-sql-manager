@@ -522,11 +522,74 @@ th {
 .ag-grid-row-number-header {
     top: 0 !important;
     z-index: 100 !important;
+    transition: background-color 0.1s;
+}
+
+.ag-grid-row-number-header:hover {
+    background-color: var(--vscode-list-hoverBackground, #2a2d2e) !important;
+}
+
+.ag-grid-row-number-header svg {
+    color: var(--vscode-foreground);
+    opacity: 0.8;
+    transition: opacity 0.1s;
+}
+
+.ag-grid-row-number-header:hover svg {
+    opacity: 1;
 }
 
 .ag-grid-row-number-cell {
     z-index: 50 !important;
     background-color: var(--vscode-editor-background, #1e1e1e) !important;
+}
+
+/* Export dropdown menu styles */
+.export-dropdown-menu {
+    position: fixed;
+    background-color: var(--vscode-dropdown-background, #3c3c3c);
+    border: 1px solid var(--vscode-dropdown-border, #454545);
+    border-radius: 3px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 2000;
+    min-width: 200px;
+    padding: 4px 0;
+    font-size: 13px;
+    animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.export-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: var(--vscode-dropdown-foreground, #cccccc);
+    transition: background-color 0.1s;
+}
+
+.export-menu-item:hover {
+    background-color: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.export-menu-item svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.export-menu-item:hover svg {
+    opacity: 1;
 }
 
 /* Pinned column headers and cells - sticky both vertically and horizontally */

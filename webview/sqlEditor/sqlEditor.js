@@ -2156,6 +2156,11 @@ window.addEventListener('message', event => {
             }
             break;
 
+        case 'showMessage':
+            // Handle messages from extension (they're already shown by the extension)
+            console.log(`[MESSAGE] ${message.level}: ${message.message}`);
+            break;
+            
         case 'autoExecuteQuery':
             // Auto-execute the query if conditions are met
             if (editor && currentConnectionId) {
@@ -2590,10 +2595,28 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         
         const tr = document.createElement('tr');
         
-        // Add row number header
+        // Add export button header
         const rowNumTh = document.createElement('th');
-        rowNumTh.className = 'ag-grid-row-number-header';
-        rowNumTh.textContent = '#';
+        rowNumTh.className = 'ag-grid-row-number-header export-header';
+        rowNumTh.innerHTML = `
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12.5 21h-7.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" />
+              <path d="M3 10h18" />
+              <path d="M10 3v18" />
+              <path d="M16 19h6" />
+              <path d="M19 16l3 3l-3 3" />
+            </svg>
+        `;
         
         // Set styles individually to avoid cssText issues
         rowNumTh.style.width = '50px';
@@ -2603,11 +2626,13 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         rowNumTh.style.padding = '8px';
         rowNumTh.style.cursor = 'pointer';
         rowNumTh.style.userSelect = 'none';
+        rowNumTh.style.textAlign = 'center';
+        rowNumTh.style.position = 'relative';
         
-        // Add click handler to select all columns
+        // Add click handler to show export menu
         rowNumTh.addEventListener('click', (e) => {
             e.stopPropagation();
-            selectAllColumns(colDefs, containerEl, data);
+            showExportMenu(e.target.closest('th'), colDefs, data);
         });
         
         console.log('[AG-GRID] Row number header created with class:', rowNumTh.className);
@@ -4616,6 +4641,269 @@ function selectAllColumns(colDefs, containerEl, data) {
     updateAggregationStats();
     
     console.log('[SELECTION] Selected all', colDefs.length, 'columns with', allColumnSelections.length, 'total cells');
+}
+
+// Show export menu when clicking on export header
+function showExportMenu(headerEl, colDefs, data) {
+    console.log('[EXPORT] Showing export menu');
+    
+    // Remove any existing export menu
+    const existingMenu = document.querySelector('.export-dropdown-menu');
+    if (existingMenu) {
+        existingMenu.remove();
+    }
+    
+    // Create dropdown menu
+    const menu = document.createElement('div');
+    menu.className = 'export-dropdown-menu';
+    menu.innerHTML = `
+        <div class="export-menu-item" data-action="copy">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+            </svg>
+            Copy to clipboard
+        </div>
+        <div class="export-menu-item" data-action="json">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                <polyline points="14,2 14,8 20,8"/>
+                <path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/>
+                <path d="M14 12a1 1 0 0 1 1 1v1a1 1 0 0 0 1 1 1 1 0 0 0-1 1v1a1 1 0 0 1-1 1"/>
+            </svg>
+            Export to JSON
+        </div>
+        <div class="export-menu-item" data-action="csv">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+                <path d="M7 16.5a1.5 1.5 0 0 0 -3 0v3a1.5 1.5 0 0 0 3 0" />
+                <path d="M10 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75" />
+                <path d="M16 15l2 6l2 -6" />
+            </svg>
+            Export to CSV
+        </div>
+        <div class="export-menu-item" data-action="excel">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+                <path d="M4 15l4 6" />
+                <path d="M4 21l4 -6" />
+                <path d="M17 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75" />
+                <path d="M11 15v6h3" />
+            </svg>
+            Export to Excel
+        </div>
+        <div class="export-menu-item" data-action="markdown">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 5m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z" />
+                <path d="M7 15v-6l2 2l2 -2v6" />
+                <path d="M14 13l2 2l2 -2m-2 2v-6" />
+            </svg>
+            Export to Markdown
+        </div>
+    `;
+    
+    // Position the menu
+    const rect = headerEl.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.left = rect.left + 'px';
+    menu.style.zIndex = '2000';
+    
+    // Add to document
+    document.body.appendChild(menu);
+    
+    // Add event listeners to menu items
+    menu.querySelectorAll('.export-menu-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const action = e.currentTarget.getAttribute('data-action');
+            handleExport(action, colDefs, data);
+            menu.remove();
+        });
+    });
+    
+    // Close menu when clicking outside
+    const closeMenu = (e) => {
+        if (!menu.contains(e.target) && !headerEl.contains(e.target)) {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        }
+    };
+    
+    // Add a small delay to prevent immediate closure
+    setTimeout(() => {
+        document.addEventListener('click', closeMenu);
+    }, 100);
+}
+
+// Handle export actions
+function handleExport(action, colDefs, data) {
+    console.log('[EXPORT] Handling export action:', action);
+    
+    try {
+        switch (action) {
+            case 'copy':
+                copyDataToClipboard(colDefs, data);
+                break;
+            case 'json':
+                exportToJson(colDefs, data);
+                break;
+            case 'csv':
+                exportToCsv(colDefs, data);
+                break;
+            case 'excel':
+                exportToExcel(colDefs, data);
+                break;
+            case 'markdown':
+                exportToMarkdown(colDefs, data);
+                break;
+            default:
+                console.warn('[EXPORT] Unknown export action:', action);
+        }
+    } catch (error) {
+        console.error('[EXPORT] Error during export:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        // Extension will handle showing error messages via saveFile response
+        console.error(`[EXPORT] ${action} export failed: ${errorMessage}`);
+    }
+}
+
+// Copy data to clipboard as tab-separated values
+function copyDataToClipboard(colDefs, data) {
+    const headers = colDefs.map(col => col.headerName || col.field).join('\t');
+    const rows = data.map(row => 
+        colDefs.map(col => {
+            const value = row[col.field];
+            return value === null || value === undefined ? '' : String(value);
+        }).join('\t')
+    );
+    
+    const clipboardData = [headers, ...rows].join('\n');
+    
+    navigator.clipboard.writeText(clipboardData).then(() => {
+        console.log('[EXPORT] Data copied to clipboard');
+        // Show info message for clipboard copy (this works in webview)
+        const statusLabel = document.getElementById('statusLabel');
+        if (statusLabel) {
+            const originalText = statusLabel.textContent;
+            statusLabel.textContent = `Copied ${data.length} rows to clipboard`;
+            setTimeout(() => {
+                statusLabel.textContent = originalText;
+            }, 3000);
+        }
+    }).catch(error => {
+        console.error('[EXPORT] Failed to copy to clipboard:', error);
+        const statusLabel = document.getElementById('statusLabel');
+        if (statusLabel) {
+            const originalText = statusLabel.textContent;
+            statusLabel.textContent = 'Failed to copy to clipboard';
+            setTimeout(() => {
+                statusLabel.textContent = originalText;
+            }, 3000);
+        }
+    });
+}
+
+// Export data as JSON
+function exportToJson(colDefs, data) {
+    console.log(`[EXPORT] Exporting ${data.length} rows to JSON format`);
+    
+    const jsonData = data.map(row => {
+        const obj = {};
+        colDefs.forEach(col => {
+            obj[col.headerName || col.field] = row[col.field];
+        });
+        return obj;
+    });
+    
+    const jsonString = JSON.stringify(jsonData, null, 2);
+    
+    vscode.postMessage({
+        type: 'saveFile',
+        content: jsonString,
+        defaultFileName: 'results.json',
+        fileType: 'JSON'
+    });
+}
+
+// Export data as CSV
+function exportToCsv(colDefs, data) {
+    console.log(`[EXPORT] Exporting ${data.length} rows to CSV format`);
+    
+    const escapeCSV = (value) => {
+        if (value === null || value === undefined) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    };
+    
+    const headers = colDefs.map(col => escapeCSV(col.headerName || col.field)).join(',');
+    const rows = data.map(row => 
+        colDefs.map(col => escapeCSV(row[col.field])).join(',')
+    );
+    
+    const csvData = [headers, ...rows].join('\n');
+    
+    vscode.postMessage({
+        type: 'saveFile',
+        content: csvData,
+        defaultFileName: 'results.csv',
+        fileType: 'CSV'
+    });
+}
+
+// Export data as Excel (TSV format for Excel compatibility)
+function exportToExcel(colDefs, data) {
+    console.log(`[EXPORT] Exporting ${data.length} rows to Excel format (TSV)`);
+    
+    const headers = colDefs.map(col => col.headerName || col.field).join('\t');
+    const rows = data.map(row => 
+        colDefs.map(col => {
+            const value = row[col.field];
+            if (value === null || value === undefined) return '';
+            return String(value).replace(/\t/g, ' ');
+        }).join('\t')
+    );
+    
+    const tsvData = [headers, ...rows].join('\n');
+    
+    vscode.postMessage({
+        type: 'saveFile',
+        content: tsvData,
+        defaultFileName: 'results.xlsx',
+        fileType: 'Excel'
+    });
+}
+
+// Export data as Markdown table
+function exportToMarkdown(colDefs, data) {
+    console.log(`[EXPORT] Exporting ${data.length} rows to Markdown format`);
+    
+    const headers = colDefs.map(col => col.headerName || col.field);
+    const separator = headers.map(() => '---');
+    
+    const escapeMarkdown = (value) => {
+        if (value === null || value === undefined) return '';
+        return String(value).replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+    };
+    
+    const headerRow = '| ' + headers.join(' | ') + ' |';
+    const separatorRow = '| ' + separator.join(' | ') + ' |';
+    const dataRows = data.map(row => 
+        '| ' + colDefs.map(col => escapeMarkdown(row[col.field])).join(' | ') + ' |'
+    );
+    
+    const markdownData = [headerRow, separatorRow, ...dataRows].join('\n');
+    
+    vscode.postMessage({
+        type: 'saveFile',
+        content: markdownData,
+        defaultFileName: 'results.md',
+        fileType: 'Markdown'
+    });
 }
 
 function applyRowHighlightGlobal(containerEl, rowIndex) {
