@@ -2600,24 +2600,22 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         rowNumTh.className = 'ag-grid-row-number-header export-header';
         rowNumTh.innerHTML = `
             <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+                xmlns="http://www.w3.org/2000/svg"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="sort-to-top-icon"
             >
-              <path d="M12.5 21h-7.5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" />
-              <path d="M3 10h18" />
-              <path d="M10 3v18" />
-              <path d="M16 19h6" />
-              <path d="M19 16l3 3l-3 3" />
+                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                <path d="M7 9l5-5l5 5" />
+                <path d="M12 4v12" />
             </svg>
-        `;
-        
+            `;
         // Set styles individually to avoid cssText issues
         rowNumTh.style.width = '50px';
         rowNumTh.style.minWidth = '50px';
@@ -4713,6 +4711,20 @@ function showExportMenu(headerEl, colDefs, data) {
             </svg>
             Export to XML
         </div>
+        <div class="export-menu-item" data-action="html">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+                <path d="M2 21v-6" />
+                <path d="M5 15v6" />
+                <path d="M2 18h3" />
+                <path d="M20 15v6h2" />
+                <path d="M13 21v-6l2 3l2 -3v6" />
+                <path d="M7.5 15h3" />
+                <path d="M9 15v6" />
+            </svg>
+            Export to HTML
+        </div>
     `;
     
     // Position the menu
@@ -4771,6 +4783,9 @@ function handleExport(action, colDefs, data) {
                 break;
             case 'xml':
                 exportToXml(colDefs, data);
+                break;
+            case 'html':
+                exportToHtml(colDefs, data);
                 break;
             default:
                 console.warn('[EXPORT] Unknown export action:', action);
@@ -4958,6 +4973,116 @@ function exportToXml(colDefs, data) {
         content: xmlData,
         defaultFileName: 'results.xml',
         fileType: 'XML'
+    });
+}
+
+// Export data as HTML table
+function exportToHtml(colDefs, data) {
+    console.log(`[EXPORT] Exporting ${data.length} rows to HTML format`);
+    
+    const escapeHtml = (value) => {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+    
+    let htmlData = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Query Results</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        tr:hover {
+            background-color: #e9ecef;
+        }
+        .stats {
+            margin-top: 15px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Query Results</h1>
+        <table>
+            <thead>
+                <tr>
+`;
+    
+    // Add table headers
+    colDefs.forEach(col => {
+        htmlData += `                    <th>${escapeHtml(col.headerName || col.field)}</th>\n`;
+    });
+    
+    htmlData += `                </tr>
+            </thead>
+            <tbody>
+`;
+    
+    // Add table rows
+    data.forEach(row => {
+        htmlData += `                <tr>\n`;
+        colDefs.forEach(col => {
+            const value = escapeHtml(row[col.field]);
+            htmlData += `                    <td>${value}</td>\n`;
+        });
+        htmlData += `                </tr>\n`;
+    });
+    
+    htmlData += `            </tbody>
+        </table>
+        <div class="stats">
+            <strong>Total rows:</strong> ${data.length} | <strong>Columns:</strong> ${colDefs.length}
+        </div>
+    </div>
+</body>
+</html>`;
+    
+    vscode.postMessage({
+        type: 'saveFile',
+        content: htmlData,
+        defaultFileName: 'results.html',
+        fileType: 'HTML'
     });
 }
 
