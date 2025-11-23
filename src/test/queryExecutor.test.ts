@@ -5,7 +5,7 @@ import { QueryExecutor, QueryResult } from '../queryExecutor';
 import { ConnectionProvider } from '../connectionProvider';
 import { QueryHistoryManager } from '../queryHistory';
 
-// Najprostsze testy podstawowej funkcjonalności
+// Basic functionality tests
 suite('QueryExecutor Basic Tests', () => {
     let queryExecutor: QueryExecutor;
     let connectionProvider: ConnectionProvider;

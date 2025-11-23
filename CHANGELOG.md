@@ -5,6 +5,20 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2025-11-23
+
+### Added
+
+- **Azure SQL Firewall Integration**: Intelligent Azure SQL firewall error detection and automated resolution
+  - **Automatic error detection**: Recognizes Azure SQL firewall errors and extracts server name and client IP
+  - **Smart resolution options**: Shows "Add IP with Azure CLI" and "Open Azure Portal" buttons for failed connections
+  - **Azure CLI automation**: Automatically installs Azure CLI, handles authentication, and adds firewall rules
+  - **Multi-subscription support**: Searches across all Azure subscriptions to find SQL servers
+  - **Intelligent caching**: Caches server location information for faster subsequent operations
+  - **Auto-reconnect**: Automatically attempts reconnection after successful firewall rule creation
+  - **Context menu integration**: Azure firewall options available in failed connection context menus
+  - **Cache management**: Commands to view and clear Azure server cache for troubleshooting
+
 ## [0.3.1] - 2025-11-23
 
 ### Fixed

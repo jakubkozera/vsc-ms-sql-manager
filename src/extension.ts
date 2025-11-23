@@ -6,6 +6,7 @@ import { SqlEditorProvider } from './sqlEditorProvider';
 import { QueryHistoryManager } from './queryHistory';
 import { QueryHistoryTreeProvider } from './queryHistoryTreeProvider';
 import { registerAllCommands } from './commands';
+import { initializeAzureFirewallHelper } from './utils/azureFirewallHelper';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -13,6 +14,9 @@ export async function activate(context: vscode.ExtensionContext) {
     // Create output channel for logging
     outputChannel = vscode.window.createOutputChannel('MS SQL Manager');
     outputChannel.appendLine('MS SQL Manager extension activated');
+
+    // Initialize Azure firewall helper with extension context
+    initializeAzureFirewallHelper(context);
 
 
     // Initialize providers
