@@ -363,9 +363,8 @@ export class BackupExportWebview {
         try {
             // Show backdrop loader
             await this.panel?.webview.postMessage({
-                type: 'showLoader',
-                message: 'Starting backup export...',
-                detail: 'Preparing backup operation...'
+                type: 'progress',
+                message: 'Starting backup export...'
             });
 
             if (options.fileFormat === 'bak') {
@@ -376,10 +375,6 @@ export class BackupExportWebview {
 
         } catch (error: any) {
             this.outputChannel.appendLine(`Backup export error: ${error.message}`);
-            
-            await this.panel?.webview.postMessage({
-                type: 'hideLoader'
-            });
             
             await this.panel?.webview.postMessage({
                 type: 'error',
@@ -396,9 +391,8 @@ export class BackupExportWebview {
             }
 
             await this.panel?.webview.postMessage({
-                type: 'updateLoader',
-                message: 'Creating BAK backup...',
-                detail: 'Executing backup command...'
+                type: 'progress',
+                message: 'Creating BAK backup...'
             });
 
             const originalBackupPath = options.backupPath;
@@ -416,9 +410,8 @@ export class BackupExportWebview {
             // Copy from temp to user location if needed
             if (needsCopy) {
                 await this.panel?.webview.postMessage({
-                    type: 'updateLoader',
-                    message: 'Copying backup file to your chosen location...',
-                    detail: 'Moving file to final destination...'
+                    type: 'progress',
+                    message: 'Copying backup file to your chosen location...'
                 });
                 
                 await this.copyBackupFileToUserLocation(actualBackupPath, originalBackupPath);
@@ -426,11 +419,7 @@ export class BackupExportWebview {
 
             this.outputChannel.appendLine(`[BackupExportWebview] Backup completed successfully: ${originalBackupPath}`);
             
-            // Hide loader and show success message
-            await this.panel?.webview.postMessage({
-                type: 'hideLoader'
-            });
-            
+            // Show success message  
             await this.panel?.webview.postMessage({
                 type: 'success',
                 message: `Backup export completed successfully to: ${originalBackupPath}`
@@ -541,9 +530,8 @@ export class BackupExportWebview {
             }
 
             await this.panel?.webview.postMessage({
-                type: 'updateLoader',
-                message: 'Finding SqlPackage.exe...',
-                detail: 'Locating BACPAC export tools...'
+                type: 'progress',
+                message: 'Finding SqlPackage.exe...'
             });
 
             // Find SqlPackage executable
@@ -577,9 +565,8 @@ export class BackupExportWebview {
             }
 
             await this.panel?.webview.postMessage({
-                type: 'updateLoader',
-                message: 'Creating BACPAC export...',
-                detail: 'Executing SqlPackage export operation...'
+                type: 'progress',
+                message: 'Creating BACPAC export...'
             });
 
             // Build SqlPackage.exe command for BACPAC export
@@ -654,11 +641,7 @@ export class BackupExportWebview {
                 });
             });
             
-            // Hide loader and show success message
-            await this.panel?.webview.postMessage({
-                type: 'hideLoader'
-            });
-            
+            // Show success message
             await this.panel?.webview.postMessage({
                 type: 'success',
                 message: `BACPAC export completed successfully to: ${options.backupPath}`

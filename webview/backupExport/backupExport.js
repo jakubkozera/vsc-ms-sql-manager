@@ -10,6 +10,9 @@ const progressSection = document.getElementById('progressSection');
 const progressMessage = document.getElementById('progressMessage');
 const messageSection = document.getElementById('messageSection');
 const messageText = document.getElementById('messageText');
+const backdrop = document.getElementById('backdrop');
+const loaderMessage = document.getElementById('loaderMessage');
+const loaderDetail = document.getElementById('loaderDetail');
 
 // Event listeners
 form.addEventListener('submit', handleSubmit);
@@ -50,7 +53,6 @@ function handleSubmit(e) {
     }
 
     setExporting(true);
-    showProgress('Preparing backup...');
 
     vscode.postMessage({
         type: 'exportBackup',
@@ -71,8 +73,10 @@ function setExporting(exporting) {
     exportBtn.disabled = exporting;
     if (exporting) {
         exportBtn.textContent = 'Exporting...';
+        showBackdrop('Preparing export...', 'Please wait, this may take several minutes');
     } else {
         exportBtn.innerHTML = 'Export Backup';
+        hideBackdrop();
     }
     
     // Disable form inputs during export
@@ -91,6 +95,23 @@ function showProgress(message) {
 
 function hideProgress() {
     progressSection.classList.remove('visible');
+}
+
+function showBackdrop(message, detail) {
+    loaderMessage.textContent = message;
+    loaderDetail.textContent = detail || '';
+    backdrop.classList.add('visible');
+}
+
+function hideBackdrop() {
+    backdrop.classList.remove('visible');
+}
+
+function updateBackdropMessage(message, detail) {
+    loaderMessage.textContent = message;
+    if (detail) {
+        loaderDetail.textContent = detail;
+    }
 }
 
 function updateFormatOptions() {
@@ -156,18 +177,18 @@ window.addEventListener('message', event => {
             break;
             
         case 'progress':
-            showProgress(message.message);
+            updateBackdropMessage(message.message, 'Processing...');
             break;
             
         case 'success':
             setExporting(false);
-            hideProgress();
+            updateBackdropMessage('Export completed successfully!', 'Closing export window...');
             showMessage(message.message, 'success');
             break;
             
         case 'error':
             setExporting(false);
-            hideProgress();
+            hideBackdrop();
             showMessage(message.message, 'error');
             break;
     }
