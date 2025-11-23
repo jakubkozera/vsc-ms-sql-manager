@@ -208,6 +208,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'openInNewEditor':
                     await this.openContentInNewEditor(message.content, message.language);
                     break;
+
+                case 'saveFile':
+                    await this.saveFileToDisk(message.content, message.defaultFileName, message.fileType, message.encoding);
+                    break;
             }
         });
 
@@ -778,6 +782,80 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             });
         } catch (error) {
             this.outputChannel.appendLine(`Failed to open content in new editor: ${error}`);
+        }
+    }
+
+    private async saveFileToDisk(content: string, defaultFileName: string, fileType: string, encoding?: string) {
+        try {
+            // Get file extension from filename or determine from file type
+            let fileExtension = '';
+            if (defaultFileName.includes('.')) {
+                fileExtension = defaultFileName.split('.').pop() || '';
+            } else {
+                // Determine extension from file type
+                switch (fileType.toLowerCase()) {
+                    case 'json': fileExtension = 'json'; break;
+                    case 'csv': fileExtension = 'csv'; break;
+                    case 'excel': fileExtension = 'xlsx'; break;
+                    case 'markdown': fileExtension = 'md'; break;
+                    case 'xml': fileExtension = 'xml'; break;
+                    case 'html': fileExtension = 'html'; break;
+                    default: fileExtension = 'txt';
+                }
+            }
+
+            // Show save dialog
+            const filters: { [name: string]: string[] } = {};
+            switch (fileType.toLowerCase()) {
+                case 'json':
+                    filters['JSON Files'] = ['json'];
+                    break;
+                case 'csv':
+                    filters['CSV Files'] = ['csv'];
+                    break;
+                case 'excel':
+                    filters['Excel Files'] = ['xlsx', 'xls'];
+                    filters['CSV Files (Excel Compatible)'] = ['csv'];
+                    break;
+                case 'markdown':
+                    filters['Markdown Files'] = ['md'];
+                    break;
+                case 'xml':
+                    filters['XML Files'] = ['xml'];
+                    break;
+                case 'html':
+                    filters['HTML Files'] = ['html', 'htm'];
+                    break;
+            }
+            filters['All Files'] = ['*'];
+
+            const uri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(defaultFileName),
+                filters: filters
+            });
+
+            if (uri) {
+                // Write the file with appropriate encoding
+                const buffer = encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+                await vscode.workspace.fs.writeFile(uri, buffer);
+                
+                // Show success message with Open action
+                const action = await vscode.window.showInformationMessage(
+                    `${fileType} file saved to ${uri.fsPath}`,
+                    'Open'
+                );
+                
+                if (action === 'Open') {
+                    // Open the file in VS Code
+                    await vscode.commands.executeCommand('vscode.open', uri);
+                }
+                
+                this.outputChannel.appendLine(`[Export] ${fileType} file saved to: ${uri.fsPath}`);
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            vscode.window.showErrorMessage(`Failed to save ${fileType} file: ${errorMessage}`);
+            this.outputChannel.appendLine(`[Export] Failed to save ${fileType} file: ${errorMessage}`);
         }
     }
 
