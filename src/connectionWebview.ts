@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionConfig, ServerGroup } from './connectionProvider';
+import { createPoolForConfig } from './dbClient';
 
 export class ConnectionWebview {
     private panel: vscode.WebviewPanel | undefined;
@@ -126,7 +127,7 @@ export class ConnectionWebview {
             });
 
             // Use our dbClient abstraction which will choose msnodesqlv8 for windows auth
-            const { createPoolForConfig } = await import('./dbClient.js');
+            // Using static import instead of dynamic for better webpack bundling
 
             const cfg: any = {};
             if (config.useConnectionString && config.connectionString) {
