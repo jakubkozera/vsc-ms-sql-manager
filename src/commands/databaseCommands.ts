@@ -14,16 +14,14 @@ export function registerDatabaseCommands(
     
     const diagramWebview = new DatabaseDiagramWebview(connectionProvider, outputChannel, context);
     const compareSchemaWebview = new CompareSchemaWebview(connectionProvider, outputChannel, context);
-    const backupExportWebview = new BackupExportWebview(connectionProvider, outputChannel, context);
     
-    // Create backup import webview with refresh callback
+    // Create refresh callback for backup import
     const refreshCallback = () => {
         if (treeProvider) {
             outputChannel.appendLine('[DatabaseCommands] Refreshing tree view after database import');
             treeProvider.refresh();
         }
     };
-    const backupImportWebview = new BackupImportWebview(connectionProvider, outputChannel, context, refreshCallback);
     
     // Register Compare Schema webview to receive connection updates
     compareSchemaWebview.registerForConnectionUpdates();
@@ -119,6 +117,8 @@ export function registerDatabaseCommands(
             }
 
             try {
+                // Create new export webview instance for each operation
+                const backupExportWebview = new BackupExportWebview(connectionProvider, outputChannel, context);
                 await backupExportWebview.show(node.connectionId, database);
             } catch (error: any) {
                 outputChannel.appendLine(`[DatabaseCommands] Error showing backup export: ${error.message}`);
@@ -138,6 +138,8 @@ export function registerDatabaseCommands(
             }
 
             try {
+                // Create new import webview instance for each operation
+                const backupImportWebview = new BackupImportWebview(connectionProvider, outputChannel, context, refreshCallback);
                 await backupImportWebview.show(node.connectionId);
             } catch (error: any) {
                 outputChannel.appendLine(`[DatabaseCommands] Error showing backup import: ${error.message}`);
