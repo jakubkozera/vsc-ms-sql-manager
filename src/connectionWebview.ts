@@ -135,7 +135,7 @@ export class ConnectionWebview {
                 cfg.useConnectionString = true;
             } else {
                 cfg.server = config.server;
-                cfg.database = config.connectionType === 'server' ? 'master' : (config.database || 'master');
+                cfg.database = config.connectionType === 'server' || !config.database ? 'master' : config.database;
                 cfg.port = config.port ? parseInt(config.port) : undefined;
                 cfg.encrypt = config.encrypt !== false;
                 cfg.trustServerCertificate = config.trustServerCertificate !== false;
@@ -173,9 +173,9 @@ export class ConnectionWebview {
         try {
             const connectionConfig: ConnectionConfig = {
                 id: config.id || Date.now().toString(),
-                name: config.name || (config.useConnectionString ? 'Connection String' : `${config.server}/${config.database || 'master'}`),
+                name: config.name || (config.useConnectionString ? 'Connection String' : `${config.server}${config.database ? '/' + config.database : ''}`),
                 server: config.server || '',
-                database: config.database || 'master',
+                database: config.database || '',
                 authType: config.authType || 'sql',
                 connectionType: config.connectionType || 'database',
                 username: config.authType === 'sql' ? config.username : undefined,
@@ -623,7 +623,7 @@ export class ConnectionWebview {
             <div id="connectionStringSection" class="hidden">
                 <div class="form-group">
                     <label for="connectionString">Connection String *</label>
-                    <textarea id="connectionString" rows="4" placeholder="Server=localhost;Database=master;Integrated Security=true;Encrypt=true;TrustServerCertificate=true;"></textarea>
+                    <textarea id="connectionString" rows="4" placeholder="Server=localhost;Integrated Security=true;Encrypt=true;TrustServerCertificate=true;"></textarea>
                     <div class="help-text">Complete SQL Server connection string</div>
                     <button type="button" class="secondary-button parse-button" id="parseBtn">Parse to Fields</button>
                 </div>
@@ -639,8 +639,8 @@ export class ConnectionWebview {
             <div class="form-row">
                 <div class="form-group">
                     <label for="database">Database</label>
-                    <input type="text" id="database" placeholder="master" value="master">
-                    <div class="help-text">Initial database to connect to</div>
+                    <input type="text" id="database" placeholder="Leave empty for server management">
+                    <div class="help-text">Initial database (empty recommended for server management)</div>
                 </div>
 
                 <div class="form-group">
@@ -825,12 +825,12 @@ export class ConnectionWebview {
         connectionTypeSelect.addEventListener('change', function() {
             const connectionType = this.value;
             if (connectionType === 'server') {
-                databaseField.value = 'master';
-                databaseField.placeholder = 'master (recommended for server connections)';
-                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database (master recommended for server management)';
+                databaseField.value = '';
+                databaseField.placeholder = 'Leave empty for server management';
+                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database (empty recommended for server management)';
             } else {
-                databaseField.placeholder = 'master';
-                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database to connect to';
+                databaseField.placeholder = 'Leave empty for server management';
+                databaseField.parentElement.querySelector('.help-text').textContent = 'Initial database (empty recommended for server management)';
             }
         });
 
@@ -1037,7 +1037,7 @@ export class ConnectionWebview {
                 useConnectionString: useConnectionString,
                 connectionString: useConnectionString ? document.getElementById('connectionString').value.trim() : null,
                 server: document.getElementById('server').value.trim(),
-                database: rawDatabase || (inferredConnectionType === 'server' ? 'master' : 'master'),
+                database: rawDatabase,
                 port: document.getElementById('port').value || null,
                 authType: document.getElementById('authType').value,
                 username: document.getElementById('username').value.trim() || null,
@@ -1068,7 +1068,7 @@ export class ConnectionWebview {
                     document.getElementById('useConnectionString').checked = false;
                     document.getElementById('server').value = config.server || '';
                         // If the saved connection has an empty database it represents a server connection
-                        document.getElementById('database').value = config.database || (config.connectionType === 'server' ? '' : 'master');
+                        document.getElementById('database').value = config.database || '';
                     document.getElementById('port').value = config.port || '';
                     document.getElementById('authType').value = config.authType || 'sql';
                     document.getElementById('username').value = config.username || '';

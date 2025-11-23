@@ -180,7 +180,7 @@ export function registerConnectionCommands(
                 // Synthesize an ADO-style connection string and include credentials (user requested)
                 const parts: string[] = [];
                 if (complete.server) parts.push(`Server=${complete.server}`);
-                if (complete.database) parts.push(`Database=${complete.database}`);
+                if (complete.database && complete.database.trim() !== '') parts.push(`Database=${complete.database}`);
                 if (complete.authType === 'sql') {
                     if (complete.username) parts.push(`User Id=${complete.username}`);
                     if (complete.password) parts.push(`Password=${complete.password}`);
