@@ -181,7 +181,9 @@ export async function discoverDatabasesInServer(server: AzureSqlServer, outputCh
         
         for (const db of serverDatabases) {
             // Skip system databases
-            if (db.name === 'master') continue;
+            if (db.name === 'master') {
+                continue;
+            }
             
             databases.push({
                 name: db.name,
@@ -204,31 +206,43 @@ export async function discoverDatabasesInServer(server: AzureSqlServer, outputCh
 }
 
 /**
- * Creates connection configuration for Azure SQL database with multiple auth options
+ * Creates connection configuration for Azure SQL server with multiple auth options
  */
-export function createAzureConnectionConfig(database: AzureSqlDatabase): any {
+export function createAzureServerConnectionConfig(server: AzureSqlServer, databases: AzureSqlDatabase[], adminInfo?: {adminLogin?: string, adminType?: string}): any {
+    // Filter out system databases and get user database names
+    const userDatabases = databases.filter(db => db.name !== 'master').map(db => db.name);
+    
+    // Use admin login as suggested username if available
+    const suggestedUsername = adminInfo?.adminLogin || '';
+    const connectionName = server.name;
+    
     return {
-        id: `azure-${database.subscriptionId}-${database.serverName}-${database.name}`,
-        name: `${database.name} (${database.serverName}) [Credentials Required]`,
-        server: database.fullyQualifiedDomainName,
-        database: database.name,
+        id: `azure-${server.subscriptionId}-${server.name}`,
+        name: connectionName,
+        server: server.fullyQualifiedDomainName,
+        database: '', // No specific database - user can choose after connecting
         authType: 'sql', // Default to SQL auth, user should choose between SQL/AAD
-        username: '', // User needs to provide SQL auth username or AAD email
+        username: suggestedUsername, // Use discovered admin login or empty
         password: '', // User needs to provide SQL auth password or AAD token
         encrypt: true,
         trustServerCertificate: false,
         port: 1433,
         serverGroup: 'Azure',
+        connectionType: 'server', // Server-level connection - user can choose database after connecting
         metadata: {
-            resourceGroup: database.resourceGroup,
-            subscriptionId: database.subscriptionId,
-            subscriptionName: database.subscriptionName,
-            location: database.location,
+            resourceGroup: server.resourceGroup,
+            subscriptionId: server.subscriptionId,
+            subscriptionName: server.subscriptionName,
+            location: server.location,
             isAzureDiscovered: true,
+            serverType: 'Azure SQL Server',
+            availableDatabases: userDatabases,
+            databaseCount: userDatabases.length,
+            discoveredAdminLogin: adminInfo?.adminLogin,
             authOptions: {
                 sqlAuth: {
                     description: 'SQL Server Authentication - requires username/password created in Azure Portal',
-                    usernameHint: 'SQL login name (e.g. sqladmin)',
+                    usernameHint: adminInfo?.adminLogin || 'SQL login name (e.g. sqladmin)',
                     passwordHint: 'SQL login password'
                 },
                 aadAuth: {
@@ -239,6 +253,26 @@ export function createAzureConnectionConfig(database: AzureSqlDatabase): any {
             }
         }
     };
+}
+
+/**
+ * Gets SQL Server administrator information for Azure SQL Server
+ */
+export async function getAzureSqlServerAdmin(server: AzureSqlServer): Promise<{adminLogin?: string, adminType?: string} | null> {
+    try {
+        const { stdout: adminJson } = await exec(
+            `az sql server show --name "${server.name}" --resource-group "${server.resourceGroup}" --subscription "${server.subscriptionId}" --query "{administratorLogin:administratorLogin,administratorLoginPassword:administratorLoginPassword}" -o json`
+        );
+        const adminInfo = JSON.parse(adminJson);
+        
+        return {
+            adminLogin: adminInfo.administratorLogin || undefined,
+            adminType: 'sql' // Azure SQL Server admin is always SQL auth
+        };
+    } catch (error) {
+        // Server admin info might not be accessible
+        return null;
+    }
 }
 
 /**
@@ -314,28 +348,31 @@ export async function performAzureDiscovery(outputChannel: vscode.OutputChannel)
             // Process servers in current batch in parallel
             const serverPromises = serverBatch.map(async (server) => {
                 try {
-                    // Check if server supports Azure AD authentication
-                    const supportsAad = await checkServerAadSupport(server);
-                    outputChannel.appendLine(`[Azure Discovery] Server ${server.name} AAD support: ${supportsAad ? 'Yes' : 'No'}`);
+                    // Get SQL Server admin info and AAD support in parallel
+                    const [supportsAad, adminInfo, databases] = await Promise.all([
+                        checkServerAadSupport(server),
+                        getAzureSqlServerAdmin(server),
+                        discoverDatabasesInServer(server, outputChannel)
+                    ]);
                     
-                    const databases = await discoverDatabasesInServer(server, outputChannel);
+                    outputChannel.appendLine(`[Azure Discovery] Server ${server.name} - AAD: ${supportsAad ? 'Yes' : 'No'}, Admin: ${adminInfo?.adminLogin || 'Unknown'}`);
                     
-                    // Create connection configs for all databases in this server
-                    return databases.map(database => {
-                        const connectionConfig = createAzureConnectionConfig(database);
-                        
-                        // Enhance with AAD info if available
-                        if (supportsAad && userInfo?.email) {
-                            connectionConfig.metadata.aadSupported = true;
-                            connectionConfig.metadata.suggestedAadUser = userInfo.email;
-                            connectionConfig.name = `${database.name} (${database.serverName}) [Try AAD: ${userInfo.email}]`;
-                        } else {
-                            connectionConfig.metadata.aadSupported = false;
-                            connectionConfig.name = `${database.name} (${database.serverName}) [SQL Auth Required]`;
-                        }
-                        
-                        return connectionConfig;
-                    });
+                    // Create one connection config per server (not per database)
+                    const connectionConfig = createAzureServerConnectionConfig(server, databases, adminInfo || undefined);
+                    
+                    // Enhance with AAD info if available
+                    if (supportsAad && userInfo?.email) {
+                        connectionConfig.metadata.aadSupported = true;
+                        connectionConfig.metadata.suggestedAadUser = userInfo.email;
+                    } else {
+                        connectionConfig.metadata.aadSupported = false;
+                    }
+                    
+                    // Database count available in metadata for UI if needed
+                    const dbCount = databases.filter(db => db.name !== 'master').length;
+                    connectionConfig.metadata.userDatabaseCount = dbCount;
+                    
+                    return [connectionConfig]; // Return array with single connection per server
                 } catch (error) {
                     outputChannel.appendLine(`[Azure Discovery] Failed to process server ${server.name}: ${error}`);
                     return [];

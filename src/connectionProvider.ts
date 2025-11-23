@@ -385,7 +385,7 @@ export class ConnectionProvider {
                 // Build config from individual properties
                 sqlConfig = {
                     server: config.server,
-                    database: config.connectionType === 'server' ? 'master' : config.database,
+                    database: config.connectionType === 'server' ? '' : config.database,
                     options: {
                         encrypt: config.encrypt || true,
                         trustServerCertificate: config.trustServerCertificate || true

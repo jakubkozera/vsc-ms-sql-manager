@@ -18,15 +18,15 @@ Comprehensive connection management system for Microsoft SQL Server databases wi
 - **Secure Credential Storage**: Passwords handled securely without permanent storage
 
 ### ☁️ Azure SQL Discovery
-Automated discovery and connection setup for Azure SQL databases with intelligent authentication guidance.
+Automated discovery and connection setup for Azure SQL servers with intelligent authentication guidance.
 
 **Key Features:**
-- **Automatic Discovery**: Scans all accessible Azure subscriptions for SQL servers and databases
-- **Smart Authentication**: Detects available authentication methods (SQL Auth vs Azure AD)
-- **Credential Guidance**: Provides specific instructions for each authentication type
+- **Server-Level Connections**: Creates connections to Azure SQL servers (not specific databases)
+- **Admin Login Discovery**: Automatically discovers and pre-fills SQL Server administrator usernames
+- **Database Enumeration**: Lists all available databases per server in connection metadata
 - **Startup Integration**: Automatically discovers Azure resources when extension loads
 - **Manual Discovery**: On-demand discovery via "Azure: Discover SQL Servers" command
-- **Rich Metadata**: Includes subscription, resource group, and location information
+
 
 
 
