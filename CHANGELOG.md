@@ -5,6 +5,20 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2025-11-24
+
+### Added
+
+- **Dynamic Column Width Adjustment**: Enhanced SQL query results table with intelligent column sizing
+  - **Automatic width calculation**: Column widths now automatically adjust based on header text and content length
+  - **Manual column resizing**: Double-click column borders to auto-fit individual columns to optimal width
+  - **Bulk auto-fit functionality**: "Auto-fit all columns" option in export menu for one-click optimization
+  - **Canvas-based measurement**: Uses Canvas API for precise text measurement ensuring accurate width calculations
+  - **Performance optimized**: Samples up to 100 rows for width calculation to maintain responsive performance
+  - **Configurable bounds**: Columns maintain reasonable min (80px) and max (450px) width limits
+
+ion for all interactive elements
+
 ## [0.4.1] - 2025-11-23
 
 ### Added

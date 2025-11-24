@@ -109,21 +109,24 @@ require.config({
 
 require(['vs/editor/editor.main'], function () {
     // Detect VS Code theme
-    const theme = document.body.classList.contains('vscode-dark') ? 'vs-dark' : 'vs';
+    const theme = document.body && document.body.classList.contains('vscode-dark') ? 'vs-dark' : 'vs';
     
-    editor = monaco.editor.create(document.getElementById('editor'), {
-        value: '',
-        language: 'sql',
-        theme: theme,
-        automaticLayout: true,
-        minimap: { enabled: true },
-        scrollBeyondLastLine: false,
-        fontSize: 14,
-        lineNumbers: 'on',
-        renderWhitespace: 'selection',
-        tabSize: 4,
-        insertSpaces: true
-    });
+    const editorElement = document.getElementById('editor');
+    if (editorElement) {
+        editor = monaco.editor.create(editorElement, {
+            value: '',
+            language: 'sql',
+            theme: theme,
+            automaticLayout: true,
+            minimap: { enabled: true },
+            scrollBeyondLastLine: false,
+            fontSize: 14,
+            lineNumbers: 'on',
+            renderWhitespace: 'selection',
+            tabSize: 4,
+            insertSpaces: true
+        });
+    }
 
     // Listen for content changes
     editor.onDidChangeModelContent(() => {
@@ -325,28 +328,33 @@ require(['vs/editor/editor.main'], function () {
 });
 
 // Toolbar buttons
-document.getElementById('executeButton').addEventListener('click', () => {
-    executeQuery();
-});
+const executeButton = document.getElementById('executeButton');
+if (executeButton) {
+    executeButton.addEventListener('click', () => {
+        executeQuery();
+    });
+}
 
 // Execute button dropdown functionality
 const executeDropdownToggle = document.getElementById('executeDropdownToggle');
 const executeDropdownMenu = document.getElementById('executeDropdownMenu');
 
-executeDropdownToggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    executeDropdownMenu.classList.toggle('show');
-    executeDropdownToggle.classList.toggle('open');
-});
+if (executeDropdownToggle && executeDropdownMenu) {
+    executeDropdownToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        executeDropdownMenu.classList.toggle('show');
+        executeDropdownToggle.classList.toggle('open');
+    });
 
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-    const buttonContainer = executeDropdownToggle.closest('.button-container');
-    if (!buttonContainer.contains(e.target)) {
-        executeDropdownMenu.classList.remove('show');
-        executeDropdownToggle.classList.remove('open');
-    }
-});
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        const buttonContainer = executeDropdownToggle.closest('.button-container');
+        if (buttonContainer && !buttonContainer.contains(e.target)) {
+            executeDropdownMenu.classList.remove('show');
+            executeDropdownToggle.classList.remove('open');
+        }
+    });
+}
 
 
 // Register a Monaco editor action that appears in the context menu for "Go to definition"
@@ -530,35 +538,58 @@ executeDropdownMenu.addEventListener('click', (e) => {
     e.stopPropagation();
 });
 
-document.getElementById('cancelButton').addEventListener('click', () => {
-    vscode.postMessage({ type: 'cancelQuery' });
-});
+const cancelButton = document.getElementById('cancelButton');
+if (cancelButton) {
+    cancelButton.addEventListener('click', () => {
+        vscode.postMessage({ type: 'cancelQuery' });
+    });
+}
 
-document.getElementById('connectButton').addEventListener('click', () => {
-    vscode.postMessage({ type: 'manageConnections' });
-});
+const connectButton = document.getElementById('connectButton');
+if (connectButton) {
+    connectButton.addEventListener('click', () => {
+        vscode.postMessage({ type: 'manageConnections' });
+    });
+}
 
-document.getElementById('estimatedPlanButton').addEventListener('click', () => {
-    executeEstimatedPlan();
-});
+const estimatedPlanButton = document.getElementById('estimatedPlanButton');
+if (estimatedPlanButton) {
+    estimatedPlanButton.addEventListener('click', () => {
+        executeEstimatedPlan();
+    });
+}
 
-document.getElementById('actualPlanCheckbox').addEventListener('change', (e) => {
-    actualPlanEnabled = e.target.checked;
-});
+const actualPlanCheckbox = document.getElementById('actualPlanCheckbox');
+if (actualPlanCheckbox) {
+    actualPlanCheckbox.addEventListener('change', (e) => {
+        actualPlanEnabled = e.target.checked;
+    });
+}
 
 // Custom Dropdown Class for Connection and Database Selectors
 class CustomDropdown {
     constructor(containerId, onSelect) {
         this.container = document.getElementById(containerId);
+        if (!this.container) {
+            console.warn(`CustomDropdown: Container with id '${containerId}' not found`);
+            return;
+        }
+        
         this.trigger = this.container.querySelector('.dropdown-trigger');
         this.menu = this.container.querySelector('.dropdown-menu');
         this.onSelect = onSelect;
         this.selectedValue = null;
 
-        this.init();
+        if (this.trigger && this.menu) {
+            this.init();
+        } else {
+            console.warn(`CustomDropdown: Required elements not found in container '${containerId}'`);
+        }
     }
 
     init() {
+        if (!this.trigger || !this.container) return;
+        
         // Toggle dropdown on trigger click
         this.trigger.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -581,6 +612,8 @@ class CustomDropdown {
     }
 
     toggle() {
+        if (!this.menu || !this.trigger) return;
+        
         const isOpen = this.menu.classList.contains('open');
 
         // Close all other dropdowns
@@ -599,16 +632,22 @@ class CustomDropdown {
     }
 
     open() {
+        if (!this.menu || !this.trigger) return;
+        
         this.menu.classList.add('open');
         this.trigger.classList.add('open');
     }
 
     close() {
+        if (!this.menu || !this.trigger) return;
+        
         this.menu.classList.remove('open');
         this.trigger.classList.remove('open');
     }
 
     setItems(items) {
+        if (!this.menu || !this.trigger) return;
+        
         // items should be array of {value, text, selected}
         this.menu.innerHTML = '';
         
@@ -633,6 +672,8 @@ class CustomDropdown {
     }
 
     selectItem(value, text) {
+        if (!this.menu || !this.trigger) return;
+        
         // Remove selected class from all items
         this.menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('selected'));
 
@@ -691,7 +732,10 @@ const connectionDropdown = new CustomDropdown('connection-dropdown', (connection
         
         if (connection && connection.connectionType === 'server') {
             // Show database selector and request database list
-            document.getElementById('databaseLabel').style.display = 'inline-block';
+            const databaseLabel = document.getElementById('databaseLabel');
+            if (databaseLabel) {
+                databaseLabel.style.display = 'inline-block';
+            }
             databaseDropdown.show();
             
             vscode.postMessage({
@@ -700,7 +744,10 @@ const connectionDropdown = new CustomDropdown('connection-dropdown', (connection
             });
         } else {
             // Hide database selector for direct database connections
-            document.getElementById('databaseLabel').style.display = 'none';
+            const databaseLabel = document.getElementById('databaseLabel');
+            if (databaseLabel) {
+                databaseLabel.style.display = 'none';
+            }
             databaseDropdown.hide();
             currentDatabaseName = null;
             
@@ -710,7 +757,10 @@ const connectionDropdown = new CustomDropdown('connection-dropdown', (connection
             });
         }
     } else {
-        document.getElementById('databaseLabel').style.display = 'none';
+        const databaseLabel = document.getElementById('databaseLabel');
+        if (databaseLabel) {
+            databaseLabel.style.display = 'none';
+        }
         databaseDropdown.hide();
     }
 });
@@ -776,13 +826,17 @@ const resultsContainer = document.getElementById('resultsContainer');
 const editorContainer = document.getElementById('editorContainer');
 const container = document.getElementById('container');
 
-resizer.addEventListener('mousedown', (e) => {
-    isResizing = true;
-    resizer.classList.add('active');
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-    e.preventDefault();
-});
+if (resizer && resultsContainer && editorContainer && container) {
+    resizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        resizer.classList.add('active');
+        if (document.body) {
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+        }
+        e.preventDefault();
+    });
+}
 
 document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
@@ -801,8 +855,10 @@ document.addEventListener('mouseup', () => {
     if (isResizing) {
         isResizing = false;
         resizer.classList.remove('active');
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        if (document.body) {
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
     }
 });
 
@@ -2292,12 +2348,20 @@ function showLoading() {
 
     // Switch to results tab
     document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
+    const resultsTab = document.querySelector('.results-tab[data-tab="results"]');
+    if (resultsTab) {
+        resultsTab.classList.add('active');
+    }
     currentTab = 'results';
     
     // Ensure results container is visible and messages is hidden
-    document.getElementById('resultsContent').style.display = 'block';
-    document.getElementById('messagesContent').style.display = 'none';
+    const messagesContent = document.getElementById('messagesContent');
+    if (resultsContent) {
+        resultsContent.style.display = 'block';
+    }
+    if (messagesContent) {
+        messagesContent.style.display = 'none';
+    }
     
     // Start the timer
     startLoadingTimer();
@@ -2391,27 +2455,45 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     if (!hasResultSets) {
         // Switch to Messages tab for queries without result sets
         document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
-        document.querySelector('.results-tab[data-tab="messages"]').classList.add('active');
+        const messagesTab = document.querySelector('.results-tab[data-tab="messages"]');
+        if (messagesTab) {
+            messagesTab.classList.add('active');
+        }
         currentTab = 'messages';
         
         // Show messages content, hide others
-        document.getElementById('resultsContent').style.display = 'none';
-        document.getElementById('messagesContent').style.display = 'block';
-        document.getElementById('queryPlanContent').style.display = 'none';
-        document.getElementById('planTreeContent').style.display = 'none';
-        document.getElementById('topOperationsContent').style.display = 'none';
+        const resultsContent = document.getElementById('resultsContent');
+        const messagesContent = document.getElementById('messagesContent');
+        const queryPlanContent = document.getElementById('queryPlanContent');
+        const planTreeContent = document.getElementById('planTreeContent');
+        const topOperationsContent = document.getElementById('topOperationsContent');
+        
+        if (resultsContent) resultsContent.style.display = 'none';
+        if (messagesContent) messagesContent.style.display = 'block';
+        if (queryPlanContent) queryPlanContent.style.display = 'none';
+        if (planTreeContent) planTreeContent.style.display = 'none';
+        if (topOperationsContent) topOperationsContent.style.display = 'none';
     } else {
         // Switch to Results tab for queries with result sets
         document.querySelectorAll('.results-tab').forEach(t => t.classList.remove('active'));
-        document.querySelector('.results-tab[data-tab="results"]').classList.add('active');
+        const resultsTab = document.querySelector('.results-tab[data-tab="results"]');
+        if (resultsTab) {
+            resultsTab.classList.add('active');
+        }
         currentTab = 'results';
         
         // Show results content, hide others
-        document.getElementById('resultsContent').style.display = 'block';
-        document.getElementById('messagesContent').style.display = 'none';
-        document.getElementById('queryPlanContent').style.display = 'none';
-        document.getElementById('planTreeContent').style.display = 'none';
-        document.getElementById('topOperationsContent').style.display = 'none';
+        const resultsContent = document.getElementById('resultsContent');
+        const messagesContent = document.getElementById('messagesContent');
+        const queryPlanContent = document.getElementById('queryPlanContent');
+        const planTreeContent = document.getElementById('planTreeContent');
+        
+        if (resultsContent) resultsContent.style.display = 'block';
+        if (messagesContent) messagesContent.style.display = 'none';
+        if (queryPlanContent) queryPlanContent.style.display = 'none';
+        if (planTreeContent) planTreeContent.style.display = 'none';
+        const topOperationsContent = document.getElementById('topOperationsContent');
+        if (topOperationsContent) topOperationsContent.style.display = 'none';
     }
 }
 
@@ -2509,6 +2591,65 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     const BUFFER_ROWS = 10; // Extra rows to render above/below viewport
     const RENDER_CHUNK_SIZE = VISIBLE_ROWS + (BUFFER_ROWS * 2);
     
+    // Function to calculate optimal column width based on content
+    function calculateOptimalColumnWidth(columnName, columnData, type) {
+        // Create a temporary canvas element for text measurement
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        
+        // Set font to match table font for accurate measurement
+        context.font = '13px var(--vscode-font-family, "Segoe UI", sans-serif)';
+        
+        // Measure header width
+        const headerWidth = context.measureText(columnName).width;
+        
+        // Find the longest content in this column
+        let maxContentWidth = 0;
+        let longestContent = '';
+        
+        // Sample up to 100 rows for performance (or all if less than 100)
+        const sampleSize = Math.min(100, columnData.length);
+        const step = Math.max(1, Math.floor(columnData.length / sampleSize));
+        
+        for (let i = 0; i < columnData.length; i += step) {
+            const value = columnData[i];
+            let displayValue = '';
+            
+            if (value === null || value === undefined) {
+                displayValue = 'NULL';
+            } else if (type === 'boolean') {
+                displayValue = value ? '✓' : '✗';
+            } else if (type === 'number') {
+                displayValue = typeof value === 'number' ? value.toLocaleString() : String(value);
+            } else {
+                displayValue = String(value);
+            }
+            
+            const contentWidth = context.measureText(displayValue).width;
+            if (contentWidth > maxContentWidth) {
+                maxContentWidth = contentWidth;
+                longestContent = displayValue;
+            }
+        }
+        
+        console.log(`[COLUMN-WIDTH] Column "${columnName}": header=${headerWidth.toFixed(1)}px, content=${maxContentWidth.toFixed(1)}px ("${longestContent.substring(0, 20)}...")`);
+        
+        // Calculate optimal width (max of header and content, plus padding)
+        const padding = 32; // 16px padding on each side + some extra space for icons and borders
+        const iconSpace = 80; // Space for sort, filter, and pin icons
+        const optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+        
+        // Set reasonable min/max bounds
+        const minWidth = 80;
+        const maxWidth = 450;
+        const paddingWidth = 36; 
+        
+        const finalWidth = Math.min(Math.max(optimalWidth, minWidth), maxWidth) + paddingWidth;
+        console.log(`[COLUMN-WIDTH] Column "${columnName}" final width: ${finalWidth.toFixed(0)}px`);
+        
+        return Math.round(finalWidth);
+    }
+
     // Detect column types and create columnDefs
     const columns = Object.keys(rowData[0]);
     console.log('[AG-GRID] Detected columns:', columns);
@@ -2525,11 +2666,15 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             type = 'date';
         }
         
+        // Extract column data for width calculation
+        const columnData = rowData.map(row => row[col]);
+        const optimalWidth = calculateOptimalColumnWidth(col, columnData, type);
+        
         return {
             field: col,
             headerName: col,
             type: type,
-            width: 150,
+            width: optimalWidth,
             pinned: false
         };
     });
@@ -2626,11 +2771,12 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         rowNumTh.style.userSelect = 'none';
         rowNumTh.style.textAlign = 'center';
         rowNumTh.style.position = 'relative';
+        rowNumTh.title = 'Click for export options and auto-fit columns';
         
         // Add click handler to show export menu
         rowNumTh.addEventListener('click', (e) => {
             e.stopPropagation();
-            showExportMenu(e.target.closest('th'), colDefs, data);
+            showExportMenu(e.target.closest('th'), colDefs, data, containerEl, sortCfg, filters);
         });
         
         console.log('[AG-GRID] Row number header created with class:', rowNumTh.className);
@@ -2870,9 +3016,18 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                 transition: background-color 0.2s;
                 z-index: 25;
             `;
+            resizeHandle.title = 'Drag to resize column, double-click to auto-fit';
             resizeHandle.onmouseover = () => resizeHandle.style.backgroundColor = 'var(--vscode-button-background, #0e639c)';
             resizeHandle.onmouseout = () => resizeHandle.style.backgroundColor = 'transparent';
             resizeHandle.onmousedown = (e) => startResize(e, th, index, colDefs, sortCfg, filters, containerEl);
+            
+            // Add double-click to auto-fit column width
+            resizeHandle.ondblclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                autoFitSingleColumn(index, colDefs, containerEl, filteredData);
+            };
+            
             resizeHandle.oncontextmenu = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -3033,6 +3188,75 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         resizingColumn = null;
         document.removeEventListener('mousemove', doResize);
         document.removeEventListener('mouseup', stopResize);
+    }
+
+    function autoFitColumnWidth(colIndex, colDefs, sortCfg, filters, containerEl, data) {
+        const col = colDefs[colIndex];
+        if (!col) return;
+        
+        console.log(`[AUTO-FIT] Auto-fitting column "${col.headerName}" (index: ${colIndex})`);
+        
+        // Extract current column data for recalculation
+        const columnData = data.map(row => row[col.field]);
+        const newWidth = calculateOptimalColumnWidth(col.headerName, columnData, col.type);
+        
+        // Update column definition
+        col.width = newWidth;
+        
+        // Update header
+        const th = containerEl.querySelector(`th[data-field="${col.field}"]`);
+        if (th) {
+            th.style.width = newWidth + 'px';
+            th.style.minWidth = newWidth + 'px';
+            th.style.maxWidth = newWidth + 'px';
+        }
+        
+        // Update total table width
+        const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
+        const table = containerEl.querySelector('.ag-grid-table');
+        table.style.width = totalWidth + 'px';
+        table.style.minWidth = totalWidth + 'px';
+        
+        // Update all cells in this column (+2 because row number is first column)
+        const cells = table.querySelectorAll(`td:nth-child(${colIndex + 2})`);
+        cells.forEach(cell => {
+            cell.style.width = newWidth + 'px';
+            cell.style.minWidth = newWidth + 'px';
+            cell.style.maxWidth = newWidth + 'px';
+        });
+        
+        console.log(`[AUTO-FIT] Column "${col.headerName}" resized to ${newWidth}px`);
+    }
+
+    function autoFitAllColumns(colDefs, sortCfg, filters, containerEl, data) {
+        console.log('[AUTO-FIT] Auto-fitting all columns');
+        
+        // Calculate new widths for all columns
+        colDefs.forEach((col, index) => {
+            const columnData = data.map(row => row[col.field]);
+            const newWidth = calculateOptimalColumnWidth(col.headerName, columnData, col.type);
+            col.width = newWidth;
+        });
+        
+        // Re-render headers and rows to apply new widths
+        renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, data);
+        
+        // Preserve current scroll position
+        const viewport = containerEl.querySelector('.ag-grid-viewport');
+        const currentScrollTop = viewport ? viewport.scrollTop : 0;
+        
+        // Re-render visible rows
+        const ROW_HEIGHT = 30;
+        const RENDER_CHUNK_SIZE = 50;
+        const newStartRow = Math.floor(currentScrollTop / ROW_HEIGHT);
+        renderAgGridRows(colDefs, data, containerEl, newStartRow, ROW_HEIGHT, RENDER_CHUNK_SIZE);
+        
+        // Restore scroll position
+        if (viewport) {
+            viewport.scrollTop = currentScrollTop;
+        }
+        
+        console.log('[AUTO-FIT] All columns auto-fitted');
     }
 
     function startResize(e, th, colIndex, colDefs, sortCfg, filters, containerEl) {
@@ -4642,7 +4866,7 @@ function selectAllColumns(colDefs, containerEl, data) {
 }
 
 // Show export menu when clicking on export header
-function showExportMenu(headerEl, colDefs, data) {
+function showExportMenu(headerEl, colDefs, data, containerEl, sortCfg, filters) {
     console.log('[EXPORT] Showing export menu');
     
     // Remove any existing export menu
@@ -4655,6 +4879,16 @@ function showExportMenu(headerEl, colDefs, data) {
     const menu = document.createElement('div');
     menu.className = 'export-dropdown-menu';
     menu.innerHTML = `
+        <div class="export-menu-item" data-action="autofit">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                <path d="M7 8h10" />
+                <path d="M7 12h10" />
+                <path d="M7 16h10" />
+            </svg>
+            Auto-fit all columns
+        </div>
+        <div style="height: 1px; background-color: var(--vscode-menu-separatorBackground); margin: 4px 0;"></div>
         <div class="export-menu-item" data-action="copy">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
@@ -4741,7 +4975,11 @@ function showExportMenu(headerEl, colDefs, data) {
     menu.querySelectorAll('.export-menu-item').forEach(item => {
         item.addEventListener('click', (e) => {
             const action = e.currentTarget.getAttribute('data-action');
-            handleExport(action, colDefs, data);
+            if (action === 'autofit') {
+                autoFitAllColumns(colDefs, sortCfg, filters, containerEl, data);
+            } else {
+                handleExport(action, colDefs, data);
+            }
             menu.remove();
         });
     });
@@ -4758,6 +4996,170 @@ function showExportMenu(headerEl, colDefs, data) {
     setTimeout(() => {
         document.addEventListener('click', closeMenu);
     }, 100);
+}
+
+// Auto-fit single column (global function)
+function autoFitSingleColumn(colIndex, colDefs, containerEl, data) {
+    const col = colDefs[colIndex];
+    if (!col) return;
+    
+    console.log(`[AUTO-FIT] Auto-fitting column "${col.headerName}" (index: ${colIndex})`);
+    
+    function calculateOptimalColumnWidthGlobal(columnName, columnData, type) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = '13px var(--vscode-font-family, "Segoe UI", sans-serif)';
+        
+        const headerWidth = context.measureText(columnName).width;
+        let maxContentWidth = 0;
+        
+        const sampleSize = Math.min(100, columnData.length);
+        const step = Math.max(1, Math.floor(columnData.length / sampleSize));
+        
+        for (let i = 0; i < columnData.length; i += step) {
+            const value = columnData[i];
+            let displayValue = '';
+            
+            if (value === null || value === undefined) {
+                displayValue = 'NULL';
+            } else if (type === 'boolean') {
+                displayValue = value ? '✓' : '✗';
+            } else if (type === 'number') {
+                displayValue = typeof value === 'number' ? value.toLocaleString() : String(value);
+            } else {
+                displayValue = String(value);
+            }
+            
+            const contentWidth = context.measureText(displayValue).width;
+            if (contentWidth > maxContentWidth) {
+                maxContentWidth = contentWidth;
+            }
+        }
+        
+        const padding = 32;
+        const iconSpace = 80;
+        const optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+        const minWidth = 80;
+        const maxWidth = 400;
+        
+        return Math.round(Math.min(Math.max(optimalWidth, minWidth), maxWidth));
+    }
+    
+    // Extract column data and calculate new width
+    const columnData = data.map(row => row[col.field]);
+    const newWidth = calculateOptimalColumnWidthGlobal(col.headerName, columnData, col.type);
+    
+    // Update column definition
+    col.width = newWidth;
+    
+    // Update header
+    const th = containerEl.querySelector(`th[data-field="${col.field}"]`);
+    if (th) {
+        th.style.width = newWidth + 'px';
+        th.style.minWidth = newWidth + 'px';
+        th.style.maxWidth = newWidth + 'px';
+    }
+    
+    // Update all cells in this column (+2 because row number is first column)
+    const cells = containerEl.querySelectorAll(`td:nth-child(${colIndex + 2})`);
+    cells.forEach(cell => {
+        cell.style.width = newWidth + 'px';
+        cell.style.minWidth = newWidth + 'px';
+        cell.style.maxWidth = newWidth + 'px';
+    });
+    
+    // Update total table width
+    const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
+    const table = containerEl.querySelector('.ag-grid-table');
+    if (table) {
+        table.style.width = totalWidth + 'px';
+        table.style.minWidth = totalWidth + 'px';
+    }
+    
+    console.log(`[AUTO-FIT] Column "${col.headerName}" resized to ${newWidth}px`);
+}
+
+// Auto-fit all columns (global function for use outside initAgGridTable)
+function autoFitAllColumns(colDefs, sortCfg, filters, containerEl, data) {
+    console.log('[AUTO-FIT] Auto-fitting all columns (global)');
+    
+    // We need to find and use the calculateOptimalColumnWidth function from the table context
+    // For now, we'll use a simplified version that recreates the logic
+    
+    function calculateOptimalColumnWidthGlobal(columnName, columnData, type) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        context.font = '13px var(--vscode-font-family, "Segoe UI", sans-serif)';
+        
+        const headerWidth = context.measureText(columnName).width;
+        let maxContentWidth = 0;
+        
+        const sampleSize = Math.min(100, columnData.length);
+        const step = Math.max(1, Math.floor(columnData.length / sampleSize));
+        
+        for (let i = 0; i < columnData.length; i += step) {
+            const value = columnData[i];
+            let displayValue = '';
+            
+            if (value === null || value === undefined) {
+                displayValue = 'NULL';
+            } else if (type === 'boolean') {
+                displayValue = value ? '✓' : '✗';
+            } else if (type === 'number') {
+                displayValue = typeof value === 'number' ? value.toLocaleString() : String(value);
+            } else {
+                displayValue = String(value);
+            }
+            
+            const contentWidth = context.measureText(displayValue).width;
+            if (contentWidth > maxContentWidth) {
+                maxContentWidth = contentWidth;
+            }
+        }
+        
+        const padding = 32;
+        const iconSpace = 80;
+        const optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+        const minWidth = 80;
+        const maxWidth = 400;
+        
+        return Math.round(Math.min(Math.max(optimalWidth, minWidth), maxWidth));
+    }
+    
+    // Calculate new widths for all columns
+    colDefs.forEach((col, index) => {
+        const columnData = data.map(row => row[col.field]);
+        const newWidth = calculateOptimalColumnWidthGlobal(col.headerName, columnData, col.type);
+        col.width = newWidth;
+    });
+    
+    // Update all header widths
+    colDefs.forEach((col, index) => {
+        const th = containerEl.querySelector(`th[data-field="${col.field}"]`);
+        if (th) {
+            th.style.width = col.width + 'px';
+            th.style.minWidth = col.width + 'px';
+            th.style.maxWidth = col.width + 'px';
+        }
+        
+        // Update all cells in this column (+2 because row number is first column)
+        const cells = containerEl.querySelectorAll(`td:nth-child(${index + 2})`);
+        cells.forEach(cell => {
+            cell.style.width = col.width + 'px';
+            cell.style.minWidth = col.width + 'px';
+            cell.style.maxWidth = col.width + 'px';
+        });
+    });
+    
+    // Update total table width
+    const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
+    const table = containerEl.querySelector('.ag-grid-table');
+    if (table) {
+        table.style.width = totalWidth + 'px';
+        table.style.minWidth = totalWidth + 'px';
+    }
+    
+    console.log('[AUTO-FIT] All columns auto-fitted (global)');
 }
 
 // Handle export actions
