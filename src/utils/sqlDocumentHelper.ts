@@ -22,10 +22,18 @@ export async function openSqlInCustomEditor(
         await vscode.workspace.fs.createDirectory(storageUri);
     }
 
-    // Create a unique filename
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const fileName = filename || `query_${timestamp}_${randomSuffix}.sql`;
+    // Create filename - use exact name if provided (for files like history.sql that should be reused)
+    // Otherwise create unique filename
+    let fileName: string;
+    if (filename && (filename === 'history.sql' || filename.includes('history'))) {
+        // For history files, use exact name to enable reuse
+        fileName = filename;
+    } else {
+        // For other files, create unique name
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        fileName = filename || `query_${timestamp}_${randomSuffix}.sql`;
+    }
     const filePath = path.join(storageUri.fsPath, fileName);
     const uri = vscode.Uri.file(filePath);
 

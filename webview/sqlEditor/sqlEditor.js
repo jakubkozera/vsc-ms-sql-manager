@@ -40,6 +40,46 @@ function isValidJSON(str) {
     return false;
 }
 
+// Helper function to remove execution summary comments from query text
+function removeExecutionComments(queryText) {
+    if (!queryText) return queryText;
+    
+    const lines = queryText.split('\n');
+    const resultLines = [];
+    let skipComments = false;
+    
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        
+        // Check if this line starts an execution summary comment block
+        if (trimmedLine.startsWith('-- Query from history')) {
+            skipComments = true;
+            continue;
+        }
+        
+        // If we're in a comment block, skip lines that look like execution metadata
+        if (skipComments) {
+            if (trimmedLine.startsWith('-- Executed:') || 
+                trimmedLine.startsWith('-- Connection:') || 
+                trimmedLine.startsWith('-- Result Sets:') ||
+                trimmedLine === '') { // Also skip empty lines that are part of the comment block
+                continue;
+            } else {
+                // Found a non-comment line, stop skipping
+                skipComments = false;
+            }
+        }
+        
+        // If we're not skipping, add the line
+        if (!skipComments) {
+            resultLines.push(line);
+        }
+    }
+    
+    // Join the lines back together and trim any trailing whitespace
+    return resultLines.join('\n').trimEnd();
+}
+
 // Helper function to check if string is valid XML
 function isValidXML(str) {
     if (typeof str !== 'string' || !str.trim()) return false;
@@ -891,6 +931,9 @@ function executeQuery() {
         queryText = editor.getValue();
     }
 
+    // Remove any existing execution summary comments before executing
+    queryText = removeExecutionComments(queryText);
+
     // Build composite connection ID if database is selected
     let connectionId = currentConnectionId;
     if (currentConnectionId && currentDatabaseName) {
@@ -917,6 +960,9 @@ function executeEstimatedPlan() {
     } else {
         queryText = editor.getValue();
     }
+
+    // Remove any existing execution summary comments before executing
+    queryText = removeExecutionComments(queryText);
 
     // Build composite connection ID if database is selected
     let connectionId = currentConnectionId;
