@@ -7,6 +7,48 @@ import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 import { SqlEditorProvider } from '../sqlEditorProvider';
 
+/**
+ * Removes existing execution summary comments from a query.
+ * These comments start with "-- Query from history" and include execution metadata.
+ */
+function removeExistingExecutionComments(query: string): string {
+    // Split the query into lines
+    const lines = query.split('\n');
+    const resultLines: string[] = [];
+    let skipComments = false;
+    
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+        
+        // Check if this line starts an execution summary comment block
+        if (trimmedLine.startsWith('-- Query from history')) {
+            skipComments = true;
+            continue;
+        }
+        
+        // If we're in a comment block, skip lines that look like execution metadata
+        if (skipComments) {
+            if (trimmedLine.startsWith('-- Executed:') || 
+                trimmedLine.startsWith('-- Connection:') || 
+                trimmedLine.startsWith('-- Result Sets:') ||
+                trimmedLine === '') { // Also skip empty lines that are part of the comment block
+                continue;
+            } else {
+                // Found a non-comment line, stop skipping
+                skipComments = false;
+            }
+        }
+        
+        // If we're not skipping, add the line
+        if (!skipComments) {
+            resultLines.push(line);
+        }
+    }
+    
+    // Join the lines back together and trim any trailing whitespace
+    return resultLines.join('\n').trimEnd();
+}
+
 // Helper function to find and update existing history.sql editor
 function tryUpdateExistingHistoryEditor(
     entry: QueryHistoryEntry,
@@ -102,8 +144,11 @@ export function registerQueryHistoryCommands(
                         : '(0 rows)';
                 const header = `\n\n-- Query from history\n-- Executed: ${entry.executedAt.toLocaleString()}\n-- Connection: ${entry.connectionName} (${entry.server}/${entry.database})\n-- Result Sets: ${entry.resultSetCount} ${rowCountsStr}`;
                 
+                // Remove existing execution summary comments before adding new ones
+                const cleanQuery = removeExistingExecutionComments(entry.query);
+                
                 // Combine query with header at the end
-                const fullContent = entry.query + header;
+                const fullContent = cleanQuery + header;
 
                 // First, try to update existing history.sql editor if it exists
                 const updatedExistingEditor = sqlEditorProvider ? 

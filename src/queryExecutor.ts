@@ -117,13 +117,8 @@ export class QueryExecutor {
                         // Calculate row counts for each result set
                         const rowCounts = allRecordsets.map(recordset => recordset.length);
                         
-                        // Strip SET commands from query for history
-                        // Remove lines that start with SET (case-insensitive)
-                        const cleanedQuery = queryText
-                            .split('\n')
-                            .filter(line => !line.trim().match(/^SET\s+/i))
-                            .join('\n')
-                            .trim();
+                        // Strip SET commands and execution summary comments from query for history
+                        const cleanedQuery = this.cleanQueryForHistory(queryText);
                         
                         // Get current database from the connection that was used
                         let currentDatabase: string | undefined = activeConnectionInfo.database;
@@ -456,5 +451,50 @@ export class QueryExecutor {
         }
         
         return null;
+    }
+
+    /**
+     * Cleans a query for storage in history by removing SET commands and execution summary comments
+     */
+    private cleanQueryForHistory(queryText: string): string {
+        const lines = queryText.split('\n');
+        const resultLines: string[] = [];
+        let skipComments = false;
+        
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+            
+            // Skip SET commands (case-insensitive)
+            if (trimmedLine.match(/^SET\s+/i)) {
+                continue;
+            }
+            
+            // Check if this line starts an execution summary comment block
+            if (trimmedLine.startsWith('-- Query from history')) {
+                skipComments = true;
+                continue;
+            }
+            
+            // If we're in a comment block, skip lines that look like execution metadata
+            if (skipComments) {
+                if (trimmedLine.startsWith('-- Executed:') || 
+                    trimmedLine.startsWith('-- Connection:') || 
+                    trimmedLine.startsWith('-- Result Sets:') ||
+                    trimmedLine === '') { // Also skip empty lines that are part of the comment block
+                    continue;
+                } else {
+                    // Found a non-comment line, stop skipping
+                    skipComments = false;
+                }
+            }
+            
+            // If we're not skipping, add the line
+            if (!skipComments) {
+                resultLines.push(line);
+            }
+        }
+        
+        // Join the lines back together and trim any trailing whitespace
+        return resultLines.join('\n').trim();
     }
 }
