@@ -5,6 +5,78 @@ import { QueryHistoryTreeProvider } from '../queryHistoryTreeProvider';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
+import { SqlEditorProvider } from '../sqlEditorProvider';
+
+// Helper function to find and update existing history.sql editor
+function tryUpdateExistingHistoryEditor(
+    entry: QueryHistoryEntry,
+    sqlEditorProvider: SqlEditorProvider | undefined,
+    outputChannel: vscode.OutputChannel
+): boolean {
+    if (!sqlEditorProvider) {
+        outputChannel.appendLine(`[QueryHistory] SqlEditorProvider not available, cannot update existing editor`);
+        return false;
+    }
+
+    // Check if we have an open history.sql file (could be either custom tab or regular file)
+    const openEditors = vscode.window.tabGroups.all.flatMap(group => group.tabs);
+    outputChannel.appendLine(`[QueryHistory] Found ${openEditors.length} open tabs, searching for history.sql`);
+    
+    // Log all tabs for debugging
+    openEditors.forEach((tab, index) => {
+        let path = 'unknown';
+        if (tab.input instanceof vscode.TabInputCustom) {
+            path = tab.input.uri.path;
+            outputChannel.appendLine(`[QueryHistory] Tab ${index}: Custom - ${path}`);
+        } else if (tab.input instanceof vscode.TabInputText) {
+            path = tab.input.uri.path;
+            outputChannel.appendLine(`[QueryHistory] Tab ${index}: Text - ${path}`);
+        } else {
+            outputChannel.appendLine(`[QueryHistory] Tab ${index}: ${tab.input?.constructor.name || 'unknown'}`);
+        }
+    });
+
+    const historyTab = openEditors.find(tab => {
+        if (tab.input instanceof vscode.TabInputCustom) {
+            return tab.input.uri.path.endsWith('history.sql');
+        }
+        if (tab.input instanceof vscode.TabInputText) {
+            return tab.input.uri.path.endsWith('history.sql');
+        }
+        return false;
+    });
+
+    if (historyTab) {
+        outputChannel.appendLine(`[QueryHistory] Found existing history.sql tab`);
+        try {
+            let uri: vscode.Uri;
+            if (historyTab.input instanceof vscode.TabInputCustom) {
+                uri = historyTab.input.uri;
+                outputChannel.appendLine(`[QueryHistory] Using Custom tab URI: ${uri.toString()}`);
+            } else if (historyTab.input instanceof vscode.TabInputText) {
+                uri = historyTab.input.uri;
+                outputChannel.appendLine(`[QueryHistory] Using Text tab URI: ${uri.toString()}`);
+            } else {
+                outputChannel.appendLine(`[QueryHistory] Tab input type not supported`);
+                return false;
+            }
+
+            // Force update the connection for this editor
+            const targetDatabase = entry.database;
+            outputChannel.appendLine(`[QueryHistory] Entry details: connectionId=${entry.connectionId}, database=${entry.database}, server=${entry.server}`);
+            sqlEditorProvider.forceConnectionUpdate(uri, entry.connectionId, targetDatabase);
+            outputChannel.appendLine(`[QueryHistory] Updated existing history.sql editor connection to ${entry.connectionId} -> ${targetDatabase}`);
+            return true;
+        } catch (err) {
+            outputChannel.appendLine(`[QueryHistory] Failed to update existing history.sql editor: ${err}`);
+            return false;
+        }
+    } else {
+        outputChannel.appendLine(`[QueryHistory] No existing history.sql tab found`);
+    }
+
+    return false;
+}
 
 export function registerQueryHistoryCommands(
     context: vscode.ExtensionContext,
@@ -12,7 +84,8 @@ export function registerQueryHistoryCommands(
     historyTreeProvider: QueryHistoryTreeProvider,
     connectionProvider: ConnectionProvider,
     outputChannel: vscode.OutputChannel,
-    unifiedTreeProvider?: UnifiedTreeProvider
+    unifiedTreeProvider?: UnifiedTreeProvider,
+    sqlEditorProvider?: SqlEditorProvider
 ): vscode.Disposable[] {
     
     const openQueryFromHistoryCommand = vscode.commands.registerCommand(
@@ -32,19 +105,55 @@ export function registerQueryHistoryCommands(
                 // Combine query with header at the end
                 const fullContent = entry.query + header;
 
-                // Set preferred database for next editor so the SQL editor will initialize
-                // with the same connection+database that the query was executed on.
-                try {
-                    if (entry.connectionId && entry.database) {
-                        connectionProvider.setNextEditorPreferredDatabase(entry.connectionId, entry.database);
-                        outputChannel.appendLine(`[QueryHistory] Preferred DB set for next editor: ${entry.connectionId} -> ${entry.database}`);
-                    }
-                } catch (err) {
-                    outputChannel.appendLine(`[QueryHistory] Failed to set preferred DB for next editor: ${err}`);
-                }
+                // First, try to update existing history.sql editor if it exists
+                const updatedExistingEditor = sqlEditorProvider ? 
+                    tryUpdateExistingHistoryEditor(entry, sqlEditorProvider, outputChannel) : false;
 
-                // Open in custom SQL editor
-                await openSqlInCustomEditor(fullContent, 'history.sql', context);
+                if (!updatedExistingEditor) {
+                    outputChannel.appendLine(`[QueryHistory] No existing editor found, creating/opening history.sql`);
+                    // Set preferred database for next editor so the SQL editor will initialize
+                    // with the same connection+database that the query was executed on.
+                    try {
+                        if (entry.connectionId && entry.database) {
+                            connectionProvider.setNextEditorPreferredDatabase(entry.connectionId, entry.database);
+                            outputChannel.appendLine(`[QueryHistory] Preferred DB set for next editor: ${entry.connectionId} -> ${entry.database}`);
+                        }
+                    } catch (err) {
+                        outputChannel.appendLine(`[QueryHistory] Failed to set preferred DB for next editor: ${err}`);
+                    }
+
+                    // Open in custom SQL editor - this will now reuse the same history.sql file
+                    await openSqlInCustomEditor(fullContent, 'history.sql', context);
+                } else {
+                    // Update the content in the existing editor
+                    outputChannel.appendLine(`[QueryHistory] Updating existing editor, found ${vscode.workspace.textDocuments.length} open documents`);
+                    const historyDoc = vscode.workspace.textDocuments.find(doc => 
+                        doc.uri.path.endsWith('history.sql')
+                    );
+                    
+                    if (historyDoc) {
+                        outputChannel.appendLine(`[QueryHistory] Found existing history document: ${historyDoc.uri.toString()}`);
+                        const edit = new vscode.WorkspaceEdit();
+                        edit.replace(
+                            historyDoc.uri,
+                            new vscode.Range(0, 0, historyDoc.lineCount, 0),
+                            fullContent
+                        );
+                        await vscode.workspace.applyEdit(edit);
+                        outputChannel.appendLine(`[QueryHistory] Updated content in existing history.sql editor`);
+                        
+                        // Focus the existing tab - this might be causing the issue
+                        outputChannel.appendLine(`[QueryHistory] Attempting to focus existing document`);
+                        // Don't call showTextDocument as it might open a new tab - just return
+                        // await vscode.window.showTextDocument(historyDoc, { 
+                        //     viewColumn: vscode.ViewColumn.Active,
+                        //     preview: false 
+                        // });
+                        outputChannel.appendLine(`[QueryHistory] Skipping showTextDocument to avoid opening new tab`);
+                    } else {
+                        outputChannel.appendLine(`[QueryHistory] Warning: Could not find existing history document despite successful tab update`);
+                    }
+                }
 
                 // Try to connect to the same connection if it exists
                 try {
@@ -53,8 +162,6 @@ export function registerQueryHistoryCommands(
                     // Check if already connected to this connection
                     if (!connectionProvider.isConnectionActive(entry.connectionId)) {
                         await connectionProvider.connectToSavedById(entry.connectionId);
-                        // Ensure this connection is set as the active connection
-                        connectionProvider.setActiveConnection(entry.connectionId);
                         vscode.window.showInformationMessage(`Connected to ${entry.connectionName}`);
 
                         // Refresh the database explorer tree view on successful connection
@@ -63,10 +170,27 @@ export function registerQueryHistoryCommands(
                             unifiedTreeProvider.refresh();
                         }
                     } else {
-                        // If already connected, make it active so editor/schema requests target it
-                        connectionProvider.setActiveConnection(entry.connectionId);
-                        outputChannel.appendLine(`[QueryHistory] Already connected to ${entry.connectionId}, set as active`);
+                        outputChannel.appendLine(`[QueryHistory] Already connected to ${entry.connectionId}`);
                     }
+
+                    // Always set this connection as active and ensure correct database context
+                    connectionProvider.setActiveConnection(entry.connectionId);
+                    
+                    // For server connections, we need to ensure we're working with the correct database
+                    const connectionConfig = connectionProvider.getConnectionConfig(entry.connectionId);
+                    if (connectionConfig && connectionConfig.connectionType === 'server') {
+                        // This is a server connection, we need to ensure the correct database context
+                        outputChannel.appendLine(`[QueryHistory] Server connection detected, ensuring database context: ${entry.database}`);
+                        
+                        // Create or ensure DB pool for the specific database from history
+                        try {
+                            await connectionProvider.ensureConnectionAndGetDbPool(entry.connectionId, entry.database);
+                            outputChannel.appendLine(`[QueryHistory] Database context established for ${entry.connectionId} -> ${entry.database}`);
+                        } catch (err) {
+                            outputChannel.appendLine(`[QueryHistory] Warning: Could not establish database context ${entry.connectionId} -> ${entry.database}: ${err}`);
+                        }
+                    }
+                    
                 } catch (error) {
                     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
                     vscode.window.showWarningMessage(

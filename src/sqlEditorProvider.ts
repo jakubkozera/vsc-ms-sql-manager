@@ -121,6 +121,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     const compositeId = `${message.connectionId}::${message.databaseName}`;
                     this.webviewSelectedConnection.set(webviewPanel.webview, compositeId);
                     this.outputChannel.appendLine(`[SqlEditorProvider] switchDatabase -> ${compositeId}`);
+                    
+                    // Update current database in connection provider for history tracking
+                    this.connectionProvider.setCurrentDatabase(message.connectionId, message.databaseName);
+                    
                     await this.sendSchemaUpdate(webviewPanel.webview, compositeId);
                     break;
 
@@ -260,18 +264,35 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     public forceConnectionUpdate(fileUri: vscode.Uri, connectionId: string, databaseName?: string): void {
-        // Find webview for this file and update its connection
+        this.outputChannel.appendLine(`[SqlEditorProvider] forceConnectionUpdate called for ${fileUri.fsPath} -> ${connectionId}::${databaseName || 'none'}`);
+        this.outputChannel.appendLine(`[SqlEditorProvider] Active webviews: ${this.webviewToDocument.size}, disposed: ${this.disposedWebviews.size}`);
+        
+        // Find ALL webviews for this file and update their connections
+        let webviewsFound = 0;
+        const compositeId = databaseName ? `${connectionId}::${databaseName}` : connectionId;
+        
         for (const [webview, uri] of this.webviewToDocument.entries()) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Checking webview URI: ${uri.toString()} vs target: ${fileUri.toString()}`);
             if (uri.toString() === fileUri.toString() && !this.disposedWebviews.has(webview)) {
+                webviewsFound++;
+                
                 // Set the preferred connection for this webview
-                const compositeId = databaseName ? `${connectionId}::${databaseName}` : connectionId;
                 this.webviewSelectedConnection.set(webview, compositeId);
+                
+                this.outputChannel.appendLine(`[SqlEditorProvider] Found matching webview #${webviewsFound}, setting connection to: ${compositeId}`);
                 
                 // Update connections list to reflect the change
                 this.updateConnectionsList(webview);
-                
-                this.outputChannel.appendLine(`[SqlEditorProvider] Forced connection update for ${fileUri.fsPath} to ${compositeId}`);
-                break;
+            }
+        }
+        
+        if (webviewsFound > 0) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Forced connection update for ${fileUri.fsPath} to ${compositeId} (updated ${webviewsFound} webviews)`);
+        } else {
+            this.outputChannel.appendLine(`[SqlEditorProvider] WARNING: No matching webviews found for ${fileUri.toString()}`);
+            // List all active webviews for debugging
+            for (const [webview, uri] of this.webviewToDocument.entries()) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Available webview: ${uri.toString()} (disposed: ${this.disposedWebviews.has(webview)})`);
             }
         }
     }
@@ -279,6 +300,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private async updateConnectionsList(webview: vscode.Webview) {
         // Don't send messages to disposed webviews
         if (this.disposedWebviews.has(webview)) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Skipping disposed webview in updateConnectionsList`);
             return;
         }
 
@@ -300,14 +322,22 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         let currentConnectionIdToSend = activeConnectionId;
         let currentDatabase: string | null = null;
 
+        this.outputChannel.appendLine(`[SqlEditorProvider] updateConnectionsList: preserved=${preserved}, activeConnectionId=${activeConnectionId}`);
+
         // Parse preserved selection if it's composite
         if (preserved && typeof preserved === 'string' && preserved.includes('::')) {
             const [baseId, dbName] = preserved.split('::');
             currentConnectionIdToSend = baseId;
             currentDatabase = dbName;
+            this.outputChannel.appendLine(`[SqlEditorProvider] Using composite preserved connection: ${baseId} -> ${dbName}`);
         } else if (preserved) {
             currentConnectionIdToSend = preserved;
+            this.outputChannel.appendLine(`[SqlEditorProvider] Using simple preserved connection: ${preserved}`);
+        } else {
+            this.outputChannel.appendLine(`[SqlEditorProvider] No preserved connection, using active: ${activeConnectionId}`);
         }
+
+        this.outputChannel.appendLine(`[SqlEditorProvider] Sending connectionsUpdate: currentConnectionId=${currentConnectionIdToSend}, currentDatabase=${currentDatabase}`);
 
         webview.postMessage({
             type: 'connectionsUpdate',
@@ -318,11 +348,16 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         // If current connection is a server type, send databases list
         const currentConn = activeConnections.find(c => c.id === currentConnectionIdToSend);
+        this.outputChannel.appendLine(`[SqlEditorProvider] Found connection: ${currentConn ? `${currentConn.config.name} (${currentConn.config.connectionType})` : 'none'}`);
+        
         if (currentConn && currentConn.config.connectionType === 'server' && currentConnectionIdToSend) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Server connection detected, sending databases list with selectedDatabase=${currentDatabase}`);
             await this.sendDatabasesList(webview, currentConnectionIdToSend, currentDatabase);
         } else if (currentConnectionIdToSend) {
             // For direct database connections, send schema immediately
-            await this.sendSchemaUpdate(webview, currentConnectionIdToSend);
+            this.outputChannel.appendLine(`[SqlEditorProvider] Database connection detected, sending schema directly`);
+            const schemaConnectionId = currentDatabase ? `${currentConnectionIdToSend}::${currentDatabase}` : currentConnectionIdToSend;
+            await this.sendSchemaUpdate(webview, schemaConnectionId);
         }
     }
 
@@ -331,6 +366,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         if (this.disposedWebviews.has(webview)) {
             return;
         }
+
+        this.outputChannel.appendLine(`[SqlEditorProvider] sendDatabasesList called with connectionId=${connectionId}, selectedDatabase=${selectedDatabase}`);
 
         try {
             const pool = this.connectionProvider.getConnection(connectionId);
@@ -347,10 +384,29 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             const dbsResult = await pool.request().query(`SELECT name FROM sys.databases WHERE state = 0 ORDER BY name`);
             const databases = dbsResult.recordset.map((row: any) => row.name);
 
-            // Use selectedDatabase if provided, otherwise default to 'master'
-            const currentDb = selectedDatabase || 'master';
+            this.outputChannel.appendLine(`[SqlEditorProvider] Available databases on server: [${databases.join(', ')}]`);
+            this.outputChannel.appendLine(`[SqlEditorProvider] Requested selectedDatabase: ${selectedDatabase}`);
 
+            // Check if the requested database exists on server
+            let currentDb = selectedDatabase;
+            
+            // If no specific database requested, check if we already have one set for this connection
+            if (!currentDb) {
+                currentDb = this.connectionProvider.getCurrentDatabase(connectionId) || 'master';
+            }
+            
+            if (selectedDatabase && !databases.includes(selectedDatabase)) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] WARNING: Database '${selectedDatabase}' from history not found on server!`);
+                this.outputChannel.appendLine(`[SqlEditorProvider] Available databases: [${databases.join(', ')}]`);
+                // Still use the requested database name so UI shows what was requested
+                // currentDb = 'master'; // Don't fallback to master, keep the requested name
+            }
+
+            this.outputChannel.appendLine(`[SqlEditorProvider] selectedDatabase=${selectedDatabase}, currentDb=${currentDb}`);
             this.outputChannel.appendLine(`[SqlEditorProvider] Sending ${databases.length} databases, selected: ${currentDb}`);
+
+            // Update current database in connection provider for history tracking
+            this.connectionProvider.setCurrentDatabase(connectionId, currentDb);
 
             webview.postMessage({
                 type: 'databasesUpdate',

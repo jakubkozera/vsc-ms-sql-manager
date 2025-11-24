@@ -74,6 +74,9 @@ export class ConnectionProvider {
     private databaseFilters: Map<string, DatabaseFilter> = new Map();
     // Table filters per database (keyed by `${connectionId}::${database}`)
     private tableFilters: Map<string, TableFilter> = new Map();
+    
+    // Track current selected database for each connection (for history purposes)
+    private currentDatabases: Map<string, string> = new Map();
 
     constructor(
         private context: vscode.ExtensionContext,
@@ -708,6 +711,27 @@ export class ConnectionProvider {
             return this.activeConfigs.get(this.currentActiveId) || null;
         }
         return null;
+    }
+
+    // Get current database for a connection (for history purposes)
+    getCurrentDatabase(connectionId?: string): string | undefined {
+        const id = connectionId || this.currentActiveId;
+        if (!id) return undefined;
+        
+        // For direct database connections, return the database from config
+        const config = this.activeConfigs.get(id);
+        if (config && config.connectionType === 'database') {
+            return config.database;
+        }
+        
+        // For server connections, return the currently selected database
+        return this.currentDatabases.get(id);
+    }
+
+    // Set current database for a connection (called when switching databases)
+    setCurrentDatabase(connectionId: string, database: string): void {
+        this.currentDatabases.set(connectionId, database);
+        console.log(`[ConnectionProvider] Set current database for ${connectionId}: ${database}`);
     }
 
     async getCompleteConnectionConfig(config: ConnectionConfig): Promise<ConnectionConfig> {

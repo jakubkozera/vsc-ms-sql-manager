@@ -125,11 +125,24 @@ export class QueryExecutor {
                             .join('\n')
                             .trim();
                         
+                        // Get current database from the connection that was used
+                        let currentDatabase: string | undefined = activeConnectionInfo.database;
+                        
+                        // For server connections, get the actual current database from the connection provider
+                        if (!currentDatabase) {
+                            currentDatabase = this.connectionProvider.getCurrentDatabase(activeConnectionInfo.id);
+                            console.log('[QueryExecutor] Got current database from connection provider:', currentDatabase);
+                        }
+                        
+                        console.log('[QueryExecutor] Saving to history - database:', currentDatabase);
+                        
+                        const finalDatabase = currentDatabase || '';
+                        
                         this.historyManager.addEntry({
                             query: cleanedQuery,
                             connectionId: activeConnectionInfo.id,
                             connectionName: activeConnectionInfo.name,
-                            database: activeConnectionInfo.database,
+                            database: finalDatabase,
                             server: activeConnectionInfo.server,
                             resultSetCount: allRecordsets.length,
                             rowCounts: rowCounts,
