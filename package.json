@@ -251,6 +251,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "mssqlManager.refreshSnippets",
+        "title": "MS SQL Manager: Refresh SQL Snippets",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "mssqlManager.toggleQueryHistoryGrouping",
         "title": "Toggle Query History Grouping",
         "icon": "$(group-by-ref-type)"

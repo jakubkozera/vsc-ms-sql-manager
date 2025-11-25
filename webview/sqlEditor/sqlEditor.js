@@ -13,6 +13,9 @@ let dbSchema = { tables: [], views: [], foreignKeys: [] };
 let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
+let sqlSnippets = []; // SQL snippets loaded from VS Code
+let completionProvider = null; // Reference to current completion provider
+let completionProviderRegistered = false; // Flag to track registration
 
 // Query execution timer
 let queryStartTime = null;
@@ -222,15 +225,8 @@ require(['vs/editor/editor.main'], function () {
         executeQuery();
     });
 
-    // Register SQL completion provider
-    console.log('[SQL-COMPLETION] Registering completion provider');
-    monaco.languages.registerCompletionItemProvider('sql', {
-        provideCompletionItems: (model, position) => {
-            console.log('[SQL-COMPLETION] provideCompletionItems called at position:', position);
-            console.log('[SQL-COMPLETION] Current dbSchema:', dbSchema);
-            return provideSqlCompletions(model, position);
-        }
-    });
+    // Register SQL completion provider (initial registration)
+    registerCompletionProvider();
 
     // Register SQL hover provider - shows table/column details using dbSchema
     console.log('[SQL-HOVER] Registering hover provider');
@@ -352,6 +348,9 @@ require(['vs/editor/editor.main'], function () {
 
     // Notify extension that webview is ready
     vscode.postMessage({ type: 'ready' });
+    
+    // Request SQL snippets from extension
+    vscode.postMessage({ type: 'getSnippets' });
 
     // Ensure Go-to-definition action is registered after editor is created
     try {
@@ -1236,6 +1235,7 @@ function provideSqlCompletions(model, position) {
     // Check if this is a new/empty query for special table suggestions
     const isNewQuery = isNewOrEmptyQuery(textUntilPosition);
     console.log('[SQL-COMPLETION] Is new query:', isNewQuery);
+    console.log('[SQL-COMPLETION] Available snippets:', sqlSnippets.map(s => s.prefix).join(', '));
 
     // Add tables
     dbSchema.tables.forEach(table => {
@@ -1245,7 +1245,7 @@ function provideSqlCompletions(model, position) {
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Class,
-            detail: `Table (${table.columns.length} columns)`,
+            detail: `🗂️ Table (${table.columns.length} columns)`,
             insertText: fullName,
             range: range,
             sortText: `2_${fullName}` // Lower priority than special options
@@ -1253,35 +1253,43 @@ function provideSqlCompletions(model, position) {
         
         // Add special script generation options only for new queries
         if (isNewQuery) {
-            // SELECT TOP 100 option
-            suggestions.push({
-                label: `${table.name}100`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT TOP 100 from ${fullName}`,
-                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${table.name}_100`, // High priority
-                documentation: {
-                    value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`
-                }
-            });
+            const table100Label = `${table.name}100`;
+            const tableAllLabel = `${table.name}*`;
             
-            // SELECT * option
-            suggestions.push({
-                label: `${table.name}*`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT * from ${fullName}`,
-                insertText: `SELECT *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${table.name}_all`,
-                documentation: {
-                    value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`
-                }
-            });
+            // Check if user has custom snippets with same prefixes
+            const hasConflict100 = sqlSnippets.some(s => s.prefix.toLowerCase() === table100Label.toLowerCase());
+            const hasConflictAll = sqlSnippets.some(s => s.prefix.toLowerCase() === tableAllLabel.toLowerCase());
             
-            // (COUNT and Schema quick scripts removed per user request)
+            // Only add if no conflict with user snippets (user snippets take priority)
+            if (!hasConflict100) {
+                suggestions.push({
+                    label: table100Label,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName}`,
+                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${table.name}_100`, // High priority
+                    documentation: {
+                        value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`
+                    }
+                });
+            }
+            
+            if (!hasConflictAll) {
+                suggestions.push({
+                    label: tableAllLabel,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName}`,
+                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${table.name}_all`,
+                    documentation: {
+                        value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`
+                    }
+                });
+            }
         }
     });
 
@@ -1293,7 +1301,7 @@ function provideSqlCompletions(model, position) {
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Interface,
-            detail: `View (${view.columns.length} columns)`,
+            detail: `👁️ View (${view.columns.length} columns)`,
             insertText: fullName,
             range: range,
             sortText: `2_${fullName}` // Lower priority than special options
@@ -1301,35 +1309,43 @@ function provideSqlCompletions(model, position) {
         
         // Add special script generation options only for new queries
         if (isNewQuery) {
-            // SELECT TOP 100 option for views
-            suggestions.push({
-                label: `${view.name}100`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT TOP 100 from ${fullName} (View)`,
-                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${view.name}_100`,
-                documentation: {
-                    value: `**Quick Script**: SELECT TOP 100 rows from view ${fullName}`
-                }
-            });
+            const view100Label = `${view.name}100`;
+            const viewAllLabel = `${view.name}*`;
             
-            // SELECT * option for views
-            suggestions.push({
-                label: `${view.name}*`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT * from ${fullName} (View)`,
-                insertText: `SELECT *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${view.name}_all`,
-                documentation: {
-                    value: `**Quick Script**: SELECT all rows from view ${fullName}`
-                }
-            });
+            // Check if user has custom snippets with same prefixes
+            const hasConflict100 = sqlSnippets.some(s => s.prefix.toLowerCase() === view100Label.toLowerCase());
+            const hasConflictAll = sqlSnippets.some(s => s.prefix.toLowerCase() === viewAllLabel.toLowerCase());
             
-            // (COUNT quick script for views removed per user request)
+            // Only add if no conflict with user snippets
+            if (!hasConflict100) {
+                suggestions.push({
+                    label: view100Label,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName} (View)`,
+                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${view.name}_100`,
+                    documentation: {
+                        value: `**Quick Script**: SELECT TOP 100 rows from view ${fullName}`
+                    }
+                });
+            }
+            
+            if (!hasConflictAll) {
+                suggestions.push({
+                    label: viewAllLabel,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName} (View)`,
+                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${view.name}_all`,
+                    documentation: {
+                        value: `**Quick Script**: SELECT all rows from view ${fullName}`
+                    }
+                });
+            }
         }
     });
 
@@ -1342,13 +1358,114 @@ function provideSqlCompletions(model, position) {
         suggestions.push({
             label: keyword,
             kind: monaco.languages.CompletionItemKind.Keyword,
+            detail: `🔑 SQL Keyword`,
             insertText: keyword,
-            range: range
+            range: range,
+            sortText: `9_${keyword}` // Low priority for keywords
         });
     });
+    
+    // Add SQL snippets (avoid duplicates with existing suggestions)
+    console.log('[SQL-COMPLETION] Adding SQL snippets:', sqlSnippets.length);
+    const existingLabels = new Set(suggestions.map(s => s.label.toLowerCase()));
+    
+    sqlSnippets.forEach(snippet => {
+        // Skip snippets that conflict with existing table suggestions
+        if (existingLabels.has(snippet.prefix.toLowerCase())) {
+            console.log('[SQL-COMPLETION] Skipping duplicate snippet:', snippet.prefix);
+            return;
+        }
+        
+        suggestions.push({
+            label: snippet.prefix,
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: `\uD83D\uDCDD ${snippet.description}`, // Add snippet icon
+            insertText: snippet.body,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range: range,
+            sortText: `00_snippet_${snippet.prefix}`, // Highest priority for user snippets
+            documentation: {
+                value: `**User Snippet**: ${snippet.name}\n\n${snippet.description || 'Custom SQL snippet'}\n\n---\n*Loaded from snippets file*`
+            }
+        });
+        existingLabels.add(snippet.prefix.toLowerCase());
+    });
 
-    return { suggestions };
+    // Final deduplication based on label (case-insensitive)
+    const uniqueSuggestions = [];
+    const seenLabels = new Set();
+    
+    for (const suggestion of suggestions) {
+        const labelKey = suggestion.label.toLowerCase();
+        if (!seenLabels.has(labelKey)) {
+            uniqueSuggestions.push(suggestion);
+            seenLabels.add(labelKey);
+        } else {
+            console.log('[SQL-COMPLETION] Skipping duplicate suggestion:', suggestion.label);
+        }
+    }
+    
+    console.log('[SQL-COMPLETION] Returning', uniqueSuggestions.length, 'unique suggestions (removed', suggestions.length - uniqueSuggestions.length, 'duplicates)');
+    return { suggestions: uniqueSuggestions };
 }
+
+// Register completion provider (can be called multiple times to update snippets)
+function registerCompletionProvider() {
+    if (!monaco || !monaco.languages) {
+        console.log('[SNIPPETS] Monaco not ready, skipping completion provider registration');
+        return;
+    }
+    
+    // Only register once - Monaco doesn't support clean disposal/re-registration
+    if (completionProviderRegistered) {
+        console.log('[SNIPPETS] Completion provider already registered, snippets will be updated automatically');
+        return;
+    }
+    
+    console.log('[SNIPPETS] Registering completion provider for the first time with', sqlSnippets.length, 'snippets');
+    
+    // Configure Monaco Editor for better snippet support (only set once)
+    try {
+        monaco.languages.setLanguageConfiguration('sql', {
+            wordPattern: /(-?\d*\.\d\w*)|([^\`\~\!\@\#\%\^\&\*\(\)\-\=\+\[\{\]\}\\\|\;\:\'\"\,\.\<\>\/\?\s]+)/g,
+        });
+    } catch (e) {
+        // Language config might already be set, ignore error
+        console.log('[SNIPPETS] Language config already set:', e.message);
+    }
+    
+    // Register completion provider and store reference
+    completionProvider = monaco.languages.registerCompletionItemProvider('sql', {
+        triggerCharacters: ['.', ' '], // Trigger on dot and space for better snippet matching
+        provideCompletionItems: (model, position) => {
+            console.log('[SQL-COMPLETION] provideCompletionItems called at position:', position);
+            console.log('[SQL-COMPLETION] Current dbSchema:', dbSchema);
+            return provideSqlCompletions(model, position);
+        }
+    });
+    
+    completionProviderRegistered = true;
+    console.log('[SNIPPETS] Completion provider registered successfully');
+}
+
+// Debug function to reset completion provider (for development)
+function resetCompletionProvider() {
+    console.log('[DEBUG] Resetting completion provider...');
+    completionProviderRegistered = false;
+    if (completionProvider) {
+        try {
+            completionProvider.dispose();
+        } catch (e) {
+            console.log('[DEBUG] Error disposing completion provider:', e);
+        }
+        completionProvider = null;
+    }
+    registerCompletionProvider();
+    console.log('[DEBUG] Completion provider reset complete');
+}
+
+// Make reset function available globally for debugging
+window.resetCompletionProvider = resetCompletionProvider;
 
 function analyzeSqlContext(textUntilPosition, lineUntilPosition) {
     const lowerText = textUntilPosition.toLowerCase();
@@ -2273,6 +2390,25 @@ window.addEventListener('message', event => {
                         executeQuery();
                     }, 50);
                 }
+            }
+            break;
+            
+        case 'snippetsUpdate':
+            console.log('[SNIPPETS] Received snippets:', message.snippets?.length || 0);
+            const newSnippets = message.snippets || [];
+            
+            // Update snippets array - completion provider will use updated data automatically
+            if (JSON.stringify(sqlSnippets) !== JSON.stringify(newSnippets)) {
+                console.log('[SNIPPETS] Snippets changed, updating array...');
+                sqlSnippets = newSnippets;
+                console.log('[SNIPPETS] Snippets updated. Completion provider will use new data on next invocation.');
+                
+                // Register completion provider if not already registered
+                if (!completionProviderRegistered) {
+                    registerCompletionProvider();
+                }
+            } else {
+                console.log('[SNIPPETS] Snippets unchanged');
             }
             break;
     }
