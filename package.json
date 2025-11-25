@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -248,6 +248,11 @@
       {
         "command": "mssqlManager.refreshQueryHistory",
         "title": "Refresh Query History",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.refreshSnippets",
+        "title": "MS SQL Manager: Refresh SQL Snippets",
         "icon": "$(refresh)"
       },
       {

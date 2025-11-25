@@ -130,6 +130,15 @@ async function initializeExtension(context: vscode.ExtensionContext) {
         sqlEditorProvider
     );
 
+    // Register developer command to refresh SQL snippets
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mssqlManager.refreshSnippets', () => {
+            outputChannel.appendLine('[Extension] Refreshing SQL snippets manually...');
+            sqlEditorProvider.refreshSnippets();
+            vscode.window.showInformationMessage('SQL snippets refreshed successfully!');
+        })
+    );
+
     // Add output channel to subscriptions
     context.subscriptions.push(outputChannel);
 }

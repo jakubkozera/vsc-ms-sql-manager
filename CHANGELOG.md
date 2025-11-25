@@ -5,6 +5,27 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-11-25
+
+### Added
+
+- **Built-in SQL Snippets**: Comprehensive collection of 33+ built-in SQL code snippets for enhanced productivity
+  - **Stored Procedures**: `proc`, `procedure`, `usp` - Generate CREATE OR ALTER PROCEDURE templates with parameters
+  - **Views**: `vw`, `view`, `v_` - Create views with proper formatting and GO statements
+  - **Functions**: `funcs`/`scalar` for scalar functions, `func`/`tvf`/`uf` for table-valued functions
+  - **Database Objects**: `ct`/`table` for CREATE TABLE, `trig`/`trigger` for triggers
+  - **Basic Queries**: `sel` for SELECT, `self`/`nolock` for SELECT WITH (NOLOCK), `top` for TOP queries
+  - **Data Manipulation**: `ins` for INSERT, `insel` for INSERT SELECT, `upd` for UPDATE, `del` for DELETE
+  - **Advanced SQL**: `merge` for MERGE statements, `cte` for CTEs, `tran` for transactions, `try` for error handling
+  - **Utilities**: `exists` for IF EXISTS, `#t` for temp tables, `@t` for table variables, `offset` for pagination
+  - **Administration**: `missing` for missing indexes query, `plan` for execution plans, `reindex`, `stats`, `spwho`
+  - **Modern SQL**: `json` for FOR JSON PATH, `openjson` for JSON parsing, `dyn` for dynamic SQL
+  - **Cloud Features**: `elastic` for Azure Elastic Query, `cetas` for Synapse/Fabric external tables
+  - **Documentation**: `header` for script headers, `printlong` for printing long strings
+  - **Smart Integration**: Built-in snippets work alongside user-defined snippets with priority handling
+  - **Visual Distinction**: Built-in snippets display with ⚡ icon, user snippets with 📝 icon
+  - **Create Custom Snippets**: Right-click context menu "Create Snippet..." to convert selected SQL code into reusable snippets
+
 ## [0.4.4] - 2025-11-25
 
 ### Added

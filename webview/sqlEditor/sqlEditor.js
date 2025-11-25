@@ -13,6 +13,289 @@ let dbSchema = { tables: [], views: [], foreignKeys: [] };
 let validationTimeout = null;
 let currentQueryPlan = null;
 let actualPlanEnabled = false;
+let sqlSnippets = []; // SQL snippets loaded from VS Code
+let completionProvider = null; // Reference to current completion provider
+let completionProviderRegistered = false; // Flag to track registration
+
+// Built-in SQL snippets
+const builtInSnippets = [
+    {
+        name: "Script Header",
+        prefix: "header",
+        body: "-- =================================================================\n-- Author      : ${1:Your Name}\n-- Create date : ${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}\n-- Description : ${2:Short description}\n-- Version     : 1.0\n-- =================================================================\n",
+        description: "Standard script/procedure header"
+    },
+    {
+        name: "CREATE OR ALTER PROCEDURE",
+        prefix: "proc",
+        body: "CREATE OR ALTER PROCEDURE dbo.usp_${1:ProcedureName}\n\t${2:@Param} ${3:int} = NULL${4:, @Param2 nvarchar(100) = NULL}\nAS\nBEGIN\n\tSET NOCOUNT ON;\n\tSET XACT_ABORT ON;\n\n\t${0:-- TODO: implementation}\nEND\nGO",
+        description: "Modern stored procedure (CREATE OR ALTER)"
+    },
+    {
+        name: "CREATE OR ALTER PROCEDURE",
+        prefix: "procedure",
+        body: "CREATE OR ALTER PROCEDURE dbo.usp_${1:ProcedureName}\n\t${2:@Param} ${3:int} = NULL${4:, @Param2 nvarchar(100) = NULL}\nAS\nBEGIN\n\tSET NOCOUNT ON;\n\tSET XACT_ABORT ON;\n\n\t${0:-- TODO: implementation}\nEND\nGO",
+        description: "Modern stored procedure (CREATE OR ALTER)"
+    },
+    {
+        name: "CREATE OR ALTER PROCEDURE",
+        prefix: "usp",
+        body: "CREATE OR ALTER PROCEDURE dbo.usp_${1:ProcedureName}\n\t${2:@Param} ${3:int} = NULL${4:, @Param2 nvarchar(100) = NULL}\nAS\nBEGIN\n\tSET NOCOUNT ON;\n\tSET XACT_ABORT ON;\n\n\t${0:-- TODO: implementation}\nEND\nGO",
+        description: "Modern stored procedure (CREATE OR ALTER)"
+    },
+    {
+        name: "CREATE OR ALTER VIEW",
+        prefix: "vw",
+        body: "CREATE OR ALTER VIEW dbo.v_${1:ViewName}\nAS\n${0:-- SELECT …}\nGO",
+        description: "CREATE OR ALTER VIEW template"
+    },
+    {
+        name: "CREATE OR ALTER VIEW",
+        prefix: "view",
+        body: "CREATE OR ALTER VIEW dbo.v_${1:ViewName}\nAS\n${0:-- SELECT …}\nGO",
+        description: "CREATE OR ALTER VIEW template"
+    },
+    {
+        name: "CREATE OR ALTER VIEW",
+        prefix: "v_",
+        body: "CREATE OR ALTER VIEW dbo.v_${1:ViewName}\nAS\n${0:-- SELECT …}\nGO",
+        description: "CREATE OR ALTER VIEW template"
+    },
+    {
+        name: "CREATE OR ALTER FUNCTION (Scalar)",
+        prefix: "funcs",
+        body: "CREATE OR ALTER FUNCTION dbo.uf_${1:FunctionName} (@${2:Param} int)\nRETURNS ${3:int}\nAS\nBEGIN\n\tRETURN ${0:0}\nEND\nGO",
+        description: "CREATE OR ALTER SCALAR FUNCTION"
+    },
+    {
+        name: "CREATE OR ALTER FUNCTION (Scalar)",
+        prefix: "scalar",
+        body: "CREATE OR ALTER FUNCTION dbo.uf_${1:FunctionName} (@${2:Param} int)\nRETURNS ${3:int}\nAS\nBEGIN\n\tRETURN ${0:0}\nEND\nGO",
+        description: "CREATE OR ALTER SCALAR FUNCTION"
+    },
+    {
+        name: "CREATE OR ALTER FUNCTION (Table-Valued)",
+        prefix: "func",
+        body: "CREATE OR ALTER FUNCTION dbo.uf_${1:FunctionName} (@${2:Param} int = NULL)\nRETURNS TABLE\nAS\nRETURN (\n\tSELECT ${0:1} AS Result\n)\nGO",
+        description: "CREATE OR ALTER TABLE-VALUED FUNCTION"
+    },
+    {
+        name: "CREATE OR ALTER FUNCTION (Table-Valued)",
+        prefix: "tvf",
+        body: "CREATE OR ALTER FUNCTION dbo.uf_${1:FunctionName} (@${2:Param} int = NULL)\nRETURNS TABLE\nAS\nRETURN (\n\tSELECT ${0:1} AS Result\n)\nGO",
+        description: "CREATE OR ALTER TABLE-VALUED FUNCTION"
+    },
+    {
+        name: "CREATE OR ALTER FUNCTION (Table-Valued)",
+        prefix: "uf",
+        body: "CREATE OR ALTER FUNCTION dbo.uf_${1:FunctionName} (@${2:Param} int = NULL)\nRETURNS TABLE\nAS\nRETURN (\n\tSELECT ${0:1} AS Result\n)\nGO",
+        description: "CREATE OR ALTER TABLE-VALUED FUNCTION"
+    },
+    {
+        name: "CREATE OR ALTER TRIGGER",
+        prefix: "trig",
+        body: "CREATE OR ALTER TRIGGER dbo.tr_${1:Table}_${2:Insert}\nON dbo.${3:Table}\nAFTER ${4:INSERT}\nAS\nBEGIN\n\tSET NOCOUNT ON;\n\t${0:-- TODO}\nEND\nGO",
+        description: "CREATE OR ALTER TRIGGER"
+    },
+    {
+        name: "CREATE OR ALTER TRIGGER",
+        prefix: "trigger",
+        body: "CREATE OR ALTER TRIGGER dbo.tr_${1:Table}_${2:Insert}\nON dbo.${3:Table}\nAFTER ${4:INSERT}\nAS\nBEGIN\n\tSET NOCOUNT ON;\n\t${0:-- TODO}\nEND\nGO",
+        description: "CREATE OR ALTER TRIGGER"
+    },
+    {
+        name: "CREATE TABLE",
+        prefix: "ct",
+        body: "CREATE TABLE dbo.${1:TableName}\n(\n\t${2:Id} int IDENTITY(1,1) NOT NULL,\n\t${3:Column} nvarchar(100) NULL,\n\tCONSTRAINT PK_${1:TableName} PRIMARY KEY CLUSTERED (${2:Id})\n)\nGO",
+        description: "CREATE TABLE with primary key"
+    },
+    {
+        name: "CREATE TABLE",
+        prefix: "table",
+        body: "CREATE TABLE dbo.${1:TableName}\n(\n\t${2:Id} int IDENTITY(1,1) NOT NULL,\n\t${3:Column} nvarchar(100) NULL,\n\tCONSTRAINT PK_${1:TableName} PRIMARY KEY CLUSTERED (${2:Id})\n)\nGO",
+        description: "CREATE TABLE with primary key"
+    },
+    {
+        name: "SELECT * FROM",
+        prefix: "sel",
+        body: "SELECT ${1:*} FROM ${2:dbo}.${3:Table} ${4:AS t}${0}",
+        description: "Basic SELECT statement"
+    },
+    {
+        name: "SELECT with NOLOCK",
+        prefix: "self",
+        body: "SELECT * FROM ${1:dbo}.${2:Table} WITH (NOLOCK)${0}",
+        description: "SELECT with NOLOCK hint"
+    },
+    {
+        name: "SELECT with NOLOCK",
+        prefix: "nolock",
+        body: "SELECT * FROM ${1:dbo}.${2:Table} WITH (NOLOCK)${0}",
+        description: "SELECT with NOLOCK hint"
+    },
+    {
+        name: "SELECT TOP 1000",
+        prefix: "top",
+        body: "SELECT TOP (1000) ${1:*}",
+        description: "Quick preview"
+    },
+    {
+        name: "COUNT(*)",
+        prefix: "selc",
+        body: "SELECT COUNT(*) FROM ${1:dbo}.${2:Table}${0}",
+        description: "Count all records"
+    },
+    {
+        name: "INSERT INTO",
+        prefix: "ins",
+        body: "INSERT INTO ${1:dbo}.${2:Table} (${3:Column}) VALUES (${4:value})${0}",
+        description: "Basic INSERT statement"
+    },
+    {
+        name: "INSERT SELECT",
+        prefix: "insel",
+        body: "INSERT INTO ${1:dbo}.${2:Target} (${3:Columns})\nSELECT ${4:Columns} FROM ${5:dbo}.${6:Source}${0}",
+        description: "INSERT with SELECT"
+    },
+    {
+        name: "UPDATE",
+        prefix: "upd",
+        body: "UPDATE ${1:t}\nSET ${2:t.Column = value}\nFROM ${3:dbo}.${4:Table} AS t${5: WHERE <condition>}${0}",
+        description: "UPDATE with FROM clause"
+    },
+    {
+        name: "DELETE",
+        prefix: "del",
+        body: "DELETE FROM ${1:dbo}.${2:Table} WHERE ${3:Id = @Id}${0}",
+        description: "Basic DELETE statement"
+    },
+    {
+        name: "TRUNCATE TABLE",
+        prefix: "trunc",
+        body: "TRUNCATE TABLE ${1:dbo}.${2:Table}",
+        description: "Truncate table (fast delete)"
+    },
+    {
+        name: "MERGE",
+        prefix: "merge",
+        body: "MERGE ${1:dbo}.${2:Target} AS t\nUSING ${3:Source} AS s ON t.${4:Key} = s.${4:Key}\nWHEN MATCHED THEN UPDATE SET ${5:t.Col = s.Col}\nWHEN NOT MATCHED BY TARGET THEN INSERT (${6:Cols}) VALUES (${7:s.Cols})\nWHEN NOT MATCHED BY SOURCE THEN DELETE;\nGO",
+        description: "MERGE statement (UPSERT)"
+    },
+    {
+        name: "Common Table Expression",
+        prefix: "cte",
+        body: "WITH ${1:cteName} AS (\n\t${2:-- query}\n)\nSELECT * FROM ${1:cteName}${0}",
+        description: "CTE (Common Table Expression)"
+    },
+    {
+        name: "IF EXISTS",
+        prefix: "exists",
+        body: "IF EXISTS (SELECT 1 FROM ${1:dbo}.${2:Table} WHERE ${3:Id = @Id})\nBEGIN\n\t${0:-- code}\nEND",
+        description: "IF EXISTS conditional block"
+    },
+    {
+        name: "Temp Table",
+        prefix: "#t",
+        body: "CREATE TABLE #${1:TempName} (\n\t${2:Id} int,\n\t${3:Name} nvarchar(100)\n)${0}",
+        description: "Create temporary table"
+    },
+    {
+        name: "Table Variable",
+        prefix: "@t",
+        body: "DECLARE @${1:Table} TABLE (\n\t${2:Id} int,\n\t${3:Name} nvarchar(100)\n)${0}",
+        description: "Declare table variable"
+    },
+    {
+        name: "BEGIN TRANSACTION",
+        prefix: "tran",
+        body: "BEGIN TRANSACTION;\nBEGIN TRY\n\t${0:-- your code}\n\tCOMMIT TRANSACTION;\nEND TRY\nBEGIN CATCH\n\tIF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n\tTHROW;\nEND CATCH",
+        description: "Transaction with error handling"
+    },
+    {
+        name: "TRY CATCH",
+        prefix: "try",
+        body: "BEGIN TRY\n\t${0:-- code}\nEND TRY\nBEGIN CATCH\n\tSELECT ERROR_NUMBER() AS ErrorNumber, ERROR_MESSAGE() AS ErrorMessage;\n\tTHROW;\nEND CATCH",
+        description: "TRY...CATCH block"
+    },
+    {
+        name: "THROW Error",
+        prefix: "throw",
+        body: "THROW 50000, '${1:Error message}', 1;",
+        description: "Throw custom error"
+    },
+    {
+        name: "Pagination (OFFSET/FETCH)",
+        prefix: "offset",
+        body: "ORDER BY ${1:Id}\nOFFSET ${2:@PageSize} * (${3:@PageNumber} - 1) ROWS\nFETCH NEXT ${2:@PageSize} ROWS ONLY",
+        description: "ROW_NUMBER() pagination"
+    },
+    {
+        name: "Missing Indexes Query",
+        prefix: "missing",
+        body: "-- Top missing indexes\nSELECT TOP 25\n\tmigs.avg_total_user_cost * migs.avg_user_impact * (migs.user_seeks + migs.user_scans) AS Impact,\n\tmid.statement,\n\t'CREATE INDEX ix_' + OBJECT_NAME(mid.object_id) + '_' + REPLACE(ISNULL(mid.equality_columns,''), ', ', '_') + ISNULL('_' + mid.inequality_columns, '')\n\t\t+ ' INCLUDE (' + ISNULL(mid.included_columns, '') + ');' AS CreateIndexStatement\nFROM sys.dm_db_missing_index_groups mig\nJOIN sys.dm_db_missing_index_group_stats migs ON mig.index_group_handle = migs.group_handle\nJOIN sys.dm_db_missing_index_details mid ON mig.index_handle = mid.index_handle\nORDER BY Impact DESC;",
+        description: "Query to find missing indexes"
+    },
+    {
+        name: "Enable Execution Plan",
+        prefix: "plan",
+        body: "SET STATISTICS IO, TIME ON;\nSET SHOWPLAN_XML ON;\n-- SET STATISTICS XML ON;\nGO",
+        description: "Enable execution plan and statistics"
+    },
+    {
+        name: "Dynamic SQL",
+        prefix: "dyn",
+        body: "DECLARE @sql nvarchar(max) = N'${1:SELECT * FROM dbo.Table WHERE Id = @Id}';\nEXEC sp_executesql @sql, N'@Id int', @Id = ${2:1};",
+        description: "Execute dynamic SQL with parameters"
+    },
+    {
+        name: "FOR JSON PATH",
+        prefix: "json",
+        body: "FOR JSON PATH${1:, ROOT('data')}${2:, INCLUDE_NULL_VALUES}",
+        description: "Format results as JSON"
+    },
+    {
+        name: "OPENJSON",
+        prefix: "openjson",
+        body: "OPENJSON(@json) WITH (\n\t${1:Id} int '$.id',\n\t${2:Name} nvarchar(100) '$.name'\n)${0}",
+        description: "Parse JSON data"
+    },
+    {
+        name: "Rebuild Indexes",
+        prefix: "reindex",
+        body: "ALTER INDEX ALL ON ${1:dbo}.${2:Table} REBUILD WITH (ONLINE = ON, SORT_IN_TEMPDB = ON);",
+        description: "Rebuild all indexes on table"
+    },
+    {
+        name: "Update Statistics",
+        prefix: "stats",
+        body: "UPDATE STATISTICS ${1:dbo}.${2:Table} WITH FULLSCAN;",
+        description: "Update table statistics"
+    },
+    {
+        name: "sp_who2",
+        prefix: "spwho",
+        body: "EXEC sp_who2;",
+        description: "Show active connections"
+    },
+    {
+        name: "Azure Elastic Query – External Table",
+        prefix: "elastic",
+        body: "-- Example external table (Azure SQL cross-database)\n\tCREATE EXTERNAL DATA SOURCE RemoteDb WITH (\n\t\\tTYPE = RDBMS,\n\t\\tLOCATION = 'server.database.windows.net',\n\t\\tDATABASE_NAME = 'RemoteDb',\n\t\\tCREDENTIAL = ElasticCredential\n\t);\n\tCREATE EXTERNAL TABLE dbo.${1:RemoteTable} (\n\t\\t${2:Id} int\n\t) WITH (DATA_SOURCE = RemoteDb);",
+        description: "Azure Elastic Query - External Table"
+    },
+    {
+        name: "CETAS (Synapse/Fabric)",
+        prefix: "cetas",
+        body: "CREATE EXTERNAL TABLE ${1:ExternalTable}\n\tWITH (\n\t\\tLOCATION = '${2:folder/file.parquet}',\n\t\\tDATA_SOURCE = ${3:storage},\n\t\\tFILE_FORMAT = ${4:ParquetFormat}\n\t) AS\n\tSELECT ${0:*} FROM ${5:SourceTable};",
+        description: "CREATE EXTERNAL TABLE AS SELECT (Synapse/Fabric)"
+    },
+    {
+        name: "Print Long String (>4000 chars)",
+        prefix: "printlong",
+        body: "DECLARE @i int = 1, @len int = LEN(@LongString);\n\tWHILE @i <= @len BEGIN\n\t\\tPRINT SUBSTRING(@LongString, @i, 4000);\n\t\\tSET @i += 4000;\n\tEND",
+        description: "Print strings longer than 4000 characters"
+    }
+];
 
 // Query execution timer
 let queryStartTime = null;
@@ -222,15 +505,8 @@ require(['vs/editor/editor.main'], function () {
         executeQuery();
     });
 
-    // Register SQL completion provider
-    console.log('[SQL-COMPLETION] Registering completion provider');
-    monaco.languages.registerCompletionItemProvider('sql', {
-        provideCompletionItems: (model, position) => {
-            console.log('[SQL-COMPLETION] provideCompletionItems called at position:', position);
-            console.log('[SQL-COMPLETION] Current dbSchema:', dbSchema);
-            return provideSqlCompletions(model, position);
-        }
-    });
+    // Register SQL completion provider (initial registration)
+    registerCompletionProvider();
 
     // Register SQL hover provider - shows table/column details using dbSchema
     console.log('[SQL-HOVER] Registering hover provider');
@@ -352,6 +628,9 @@ require(['vs/editor/editor.main'], function () {
 
     // Notify extension that webview is ready
     vscode.postMessage({ type: 'ready' });
+    
+    // Request SQL snippets from extension
+    vscode.postMessage({ type: 'getSnippets' });
 
     // Ensure Go-to-definition action is registered after editor is created
     try {
@@ -361,6 +640,14 @@ require(['vs/editor/editor.main'], function () {
         }
     } catch (e) {
         console.error('[GoToDef] Failed to register inside require callback', e);
+    }
+    
+    // Register Create Snippet action
+    try {
+        registerCreateSnippetAction();
+        console.log('[SNIPPETS] Create snippet action registered');
+    } catch (e) {
+        console.error('[SNIPPETS] Failed to register create snippet action:', e);
     }
 
     // Add global keyboard listener for CTRL+C to copy table selections
@@ -1236,6 +1523,7 @@ function provideSqlCompletions(model, position) {
     // Check if this is a new/empty query for special table suggestions
     const isNewQuery = isNewOrEmptyQuery(textUntilPosition);
     console.log('[SQL-COMPLETION] Is new query:', isNewQuery);
+    console.log('[SQL-COMPLETION] Available snippets:', sqlSnippets.map(s => s.prefix).join(', '));
 
     // Add tables
     dbSchema.tables.forEach(table => {
@@ -1245,7 +1533,7 @@ function provideSqlCompletions(model, position) {
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Class,
-            detail: `Table (${table.columns.length} columns)`,
+            detail: `🗂️ Table (${table.columns.length} columns)`,
             insertText: fullName,
             range: range,
             sortText: `2_${fullName}` // Lower priority than special options
@@ -1253,35 +1541,43 @@ function provideSqlCompletions(model, position) {
         
         // Add special script generation options only for new queries
         if (isNewQuery) {
-            // SELECT TOP 100 option
-            suggestions.push({
-                label: `${table.name}100`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT TOP 100 from ${fullName}`,
-                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${table.name}_100`, // High priority
-                documentation: {
-                    value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`
-                }
-            });
+            const table100Label = `${table.name}100`;
+            const tableAllLabel = `${table.name}*`;
             
-            // SELECT * option
-            suggestions.push({
-                label: `${table.name}*`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT * from ${fullName}`,
-                insertText: `SELECT *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${table.name}_all`,
-                documentation: {
-                    value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`
-                }
-            });
+            // Check if user has custom snippets with same prefixes
+            const hasConflict100 = sqlSnippets.some(s => s.prefix.toLowerCase() === table100Label.toLowerCase());
+            const hasConflictAll = sqlSnippets.some(s => s.prefix.toLowerCase() === tableAllLabel.toLowerCase());
             
-            // (COUNT and Schema quick scripts removed per user request)
+            // Only add if no conflict with user snippets (user snippets take priority)
+            if (!hasConflict100) {
+                suggestions.push({
+                    label: table100Label,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName}`,
+                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${table.name}_100`, // High priority
+                    documentation: {
+                        value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`
+                    }
+                });
+            }
+            
+            if (!hasConflictAll) {
+                suggestions.push({
+                    label: tableAllLabel,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName}`,
+                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${table.name}_all`,
+                    documentation: {
+                        value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`
+                    }
+                });
+            }
         }
     });
 
@@ -1293,7 +1589,7 @@ function provideSqlCompletions(model, position) {
         suggestions.push({
             label: fullName,
             kind: monaco.languages.CompletionItemKind.Interface,
-            detail: `View (${view.columns.length} columns)`,
+            detail: `👁️ View (${view.columns.length} columns)`,
             insertText: fullName,
             range: range,
             sortText: `2_${fullName}` // Lower priority than special options
@@ -1301,35 +1597,43 @@ function provideSqlCompletions(model, position) {
         
         // Add special script generation options only for new queries
         if (isNewQuery) {
-            // SELECT TOP 100 option for views
-            suggestions.push({
-                label: `${view.name}100`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT TOP 100 from ${fullName} (View)`,
-                insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${view.name}_100`,
-                documentation: {
-                    value: `**Quick Script**: SELECT TOP 100 rows from view ${fullName}`
-                }
-            });
+            const view100Label = `${view.name}100`;
+            const viewAllLabel = `${view.name}*`;
             
-            // SELECT * option for views
-            suggestions.push({
-                label: `${view.name}*`,
-                kind: monaco.languages.CompletionItemKind.Snippet,
-                detail: `Generate SELECT * from ${fullName} (View)`,
-                insertText: `SELECT *\nFROM ${fullName}`,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range: range,
-                sortText: `0_${view.name}_all`,
-                documentation: {
-                    value: `**Quick Script**: SELECT all rows from view ${fullName}`
-                }
-            });
+            // Check if user has custom snippets with same prefixes
+            const hasConflict100 = sqlSnippets.some(s => s.prefix.toLowerCase() === view100Label.toLowerCase());
+            const hasConflictAll = sqlSnippets.some(s => s.prefix.toLowerCase() === viewAllLabel.toLowerCase());
             
-            // (COUNT quick script for views removed per user request)
+            // Only add if no conflict with user snippets
+            if (!hasConflict100) {
+                suggestions.push({
+                    label: view100Label,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName} (View)`,
+                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${view.name}_100`,
+                    documentation: {
+                        value: `**Quick Script**: SELECT TOP 100 rows from view ${fullName}`
+                    }
+                });
+            }
+            
+            if (!hasConflictAll) {
+                suggestions.push({
+                    label: viewAllLabel,
+                    kind: monaco.languages.CompletionItemKind.Snippet,
+                    detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName} (View)`,
+                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range: range,
+                    sortText: `0_${view.name}_all`,
+                    documentation: {
+                        value: `**Quick Script**: SELECT all rows from view ${fullName}`
+                    }
+                });
+            }
         }
     });
 
@@ -1342,12 +1646,170 @@ function provideSqlCompletions(model, position) {
         suggestions.push({
             label: keyword,
             kind: monaco.languages.CompletionItemKind.Keyword,
+            detail: `🔑 SQL Keyword`,
             insertText: keyword,
-            range: range
+            range: range,
+            sortText: `9_${keyword}` // Low priority for keywords
         });
     });
+    
+    // Combine user snippets with built-in snippets
+    const allSnippets = [...sqlSnippets, ...builtInSnippets];
+    console.log('[SQL-COMPLETION] Adding snippets:', sqlSnippets.length, 'user +', builtInSnippets.length, 'built-in =', allSnippets.length, 'total');
+    
+    const existingLabels = new Set(suggestions.map(s => s.label.toLowerCase()));
+    
+    allSnippets.forEach(snippet => {
+        // Skip snippets that conflict with existing table suggestions
+        if (existingLabels.has(snippet.prefix.toLowerCase())) {
+            console.log('[SQL-COMPLETION] Skipping duplicate snippet:', snippet.prefix);
+            return;
+        }
+        
+        // Determine if this is a user snippet or built-in
+        const isUserSnippet = sqlSnippets.some(userSnippet => userSnippet.prefix === snippet.prefix);
+        const snippetType = isUserSnippet ? 'User' : 'Built-in';
+        const iconPrefix = isUserSnippet ? '\uD83D\uDCDD' : '\u26A1';
+        const sortPrefix = isUserSnippet ? '00_user' : '01_builtin';
+        
+        suggestions.push({
+            label: snippet.prefix,
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: `${iconPrefix} ${snippet.description}`,
+            insertText: snippet.body,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range: range,
+            sortText: `${sortPrefix}_snippet_${snippet.prefix}`,
+            documentation: {
+                value: `**${snippetType} Snippet**: ${snippet.name}\n\n${snippet.description || 'SQL snippet'}\n\n---\n*${isUserSnippet ? 'Loaded from snippets file' : 'Built into MS SQL Manager'}*`
+            }
+        });
+        existingLabels.add(snippet.prefix.toLowerCase());
+    });
 
-    return { suggestions };
+    // Final deduplication based on label (case-insensitive)
+    const uniqueSuggestions = [];
+    const seenLabels = new Set();
+    
+    for (const suggestion of suggestions) {
+        const labelKey = suggestion.label.toLowerCase();
+        if (!seenLabels.has(labelKey)) {
+            uniqueSuggestions.push(suggestion);
+            seenLabels.add(labelKey);
+        } else {
+            console.log('[SQL-COMPLETION] Skipping duplicate suggestion:', suggestion.label);
+        }
+    }
+    
+    console.log('[SQL-COMPLETION] Returning', uniqueSuggestions.length, 'unique suggestions (removed', suggestions.length - uniqueSuggestions.length, 'duplicates)');
+    return { suggestions: uniqueSuggestions };
+}
+
+// Register completion provider (can be called multiple times to update snippets)
+function registerCompletionProvider() {
+    if (!monaco || !monaco.languages) {
+        console.log('[SNIPPETS] Monaco not ready, skipping completion provider registration');
+        return;
+    }
+    
+    // Only register once - Monaco doesn't support clean disposal/re-registration
+    if (completionProviderRegistered) {
+        console.log('[SNIPPETS] Completion provider already registered, snippets will be updated automatically');
+        return;
+    }
+    
+    console.log('[SNIPPETS] Registering completion provider for the first time with', sqlSnippets.length, 'snippets');
+    
+    // Configure Monaco Editor for better snippet support (only set once)
+    try {
+        monaco.languages.setLanguageConfiguration('sql', {
+            wordPattern: /(-?\d*\.\d\w*)|([^\`\~\!\@\#\%\^\&\*\(\)\-\=\+\[\{\]\}\\\|\;\:\'\"\,\.\<\>\/\?\s]+)/g,
+        });
+    } catch (e) {
+        // Language config might already be set, ignore error
+        console.log('[SNIPPETS] Language config already set:', e.message);
+    }
+    
+    // Register completion provider and store reference
+    completionProvider = monaco.languages.registerCompletionItemProvider('sql', {
+        triggerCharacters: ['.', ' '], // Trigger on dot and space for better snippet matching
+        provideCompletionItems: (model, position) => {
+            console.log('[SQL-COMPLETION] provideCompletionItems called at position:', position);
+            console.log('[SQL-COMPLETION] Current dbSchema:', dbSchema);
+            return provideSqlCompletions(model, position);
+        }
+    });
+    
+    completionProviderRegistered = true;
+    console.log('[SNIPPETS] Completion provider registered successfully');
+}
+
+// Debug function to reset completion provider (for development)
+function resetCompletionProvider() {
+    console.log('[DEBUG] Resetting completion provider...');
+    completionProviderRegistered = false;
+    if (completionProvider) {
+        try {
+            completionProvider.dispose();
+        } catch (e) {
+            console.log('[DEBUG] Error disposing completion provider:', e);
+        }
+        completionProvider = null;
+    }
+    registerCompletionProvider();
+    console.log('[DEBUG] Completion provider reset complete');
+}
+
+// Make reset function available globally for debugging
+window.resetCompletionProvider = resetCompletionProvider;
+
+// Register Monaco Editor context menu action for creating snippets
+function registerCreateSnippetAction() {
+    if (!monaco || !monaco.editor || !editor) {
+        console.log('[SNIPPETS] Monaco or editor not ready for context menu registration');
+        return;
+    }
+
+    try {
+        editor.addAction({
+            id: 'create-snippet',
+            label: 'Create Snippet...',
+            contextMenuGroupId: '9_cutcopypaste',
+            contextMenuOrder: 1.5,
+            precondition: 'editorHasSelection',
+            run: async function(editor) {
+                const selection = editor.getSelection();
+                const selectedText = editor.getModel().getValueInRange(selection);
+                
+                if (!selectedText || selectedText.trim().length === 0) {
+                    console.log('[SNIPPETS] No text selected');
+                    return;
+                }
+                
+                console.log('[SNIPPETS] Creating snippet from selection:', selectedText.length, 'characters');
+                await createSnippetFromSelection(selectedText.trim());
+            }
+        });
+        console.log('[SNIPPETS] Create snippet action registered successfully');
+    } catch (error) {
+        console.error('[SNIPPETS] Failed to register create snippet action:', error);
+    }
+}
+
+// Function to handle snippet creation from selected text
+async function createSnippetFromSelection(selectedText) {
+    try {
+        console.log('[SNIPPETS] Starting snippet creation process...');
+        
+        // Send message to extension to get user input
+        vscode.postMessage({
+            type: 'requestSnippetInput',
+            selectedText: selectedText
+        });
+        
+    } catch (error) {
+        console.error('[SNIPPETS] Error creating snippet:', error);
+    }
 }
 
 function analyzeSqlContext(textUntilPosition, lineUntilPosition) {
@@ -2273,6 +2735,43 @@ window.addEventListener('message', event => {
                         executeQuery();
                     }, 50);
                 }
+            }
+            break;
+            
+        case 'snippetsUpdate':
+            console.log('[SNIPPETS] Received snippets:', message.snippets?.length || 0);
+            const newSnippets = message.snippets || [];
+            
+            // Update snippets array - completion provider will use updated data automatically
+            if (JSON.stringify(sqlSnippets) !== JSON.stringify(newSnippets)) {
+                console.log('[SNIPPETS] Snippets changed, updating array...');
+                sqlSnippets = newSnippets;
+                console.log('[SNIPPETS] Snippets updated. Completion provider will use new data on next invocation.');
+                
+                // Register completion provider if not already registered
+                if (!completionProviderRegistered) {
+                    registerCompletionProvider();
+                }
+            } else {
+                console.log('[SNIPPETS] Snippets unchanged');
+            }
+            break;
+            
+        case 'snippetInputReceived':
+            // Handle snippet input from extension
+            if (message.success && message.name && message.prefix) {
+                console.log('[SNIPPETS] Received snippet input:', message.name, message.prefix);
+                
+                // Send create snippet message to extension
+                vscode.postMessage({
+                    type: 'createSnippet',
+                    name: message.name,
+                    prefix: message.prefix,
+                    body: message.body,
+                    description: message.description
+                });
+            } else {
+                console.log('[SNIPPETS] Snippet creation cancelled or invalid input');
             }
             break;
     }
