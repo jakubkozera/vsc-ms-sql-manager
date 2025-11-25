@@ -361,6 +361,14 @@ require(['vs/editor/editor.main'], function () {
     } catch (e) {
         console.error('[GoToDef] Failed to register inside require callback', e);
     }
+    
+    // Register Create Snippet action
+    try {
+        registerCreateSnippetAction();
+        console.log('[SNIPPETS] Create snippet action registered');
+    } catch (e) {
+        console.error('[SNIPPETS] Failed to register create snippet action:', e);
+    }
 
     // Add global keyboard listener for CTRL+C to copy table selections
     setupGlobalKeyboardHandlers();
@@ -1467,6 +1475,55 @@ function resetCompletionProvider() {
 // Make reset function available globally for debugging
 window.resetCompletionProvider = resetCompletionProvider;
 
+// Register Monaco Editor context menu action for creating snippets
+function registerCreateSnippetAction() {
+    if (!monaco || !monaco.editor || !editor) {
+        console.log('[SNIPPETS] Monaco or editor not ready for context menu registration');
+        return;
+    }
+
+    try {
+        editor.addAction({
+            id: 'create-snippet',
+            label: 'Create Snippet...',
+            contextMenuGroupId: '9_cutcopypaste',
+            contextMenuOrder: 1.5,
+            precondition: 'editorHasSelection',
+            run: async function(editor) {
+                const selection = editor.getSelection();
+                const selectedText = editor.getModel().getValueInRange(selection);
+                
+                if (!selectedText || selectedText.trim().length === 0) {
+                    console.log('[SNIPPETS] No text selected');
+                    return;
+                }
+                
+                console.log('[SNIPPETS] Creating snippet from selection:', selectedText.length, 'characters');
+                await createSnippetFromSelection(selectedText.trim());
+            }
+        });
+        console.log('[SNIPPETS] Create snippet action registered successfully');
+    } catch (error) {
+        console.error('[SNIPPETS] Failed to register create snippet action:', error);
+    }
+}
+
+// Function to handle snippet creation from selected text
+async function createSnippetFromSelection(selectedText) {
+    try {
+        console.log('[SNIPPETS] Starting snippet creation process...');
+        
+        // Send message to extension to get user input
+        vscode.postMessage({
+            type: 'requestSnippetInput',
+            selectedText: selectedText
+        });
+        
+    } catch (error) {
+        console.error('[SNIPPETS] Error creating snippet:', error);
+    }
+}
+
 function analyzeSqlContext(textUntilPosition, lineUntilPosition) {
     const lowerText = textUntilPosition.toLowerCase();
     const lowerLine = lineUntilPosition.toLowerCase();
@@ -2409,6 +2466,24 @@ window.addEventListener('message', event => {
                 }
             } else {
                 console.log('[SNIPPETS] Snippets unchanged');
+            }
+            break;
+            
+        case 'snippetInputReceived':
+            // Handle snippet input from extension
+            if (message.success && message.name && message.prefix) {
+                console.log('[SNIPPETS] Received snippet input:', message.name, message.prefix);
+                
+                // Send create snippet message to extension
+                vscode.postMessage({
+                    type: 'createSnippet',
+                    name: message.name,
+                    prefix: message.prefix,
+                    body: message.body,
+                    description: message.description
+                });
+            } else {
+                console.log('[SNIPPETS] Snippet creation cancelled or invalid input');
             }
             break;
     }

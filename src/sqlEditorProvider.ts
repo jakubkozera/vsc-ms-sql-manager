@@ -229,6 +229,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         snippets: this.sqlSnippets
                     });
                     break;
+
+                case 'createSnippet':
+                    await this.createSnippetFromSelection(message.name, message.prefix, message.body, message.description);
+                    break;
+                    
+                case 'requestSnippetInput':
+                    await this.handleSnippetInputRequest(webviewPanel.webview, message.selectedText);
+                    break;
             }
         });
 
@@ -388,6 +396,155 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     snippets: this.sqlSnippets
                 });
             }
+        }
+    }
+
+    private async createSnippetFromSelection(name: string, prefix: string, body: string, description?: string): Promise<void> {
+        try {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Creating snippet: ${name} (${prefix})`);
+            
+            // Determine the best snippets file to use (prefer user snippets)
+            let targetPath: string;
+            const userDataPath = process.env.APPDATA || process.env.HOME;
+            
+            if (userDataPath) {
+                // Check if VS Code Insiders is running
+                const isInsiders = vscode.env.appName.includes('Insiders');
+                targetPath = path.join(
+                    userDataPath,
+                    isInsiders ? 'Code - Insiders' : 'Code',
+                    'User',
+                    'snippets',
+                    'sql.json'
+                );
+            } else {
+                // Fallback to workspace snippets
+                targetPath = path.join(this.context.extensionUri.fsPath, '.vscode', 'sql.json');
+            }
+
+            this.outputChannel.appendLine(`[SqlEditorProvider] Target snippets file: ${targetPath}`);
+
+            // Ensure directory exists
+            const dir = path.dirname(targetPath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+                this.outputChannel.appendLine(`[SqlEditorProvider] Created directory: ${dir}`);
+            }
+
+            // Read existing snippets or create empty object
+            let snippets: any = {};
+            if (fs.existsSync(targetPath)) {
+                try {
+                    const content = fs.readFileSync(targetPath, 'utf8');
+                    const cleanContent = this.removeJsonComments(content);
+                    snippets = JSON.parse(cleanContent);
+                    this.outputChannel.appendLine(`[SqlEditorProvider] Loaded existing snippets from ${targetPath}`);
+                } catch (parseError) {
+                    this.outputChannel.appendLine(`[SqlEditorProvider] Error parsing existing snippets: ${parseError}`);
+                    snippets = {};
+                }
+            }
+
+            // Add new snippet
+            snippets[name] = {
+                prefix: prefix,
+                body: body.split('\n'),
+                description: description || `Custom SQL snippet: ${name}`
+            };
+
+            // Write back to file with pretty formatting
+            const jsonContent = JSON.stringify(snippets, null, 4);
+            fs.writeFileSync(targetPath, jsonContent, 'utf8');
+            
+            this.outputChannel.appendLine(`[SqlEditorProvider] Snippet '${name}' saved successfully to ${targetPath}`);
+            
+            // Show success message
+            vscode.window.showInformationMessage(`Snippet '${name}' created successfully!`);
+            
+            // Refresh snippets to include the new one
+            this.refreshSnippets();
+            
+        } catch (error) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Error creating snippet: ${error}`);
+            vscode.window.showErrorMessage(`Failed to create snippet: ${error}`);
+        }
+    }
+
+    private async handleSnippetInputRequest(webview: vscode.Webview, selectedText: string): Promise<void> {
+        try {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Handling snippet input request for ${selectedText.length} characters`);
+            
+            // Get snippet name from user
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter a name for the snippet',
+                placeHolder: 'My SQL Snippet',
+                validateInput: (value) => {
+                    if (!value || value.trim().length === 0) {
+                        return 'Snippet name cannot be empty';
+                    }
+                    if (value.length > 50) {
+                        return 'Snippet name too long (max 50 characters)';
+                    }
+                    return null;
+                }
+            });
+            
+            if (!name) {
+                webview.postMessage({
+                    type: 'snippetInputReceived',
+                    success: false
+                });
+                return;
+            }
+            
+            // Get snippet prefix from user
+            const prefix = await vscode.window.showInputBox({
+                prompt: 'Enter a prefix/trigger for the snippet',
+                placeHolder: 'mysnippet',
+                validateInput: (value) => {
+                    if (!value || value.trim().length === 0) {
+                        return 'Snippet prefix cannot be empty';
+                    }
+                    if (value.includes(' ')) {
+                        return 'Snippet prefix cannot contain spaces';
+                    }
+                    if (value.length > 20) {
+                        return 'Snippet prefix too long (max 20 characters)';
+                    }
+                    return null;
+                }
+            });
+            
+            if (!prefix) {
+                webview.postMessage({
+                    type: 'snippetInputReceived',
+                    success: false
+                });
+                return;
+            }
+            
+            // Optionally get description
+            const description = await vscode.window.showInputBox({
+                prompt: 'Enter a description for the snippet (optional)',
+                placeHolder: 'Custom SQL snippet'
+            });
+            
+            // Send back to webview
+            webview.postMessage({
+                type: 'snippetInputReceived',
+                success: true,
+                name: name.trim(),
+                prefix: prefix.trim(),
+                body: selectedText,
+                description: description?.trim() || `Custom SQL snippet: ${name.trim()}`
+            });
+            
+        } catch (error) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Error handling snippet input: ${error}`);
+            webview.postMessage({
+                type: 'snippetInputReceived',
+                success: false
+            });
         }
     }
 
