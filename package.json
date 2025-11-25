@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -20,7 +20,7 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:sql"
+    "*"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -1052,6 +1052,11 @@
           "default": 0,
           "minimum": 0,
           "description": "Query execution timeout in seconds. Set to 0 for no timeout (infinite)."
+        },
+        "mssqlManager.immediateActive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Activate extension immediately when VS Code starts. When false, extension activates only when SQL files are opened."
         }
       }
     }

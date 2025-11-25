@@ -13,11 +13,42 @@ let outputChannel: vscode.OutputChannel;
 export async function activate(context: vscode.ExtensionContext) {
     // Create output channel for logging
     outputChannel = vscode.window.createOutputChannel('MS SQL Manager');
+    
+    // Check if extension should activate immediately or wait for SQL files
+    const config = vscode.workspace.getConfiguration('mssqlManager');
+    const immediateActive = config.get<boolean>('immediateActive', true);
+    
+    // If immediateActive is false, check if we have any SQL files open
+    if (!immediateActive) {
+        const hasSqlFiles = vscode.window.tabGroups.all
+            .flatMap(group => group.tabs)
+            .some(tab => tab.input instanceof vscode.TabInputText && 
+                        tab.input.uri.fsPath.toLowerCase().endsWith('.sql'));
+        
+        if (!hasSqlFiles) {
+            outputChannel.appendLine('MS SQL Manager: Waiting for SQL files to be opened (immediateActive = false)');
+            
+            // Register a listener for when SQL files are opened
+            const disposable = vscode.workspace.onDidOpenTextDocument((document) => {
+                if (document.languageId === 'sql') {
+                    outputChannel.appendLine('SQL file opened, activating MS SQL Manager');
+                    disposable.dispose();
+                    initializeExtension(context);
+                }
+            });
+            
+            context.subscriptions.push(disposable);
+            return;
+        }
+    }
+    
     outputChannel.appendLine('MS SQL Manager extension activated');
+    await initializeExtension(context);
+}
 
+async function initializeExtension(context: vscode.ExtensionContext) {
     // Initialize Azure firewall helper with extension context
     initializeAzureFirewallHelper(context);
-
 
     // Initialize providers
     const connectionProvider = new ConnectionProvider(context, outputChannel);

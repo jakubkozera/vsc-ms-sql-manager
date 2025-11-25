@@ -5,6 +5,17 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2025-11-25
+
+### Added
+
+- **Configurable Extension Activation**: Added `mssqlManager.immediateActive` setting for controlling extension activation behavior
+  - **Default behavior (immediateActive = true)**: Extension activates immediately when VS Code starts, providing instant access to database management features
+  - **SQL-only activation (immediateActive = false)**: Extension activates only when SQL files are opened, reducing startup overhead for non-SQL workflows
+  - **Dynamic activation detection**: When set to false, extension intelligently detects existing SQL files and activates accordingly
+  - **Seamless transition**: Extension activates automatically when first SQL file is opened, maintaining full functionality
+  - **User preference support**: Setting can be configured in VS Code settings (File > Preferences > Settings > search "mssqlManager.immediateActive")
+
 ## [0.4.2] - 2025-11-24
 
 ### Added
