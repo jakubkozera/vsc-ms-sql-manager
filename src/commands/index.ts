@@ -95,7 +95,8 @@ export function registerAllCommands(
             historyTreeProvider,
             connectionProvider,
             outputChannel,
-            unifiedTreeProvider
+            unifiedTreeProvider,
+            sqlEditorProvider
         );
         allCommands.push(...historyCommands);
     }

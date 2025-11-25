@@ -5,7 +5,7 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.3] - 2025-11-25
+## [0.4.4] - 2025-11-25
 
 ### Added
 
@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Dynamic activation detection**: When set to false, extension intelligently detects existing SQL files and activates accordingly
   - **Seamless transition**: Extension activates automatically when first SQL file is opened, maintaining full functionality
   - **User preference support**: Setting can be configured in VS Code settings (File > Preferences > Settings > search "mssqlManager.immediateActive")
+## [0.4.3] - 2025-11-24
+
+### Fixed
+
+- **Query History Execution Comments**: Fixed issue where execution summary comments accumulated when re-running queries from history
+  - **Clean execution**: Execution summary comments ("-- Query from history", "-- Executed:", "-- Connection:", "-- Result Sets:") are now properly replaced instead of appended
+  - **Smart comment detection**: Added intelligent detection and removal of existing execution metadata before adding new comments
+  - **History preservation**: Query history now stores clean SQL without execution comments, preventing comment accumulation
+  - **Consistent behavior**: Both regular query execution and history replay now handle execution summaries consistently
+  - Previously, re-executing queries from history would append new execution comments to existing ones, creating cluttered SQL with duplicate metadata
 
 ## [0.4.2] - 2025-11-24
 
