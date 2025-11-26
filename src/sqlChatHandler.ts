@@ -167,21 +167,35 @@ export class SqlChatHandler {
                 const sqlQueries = this.extractSqlQueries(response);
                 
                 if (sqlQueries.length > 0) {
+                    // Check if user explicitly requested execution in editor
+                    const executionKeywords = ['wykonaj', 'execute', 'run', 'uruchom', 'open'];
+                    const requestsEditorExecution = executionKeywords.some(keyword => lowerPrompt.includes(keyword));
+                    
                     stream.markdown(`Here's the SQL query for your request:\n\n`);
                     
                     for (const sql of sqlQueries) {
                         // Show the SQL with syntax highlighting
                         stream.markdown('```sql\n' + sql + '\n```\n');
                         
-                        // Check if this is a SELECT query - auto-execute it
+                        // Check if this is a SELECT query
                         const queryType = sql.trim().toUpperCase();
                         const isSelect = queryType.startsWith('SELECT') || queryType.startsWith('WITH');
                         
-                        if (isSelect && conversationState.connectionContext) {
+                        if (requestsEditorExecution && conversationState.connectionContext) {
+                            // User explicitly requested execution - open in SQL editor and execute
+                            stream.progress('Opening query in SQL editor...');
+                            try {
+                                await this.executeQueryInEditorFromChat(sql, conversationState.connectionContext);
+                                stream.markdown('\n✅ Query opened and executed in SQL editor\n');
+                            } catch (error) {
+                                stream.markdown(`\n\n❌ Failed to open query: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            }
+                        } else if (isSelect && conversationState.connectionContext) {
+                            // Auto-execute SELECT queries in chat
                             stream.progress('Executing query...');
                             
                             try {
-                                // Execute the query automatically
+                                // Execute the query automatically and show results in chat
                                 const result = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
                                 
                                 // Show results in chat
