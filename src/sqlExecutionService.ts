@@ -66,10 +66,6 @@ export class SqlExecutionService {
 
             // Execute the query
             const result = await this.executeQuery(query, connectionContext);
-            
-            if (options.showResults !== false) {
-                await this.showExecutionResults(result, query);
-            }
 
             return {
                 success: true,
@@ -201,45 +197,6 @@ export class SqlExecutionService {
         const queryExecutor = new QueryExecutor(this.connectionProvider, this.outputChannel);
         
         return await queryExecutor.executeQuery(query, connection);
-    }
-
-    /**
-     * Show execution results in appropriate format
-     */
-    private async showExecutionResults(result: QueryResult, originalQuery: string): Promise<void> {
-        if (result.recordsets && result.recordsets.length > 0 && result.recordsets[0].length > 0) {
-            // Show results in a new SQL editor or dedicated results view
-            await this.showResultsInWebview(result, originalQuery);
-        } else {
-            // Show summary message for non-SELECT queries
-            const rowsAffected = result.rowsAffected?.reduce((sum, count) => sum + count, 0) || 0;
-            const message = rowsAffected > 0 
-                ? `Query executed successfully. ${rowsAffected} row(s) affected. Execution time: ${result.executionTime}ms`
-                : `Query executed successfully. Execution time: ${result.executionTime}ms`;
-                
-            vscode.window.showInformationMessage(message);
-        }
-    }
-
-    /**
-     * Show results in webview (leveraging existing SQL editor infrastructure)
-     */
-    private async showResultsInWebview(result: QueryResult, originalQuery: string): Promise<void> {
-        // Create a new untitled document for the results
-        const doc = await vscode.workspace.openTextDocument({
-            content: originalQuery,
-            language: 'sql'
-        });
-
-        // Open the document in the SQL editor
-        const editor = await vscode.window.showTextDocument(doc);
-
-        // The SQL editor webview will handle displaying the results
-        // We could enhance this by directly posting results to the webview
-        vscode.window.showInformationMessage(
-            `Query executed successfully. ${result.recordsets[0]?.length || 0} row(s) returned. ` +
-            `Execution time: ${result.executionTime}ms`
-        );
     }
 
     /**

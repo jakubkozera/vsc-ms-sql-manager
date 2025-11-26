@@ -182,13 +182,21 @@ export class SqlChatHandler {
                         const isSelect = queryType.startsWith('SELECT') || queryType.startsWith('WITH');
                         
                         if (requestsEditorExecution && conversationState.connectionContext) {
-                            // User explicitly requested execution - open in SQL editor and execute
-                            stream.progress('Opening query in SQL editor...');
+                            // User explicitly requested execution - open in SQL editor, execute, and show results in chat
+                            stream.progress('Opening query in SQL editor and executing...');
                             try {
+                                // Execute in editor (opens SQL editor with query and runs it)
                                 await this.executeQueryInEditorFromChat(sql, conversationState.connectionContext);
+                                
+                                // Also get results to display in chat for analysis
+                                stream.progress('Retrieving results...');
+                                const results = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
+                                
                                 stream.markdown('\n✅ Query opened and executed in SQL editor\n');
+                                stream.markdown('\n---\n\n');
+                                stream.markdown(results);
                             } catch (error) {
-                                stream.markdown(`\n\n❌ Failed to open query: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                                stream.markdown(`\n\n❌ Failed to execute query: ${error instanceof Error ? error.message : 'Unknown error'}`);
                             }
                         } else if (isSelect && conversationState.connectionContext) {
                             // Auto-execute SELECT queries in chat
