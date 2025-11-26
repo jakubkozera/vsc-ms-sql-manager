@@ -331,6 +331,19 @@
         "command": "mssqlManager.discoverAzureServers",
         "title": "Discover Azure SQL Servers",
         "icon": "$(cloud)"
+      },
+      {
+        "command": "mssqlManager.openSqlChat",
+        "title": "Open SQL Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "mssqlManager.executeChatGeneratedQuery",
+        "title": "Execute Chat Generated Query"
+      },
+      {
+        "command": "mssqlManager.insertChatGeneratedQuery",
+        "title": "Insert Chat Generated Query"
       }
     ],
     "viewsContainers": {
@@ -384,6 +397,42 @@
         "id": "mssqlManager.scriptProcedureExecuteTo",
         "label": "EXECUTE To",
         "icon": "$(play)"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "ms-sql-manager.sql",
+        "name": "sql",
+        "fullName": "SQL Database Assistant",
+        "description": "Ask questions about your SQL databases and get help with queries",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "explain",
+            "description": "Explain a SQL query or database concept"
+          },
+          {
+            "name": "optimize",
+            "description": "Suggest optimizations for a SQL query"
+          },
+          {
+            "name": "schema",
+            "description": "Show information about database tables and structure"
+          }
+        ],
+        "disambiguation": [
+          {
+            "category": "database",
+            "description": "The user wants help with SQL queries, database operations, or understanding database schemas.",
+            "examples": [
+              "Show me all customers from New York",
+              "How do I join these two tables?",
+              "Create a query to find the top selling products",
+              "What's the structure of the users table?",
+              "Help me optimize this slow query"
+            ]
+          }
+        ]
       }
     ],
     "menus": {
@@ -619,6 +668,11 @@
           "group": "2_script@2"
         },
         {
+          "command": "mssqlManager.openSqlChat",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "2_script@3"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
           "group": "3_refresh@1"
@@ -739,6 +793,11 @@
           "group": "2_manage@7"
         },
         {
+          "command": "mssqlManager.openSqlChat",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "2_manage@8"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
           "group": "3_refresh@1"
@@ -752,6 +811,11 @@
           "command": "mssqlManager.compareSchema",
           "when": "view == mssqlManager.explorer && viewItem == database",
           "group": "1_query@4"
+        },
+        {
+          "command": "mssqlManager.openSqlChat",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@5"
         },
         {
           "command": "mssqlManager.generateDatabaseScripts",
@@ -1028,6 +1092,14 @@
         },
         {
           "command": "mssqlManager.importBackup",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.executeChatGeneratedQuery",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.insertChatGeneratedQuery",
           "when": "false"
         }
       ]

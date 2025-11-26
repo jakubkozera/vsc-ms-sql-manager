@@ -3,6 +3,7 @@ import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider, ConnectionNode, DatabaseNode, ServerConnectionNode } from '../unifiedTreeProvider';
 import { ServerGroupWebview } from '../serverGroupWebview';
 import { addFirewallRule, openAzurePortalFirewall, clearAllServerCache, showServerCacheInfo } from '../utils/azureFirewallHelper';
+import { SchemaContextBuilder } from '../schemaContextBuilder';
 
 export function registerConnectionCommands(
     context: vscode.ExtensionContext,
@@ -10,8 +11,31 @@ export function registerConnectionCommands(
     unifiedTreeProvider: UnifiedTreeProvider,
     outputChannel: vscode.OutputChannel,
     treeView?: vscode.TreeView<any>,
-    sqlEditorProvider?: any
+    sqlEditorProvider?: any,
+    schemaContextBuilder?: SchemaContextBuilder
 ): vscode.Disposable[] {
+    
+    // Helper function to trigger background schema generation for chat context
+    const triggerSchemaGeneration = async (connectionId: string, database?: string) => {
+        if (!schemaContextBuilder) {
+            outputChannel.appendLine(`[ConnectionCommands] Schema context builder NOT AVAILABLE!`);
+            return;
+        }
+        
+        try {
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+            outputChannel.appendLine(`[ConnectionCommands] STARTING SCHEMA GENERATION for ${connectionId}::${database || 'default'}`);
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+            await schemaContextBuilder.buildSchemaContext(connectionId, database);
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+            outputChannel.appendLine(`[ConnectionCommands] SCHEMA GENERATION COMPLETED for ${connectionId}::${database || 'default'}`);
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+        } catch (error) {
+            outputChannel.appendLine(`[ConnectionCommands] !!!ERROR!!! Schema generation failed: ${error}`);
+            outputChannel.appendLine(`[ConnectionCommands] Error stack: ${error instanceof Error ? error.stack : 'No stack'}`);
+        }
+    };
+    
     const connectCommand = vscode.commands.registerCommand('mssqlManager.connect', async () => {
         await connectionProvider.connect();
     });
@@ -33,6 +57,12 @@ export function registerConnectionCommands(
                 connectionProvider.clearConnectionFailure(connectionId);
                 await connectionProvider.connectToSavedById(connectionId);
                 unifiedTreeProvider.refresh();
+                
+                // Trigger background schema generation for chat context
+                outputChannel.appendLine(`[ConnectionCommands] About to trigger schema generation for ${connectionId}...`);
+                triggerSchemaGeneration(connectionId, connectionItem.database).catch(err => {
+                    outputChannel.appendLine(`[ConnectionCommands] Catch block: Schema generation promise rejected: ${err}`);
+                });
                 
                 // Expand the tree node after connection
                 if (treeView) {
@@ -297,7 +327,7 @@ export function registerConnectionCommands(
         vscode.window.showInformationMessage(`Found ${connections.length} saved connections. Check output channel for details.`);
     });
 
-    const newQueryCommand = vscode.commands.registerCommand('mssqlManager.newQuery', async (connectionItem?: any) => {
+    const newQueryCommand = vscode.commands.registerCommand('mssqlManager.newQuery', async (connectionItem?: any, initialQuery?: string, autoExecute: boolean = false) => {
         try {
             if (!connectionItem || !connectionItem.connectionId) {
                 vscode.window.showErrorMessage('Invalid connection item');
@@ -376,13 +406,19 @@ export function registerConnectionCommands(
                     queryFilePath = path.join(storagePath, queryFileName);
                 }
 
-                // Create empty query content
-                const initialContent = '';
+                // Create empty query content (or use initialQuery if provided)
+                const initialContent = initialQuery || '';
                 
                 // Write the content to the file
                 const uri = vscode.Uri.file(queryFilePath);
                 await vscode.workspace.fs.writeFile(uri, Buffer.from(initialContent, 'utf8'));
                 outputChannel.appendLine(`[New Query] Created new file: ${path.basename(queryFilePath)}`);
+            } else {
+                // If reusing file and initialQuery provided, write it
+                if (initialQuery) {
+                    const uri = vscode.Uri.file(queryFilePath);
+                    await vscode.workspace.fs.writeFile(uri, Buffer.from(initialQuery, 'utf8'));
+                }
             }
 
             // Open the file with the custom SQL editor
@@ -397,13 +433,35 @@ export function registerConnectionCommands(
                 setTimeout(() => {
                     const databaseName = connectionItem.database || (connectionItem.database ? undefined : 'master');
                     sqlEditorProvider.forceConnectionUpdate(uri, connectionId, databaseName);
+                    
+                    // If initialQuery was provided and we're reusing a file, also insert the query
+                    if (initialQuery) {
+                        setTimeout(() => {
+                            sqlEditorProvider.insertTextToEditor(uri, initialQuery);
+                            
+                            // Auto-execute if requested
+                            if (autoExecute) {
+                                setTimeout(() => {
+                                    sqlEditorProvider.triggerAutoExecute(uri);
+                                }, 100);
+                            }
+                        }, 100);
+                    }
                 }, 100);
+            } else if (autoExecute && sqlEditorProvider) {
+                // For new files with autoExecute, trigger execution after editor loads
+                setTimeout(() => {
+                    sqlEditorProvider.triggerAutoExecute(uri);
+                }, 200);
             }
+
+            return uri;
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to create new query: ${errorMessage}`);
             outputChannel.appendLine(`New query failed: ${errorMessage}`);
+            return null;
         }
     });
 

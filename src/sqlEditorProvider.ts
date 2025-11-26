@@ -74,16 +74,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     // Send initial connections list
                     this.updateConnectionsList(webviewPanel.webview);
                     
-                    // Auto-execute query if it's a SELECT statement and we have a database context
-                    const content = document.getText().trim();
-                    if (preferredDb && content && content.toLowerCase().startsWith('select')) {
-                        // Small delay to ensure webview is fully initialized
-                        setTimeout(() => {
-                            webviewPanel.webview.postMessage({
-                                type: 'autoExecuteQuery'
-                            });
-                        }, 50);
-                    }
+                    // Note: Auto-execute is now controlled by the newQuery command via triggerAutoExecute()
+                    // to give explicit control over when queries execute
                     break;
 
                 case 'documentChanged':
@@ -608,6 +600,55 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 this.outputChannel.appendLine(`[SqlEditorProvider] Available webview: ${uri.toString()} (disposed: ${this.disposedWebviews.has(webview)})`);
             }
         }
+    }
+
+    /**
+     * Insert text into SQL editor webview
+     */
+    public insertTextToEditor(fileUri: vscode.Uri, text: string): boolean {
+        this.outputChannel.appendLine(`[SqlEditorProvider] insertTextToEditor called for ${fileUri.fsPath}`);
+        
+        // Find the webview for this file
+        for (const [webview, uri] of this.webviewToDocument.entries()) {
+            if (uri.toString() === fileUri.toString() && !this.disposedWebviews.has(webview)) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Found matching webview, inserting text`);
+                
+                // Send update message to webview
+                webview.postMessage({
+                    type: 'update',
+                    content: text
+                });
+                
+                return true;
+            }
+        }
+        
+        this.outputChannel.appendLine(`[SqlEditorProvider] WARNING: No matching webview found for ${fileUri.toString()}`);
+        return false;
+    }
+
+    /**
+     * Trigger auto-execute for SQL editor
+     */
+    public triggerAutoExecute(fileUri: vscode.Uri): boolean {
+        this.outputChannel.appendLine(`[SqlEditorProvider] triggerAutoExecute called for ${fileUri.fsPath}`);
+        
+        // Find the webview for this file
+        for (const [webview, uri] of this.webviewToDocument.entries()) {
+            if (uri.toString() === fileUri.toString() && !this.disposedWebviews.has(webview)) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Found matching webview, triggering auto-execute`);
+                
+                // Send autoExecuteQuery message to webview
+                webview.postMessage({
+                    type: 'autoExecuteQuery'
+                });
+                
+                return true;
+            }
+        }
+        
+        this.outputChannel.appendLine(`[SqlEditorProvider] WARNING: No matching webview found for ${fileUri.toString()}`);
+        return false;
     }
 
     private async updateConnectionsList(webview: vscode.Webview) {
