@@ -160,94 +160,82 @@ export class SqlChatHandler {
         
         // Prepare context for the language model
         const systemPrompt = this.buildSystemPrompt(conversationState);
+    
+    
+        stream.progress('Processing...');
         
-        // Check if this looks like a request for SQL generation
-        const lowerPrompt = prompt.toLowerCase();
-        const isSqlRequest = this.isSqlGenerationRequest(lowerPrompt);
+        // Use VS Code's language model API to generate SQL
+        const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
         
-        if (isSqlRequest) {
-            stream.progress('Processing...');
+        if (response) {
+            // Extract SQL from response
+            const sqlQueries = this.extractSqlQueries(response);
             
-            // Use VS Code's language model API to generate SQL
-            const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
-            
-            if (response) {
-                // Extract SQL from response
-                const sqlQueries = this.extractSqlQueries(response);
+            if (sqlQueries.length > 0) {
+                stream.markdown(`Here's the SQL query for your request:\n\n`);
                 
-                if (sqlQueries.length > 0) {
-                    // Check if user explicitly requested execution in editor
-                    const executionKeywords = ['wykonaj', 'execute', 'run', 'uruchom', 'open'];
-                    const requestsEditorExecution = executionKeywords.some(keyword => lowerPrompt.includes(keyword));
+                for (const sql of sqlQueries) {
+                    // Show the SQL with syntax highlighting
+                    stream.markdown('```sql\n' + sql + '\n```\n');
                     
-                    stream.markdown(`Here's the SQL query for your request:\n\n`);
+                    // Check if this is a SELECT query
+                    const queryType = sql.trim().toUpperCase();
+                    const isSelect = queryType.startsWith('SELECT') || queryType.startsWith('WITH');
                     
-                    for (const sql of sqlQueries) {
-                        // Show the SQL with syntax highlighting
-                        stream.markdown('```sql\n' + sql + '\n```\n');
-                        
-                        // Check if this is a SELECT query
-                        const queryType = sql.trim().toUpperCase();
-                        const isSelect = queryType.startsWith('SELECT') || queryType.startsWith('WITH');
-                        
-                        if (requestsEditorExecution && conversationState.connectionContext) {
-                            // User explicitly requested execution - open in SQL editor, execute, and show results in chat
-                            stream.progress('Opening query in SQL editor and executing...');
-                            try {
-                                // Execute in editor (opens SQL editor with query and runs it)
-                                await this.executeQueryInEditorFromChat(sql, conversationState.connectionContext);
-                                
-                                // Also get results to display in chat for analysis
-                                stream.progress('Retrieving results...');
-                                const results = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
-                                
-                                stream.markdown('\n✅ Query opened and executed in SQL editor\n');
-                                stream.markdown('\n---\n\n');
-                                stream.markdown(results);
-                            } catch (error) {
-                                stream.markdown(`\n\n❌ Failed to execute query: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                            }
-                        } else if (isSelect && conversationState.connectionContext) {
-                            // Auto-execute SELECT queries in chat
-                            stream.progress('Executing query...');
+                    // Analyze user intent - do they want to see the results?
+                    const wantsResults = await this.userWantsQueryResults(prompt, sql);
+                    
+                    if (wantsResults && conversationState.connectionContext) {
+                        // User wants to see results - execute in editor and show in chat
+                        stream.progress('Opening query in SQL editor and executing...');
+                        try {
+                            // Execute in editor (opens SQL editor with query and runs it)
+                            await this.executeQueryInEditorFromChat(sql, conversationState.connectionContext);
                             
-                            try {
-                                // Execute the query automatically and show results in chat
-                                const result = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
-                                
-                                // Show results in chat
-                                stream.markdown('\n---\n\n');
-                                stream.markdown(result);
-                            } catch (error) {
-                                stream.markdown(`\n\n❌ Execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                            }
+                            // Also get results to display in chat for analysis
+                            stream.progress('Retrieving results...');
+                            const results = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
+                            
+                            stream.markdown('\n✅ Query opened and executed in SQL editor\n');
+                            stream.markdown('\n---\n\n');
+                            stream.markdown(results);
+                        } catch (error) {
+                            stream.markdown(`\n\n❌ Failed to execute query: ${error instanceof Error ? error.message : 'Unknown error'}`);
                         }
+                    } else if (isSelect && conversationState.connectionContext) {
+                        // Auto-execute SELECT queries in chat (without opening editor)
+                        stream.progress('Executing query...');
                         
-                        // Add action buttons
-                        stream.button({
-                            command: 'mssqlManager.executeChatGeneratedQuery',
-                            title: isSelect ? 'Re-execute Query' : 'Execute Query',
-                            arguments: [sql, conversationState.connectionContext, request, stream]
-                        });
-                        
-                        stream.button({
-                            command: 'mssqlManager.insertChatGeneratedQuery',
-                            title: 'Insert to Editor',
-                            arguments: [sql, conversationState.connectionContext]
-                        });
+                        try {
+                            // Execute the query automatically and show results in chat
+                            const result = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
+                            
+                            // Show results in chat
+                            stream.markdown('\n---\n\n');
+                            stream.markdown(result);
+                        } catch (error) {
+                            stream.markdown(`\n\n❌ Execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        }
                     }
-                } else {
-                    stream.markdown(response);
+                    
+                    // Add action buttons
+                    stream.button({
+                        command: 'mssqlManager.executeChatGeneratedQuery',
+                        title: isSelect ? 'Re-execute Query' : 'Execute Query',
+                        arguments: [sql, conversationState.connectionContext, request, stream]
+                    });
+                    
+                    stream.button({
+                        command: 'mssqlManager.insertChatGeneratedQuery',
+                        title: 'Insert to Editor',
+                        arguments: [sql, conversationState.connectionContext]
+                    });
                 }
-            }
-        } else {
-            // General SQL assistance or explanation
-            stream.progress('Analyzing your request...');
-            const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
-            if (response) {
+            } else {
                 stream.markdown(response);
             }
         }
+        
     }
 
     /**
@@ -606,6 +594,81 @@ When generating SQL:
 
         return sqlKeywords.some(keyword => prompt.includes(keyword)) ||
                sqlPhrases.some(phrase => prompt.includes(phrase));
+    }
+
+    /**
+     * Analyze user intent to determine if they want to see query results
+     * Uses AI to understand the user's intent rather than relying on keywords
+     */
+    private async userWantsQueryResults(userPrompt: string, generatedSql: string): Promise<boolean> {
+        try {
+            // Quick heuristic checks first (performance optimization)
+            const lowerPrompt = userPrompt.toLowerCase();
+            
+            // If user just wants to see/generate the query structure, don't execute
+            const queryDesignKeywords = ['how to', 'syntax', 'example', 'structure', 'template', 'format'];
+            if (queryDesignKeywords.some(keyword => lowerPrompt.includes(keyword))) {
+                return false;
+            }
+            
+            // If it's clearly a data modification query (not SELECT), user likely wants to review first
+            const sqlUpper = generatedSql.trim().toUpperCase();
+            if (sqlUpper.startsWith('INSERT') || sqlUpper.startsWith('UPDATE') || 
+                sqlUpper.startsWith('DELETE') || sqlUpper.startsWith('DROP') || 
+                sqlUpper.startsWith('ALTER') || sqlUpper.startsWith('CREATE')) {
+                return false;
+            }
+            
+            // Use AI to analyze intent for SELECT queries
+            const models = await vscode.lm.selectChatModels();
+            if (models.length === 0) {
+                // Fallback: assume user wants results for SELECT queries
+                return sqlUpper.startsWith('SELECT') || sqlUpper.startsWith('WITH');
+            }
+
+            const model = models[0];
+            const intentPrompt = `Analyze the user's intent. Does the user want to EXECUTE the query and SEE THE RESULTS, or do they just want to see the query itself?
+
+User's request: "${userPrompt}"
+
+Generated SQL query:
+\`\`\`sql
+${generatedSql}
+\`\`\`
+
+Answer with ONLY "YES" if the user wants to execute and see results (wants data from database), or "NO" if they just want to see the query structure/syntax.
+
+Examples:
+- "wykonaj to zapytanie" → YES (execute this query)
+- "show me all users" → YES (wants data)
+- "find customers from Poland" → YES (wants data)
+- "how do I select users?" → NO (wants to learn syntax)
+- "what's the syntax for JOIN?" → NO (wants to learn)
+- "give me a query that finds..." → NO (wants query, not results yet)
+
+Answer:`;
+
+            const response = await model.sendRequest(
+                [vscode.LanguageModelChatMessage.User(intentPrompt)],
+                {},
+                new vscode.CancellationTokenSource().token
+            );
+
+            let answer = '';
+            for await (const fragment of response.text) {
+                answer += fragment;
+            }
+
+            // Parse the response
+            const trimmedAnswer = answer.trim().toUpperCase();
+            return trimmedAnswer.includes('YES') || trimmedAnswer.startsWith('YES');
+
+        } catch (error) {
+            this.outputChannel.appendLine(`[SqlChatHandler] Intent analysis error: ${error}`);
+            // Fallback: execute SELECT queries by default
+            const sqlUpper = generatedSql.trim().toUpperCase();
+            return sqlUpper.startsWith('SELECT') || sqlUpper.startsWith('WITH');
+        }
     }
 
     /**
