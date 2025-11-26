@@ -68,7 +68,16 @@ export class SqlChatHandler {
             if (!conversationState.connectionContext) {
                 const connectionContext = await this.resolveConnectionContext();
                 if (!connectionContext) {
-                    stream.markdown('❌ No active database connections found. Please connect to a database first using the MS SQL Manager extension.');
+                    stream.markdown('❌ No active database connections found.\n\n');
+                    
+                    // Offer to open connection manager
+                    stream.button({
+                        command: 'mssqlManager.manageConnections',
+                        title: vscode.l10n.t('Manage Connections'),
+                        arguments: []
+                    });
+                    
+                    stream.markdown('\nPlease connect to a database using the button above or the MS SQL Manager extension.');
                     
                     return {
                         metadata: {
