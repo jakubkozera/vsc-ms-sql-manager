@@ -166,7 +166,7 @@ export class SqlChatHandler {
         const isSqlRequest = this.isSqlGenerationRequest(lowerPrompt);
         
         if (isSqlRequest) {
-            stream.progress('Generating SQL query...');
+            stream.progress('Processing...');
             
             // Use VS Code's language model API to generate SQL
             const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
