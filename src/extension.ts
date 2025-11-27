@@ -9,6 +9,7 @@ import { registerAllCommands } from './commands';
 import { initializeAzureFirewallHelper } from './utils/azureFirewallHelper';
 import { SqlChatHandler } from './sqlChatHandler';
 import { SchemaContextBuilder } from './schemaContextBuilder';
+import { DatabaseInstructionsManager } from './databaseInstructions';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -84,6 +85,14 @@ async function initializeExtension(context: vscode.ExtensionContext) {
     const schemaContextBuilder = new SchemaContextBuilder(connectionProvider, outputChannel, context);
     outputChannel.appendLine('[Extension] Schema context builder initialized');
     
+    // Initialize database instructions manager
+    const databaseInstructionsManager = new DatabaseInstructionsManager(context, outputChannel);
+    outputChannel.appendLine('[Extension] Database instructions manager initialized');
+    context.subscriptions.push(databaseInstructionsManager);
+    
+    // Pass database instructions manager to tree provider
+    unifiedTreeProvider.setDatabaseInstructionsManager(databaseInstructionsManager);
+    
     // Register SQL custom editor provider
     const sqlEditorProvider = new SqlEditorProvider(context, queryExecutor, connectionProvider, outputChannel);
     context.subscriptions.push(
@@ -134,7 +143,8 @@ async function initializeExtension(context: vscode.ExtensionContext) {
         historyManager,
         historyTreeProvider,
         sqlEditorProvider,
-        schemaContextBuilder
+        schemaContextBuilder,
+        databaseInstructionsManager
     );
 
     // Register developer command to refresh SQL snippets
@@ -151,7 +161,7 @@ async function initializeExtension(context: vscode.ExtensionContext) {
 
     // Register chat participant
     try {
-        const sqlChatHandler = new SqlChatHandler(context, connectionProvider, outputChannel);
+        const sqlChatHandler = new SqlChatHandler(context, connectionProvider, outputChannel, databaseInstructionsManager);
         
         // Create chat participant with proper ID from package.json
         const chatParticipant = vscode.chat.createChatParticipant('ms-sql-manager.sql', sqlChatHandler.handleChatRequest.bind(sqlChatHandler));

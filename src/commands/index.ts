@@ -13,6 +13,7 @@ import { registerDatabaseCommands } from './databaseCommands';
 import { registerScriptGenerationCommands } from './scriptGenerationCommands';
 import { SqlEditorProvider } from '../sqlEditorProvider';
 import { SchemaContextBuilder } from '../schemaContextBuilder';
+import { DatabaseInstructionsManager } from '../databaseInstructions';
 
 export function registerAllCommands(
     context: vscode.ExtensionContext,
@@ -24,7 +25,8 @@ export function registerAllCommands(
     historyManager?: QueryHistoryManager,
     historyTreeProvider?: QueryHistoryTreeProvider,
     sqlEditorProvider?: SqlEditorProvider,
-    schemaContextBuilder?: SchemaContextBuilder
+    schemaContextBuilder?: SchemaContextBuilder,
+    databaseInstructionsManager?: DatabaseInstructionsManager
 ): void {
     const refreshCommand = vscode.commands.registerCommand('mssqlManager.refresh', () => {
         outputChannel.appendLine('[Extension] Refreshing tree view');
@@ -43,7 +45,8 @@ export function registerAllCommands(
         outputChannel,
         treeView,
         sqlEditorProvider,
-        schemaContextBuilder
+        schemaContextBuilder,
+        databaseInstructionsManager
     );
 
     const queryCommands = registerQueryCommands(

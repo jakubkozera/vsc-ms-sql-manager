@@ -344,6 +344,16 @@
       {
         "command": "mssqlManager.insertChatGeneratedQuery",
         "title": "Insert Chat Generated Query"
+      },
+      {
+        "command": "mssqlManager.addDatabaseInstructions",
+        "title": "Add Database Instructions",
+        "icon": "$(note)"
+      },
+      {
+        "command": "mssqlManager.unlinkDatabaseInstructions",
+        "title": "Unlink Database Instructions",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -673,6 +683,16 @@
           "group": "2_script@3"
         },
         {
+          "command": "mssqlManager.addDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "2_script@4"
+        },
+        {
+          "command": "mssqlManager.unlinkDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActiveWithInstructions",
+          "group": "2_script@5"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
           "group": "3_refresh@1"
@@ -798,6 +818,16 @@
           "group": "2_manage@8"
         },
         {
+          "command": "mssqlManager.addDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "2_manage@9"
+        },
+        {
+          "command": "mssqlManager.unlinkDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActiveWithInstructions",
+          "group": "2_manage@10"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
           "group": "3_refresh@1"
@@ -816,6 +846,16 @@
           "command": "mssqlManager.openSqlChat",
           "when": "view == mssqlManager.explorer && viewItem == database",
           "group": "1_query@5"
+        },
+        {
+          "command": "mssqlManager.addDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@6"
+        },
+        {
+          "command": "mssqlManager.unlinkDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == databaseWithInstructions",
+          "group": "1_query@7"
         },
         {
           "command": "mssqlManager.generateDatabaseScripts",

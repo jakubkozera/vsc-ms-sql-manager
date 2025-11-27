@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionProvider, ConnectionConfig } from './connectionProvider';
 import { SchemaContextBuilder } from './schemaContextBuilder';
 import { SqlExecutionService } from './sqlExecutionService';
+import { DatabaseInstructionsManager } from './databaseInstructions';
 
 export interface ChatConnectionContext {
     connectionId: string;
@@ -27,14 +28,18 @@ export class SqlChatHandler {
     private conversationStates = new Map<string, ChatConversationState>();
     private schemaContextBuilder: SchemaContextBuilder;
     private sqlExecutionService: SqlExecutionService;
+    private databaseInstructionsManager: DatabaseInstructionsManager;
     
     constructor(
         private context: vscode.ExtensionContext,
         private connectionProvider: ConnectionProvider,
-        private outputChannel: vscode.OutputChannel
+        private outputChannel: vscode.OutputChannel,
+        databaseInstructionsManager: DatabaseInstructionsManager
     ) {
+        this.databaseInstructionsManager = databaseInstructionsManager;
         this.schemaContextBuilder = new SchemaContextBuilder(connectionProvider, outputChannel, context);
         this.sqlExecutionService = new SqlExecutionService(connectionProvider, outputChannel);
+        this.databaseInstructionsManager = databaseInstructionsManager;
         
         // Load persisted conversation states
         this.loadConversationStates();
@@ -133,6 +138,7 @@ export class SqlChatHandler {
         stream: vscode.ChatResponseStream,
         token: vscode.CancellationToken
     ): Promise<void> {
+        this.outputChannel.appendLine(`[SqlChatHandler] processUserQuery called with prompt: ${request.prompt}`);
         const prompt = request.prompt;
         
         // Add database context at the beginning of conversation
@@ -159,83 +165,105 @@ export class SqlChatHandler {
         }
         
         // Prepare context for the language model
-        const systemPrompt = this.buildSystemPrompt(conversationState);
-    
-    
-        stream.progress('Processing...');
+        const systemPrompt = await this.buildSystemPrompt(conversationState);
         
-        // Use VS Code's language model API to generate SQL
-        const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
+        // Check if this looks like a request for SQL generation
+        const lowerPrompt = prompt.toLowerCase();
+        this.outputChannel.appendLine(`[SqlChatHandler] Checking if SQL request, lowerPrompt: ${lowerPrompt}`);
+        const isSqlRequest = this.isSqlGenerationRequest(lowerPrompt);
+        this.outputChannel.appendLine(`[SqlChatHandler] isSqlRequest result: ${isSqlRequest}`);
         
-        if (response) {
-            // Extract SQL from response
-            const sqlQueries = this.extractSqlQueries(response);
+        if (isSqlRequest) {
+            this.outputChannel.appendLine(`[SqlChatHandler] Detected SQL request, generating response`);
+            stream.progress('Processing...');
             
-            if (sqlQueries.length > 0) {
-                stream.markdown(`Here's the SQL query for your request:\n\n`);
-                
-                for (const sql of sqlQueries) {
-                    // Show the SQL with syntax highlighting
-                    stream.markdown('```sql\n' + sql + '\n```\n');
+            // Use VS Code's language model API to generate SQL
+            this.outputChannel.appendLine(`[SqlChatHandler] Calling generateSqlWithLanguageModel`);
+            const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
+            this.outputChannel.appendLine(`[SqlChatHandler] Language model response length: ${response?.length || 0}`);
+            
+            if (response) {
+                // Extract SQL from response
+                const sqlQueries = this.extractSqlQueries(response);
+            
+                if (sqlQueries.length > 0) {
+                    stream.markdown(`Here's the SQL query for your request:\n\n`);
                     
-                    // Check if this is a SELECT query
-                    const queryType = sql.trim().toUpperCase();
-                    const isSelect = queryType.startsWith('SELECT') || queryType.startsWith('WITH');
-                    
-                    // Analyze user intent - do they want to see the results?
-                    const wantsResults = await this.userWantsQueryResults(prompt, sql);
-                    
-                    if (wantsResults && conversationState.connectionContext) {
-                        // User wants to see results - execute in editor and show in chat
-                        stream.progress('Opening query in SQL editor and executing...');
-                        try {
-                            // Execute in editor (opens SQL editor with query and runs it)
-                            await this.executeQueryInEditorFromChat(sql, conversationState.connectionContext);
-                            
-                            // Also get results to display in chat for analysis
-                            stream.progress('Retrieving results...');
-                            const results = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
-                            
-                            stream.markdown('\n✅ Query opened and executed in SQL editor\n');
-                            stream.markdown('\n---\n\n');
-                            stream.markdown(results);
-                        } catch (error) {
-                            stream.markdown(`\n\n❌ Failed to execute query: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                        }
-                    } else if (isSelect && conversationState.connectionContext) {
-                        // Auto-execute SELECT queries in chat (without opening editor)
-                        stream.progress('Executing query...');
+                    for (const sql of sqlQueries) {
+                        // Show the SQL with syntax highlighting
+                        stream.markdown('```sql\n' + sql + '\n```\n');
                         
-                        try {
-                            // Execute the query automatically and show results in chat
-                            const result = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
+                        // Check if this is a SELECT query
+                        const queryType = sql.trim().toUpperCase();
+                        const isSelect = queryType.startsWith('SELECT') || queryType.startsWith('WITH');
+                        
+                        // Analyze user intent - do they want to see the results?
+                        const wantsResults = await this.userWantsQueryResults(prompt, sql);
+                        
+                        if (wantsResults && conversationState.connectionContext) {
+                            // User wants to see results - execute in editor and show in chat
+                            stream.progress('Opening query in SQL editor and executing...');
+                            try {
+                                // Execute in editor (opens SQL editor with query and runs it)
+                                await this.executeQueryInEditorFromChat(sql, conversationState.connectionContext);
+                                
+                                // Also get results to display in chat for analysis
+                                stream.progress('Retrieving results...');
+                                const results = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
+                                
+                                stream.markdown('\n✅ Query opened and executed in SQL editor\n');
+                                stream.markdown('\n---\n\n');
+                                stream.markdown(results);
+                            } catch (error) {
+                                stream.markdown(`\n\n❌ Failed to execute query: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            }
+                        } else if (isSelect && conversationState.connectionContext) {
+                            // Auto-execute SELECT queries in chat (without opening editor)
+                            stream.progress('Executing query...');
                             
-                            // Show results in chat
-                            stream.markdown('\n---\n\n');
-                            stream.markdown(result);
-                        } catch (error) {
-                            stream.markdown(`\n\n❌ Execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            try {
+                                // Execute the query automatically and show results in chat
+                                const result = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
+                                
+                                // Show results in chat
+                                stream.markdown('\n---\n\n');
+                                stream.markdown(result);
+                            } catch (error) {
+                                stream.markdown(`\n\n❌ Execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                            }
                         }
+                        
+                        // Add action buttons
+                        stream.button({
+                            command: 'mssqlManager.executeChatGeneratedQuery',
+                            title: isSelect ? 'Re-execute Query' : 'Execute Query',
+                            arguments: [sql, conversationState.connectionContext, request, stream]
+                        });
+                        
+                        stream.button({
+                            command: 'mssqlManager.insertChatGeneratedQuery',
+                            title: 'Insert to Editor',
+                            arguments: [sql, conversationState.connectionContext]
+                        });
                     }
-                    
-                    // Add action buttons
-                    stream.button({
-                        command: 'mssqlManager.executeChatGeneratedQuery',
-                        title: isSelect ? 'Re-execute Query' : 'Execute Query',
-                        arguments: [sql, conversationState.connectionContext, request, stream]
-                    });
-                    
-                    stream.button({
-                        command: 'mssqlManager.insertChatGeneratedQuery',
-                        title: 'Insert to Editor',
-                        arguments: [sql, conversationState.connectionContext]
-                    });
+                } else {
+                    stream.markdown(response);
                 }
-            } else {
+            }
+        } else {
+            // Not a SQL generation request - general chat
+            this.outputChannel.appendLine(`[SqlChatHandler] Not SQL request, generating general response`);
+            stream.progress('Processing...');
+            
+            const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
+            this.outputChannel.appendLine(`[SqlChatHandler] General response length: ${response?.length || 0}`);
+            
+            if (response) {
                 stream.markdown(response);
+            } else {
+                stream.markdown('I apologize, but I was unable to generate a response. Please try rephrasing your question.');
             }
         }
-        
     }
 
     /**
@@ -365,9 +393,11 @@ export class SqlChatHandler {
     /**
      * Build system prompt with schema context
      */
-    private buildSystemPrompt(conversationState: ChatConversationState): string {
+    private async buildSystemPrompt(conversationState: ChatConversationState): Promise<string> {
         const connection = conversationState.connectionContext;
         const config = connection ? this.connectionProvider.getConnectionConfig(connection.connectionId) : null;
+        
+        this.outputChannel.appendLine(`[SqlChatHandler] Building system prompt for connection: ${connection?.connectionId}, database: ${connection?.database}`);
         
         let prompt = `You are a SQL expert assistant for Microsoft SQL Server. You help users write SQL queries and understand database schemas.
 
@@ -378,7 +408,35 @@ Current Connection Context:
 
 Database Schema:
 ${conversationState.schemaContext || 'Schema information not available'}
+`;
 
+        // Add database-specific instructions if available
+        if (connection) {
+            try {
+                // For server connections, database name is separate
+                // For database connections, connectionId already includes the database
+                const databaseParam = config?.connectionType === 'server' ? connection.database : undefined;
+                
+                this.outputChannel.appendLine(`[SqlChatHandler] Loading instructions for connection: ${connection.connectionId}, database: ${databaseParam}, connectionType: ${config?.connectionType}`);
+                const instructions = await this.databaseInstructionsManager.loadInstructions(
+                    connection.connectionId,
+                    databaseParam
+                );
+                
+                if (instructions) {
+                    this.outputChannel.appendLine(`[SqlChatHandler] Loaded instructions (${instructions.length} chars)`);
+                    prompt += `\nDatabase-Specific Instructions:
+${instructions}
+`;
+                } else {
+                    this.outputChannel.appendLine(`[SqlChatHandler] No instructions found for this connection`);
+                }
+            } catch (error) {
+                this.outputChannel.appendLine(`[SqlChatHandler] Error loading instructions: ${error}`);
+            }
+        }
+
+        prompt += `
 IMPORTANT - Query Execution:
 - You HAVE direct access to execute SQL queries in the connected database
 - When user asks to "execute", "run", "show results", or "get data" - ALWAYS generate the SQL query
@@ -680,9 +738,12 @@ Answer:`;
         context: vscode.ChatContext,
         token: vscode.CancellationToken
     ): Promise<string | null> {
+        this.outputChannel.appendLine(`[SqlChatHandler] generateSqlWithLanguageModel called`);
         try {
             // Check if language model is available
+            this.outputChannel.appendLine(`[SqlChatHandler] Selecting chat models...`);
             const models = await vscode.lm.selectChatModels();
+            this.outputChannel.appendLine(`[SqlChatHandler] Found ${models.length} models`);
             if (models.length === 0) {
                 return 'No language models available. Please install GitHub Copilot or another compatible language model provider.';
             }
