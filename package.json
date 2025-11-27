@@ -603,6 +603,11 @@
           "group": "inline@1"
         },
         {
+          "command": "mssqlManager.disconnectConnection",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
+          "group": "inline@1"
+        },
+        {
           "command": "mssqlManager.editConnection",
           "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active.*|Inactive|Failed)$/",
           "group": "inline@2"
@@ -611,11 +616,6 @@
           "command": "mssqlManager.deleteConnection",
           "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active.*|Inactive|Failed)$/",
           "group": "inline@3"
-        },
-        {
-          "command": "mssqlManager.disconnectConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
-          "group": "inline@4"
         },
         {
           "command": "mssqlManager.newQuery",
