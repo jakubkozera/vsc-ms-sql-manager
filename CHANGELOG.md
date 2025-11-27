@@ -5,6 +5,31 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-11-27
+
+### Added
+
+- **AI-Powered SQL Chat Assistant (@sql)**: Integrated chat participant for intelligent SQL query generation and database assistance
+  - **Natural language to SQL**: Convert plain English questions into optimized SQL queries (e.g., "show me all customers from New York")
+  - **Context-aware assistance**: Automatically detects active database connection and loads full schema context for accurate query generation
+  - **Direct query execution**: Generated SQL queries execute directly in the SQL Editor with results displayed in real-time
+  - **Database schema integration**: Chat assistant understands your database structure including tables, columns, relationships, and data types
+  - **Database-specific instructions**: Link custom .md instruction files to databases/connections for specialized context (e.g., business rules, naming conventions)
+  - **Instruction management**: Add, edit, and unlink instruction files through context menus with automatic file watching
+  - **Smart command system**: Built-in commands like `/explain`, `/optimize`, and `/schema` for specialized assistance
+  - **Conversation memory**: Maintains context throughout the chat session for follow-up questions and refinements
+  - **Multi-connection support**: Works seamlessly with both database-level and server-level connections
+  - **Accessibility**: Available via "Open SQL Chat" in connection context menus or through VS Code's chat interface
+  - **Real-time schema caching**: Background schema generation ensures fast response times with automatic cache updates
+
+### Enhanced
+
+- **Server Group Management**: Improved server group workflow with streamlined connection creation
+  - **Quick add connection**: New inline "+" button on server groups opens connection dialog with pre-selected group
+  - **Context menu integration**: "Add Connection" option in server group right-click menu
+  - **Auto-group assignment**: New connections automatically assigned to selected server group
+  - **Reorganized toolbar**: Cleaner Database Explorer toolbar with optimized button layout (removed redundant refresh button)
+
 ## [0.5.0] - 2025-11-25
 
 ### Added
