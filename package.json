@@ -39,8 +39,8 @@
     "commands": [
       {
         "command": "mssqlManager.connect",
-        "title": "MS SQL Manager: Connect to Database",
-        "icon": "$(plug)"
+        "title": "Connect to Database",
+        "icon": "$(add)"
       },
       {
         "command": "mssqlManager.executeQuery",
@@ -64,8 +64,8 @@
       },
       {
         "command": "mssqlManager.manageConnections",
-        "title": "MS SQL Manager: Manage Connections",
-        "icon": "$(settings-gear)"
+        "title": "Manage Connections",
+        "icon": "$(plug)"
       },
       {
         "command": "mssqlManager.debugConnections",
@@ -559,11 +559,6 @@
           "command": "mssqlManager.createServerGroup",
           "when": "view == mssqlManager.explorer",
           "group": "navigation@4"
-        },
-        {
-          "command": "mssqlManager.discoverAzureServers",
-          "when": "view == mssqlManager.explorer",
-          "group": "navigation@5"
         },
         {
           "command": "mssqlManager.refreshQueryHistory",
