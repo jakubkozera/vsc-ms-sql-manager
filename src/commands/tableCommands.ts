@@ -71,12 +71,13 @@ export function registerTableCommands(
                 query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] ${tableAlias}`;
             }
             
-            // Set the preferred database context and open in SQL editor
+            // Set the preferred database context and open in SQL editor with auto-execute
             if (tableNode.database) {
                 connectionProvider.setNextEditorPreferredDatabase(tableNode.connectionId, tableNode.database);
             }
             
-            await openSqlInCustomEditor(query, `select_top_1000_${table}.sql`, context);
+            // Use newQuery command with autoExecute to run the query immediately
+            await vscode.commands.executeCommand('mssqlManager.newQuery', tableNode, query, true);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate SELECT query: ${errorMessage}`);
