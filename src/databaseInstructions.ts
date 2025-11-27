@@ -372,6 +372,27 @@ These instructions will be included in the context of every @sql chat query for 
     }
 
     /**
+     * Get the file path for linked instructions (for editing)
+     */
+    async getInstructionsFilePath(connectionId: string, database?: string): Promise<vscode.Uri | null> {
+        const instructionName = this.getLinkedInstructionName(connectionId, database);
+        
+        if (!instructionName) {
+            return null;
+        }
+
+        const filePath = path.join(this.instructionsPath, `${instructionName}.md`);
+        
+        if (!fs.existsSync(filePath)) {
+            // File was deleted - unlink it
+            await this.handleDeletedInstruction(instructionName);
+            return null;
+        }
+
+        return vscode.Uri.file(filePath);
+    }
+
+    /**
      * Dispose resources
      */
     dispose(): void {

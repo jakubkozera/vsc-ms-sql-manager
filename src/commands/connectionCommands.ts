@@ -900,6 +900,61 @@ export function registerConnectionCommands(
         }
     });
 
+    const editDatabaseInstructionsCommand = vscode.commands.registerCommand(
+        'mssqlManager.editDatabaseInstructions',
+        async (node?: any) => {
+            try {
+                if (!node) {
+                    vscode.window.showErrorMessage('Please select a database or connection from the tree view');
+                    return;
+                }
+
+                let connectionId: string | undefined;
+                let database: string | undefined;
+
+                if (node instanceof DatabaseNode) {
+                    // DatabaseNode is a child of ServerConnectionNode - we need both connectionId and database name
+                    connectionId = node.connectionId;
+                    database = node.database;
+                } else if (node instanceof ConnectionNode) {
+                    // ConnectionNode represents a database connection - connectionId already includes the database
+                    connectionId = node.connectionId;
+                    database = undefined;  // Don't pass database for database-type connections
+                } else if (node instanceof ServerConnectionNode) {
+                    // ServerConnectionNode represents a server - no specific database
+                    connectionId = node.connectionId;
+                    database = undefined;
+                }
+
+                if (!connectionId) {
+                    vscode.window.showErrorMessage('Please select a database or connection');
+                    return;
+                }
+
+                if (!databaseInstructionsManager) {
+                    vscode.window.showErrorMessage('Database instructions manager not initialized');
+                    return;
+                }
+
+                // Get the instructions file path and open it
+                const instructionsFilePath = await databaseInstructionsManager.getInstructionsFilePath(connectionId, database);
+                
+                if (!instructionsFilePath) {
+                    vscode.window.showWarningMessage('No instructions file linked to this database');
+                    return;
+                }
+
+                // Open the file in editor
+                const doc = await vscode.workspace.openTextDocument(instructionsFilePath);
+                await vscode.window.showTextDocument(doc);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                vscode.window.showErrorMessage(`Failed to open instructions: ${errorMessage}`);
+                outputChannel.appendLine(`Edit instructions failed: ${errorMessage}`);
+            }
+        }
+    );
+
     return [
         connectCommand,
         disconnectCommand,
@@ -923,6 +978,7 @@ export function registerConnectionCommands(
         showAzureServerCacheCommand,
         discoverAzureServersCommand,
         addDatabaseInstructionsCommand,
-        unlinkDatabaseInstructionsCommand
+        unlinkDatabaseInstructionsCommand,
+        editDatabaseInstructionsCommand
     ];
 }
