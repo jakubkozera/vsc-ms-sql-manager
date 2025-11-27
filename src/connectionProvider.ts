@@ -210,7 +210,7 @@ export class ConnectionProvider {
         this.outputChannel.appendLine(`Server group deleted: ${groupId} (${connectionsInGroup.length} connection(s) removed)`);
     }
 
-    async connectWithWebview(): Promise<void> {
+    async connectWithWebview(preSelectedServerGroupId?: string): Promise<void> {
         // Use require here so webpack can resolve the TS module during bundling
         // and avoid runtime import extension issues with node16 resolution.
         // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -219,7 +219,7 @@ export class ConnectionProvider {
             this.handleWebviewConnection(config);
         });
         
-        await connectionWebview.show();
+        await connectionWebview.show(undefined, preSelectedServerGroupId);
     }
 
     private async handleWebviewConnection(config: ConnectionConfig): Promise<void> {
@@ -239,8 +239,8 @@ export class ConnectionProvider {
         }
     }
 
-    async connect(): Promise<void> {
-        await this.connectWithWebview();
+    async connect(preSelectedServerGroupId?: string): Promise<void> {
+        await this.connectWithWebview(preSelectedServerGroupId);
     }
 
     async manageConnections(): Promise<void> {

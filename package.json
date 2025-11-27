@@ -93,6 +93,11 @@
         "icon": "$(folder-library)"
       },
       {
+        "command": "mssqlManager.addConnectionToServerGroup",
+        "title": "Add Connection",
+        "icon": "$(add)"
+      },
+      {
         "command": "mssqlManager.editServerGroup",
         "title": "Edit Server Group",
         "icon": "$(edit)"
@@ -698,14 +703,34 @@
           "group": "3_refresh@1"
         },
         {
-          "command": "mssqlManager.editServerGroup",
+          "command": "mssqlManager.addConnectionToServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@1"
         },
         {
-          "command": "mssqlManager.deleteServerGroup",
+          "command": "mssqlManager.editServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@2"
+        },
+        {
+          "command": "mssqlManager.deleteServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "inline@3"
+        },
+        {
+          "command": "mssqlManager.addConnectionToServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "mssqlManager.editServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "mssqlManager.deleteServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "1_manage@3"
         },
         {
           "command": "mssqlManager.connectToSaved",

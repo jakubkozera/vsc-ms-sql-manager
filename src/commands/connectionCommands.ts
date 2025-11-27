@@ -258,6 +258,17 @@ export function registerConnectionCommands(
         await serverGroupWebview.show();
     });
 
+    const addConnectionToServerGroupCommand = vscode.commands.registerCommand('mssqlManager.addConnectionToServerGroup', async (serverGroupNode?: any) => {
+        try {
+            const serverGroupId = serverGroupNode?.group?.id;
+            await connectionProvider.connect(serverGroupId);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to add connection: ${errorMessage}`);
+            outputChannel.appendLine(`Add connection to server group failed: ${errorMessage}`);
+        }
+    });
+
     const editServerGroupCommand = vscode.commands.registerCommand('mssqlManager.editServerGroup', async (serverGroupNode?: any) => {
         try {
             if (!serverGroupNode || !serverGroupNode.group) {
@@ -965,6 +976,7 @@ export function registerConnectionCommands(
         disconnectConnectionCommand,
         copyConnectionStringCommand,
         createServerGroupCommand,
+        addConnectionToServerGroupCommand,
         editServerGroupCommand,
         deleteServerGroupCommand,
         debugConnectionsCommand,
