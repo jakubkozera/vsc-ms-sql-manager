@@ -546,19 +546,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "mssqlManager.refresh",
+          "command": "mssqlManager.manageConnections",
           "when": "view == mssqlManager.explorer",
           "group": "navigation@2"
         },
         {
-          "command": "mssqlManager.manageConnections",
-          "when": "view == mssqlManager.explorer",
-          "group": "navigation@3"
-        },
-        {
           "command": "mssqlManager.createServerGroup",
           "when": "view == mssqlManager.explorer",
-          "group": "navigation@4"
+          "group": "navigation@3"
         },
         {
           "command": "mssqlManager.refreshQueryHistory",
