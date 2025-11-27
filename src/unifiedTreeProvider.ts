@@ -13,11 +13,16 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     // Drag and drop support
     readonly dropMimeTypes = ['application/vnd.code.tree.mssqlmanagerexplorer'];
     readonly dragMimeTypes = ['application/vnd.code.tree.mssqlmanagerexplorer'];
+    private databaseInstructionsManager?: any; // DatabaseInstructionsManager
 
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel
     ) {}
+
+    setDatabaseInstructionsManager(manager: any): void {
+        this.databaseInstructionsManager = manager;
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -93,6 +98,21 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     }
 
     getTreeItem(element: TreeNode): vscode.TreeItem {
+        // Update contextValue for database and connection nodes based on linked instructions
+        if (this.databaseInstructionsManager) {
+            if (element instanceof DatabaseNode && element.database) {
+                const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId, element.database);
+                element.contextValue = hasInstructions ? 'databaseWithInstructions' : 'database';
+            } else if (element instanceof ConnectionNode) {
+                const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
+                const baseContext = element.isActive ? 'connectionActive' : 'connection';
+                element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
+            } else if (element instanceof ServerConnectionNode) {
+                const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
+                const baseContext = element.isActive ? 'serverConnectionActive' : 'serverConnection';
+                element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
+            }
+        }
         return element;
     }
 

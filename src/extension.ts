@@ -7,6 +7,9 @@ import { QueryHistoryManager } from './queryHistory';
 import { QueryHistoryTreeProvider } from './queryHistoryTreeProvider';
 import { registerAllCommands } from './commands';
 import { initializeAzureFirewallHelper } from './utils/azureFirewallHelper';
+import { SqlChatHandler } from './sqlChatHandler';
+import { SchemaContextBuilder } from './schemaContextBuilder';
+import { DatabaseInstructionsManager } from './databaseInstructions';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -78,6 +81,18 @@ async function initializeExtension(context: vscode.ExtensionContext) {
     const queryExecutor = new QueryExecutor(connectionProvider, outputChannel, historyManager);
     outputChannel.appendLine('[Extension] Query executor initialized with history manager');
     
+    // Initialize schema context builder for chat and background schema generation
+    const schemaContextBuilder = new SchemaContextBuilder(connectionProvider, outputChannel, context);
+    outputChannel.appendLine('[Extension] Schema context builder initialized');
+    
+    // Initialize database instructions manager
+    const databaseInstructionsManager = new DatabaseInstructionsManager(context, outputChannel);
+    outputChannel.appendLine('[Extension] Database instructions manager initialized');
+    context.subscriptions.push(databaseInstructionsManager);
+    
+    // Pass database instructions manager to tree provider
+    unifiedTreeProvider.setDatabaseInstructionsManager(databaseInstructionsManager);
+    
     // Register SQL custom editor provider
     const sqlEditorProvider = new SqlEditorProvider(context, queryExecutor, connectionProvider, outputChannel);
     context.subscriptions.push(
@@ -127,7 +142,9 @@ async function initializeExtension(context: vscode.ExtensionContext) {
         treeView,
         historyManager,
         historyTreeProvider,
-        sqlEditorProvider
+        sqlEditorProvider,
+        schemaContextBuilder,
+        databaseInstructionsManager
     );
 
     // Register developer command to refresh SQL snippets
@@ -141,6 +158,85 @@ async function initializeExtension(context: vscode.ExtensionContext) {
 
     // Add output channel to subscriptions
     context.subscriptions.push(outputChannel);
+
+    // Register chat participant
+    try {
+        const sqlChatHandler = new SqlChatHandler(context, connectionProvider, outputChannel, databaseInstructionsManager);
+        
+        // Create chat participant with proper ID from package.json
+        const chatParticipant = vscode.chat.createChatParticipant('ms-sql-manager.sql', sqlChatHandler.handleChatRequest.bind(sqlChatHandler));
+        chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'resources', 'database-dark.svg');
+        
+        // Set up follow-up provider
+        chatParticipant.followupProvider = {
+            provideFollowups(result: vscode.ChatResult, context: vscode.ChatContext, token: vscode.CancellationToken) {
+                return [
+                    {
+                        prompt: 'explain this query in detail',
+                        label: '📖 Explain Query'
+                    },
+                    {
+                        prompt: 'optimize this query for better performance',
+                        label: '⚡ Optimize Query'
+                    },
+                    {
+                        prompt: 'suggest indexes for this query',
+                        label: '🗂️ Suggest Index'
+                    },
+                    {
+                        prompt: 'show me the table schema',
+                        label: '🏗️ Show Schema'
+                    }
+                ];
+            }
+        };
+        
+        context.subscriptions.push(chatParticipant);
+        
+        // Register chat-related commands
+        const executeChatQueryCommand = vscode.commands.registerCommand(
+            'mssqlManager.executeChatGeneratedQuery',
+            async (sql: string, connectionContext: any, request?: any, stream?: any) => {
+                try {
+                    // Execute query in SQL editor (opens editor and runs query)
+                    await sqlChatHandler.executeQueryInEditorFromChat(sql, connectionContext);
+                } catch (error) {
+                    const errorMsg = `Failed to execute query: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                    vscode.window.showErrorMessage(errorMsg);
+                }
+            }
+        );
+        
+        const insertChatQueryCommand = vscode.commands.registerCommand(
+            'mssqlManager.insertChatGeneratedQuery',
+            async (sql: string, connectionContext?: any) => {
+                try {
+                    await sqlChatHandler.insertQueryToEditor(sql, connectionContext);
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to insert query: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            }
+        );
+        
+        const openChatCommand = vscode.commands.registerCommand(
+            'mssqlManager.openSqlChat',
+            async (connectionId?: string, database?: string) => {
+                // Open chat and set context if provided
+                await vscode.commands.executeCommand('workbench.panel.chat.view.copilot.focus');
+                if (connectionId) {
+                    // We could enhance this to pre-set connection context
+                    vscode.window.showInformationMessage('Chat opened. Use @sql to interact with your database.');
+                }
+            }
+        );
+        
+        context.subscriptions.push(executeChatQueryCommand, insertChatQueryCommand, openChatCommand);
+        
+        outputChannel.appendLine('SQL Chat participant registered successfully');
+    } catch (error) {
+        outputChannel.appendLine(`Failed to register chat participant: ${error}`);
+        // Don't fail the extension if chat isn't available
+    }
 }
 
 export function deactivate() {

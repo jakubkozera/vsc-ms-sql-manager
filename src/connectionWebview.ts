@@ -17,26 +17,38 @@ export class ConnectionWebview {
         this.serverGroups = this.context.globalState.get<ServerGroup[]>('mssqlManager.serverGroups', []);
     }
 
-    async show(existingConfig?: ConnectionConfig): Promise<void> {
+    async show(existingConfig?: ConnectionConfig, preSelectedServerGroupId?: string): Promise<void> {
+        console.log('[ConnectionWebview] show() called with preSelectedServerGroupId:', preSelectedServerGroupId);
         // Refresh server groups from global state every time
         this.serverGroups = this.context.globalState.get<ServerGroup[]>('mssqlManager.serverGroups', []);
+        console.log('[ConnectionWebview] Loaded server groups:', this.serverGroups.map(g => ({ id: g.id, name: g.name })));
         
         if (this.panel) {
             this.panel.reveal(vscode.ViewColumn.One);
             
             // Always send server groups first
             setTimeout(() => {
+                console.log('[ConnectionWebview] Sending loadServerGroups message');
                 this.panel?.webview.postMessage({
                     command: 'loadServerGroups',
                     serverGroups: this.serverGroups
                 });
                 
-                // Then load existing config if provided
+                // Then load existing config or pre-select server group
                 if (existingConfig) {
                     setTimeout(() => {
+                        console.log('[ConnectionWebview] Sending loadConnection message');
                         this.panel?.webview.postMessage({
                             command: 'loadConnection',
                             config: existingConfig
+                        });
+                    }, 50);
+                } else if (preSelectedServerGroupId) {
+                    setTimeout(() => {
+                        console.log('[ConnectionWebview] Sending preselectServerGroup message with ID:', preSelectedServerGroupId);
+                        this.panel?.webview.postMessage({
+                            command: 'preselectServerGroup',
+                            serverGroupId: preSelectedServerGroupId
                         });
                     }, 50);
                 }
@@ -92,6 +104,7 @@ export class ConnectionWebview {
         
         // Send server groups to webview
         setTimeout(() => {
+            console.log('[ConnectionWebview] (New panel) Sending loadServerGroups message');
             this.panel?.webview.postMessage({
                 command: 'loadServerGroups',
                 serverGroups: this.serverGroups
@@ -100,9 +113,18 @@ export class ConnectionWebview {
             // If editing existing connection, load it after groups are loaded
             if (existingConfig) {
                 setTimeout(() => {
+                    console.log('[ConnectionWebview] (New panel) Sending loadConnection message');
                     this.panel?.webview.postMessage({
                         command: 'loadConnection',
                         config: existingConfig
+                    });
+                }, 50);
+            } else if (preSelectedServerGroupId) {
+                setTimeout(() => {
+                    console.log('[ConnectionWebview] (New panel) Sending preselectServerGroup message with ID:', preSelectedServerGroupId);
+                    this.panel?.webview.postMessage({
+                        command: 'preselectServerGroup',
+                        serverGroupId: preSelectedServerGroupId
                     });
                 }, 50);
             }
@@ -887,6 +909,9 @@ export class ConnectionWebview {
                 case 'loadServerGroups':
                     loadServerGroups(message.serverGroups);
                     break;
+                case 'preselectServerGroup':
+                    preselectServerGroup(message.serverGroupId);
+                    break;
                 case 'testProgress':
                     showMessage('info', '<span class="spinner"></span>' + message.message);
                     break;
@@ -1109,6 +1134,15 @@ export class ConnectionWebview {
             }
             
             console.log('[ConnectionWebview] Total options in dropdown:', serverGroupSelect.children.length);
+        }
+
+        function preselectServerGroup(serverGroupId) {
+            console.log('[ConnectionWebview] Pre-selecting server group:', serverGroupId);
+            const serverGroupSelect = document.getElementById('serverGroup');
+            if (serverGroupSelect && serverGroupId) {
+                serverGroupSelect.value = serverGroupId;
+                console.log('[ConnectionWebview] Set server group dropdown to:', serverGroupId);
+            }
         }
 
         function showMessage(type, text) {

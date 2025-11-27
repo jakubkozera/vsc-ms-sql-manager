@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -39,8 +39,8 @@
     "commands": [
       {
         "command": "mssqlManager.connect",
-        "title": "MS SQL Manager: Connect to Database",
-        "icon": "$(plug)"
+        "title": "Connect to Database",
+        "icon": "$(add)"
       },
       {
         "command": "mssqlManager.executeQuery",
@@ -64,8 +64,8 @@
       },
       {
         "command": "mssqlManager.manageConnections",
-        "title": "MS SQL Manager: Manage Connections",
-        "icon": "$(settings-gear)"
+        "title": "Manage Connections",
+        "icon": "$(plug)"
       },
       {
         "command": "mssqlManager.debugConnections",
@@ -91,6 +91,11 @@
         "command": "mssqlManager.createServerGroup",
         "title": "Create Server Group",
         "icon": "$(folder-library)"
+      },
+      {
+        "command": "mssqlManager.addConnectionToServerGroup",
+        "title": "Add Connection",
+        "icon": "$(add)"
       },
       {
         "command": "mssqlManager.editServerGroup",
@@ -331,6 +336,34 @@
         "command": "mssqlManager.discoverAzureServers",
         "title": "Discover Azure SQL Servers",
         "icon": "$(cloud)"
+      },
+      {
+        "command": "mssqlManager.openSqlChat",
+        "title": "Open SQL Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "mssqlManager.executeChatGeneratedQuery",
+        "title": "Execute Chat Generated Query"
+      },
+      {
+        "command": "mssqlManager.insertChatGeneratedQuery",
+        "title": "Insert Chat Generated Query"
+      },
+      {
+        "command": "mssqlManager.addDatabaseInstructions",
+        "title": "Add Database Instructions",
+        "icon": "$(note)"
+      },
+      {
+        "command": "mssqlManager.unlinkDatabaseInstructions",
+        "title": "Unlink Database Instructions",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mssqlManager.editDatabaseInstructions",
+        "title": "Edit Database Instructions",
+        "icon": "$(edit)"
       }
     ],
     "viewsContainers": {
@@ -384,6 +417,42 @@
         "id": "mssqlManager.scriptProcedureExecuteTo",
         "label": "EXECUTE To",
         "icon": "$(play)"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "ms-sql-manager.sql",
+        "name": "sql",
+        "fullName": "SQL Database Assistant",
+        "description": "Ask questions about your SQL databases and get help with queries",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "explain",
+            "description": "Explain a SQL query or database concept"
+          },
+          {
+            "name": "optimize",
+            "description": "Suggest optimizations for a SQL query"
+          },
+          {
+            "name": "schema",
+            "description": "Show information about database tables and structure"
+          }
+        ],
+        "disambiguation": [
+          {
+            "category": "database",
+            "description": "The user wants help with SQL queries, database operations, or understanding database schemas.",
+            "examples": [
+              "Show me all customers from New York",
+              "How do I join these two tables?",
+              "Create a query to find the top selling products",
+              "What's the structure of the users table?",
+              "Help me optimize this slow query"
+            ]
+          }
+        ]
       }
     ],
     "menus": {
@@ -482,24 +551,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "mssqlManager.refresh",
+          "command": "mssqlManager.manageConnections",
           "when": "view == mssqlManager.explorer",
           "group": "navigation@2"
         },
         {
-          "command": "mssqlManager.manageConnections",
-          "when": "view == mssqlManager.explorer",
-          "group": "navigation@3"
-        },
-        {
           "command": "mssqlManager.createServerGroup",
           "when": "view == mssqlManager.explorer",
-          "group": "navigation@4"
-        },
-        {
-          "command": "mssqlManager.discoverAzureServers",
-          "when": "view == mssqlManager.explorer",
-          "group": "navigation@5"
+          "group": "navigation@3"
         },
         {
           "command": "mssqlManager.refreshQueryHistory",
@@ -539,23 +598,23 @@
           "group": "inline@1"
         },
         {
+          "command": "mssqlManager.disconnectConnection",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
+          "group": "inline@1"
+        },
+        {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active.*|Inactive|Failed)$/",
           "group": "inline@2"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active.*|Inactive|Failed)$/",
           "group": "inline@3"
         },
         {
-          "command": "mssqlManager.disconnectConnection",
-          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
-          "group": "inline@4"
-        },
-        {
           "command": "mssqlManager.newQuery",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active.*|Inactive|Failed)$/",
           "group": "1_connection@1"
         },
         {
@@ -580,17 +639,17 @@
         },
         {
           "command": "mssqlManager.disconnectConnection",
-          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
           "group": "1_connection@2"
         },
         {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active.*|Inactive|Failed)$/",
           "group": "2_manage@1"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connection(Active.*|Inactive|Failed)$/",
           "group": "2_manage@2"
         },
         {
@@ -600,38 +659,78 @@
         },
         {
           "command": "mssqlManager.showDatabaseDiagram",
-          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
           "group": "2_manage@4"
         },
         {
           "command": "mssqlManager.compareSchema",
-          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
           "group": "2_manage@5"
         },
         {
           "command": "mssqlManager.generateDatabaseScripts",
-          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
           "group": "2_script@1"
         },
         {
           "command": "mssqlManager.exportBackup",
-          "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
           "group": "2_script@2"
         },
         {
-          "command": "mssqlManager.refreshNode",
+          "command": "mssqlManager.openSqlChat",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
+          "group": "2_script@3"
+        },
+        {
+          "command": "mssqlManager.addDatabaseInstructions",
           "when": "view == mssqlManager.explorer && viewItem == connectionActive",
+          "group": "2_script@4"
+        },
+        {
+          "command": "mssqlManager.unlinkDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActiveWithInstructions",
+          "group": "2_script@4"
+        },
+        {
+          "command": "mssqlManager.editDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == connectionActiveWithInstructions",
+          "group": "2_script@4"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
           "group": "3_refresh@1"
         },
         {
-          "command": "mssqlManager.editServerGroup",
+          "command": "mssqlManager.addConnectionToServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@1"
         },
         {
-          "command": "mssqlManager.deleteServerGroup",
+          "command": "mssqlManager.editServerGroup",
           "when": "view == mssqlManager.explorer && viewItem == serverGroup",
           "group": "inline@2"
+        },
+        {
+          "command": "mssqlManager.deleteServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "inline@3"
+        },
+        {
+          "command": "mssqlManager.addConnectionToServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "mssqlManager.editServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "mssqlManager.deleteServerGroup",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "group": "1_manage@3"
         },
         {
           "command": "mssqlManager.connectToSaved",
@@ -655,32 +754,32 @@
         },
         {
           "command": "mssqlManager.disconnectConnection",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "inline@1"
         },
         {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "inline@2"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "inline@3"
         },
         {
           "command": "mssqlManager.newQuery",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active.*|Inactive|Failed)$/",
           "group": "1_connection@1"
         },
         {
           "command": "mssqlManager.newQueryOnDatabase",
-          "when": "view == mssqlManager.explorer && viewItem == database",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "1_query@1"
         },
         {
           "command": "mssqlManager.copyConnectionString",
-          "when": "view == mssqlManager.explorer && viewItem == database",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "1_query@2"
         },
         {
@@ -695,77 +794,117 @@
         },
         {
           "command": "mssqlManager.disconnectConnection",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "1_connection@2"
         },
         {
           "command": "mssqlManager.filterDatabases",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active.*|Inactive|Failed)$/",
           "group": "1_connection@3"
         },
         {
           "command": "mssqlManager.editConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active.*|Inactive|Failed)$/",
           "group": "2_manage@1"
         },
         {
           "command": "mssqlManager.deleteConnection",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active.*|Inactive|Failed)$/",
           "group": "2_manage@2"
         },
         {
           "command": "mssqlManager.copyConnectionString",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active.*|Inactive|Failed)$/",
           "group": "2_manage@3"
         },
         {
           "command": "mssqlManager.showDatabaseDiagram",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "2_manage@4"
         },
         {
           "command": "mssqlManager.compareSchema",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "2_manage@5"
         },
         {
           "command": "mssqlManager.exportBackup",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "2_manage@6"
         },
         {
           "command": "mssqlManager.importBackup",
-          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "2_manage@7"
         },
         {
-          "command": "mssqlManager.refreshNode",
+          "command": "mssqlManager.openSqlChat",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
+          "group": "2_manage@8"
+        },
+        {
+          "command": "mssqlManager.addDatabaseInstructions",
           "when": "view == mssqlManager.explorer && viewItem == serverConnectionActive",
+          "group": "2_manage@9"
+        },
+        {
+          "command": "mssqlManager.unlinkDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActiveWithInstructions",
+          "group": "2_manage@9"
+        },
+        {
+          "command": "mssqlManager.editDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == serverConnectionActiveWithInstructions",
+          "group": "2_manage@9"
+        },
+        {
+          "command": "mssqlManager.refreshNode",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "3_refresh@1"
         },
         {
           "command": "mssqlManager.showDatabaseDiagram",
-          "when": "view == mssqlManager.explorer && viewItem == database",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "1_query@3"
         },
         {
           "command": "mssqlManager.compareSchema",
-          "when": "view == mssqlManager.explorer && viewItem == database",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "1_query@4"
         },
         {
-          "command": "mssqlManager.generateDatabaseScripts",
+          "command": "mssqlManager.openSqlChat",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
+          "group": "1_query@5"
+        },
+        {
+          "command": "mssqlManager.addDatabaseInstructions",
           "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "1_query@6"
+        },
+        {
+          "command": "mssqlManager.unlinkDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == databaseWithInstructions",
+          "group": "1_query@6"
+        },
+        {
+          "command": "mssqlManager.editDatabaseInstructions",
+          "when": "view == mssqlManager.explorer && viewItem == databaseWithInstructions",
+          "group": "1_query@6"
+        },
+        {
+          "command": "mssqlManager.generateDatabaseScripts",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "2_script@1"
         },
         {
           "command": "mssqlManager.exportBackup",
-          "when": "view == mssqlManager.explorer && viewItem == database",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "2_script@2"
         },
         {
           "command": "mssqlManager.refreshNode",
-          "when": "view == mssqlManager.explorer && viewItem == database",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "3_refresh@1"
         },
         {
@@ -1028,6 +1167,14 @@
         },
         {
           "command": "mssqlManager.importBackup",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.executeChatGeneratedQuery",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.insertChatGeneratedQuery",
           "when": "false"
         }
       ]

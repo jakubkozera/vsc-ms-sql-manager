@@ -3,6 +3,8 @@ import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider, ConnectionNode, DatabaseNode, ServerConnectionNode } from '../unifiedTreeProvider';
 import { ServerGroupWebview } from '../serverGroupWebview';
 import { addFirewallRule, openAzurePortalFirewall, clearAllServerCache, showServerCacheInfo } from '../utils/azureFirewallHelper';
+import { SchemaContextBuilder } from '../schemaContextBuilder';
+import { DatabaseInstructionsManager } from '../databaseInstructions';
 
 export function registerConnectionCommands(
     context: vscode.ExtensionContext,
@@ -10,8 +12,32 @@ export function registerConnectionCommands(
     unifiedTreeProvider: UnifiedTreeProvider,
     outputChannel: vscode.OutputChannel,
     treeView?: vscode.TreeView<any>,
-    sqlEditorProvider?: any
+    sqlEditorProvider?: any,
+    schemaContextBuilder?: SchemaContextBuilder,
+    databaseInstructionsManager?: DatabaseInstructionsManager
 ): vscode.Disposable[] {
+    
+    // Helper function to trigger background schema generation for chat context
+    const triggerSchemaGeneration = async (connectionId: string, database?: string) => {
+        if (!schemaContextBuilder) {
+            outputChannel.appendLine(`[ConnectionCommands] Schema context builder NOT AVAILABLE!`);
+            return;
+        }
+        
+        try {
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+            outputChannel.appendLine(`[ConnectionCommands] STARTING SCHEMA GENERATION for ${connectionId}::${database || 'default'}`);
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+            await schemaContextBuilder.buildSchemaContext(connectionId, database);
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+            outputChannel.appendLine(`[ConnectionCommands] SCHEMA GENERATION COMPLETED for ${connectionId}::${database || 'default'}`);
+            outputChannel.appendLine(`[ConnectionCommands] ========================================`);
+        } catch (error) {
+            outputChannel.appendLine(`[ConnectionCommands] !!!ERROR!!! Schema generation failed: ${error}`);
+            outputChannel.appendLine(`[ConnectionCommands] Error stack: ${error instanceof Error ? error.stack : 'No stack'}`);
+        }
+    };
+    
     const connectCommand = vscode.commands.registerCommand('mssqlManager.connect', async () => {
         await connectionProvider.connect();
     });
@@ -33,6 +59,12 @@ export function registerConnectionCommands(
                 connectionProvider.clearConnectionFailure(connectionId);
                 await connectionProvider.connectToSavedById(connectionId);
                 unifiedTreeProvider.refresh();
+                
+                // Trigger background schema generation for chat context
+                outputChannel.appendLine(`[ConnectionCommands] About to trigger schema generation for ${connectionId}...`);
+                triggerSchemaGeneration(connectionId, connectionItem.database).catch(err => {
+                    outputChannel.appendLine(`[ConnectionCommands] Catch block: Schema generation promise rejected: ${err}`);
+                });
                 
                 // Expand the tree node after connection
                 if (treeView) {
@@ -226,6 +258,17 @@ export function registerConnectionCommands(
         await serverGroupWebview.show();
     });
 
+    const addConnectionToServerGroupCommand = vscode.commands.registerCommand('mssqlManager.addConnectionToServerGroup', async (serverGroupNode?: any) => {
+        try {
+            const serverGroupId = serverGroupNode?.group?.id;
+            await connectionProvider.connect(serverGroupId);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to add connection: ${errorMessage}`);
+            outputChannel.appendLine(`Add connection to server group failed: ${errorMessage}`);
+        }
+    });
+
     const editServerGroupCommand = vscode.commands.registerCommand('mssqlManager.editServerGroup', async (serverGroupNode?: any) => {
         try {
             if (!serverGroupNode || !serverGroupNode.group) {
@@ -297,7 +340,7 @@ export function registerConnectionCommands(
         vscode.window.showInformationMessage(`Found ${connections.length} saved connections. Check output channel for details.`);
     });
 
-    const newQueryCommand = vscode.commands.registerCommand('mssqlManager.newQuery', async (connectionItem?: any) => {
+    const newQueryCommand = vscode.commands.registerCommand('mssqlManager.newQuery', async (connectionItem?: any, initialQuery?: string, autoExecute: boolean = false) => {
         try {
             if (!connectionItem || !connectionItem.connectionId) {
                 vscode.window.showErrorMessage('Invalid connection item');
@@ -376,13 +419,19 @@ export function registerConnectionCommands(
                     queryFilePath = path.join(storagePath, queryFileName);
                 }
 
-                // Create empty query content
-                const initialContent = '';
+                // Create empty query content (or use initialQuery if provided)
+                const initialContent = initialQuery || '';
                 
                 // Write the content to the file
                 const uri = vscode.Uri.file(queryFilePath);
                 await vscode.workspace.fs.writeFile(uri, Buffer.from(initialContent, 'utf8'));
                 outputChannel.appendLine(`[New Query] Created new file: ${path.basename(queryFilePath)}`);
+            } else {
+                // If reusing file and initialQuery provided, write it
+                if (initialQuery) {
+                    const uri = vscode.Uri.file(queryFilePath);
+                    await vscode.workspace.fs.writeFile(uri, Buffer.from(initialQuery, 'utf8'));
+                }
             }
 
             // Open the file with the custom SQL editor
@@ -397,13 +446,35 @@ export function registerConnectionCommands(
                 setTimeout(() => {
                     const databaseName = connectionItem.database || (connectionItem.database ? undefined : 'master');
                     sqlEditorProvider.forceConnectionUpdate(uri, connectionId, databaseName);
+                    
+                    // If initialQuery was provided and we're reusing a file, also insert the query
+                    if (initialQuery) {
+                        setTimeout(() => {
+                            sqlEditorProvider.insertTextToEditor(uri, initialQuery);
+                            
+                            // Auto-execute if requested
+                            if (autoExecute) {
+                                setTimeout(() => {
+                                    sqlEditorProvider.triggerAutoExecute(uri);
+                                }, 100);
+                            }
+                        }, 100);
+                    }
                 }, 100);
+            } else if (autoExecute && sqlEditorProvider) {
+                // For new files with autoExecute, trigger execution after editor loads
+                setTimeout(() => {
+                    sqlEditorProvider.triggerAutoExecute(uri);
+                }, 200);
             }
+
+            return uri;
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to create new query: ${errorMessage}`);
             outputChannel.appendLine(`New query failed: ${errorMessage}`);
+            return null;
         }
     });
 
@@ -763,6 +834,138 @@ export function registerConnectionCommands(
         }
     });
 
+    // Database Instructions Commands
+    const addDatabaseInstructionsCommand = vscode.commands.registerCommand('mssqlManager.addDatabaseInstructions', async (node?: any) => {
+        try {
+            if (!databaseInstructionsManager) {
+                vscode.window.showErrorMessage('Database instructions manager not available');
+                return;
+            }
+
+            let connectionId: string | undefined;
+            let database: string | undefined;
+
+            if (node instanceof DatabaseNode) {
+                // DatabaseNode is a child of ServerConnectionNode - we need both connectionId and database name
+                connectionId = node.connectionId;
+                database = node.database;
+            } else if (node instanceof ConnectionNode) {
+                // ConnectionNode represents a database connection - connectionId already includes the database
+                connectionId = node.connectionId;
+                database = undefined;  // Don't pass database for database-type connections
+            } else if (node instanceof ServerConnectionNode) {
+                // ServerConnectionNode represents a server - no specific database
+                connectionId = node.connectionId;
+                database = undefined;
+            }
+
+            if (!connectionId) {
+                vscode.window.showErrorMessage('Please select a database or connection');
+                return;
+            }
+
+            await databaseInstructionsManager.showAddInstructionsDialog(connectionId, database);
+            unifiedTreeProvider.refresh();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to add instructions: ${errorMessage}`);
+            outputChannel.appendLine(`Add instructions failed: ${errorMessage}`);
+        }
+    });
+
+    const unlinkDatabaseInstructionsCommand = vscode.commands.registerCommand('mssqlManager.unlinkDatabaseInstructions', async (node?: any) => {
+        try {
+            if (!databaseInstructionsManager) {
+                vscode.window.showErrorMessage('Database instructions manager not available');
+                return;
+            }
+
+            let connectionId: string | undefined;
+            let database: string | undefined;
+
+            if (node instanceof DatabaseNode) {
+                // DatabaseNode is a child of ServerConnectionNode - we need both connectionId and database name
+                connectionId = node.connectionId;
+                database = node.database;
+            } else if (node instanceof ConnectionNode) {
+                // ConnectionNode represents a database connection - connectionId already includes the database
+                connectionId = node.connectionId;
+                database = undefined;  // Don't pass database for database-type connections
+            } else if (node instanceof ServerConnectionNode) {
+                // ServerConnectionNode represents a server - no specific database
+                connectionId = node.connectionId;
+                database = undefined;
+            }
+
+            if (!connectionId) {
+                vscode.window.showErrorMessage('Please select a database or connection');
+                return;
+            }
+
+            await databaseInstructionsManager.showUnlinkInstructionsDialog(connectionId, database);
+            unifiedTreeProvider.refresh();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to unlink instructions: ${errorMessage}`);
+            outputChannel.appendLine(`Unlink instructions failed: ${errorMessage}`);
+        }
+    });
+
+    const editDatabaseInstructionsCommand = vscode.commands.registerCommand(
+        'mssqlManager.editDatabaseInstructions',
+        async (node?: any) => {
+            try {
+                if (!node) {
+                    vscode.window.showErrorMessage('Please select a database or connection from the tree view');
+                    return;
+                }
+
+                let connectionId: string | undefined;
+                let database: string | undefined;
+
+                if (node instanceof DatabaseNode) {
+                    // DatabaseNode is a child of ServerConnectionNode - we need both connectionId and database name
+                    connectionId = node.connectionId;
+                    database = node.database;
+                } else if (node instanceof ConnectionNode) {
+                    // ConnectionNode represents a database connection - connectionId already includes the database
+                    connectionId = node.connectionId;
+                    database = undefined;  // Don't pass database for database-type connections
+                } else if (node instanceof ServerConnectionNode) {
+                    // ServerConnectionNode represents a server - no specific database
+                    connectionId = node.connectionId;
+                    database = undefined;
+                }
+
+                if (!connectionId) {
+                    vscode.window.showErrorMessage('Please select a database or connection');
+                    return;
+                }
+
+                if (!databaseInstructionsManager) {
+                    vscode.window.showErrorMessage('Database instructions manager not initialized');
+                    return;
+                }
+
+                // Get the instructions file path and open it
+                const instructionsFilePath = await databaseInstructionsManager.getInstructionsFilePath(connectionId, database);
+                
+                if (!instructionsFilePath) {
+                    vscode.window.showWarningMessage('No instructions file linked to this database');
+                    return;
+                }
+
+                // Open the file in editor
+                const doc = await vscode.workspace.openTextDocument(instructionsFilePath);
+                await vscode.window.showTextDocument(doc);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                vscode.window.showErrorMessage(`Failed to open instructions: ${errorMessage}`);
+                outputChannel.appendLine(`Edit instructions failed: ${errorMessage}`);
+            }
+        }
+    );
+
     return [
         connectCommand,
         disconnectCommand,
@@ -773,6 +976,7 @@ export function registerConnectionCommands(
         disconnectConnectionCommand,
         copyConnectionStringCommand,
         createServerGroupCommand,
+        addConnectionToServerGroupCommand,
         editServerGroupCommand,
         deleteServerGroupCommand,
         debugConnectionsCommand,
@@ -784,6 +988,9 @@ export function registerConnectionCommands(
         openAzurePortalCommand,
         clearAzureServerCacheCommand,
         showAzureServerCacheCommand,
-        discoverAzureServersCommand
+        discoverAzureServersCommand,
+        addDatabaseInstructionsCommand,
+        unlinkDatabaseInstructionsCommand,
+        editDatabaseInstructionsCommand
     ];
 }

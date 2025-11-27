@@ -119,12 +119,13 @@ export function registerQueryCommands(
                 query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
             }
             
-            // Set the preferred database context if available
+            // Set the preferred database context if available and execute query
             if (item.database && item.connectionId) {
                 connectionProvider.setNextEditorPreferredDatabase(item.connectionId, item.database);
             }
             
-            await openSqlInCustomEditor(query, `select_${tableName}.sql`, context);
+            // Use newQuery command with autoExecute to run the query immediately
+            await vscode.commands.executeCommand('mssqlManager.newQuery', item, query, true);
         }
     });
 
