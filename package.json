@@ -338,6 +338,11 @@
         "icon": "$(cloud)"
       },
       {
+        "command": "mssqlManager.discoverDockerContainers",
+        "title": "Discover Docker SQL Containers",
+        "icon": "$(vm)"
+      },
+      {
         "command": "mssqlManager.openSqlChat",
         "title": "Open SQL Chat",
         "icon": "$(comment-discussion)"

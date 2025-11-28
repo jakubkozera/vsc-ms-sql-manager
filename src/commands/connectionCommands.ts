@@ -834,6 +834,42 @@ export function registerConnectionCommands(
         }
     });
 
+    const discoverDockerContainersCommand = vscode.commands.registerCommand('mssqlManager.discoverDockerContainers', async () => {
+        try {
+            const choice = await vscode.window.showInformationMessage(
+                'This will discover running Docker SQL Server containers and add them to the Docker group. Continue?',
+                { modal: true },
+                'Discover Containers'
+            );
+            
+            if (choice === 'Discover Containers') {
+                outputChannel.appendLine('[Docker Discovery] Manual Docker discovery initiated');
+                
+                // Reset the discovery flag to allow re-running
+                await connectionProvider.resetDockerDiscoveryFlag();
+                
+                // Run discovery
+                await connectionProvider.discoverDockerServersOnce();
+                
+                // Refresh tree
+                unifiedTreeProvider.refresh();
+                
+                // Get discovered containers count
+                const allConnections = await connectionProvider.getSavedConnectionsList();
+                const dockerConnections = allConnections.filter(c => c.id.startsWith('docker-'));
+                const message = dockerConnections.length > 0 
+                    ? `Docker discovery completed. Found ${dockerConnections.length} SQL Server container(s).`
+                    : 'Docker discovery completed. No SQL Server containers found.';
+                
+                vscode.window.showInformationMessage(message);
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to discover Docker containers: ${errorMessage}`);
+            outputChannel.appendLine(`Docker discovery failed: ${errorMessage}`);
+        }
+    });
+
     // Database Instructions Commands
     const addDatabaseInstructionsCommand = vscode.commands.registerCommand('mssqlManager.addDatabaseInstructions', async (node?: any) => {
         try {
@@ -989,6 +1025,7 @@ export function registerConnectionCommands(
         clearAzureServerCacheCommand,
         showAzureServerCacheCommand,
         discoverAzureServersCommand,
+        discoverDockerContainersCommand,
         addDatabaseInstructionsCommand,
         unlinkDatabaseInstructionsCommand,
         editDatabaseInstructionsCommand

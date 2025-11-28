@@ -71,6 +71,13 @@ async function initializeExtension(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`[Extension] Azure discovery error: ${err}`);
     }
     
+    // Run one-time Docker SQL Server discovery
+    try {
+        await connectionProvider.discoverDockerServersOnce();
+    } catch (err) {
+        outputChannel.appendLine(`[Extension] Docker discovery error: ${err}`);
+    }
+    
     // Initialize query history
     outputChannel.appendLine('[Extension] Initializing query history...');
     const historyManager = new QueryHistoryManager(context);

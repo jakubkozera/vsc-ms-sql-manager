@@ -4,6 +4,7 @@ import * as sql from 'mssql';
 import { createPoolForConfig, DBPool } from './dbClient';
 import { analyzeConnectionError, showAzureFirewallSolution } from './utils/azureFirewallHelper';
 import { performAzureDiscovery } from './utils/azureDiscovery';
+import { discoverDockerSqlServers } from './utils/dockerDiscovery';
 
 export interface ServerGroup {
     id: string;
@@ -331,8 +332,14 @@ export class ConnectionProvider {
             
             // Re-prompt for password if SQL auth and not found in secure storage
             if (completeConfig.authType === 'sql' && !completeConfig.password) {
+                // Check if this is a Docker connection
+                const isDockerConnection = completeConfig.id.startsWith('docker-');
+                const promptMessage = isDockerConnection
+                    ? `Enter SA password for Docker container: ${completeConfig.name}`
+                    : `Enter password for ${completeConfig.username}@${completeConfig.server}`;
+                
                 const password = await vscode.window.showInputBox({
-                    prompt: `Enter password for ${completeConfig.username}@${completeConfig.server}`,
+                    prompt: promptMessage,
                     password: true,
                     placeHolder: 'Password'
                 });
@@ -344,6 +351,7 @@ export class ConnectionProvider {
                 completeConfig.password = password;
                 // Update secure storage with new password
                 await this.context.secrets.store(`mssqlManager.password.${config.id}`, password);
+                this.outputChannel.appendLine(`[ConnectionProvider] Stored password for ${completeConfig.name}`);
             }
 
             await this.establishConnection(completeConfig);
@@ -1148,6 +1156,112 @@ export class ConnectionProvider {
     async resetAzureDiscoveryFlag(): Promise<void> {
         await this.context.globalState.update('mssqlManager.azureDiscoveryDone', false);
         this.outputChannel.appendLine('[ConnectionProvider] Azure discovery flag reset');
+    }
+
+    /**
+     * Discovers Docker SQL Server containers running on localhost.
+     * Runs once after the extension is installed/first activated.
+     */
+    async discoverDockerServersOnce(): Promise<void> {
+        try {
+            const alreadyRun = this.context.globalState.get<boolean>('mssqlManager.dockerDiscoveryDone', false);
+            if (alreadyRun) {
+                this.outputChannel.appendLine('[ConnectionProvider] Docker discovery already executed, skipping');
+                return;
+            }
+
+            this.outputChannel.appendLine('[ConnectionProvider] Starting one-time Docker SQL Server discovery');
+
+            // Perform Docker discovery
+            const dockerContainers = await discoverDockerSqlServers(this.outputChannel);
+
+            if (dockerContainers.length > 0) {
+                // Ensure Docker server group exists
+                let groups = this.getServerGroups();
+                let dockerGroup = groups.find(g => g.name === 'Docker');
+                if (!dockerGroup) {
+                    dockerGroup = { 
+                        id: 'group-docker', 
+                        name: 'Docker', 
+                        color: '#2496ED',
+                        iconType: 'custom'
+                    };
+                    await this.saveServerGroup(dockerGroup);
+                    groups = this.getServerGroups();
+                }
+
+                // Get current saved connections
+                const savedConnections = this.getSavedConnections();
+
+                // Add discovered Docker containers as connections
+                for (const container of dockerContainers) {
+                    const connectionId = `docker-${container.containerId}`;
+                    
+                    // Check if connection already exists by ID
+                    const exists = savedConnections.find(s => s.id === connectionId);
+
+                    if (!exists) {
+                        // Create connection config
+                        const dockerConnection: ConnectionConfig = {
+                            id: connectionId,
+                            name: `${container.containerName}`,
+                            server: 'localhost',
+                            database: 'master',
+                            authType: 'sql',
+                            connectionType: 'server',
+                            username: 'sa',
+                            port: container.port,
+                            encrypt: false,
+                            trustServerCertificate: true,
+                            serverGroupId: dockerGroup.id
+                        };
+
+                        // Store password in secrets if available
+                        if (container.saPassword) {
+                            await this.context.secrets.store(`mssqlManager.password.${connectionId}`, container.saPassword);
+                            this.outputChannel.appendLine(`[ConnectionProvider] Stored SA password for ${container.containerName}`);
+                        } else {
+                            this.outputChannel.appendLine(`[ConnectionProvider] No SA password found for ${container.containerName}, will prompt on connect`);
+                        }
+
+                        // Add to connections list
+                        savedConnections.push(dockerConnection);
+                        this.outputChannel.appendLine(
+                            `[ConnectionProvider] Added Docker container: ${container.containerName} ` +
+                            `(${container.image}) on port ${container.port}`
+                        );
+                    } else {
+                        this.outputChannel.appendLine(`[ConnectionProvider] Docker connection already exists: ${container.containerName}`);
+                    }
+                }
+
+                // Save updated connections
+                await this.context.globalState.update('mssqlManager.connections', savedConnections);
+                this.outputChannel.appendLine(`[ConnectionProvider] Registered ${dockerContainers.length} Docker SQL container(s)`);
+
+                // Notify UI
+                this.notifyConnectionChanged();
+            } else {
+                this.outputChannel.appendLine('[ConnectionProvider] No Docker SQL Server containers found');
+            }
+
+            // Mark discovery as done
+            await this.context.globalState.update('mssqlManager.dockerDiscoveryDone', true);
+            this.outputChannel.appendLine('[ConnectionProvider] Docker discovery finished');
+
+        } catch (error) {
+            this.outputChannel.appendLine(`[ConnectionProvider] Error during Docker discovery: ${error}`);
+            // Still mark as done to avoid repeated attempts
+            await this.context.globalState.update('mssqlManager.dockerDiscoveryDone', true);
+        }
+    }
+
+    /**
+     * Resets Docker discovery flag to allow re-running discovery
+     */
+    async resetDockerDiscoveryFlag(): Promise<void> {
+        await this.context.globalState.update('mssqlManager.dockerDiscoveryDone', false);
+        this.outputChannel.appendLine('[ConnectionProvider] Docker discovery flag reset');
     }
 
     async connectToSavedById(connectionId: string): Promise<void> {
