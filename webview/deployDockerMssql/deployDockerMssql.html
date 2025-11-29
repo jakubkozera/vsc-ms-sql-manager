@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deploy MS SQL Server</title>
+    <link rel="stylesheet" href="{{cssUri}}">
+</head>
+<body>
+    <div class="container">
+        <h1>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="#0DB7ED" viewBox="0 0 24 24">
+                <path d="M21.803 10.242c-.054-.043-.561-.425-1.628-.425a5.152 5.152 0 0 0-.841.072c-.207-1.417-1.378-2.107-1.43-2.138l-.287-.165-.189.272a3.851 3.851 0 0 0-.51 1.192c-.191.809-.075 1.568.336 2.218-.496.276-1.292.344-1.453.35H2.626a.626.626 0 0 0-.625.623 9.483 9.483 0 0 0 .577 3.385c.454 1.19 1.129 2.067 2.007 2.603.984.603 2.584.947 4.396.947.819.003 1.636-.072 2.441-.221a10.235 10.235 0 0 0 3.186-1.157 8.75 8.75 0 0 0 2.174-1.78c1.044-1.182 1.666-2.497 2.128-3.667h.184c1.143 0 1.846-.457 2.233-.841.258-.244.459-.542.589-.872l.084-.24-.197-.156z"/>
+            </svg>
+            Deploy MS SQL Server
+        </h1>
+        <p class="subtitle">Deploy a new Microsoft SQL Server container using Docker</p>
+
+        <form id="deployForm">
+            <!-- Container Configuration -->
+            <div class="section">
+                <h2>Container Configuration</h2>
+                
+                <div class="form-group">
+                    <label for="containerName">Container Name *</label>
+                    <input type="text" id="containerName" required placeholder="mssql-server" value="mssql-server">
+                    <div class="help-text">Unique name for the Docker container</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="port">Host Port *</label>
+                    <input type="number" id="port" required placeholder="1433" value="1433" min="1" max="65535">
+                    <div class="help-text">Port on which SQL Server will be accessible (default: 1433)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="network">Docker Network</label>
+                    <select id="network">
+                        <option value="bridge">bridge (default)</option>
+                    </select>
+                    <div class="help-text">Docker network to attach the container to</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="memory">Memory Limit</label>
+                    <select id="memory">
+                        <option value="">No limit</option>
+                        <option value="2g">2 GB</option>
+                        <option value="4g" selected>4 GB (recommended)</option>
+                        <option value="8g">8 GB</option>
+                        <option value="16g">16 GB</option>
+                    </select>
+                    <div class="help-text">Maximum memory the container can use</div>
+                </div>
+            </div>
+
+            <!-- SQL Server Configuration -->
+            <div class="section">
+                <h2>SQL Server Configuration</h2>
+                
+                <div class="form-group">
+                    <label for="image">SQL Server Version *</label>
+                    <select id="image">
+                        <option value="mcr.microsoft.com/mssql/server:2022-latest">SQL Server 2022 (latest)</option>
+                        <option value="mcr.microsoft.com/mssql/server:2022-CU14-ubuntu-22.04">SQL Server 2022 CU14</option>
+                        <option value="mcr.microsoft.com/mssql/server:2019-latest">SQL Server 2019 (latest)</option>
+                        <option value="mcr.microsoft.com/mssql/server:2019-CU27-ubuntu-20.04">SQL Server 2019 CU27</option>
+                        <option value="mcr.microsoft.com/mssql/server:2017-latest">SQL Server 2017 (latest)</option>
+                        <option value="mcr.microsoft.com/azure-sql-edge:latest">Azure SQL Edge (ARM/IoT)</option>
+                    </select>
+                    <div class="help-text">Select SQL Server Docker image version</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="edition">SQL Server Edition</label>
+                    <select id="edition">
+                        <option value="Developer">Developer (free, for non-production use)</option>
+                        <option value="Express">Express (free, limited features)</option>
+                        <option value="Standard">Standard (requires license)</option>
+                        <option value="Enterprise">Enterprise (requires license)</option>
+                    </select>
+                    <div class="help-text">Select the SQL Server edition to deploy</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="collation">Collation</label>
+                    <select id="collation">
+                        <option value="">SQL_Latin1_General_CP1_CI_AS (default)</option>
+                        <option value="Latin1_General_CI_AS">Latin1_General_CI_AS</option>
+                        <option value="SQL_Latin1_General_CP1_CS_AS">SQL_Latin1_General_CP1_CS_AS (case-sensitive)</option>
+                        <option value="Latin1_General_100_CI_AS">Latin1_General_100_CI_AS</option>
+                    </select>
+                    <div class="help-text">Database collation setting (affects sorting and comparison)</div>
+                </div>
+            </div>
+
+            <!-- Security Configuration -->
+            <div class="section">
+                <h2>Security Configuration</h2>
+                
+                <div class="form-group">
+                    <label for="saPassword">SA Password *</label>
+                    <div class="password-input-group">
+                        <input type="password" id="saPassword" required placeholder="YourStrong@Passw0rd">
+                        <button type="button" id="togglePasswordBtn" class="icon-btn" title="Show/Hide Password">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
+                        <button type="button" id="generatePasswordBtn" class="icon-btn" title="Generate Strong Password">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="password-requirements">
+                        <div class="requirement" id="req-length">
+                            <span class="icon">○</span> At least 8 characters
+                        </div>
+                        <div class="requirement" id="req-uppercase">
+                            <span class="icon">○</span> At least one uppercase letter
+                        </div>
+                        <div class="requirement" id="req-lowercase">
+                            <span class="icon">○</span> At least one lowercase letter
+                        </div>
+                        <div class="requirement" id="req-number">
+                            <span class="icon">○</span> At least one number
+                        </div>
+                        <div class="requirement" id="req-special">
+                            <span class="icon">○</span> At least one special character
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-item eula-checkbox">
+                        <input type="checkbox" id="acceptEula" required>
+                        <label for="acceptEula">
+                            I accept the Microsoft SQL Server 
+                            <a href="https://go.microsoft.com/fwlink/?linkid=857698" target="_blank">End-User License Agreement</a> *
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button type="submit" id="deployBtn" class="primary-btn" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                    </svg>
+                    Deploy Container
+                </button>
+                <button type="button" id="testBtn" class="secondary-btn" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    Test Connection
+                </button>
+            </div>
+
+            <!-- Progress Section -->
+            <div class="progress" id="progressSection" style="display: none;">
+                <div class="progress-content">
+                    <div class="spinner"></div>
+                    <div>
+                        <strong>Status:</strong> <span id="progressMessage">Deploying container...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Result Section -->
+            <div class="result" id="resultSection" style="display: none;">
+                <div id="resultContent"></div>
+            </div>
+        </form>
+
+        <!-- Information Panel -->
+        <div class="info-panel">
+            <h3>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                Information
+            </h3>
+            <ul>
+                <li><strong>Image:</strong> <span id="selectedImage">mcr.microsoft.com/mssql/server:2022-latest</span></li>
+                <li><strong>Default Port:</strong> 1433 (mapped to host port you specify)</li>
+                <li><strong>Default User:</strong> sa</li>
+                <li><strong>Minimum Requirements:</strong> 2GB RAM, 2GB disk space</li>
+            </ul>
+            
+            <div class="warning-box">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <div>
+                    <strong>Important:</strong> The Developer and Express editions are free for development and testing. 
+                    Standard and Enterprise editions require proper licensing for production use.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{jsUri}}"></script>
+</body>
+</html>

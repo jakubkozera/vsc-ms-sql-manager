@@ -1,0 +1,397 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    padding: 0;
+    margin: 0;
+    color: var(--vscode-foreground);
+    background-color: var(--vscode-editor-background);
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 28px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: var(--vscode-foreground);
+}
+
+h1 svg {
+    flex-shrink: 0;
+}
+
+.subtitle {
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+    margin: 0 0 24px 0;
+}
+
+h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    color: var(--vscode-foreground);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    padding-bottom: 8px;
+}
+
+h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 12px 0;
+    color: var(--vscode-foreground);
+}
+
+.section {
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group:last-child {
+    margin-bottom: 0;
+}
+
+label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--vscode-foreground);
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"],
+select,
+textarea {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--vscode-input-foreground);
+    background-color: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder);
+}
+
+input[type="text"]:disabled,
+input[type="number"]:disabled,
+input[type="password"]:disabled,
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.password-input-group {
+    display: flex;
+    gap: 8px;
+}
+
+.password-input-group input {
+    flex: 1;
+}
+
+.icon-btn {
+    padding: 8px 12px;
+    background-color: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: 1px solid var(--vscode-button-border);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.icon-btn:hover {
+    background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.icon-btn:active {
+    transform: scale(0.98);
+}
+
+.password-requirements {
+    margin-top: 8px;
+    padding: 12px;
+    background: var(--vscode-textBlockQuote-background);
+    border-left: 3px solid var(--vscode-textBlockQuote-border);
+    border-radius: 4px;
+}
+
+.requirement {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin: 4px 0;
+    color: var(--vscode-descriptionForeground);
+}
+
+.requirement .icon {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.requirement.valid {
+    color: var(--vscode-testing-iconPassed);
+}
+
+.requirement.valid .icon {
+    content: "✓";
+}
+
+.requirement.valid .icon::before {
+    content: "✓";
+}
+
+.help-text {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    margin-top: 4px;
+}
+
+.checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.checkbox-item input[type="checkbox"] {
+    width: auto;
+    cursor: pointer;
+}
+
+.checkbox-item label {
+    margin: 0;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.eula-checkbox {
+    padding: 12px;
+    background: var(--vscode-textBlockQuote-background);
+    border-left: 3px solid var(--vscode-notificationsWarningIcon-foreground);
+    border-radius: 4px;
+}
+
+.eula-checkbox label {
+    font-size: 13px;
+}
+
+.eula-checkbox a {
+    color: var(--vscode-textLink-foreground);
+    text-decoration: none;
+}
+
+.eula-checkbox a:hover {
+    text-decoration: underline;
+}
+
+.button-group {
+    display: flex;
+    gap: 12px;
+    margin: 24px 0;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.primary-btn {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    flex: 1;
+}
+
+.primary-btn:hover:not(:disabled) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.primary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.secondary-btn {
+    background-color: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: 1px solid var(--vscode-button-border);
+}
+
+.secondary-btn:hover:not(:disabled) {
+    background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.secondary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+button:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.progress {
+    padding: 16px;
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    margin: 20px 0;
+}
+
+.progress-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--vscode-progressBar-background);
+    border-top-color: var(--vscode-button-background);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.result {
+    padding: 16px;
+    border-radius: 6px;
+    margin: 20px 0;
+}
+
+.result.success {
+    background: var(--vscode-testing-iconPassed);
+    color: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-testing-iconPassed);
+}
+
+.result.error {
+    background: var(--vscode-inputValidation-errorBackground);
+    color: var(--vscode-inputValidation-errorForeground);
+    border: 1px solid var(--vscode-inputValidation-errorBorder);
+}
+
+.result-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.result-message {
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.info-panel {
+    background: var(--vscode-textBlockQuote-background);
+    border-left: 3px solid var(--vscode-textBlockQuote-border);
+    border-radius: 4px;
+    padding: 16px;
+    margin-top: 24px;
+}
+
+.info-panel ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.info-panel li {
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--vscode-foreground);
+}
+
+.warning-box {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--vscode-inputValidation-warningBackground);
+    border: 1px solid var(--vscode-inputValidation-warningBorder);
+    border-radius: 4px;
+}
+
+.warning-box svg {
+    flex-shrink: 0;
+    color: var(--vscode-notificationsWarningIcon-foreground);
+}
+
+.warning-box div {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--vscode-foreground);
+}
+
+.warning-box strong {
+    display: block;
+    margin-bottom: 4px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--vscode-editor-background);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
+}

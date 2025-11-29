@@ -348,6 +348,11 @@
         "icon": "$(server)"
       },
       {
+        "command": "mssqlManager.deployDockerMssql",
+        "title": "Deploy MS SQL",
+        "icon": "$(add)"
+      },
+      {
         "command": "mssqlManager.collapseAll",
         "title": "Collapse All",
         "icon": "$(collapse-all)"
@@ -748,33 +753,38 @@
         },
         {
           "command": "mssqlManager.addConnectionToServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@1"
         },
         {
           "command": "mssqlManager.editServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@2"
         },
         {
           "command": "mssqlManager.deleteServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@3"
         },
         {
           "command": "mssqlManager.addConnectionToServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "1_manage@1"
         },
         {
           "command": "mssqlManager.editServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "1_manage@2"
         },
         {
           "command": "mssqlManager.deleteServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "1_manage@3"
+        },
+        {
+          "command": "mssqlManager.deployDockerMssql",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroupDocker",
+          "group": "2_docker@1"
         },
         {
           "command": "mssqlManager.connectToSaved",

@@ -5,6 +5,7 @@ import { ServerGroupWebview } from '../serverGroupWebview';
 import { addFirewallRule, openAzurePortalFirewall, clearAllServerCache, showServerCacheInfo } from '../utils/azureFirewallHelper';
 import { SchemaContextBuilder } from '../schemaContextBuilder';
 import { DatabaseInstructionsManager } from '../databaseInstructions';
+import { DeployDockerMssqlWebview } from '../deployDockerMssql';
 
 export function registerConnectionCommands(
     context: vscode.ExtensionContext,
@@ -919,6 +920,17 @@ export function registerConnectionCommands(
         }
     });
 
+    const deployDockerMssqlCommand = vscode.commands.registerCommand('mssqlManager.deployDockerMssql', async () => {
+        try {
+            const deployWebview = new DeployDockerMssqlWebview(connectionProvider, outputChannel, context);
+            await deployWebview.show();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to open Deploy MS SQL webview: ${errorMessage}`);
+            outputChannel.appendLine(`Deploy Docker MSSQL failed: ${errorMessage}`);
+        }
+    });
+
     // Database Instructions Commands
     const addDatabaseInstructionsCommand = vscode.commands.registerCommand('mssqlManager.addDatabaseInstructions', async (node?: any) => {
         try {
@@ -1077,6 +1089,7 @@ export function registerConnectionCommands(
         discoverDockerContainersCommand,
         discoverLocalServersCommand,
         collapseAllCommand,
+        deployDockerMssqlCommand,
         addDatabaseInstructionsCommand,
         unlinkDatabaseInstructionsCommand,
         editDatabaseInstructionsCommand

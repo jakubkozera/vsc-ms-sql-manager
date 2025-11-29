@@ -2276,7 +2276,14 @@ export class ServerGroupNode extends TreeNode {
         
         this.description = `${connectionCount} connection(s)`;
         this.tooltip = `${group.name}\n${group.description || ''}\n${connectionCount} connection(s)`;
-        this.contextValue = 'serverGroup';
+        
+        // Set contextValue based on group name
+        // Docker group gets special contextValue to show Deploy MS SQL option
+        if (group.name === 'Docker') {
+            this.contextValue = 'serverGroupDocker';
+        } else {
+            this.contextValue = 'serverGroup';
+        }
         
         // Set colored icon - use theme-aware icons
         const isOpen = this.collapsibleState === vscode.TreeItemCollapsibleState.Expanded;
