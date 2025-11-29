@@ -349,7 +349,7 @@
       },
       {
         "command": "mssqlManager.deployDockerMssql",
-        "title": "Deploy MS SQL",
+        "title": "Deploy Docker MS SQL container",
         "icon": "$(add)"
       },
       {
@@ -485,6 +485,11 @@
         {
           "command": "mssqlManager.collapseAll",
           "group": "0_view@1"
+        },
+        {
+          "command": "mssqlManager.deployDockerMssql",
+          "when": "mssqlManager.dockerRunning",
+          "group": "1_discovery@0"
         },
         {
           "command": "mssqlManager.discoverDockerContainers",
