@@ -3137,15 +3137,29 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
     console.log('[AG-GRID] Metadata:', metadata);
     
-    // Create FK lookup cache for this table
-    const fkColumnSet = new Set();
-    if (metadata && metadata.sourceTable && metadata.sourceSchema && dbSchema.foreignKeys) {
-        dbSchema.foreignKeys.forEach(fk => {
-            if (fk.fromTable === metadata.sourceTable && fk.fromSchema === metadata.sourceSchema) {
-                fkColumnSet.add(fk.fromColumn);
+    // Create PK/FK lookup maps from metadata columns
+    // This works for all result sets, regardless of single or multiple tables
+    const pkColumnSet = new Set();
+    const fkColumnMap = new Map(); // Map column name to FK info
+    
+    if (metadata && metadata.columns) {
+        metadata.columns.forEach(col => {
+            if (col.isPrimaryKey) {
+                pkColumnSet.add(col.name);
+            }
+            // Check FK from dbSchema if we have source table info
+            if (col.sourceTable && col.sourceSchema && dbSchema.foreignKeys) {
+                dbSchema.foreignKeys.forEach(fk => {
+                    if (fk.fromTable === col.sourceTable && 
+                        fk.fromSchema === col.sourceSchema && 
+                        fk.fromColumn === col.name) {
+                        fkColumnMap.set(col.name, fk);
+                    }
+                });
             }
         });
-        console.log('[AG-GRID] FK columns for table', metadata.sourceTable, ':', Array.from(fkColumnSet));
+        console.log('[AG-GRID] PK columns:', Array.from(pkColumnSet));
+        console.log('[AG-GRID] FK columns:', Array.from(fkColumnMap.keys()));
     }
     
     // Virtual scrolling configuration
@@ -3234,8 +3248,9 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const optimalWidth = calculateOptimalColumnWidth(col, columnData, type);
         
         // Check if this column is a primary key or foreign key
-        const isPrimaryKey = metadata && metadata.primaryKeyColumns && metadata.primaryKeyColumns.includes(col);
-        const isForeignKey = fkColumnSet.has(col);
+        // Use PK/FK info from metadata columns (works for all result sets)
+        const isPrimaryKey = pkColumnSet.has(col);
+        const isForeignKey = fkColumnMap.has(col);
         
         return {
             field: col,
