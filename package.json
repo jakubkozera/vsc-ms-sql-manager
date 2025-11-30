@@ -858,7 +858,7 @@
         },
         {
           "command": "mssqlManager.filterDatabases",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active.*|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "1_connection@3"
         },
         {
