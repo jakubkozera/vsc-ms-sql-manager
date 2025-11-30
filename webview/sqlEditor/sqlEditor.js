@@ -6179,6 +6179,118 @@ function applyCellHighlightGlobal(containerEl, rowIndex, colIndex) {
     }
 }
 
+// Helper function to determine SQL data type category
+function getDataTypeCategory(sqlType) {
+    if (!sqlType) return 'unknown';
+    
+    const type = sqlType.toLowerCase();
+    
+    // Numeric types
+    if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(type)) {
+        return 'numeric';
+    }
+    
+    // Boolean/bit type
+    if (type === 'bit') {
+        return 'boolean';
+    }
+    
+    // Date/time types
+    if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(type)) {
+        return 'datetime';
+    }
+    
+    // Text types
+    if (['char', 'varchar', 'nchar', 'nvarchar', 'text', 'ntext'].includes(type)) {
+        return 'text';
+    }
+    
+    // Binary types
+    if (['binary', 'varbinary', 'image'].includes(type)) {
+        return 'binary';
+    }
+    
+    // Default to text for unknown types
+    return 'text';
+}
+
+// Calculate statistics for numeric values
+function calculateNumericStats(values) {
+    if (values.length === 0) return null;
+    
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / values.length;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    
+    return {
+        sum: sum.toFixed(2),
+        avg: avg.toFixed(2),
+        min: min,
+        max: max
+    };
+}
+
+// Calculate statistics for text values
+function calculateTextStats(values) {
+    if (values.length === 0) return null;
+    
+    const distinctValues = new Set(values);
+    const lengths = values.map(v => String(v).length);
+    const minLength = Math.min(...lengths);
+    const maxLength = Math.max(...lengths);
+    
+    return {
+        distinct: distinctValues.size,
+        minLength: minLength,
+        maxLength: maxLength
+    };
+}
+
+// Calculate statistics for boolean values
+function calculateBooleanStats(values) {
+    if (values.length === 0) return null;
+    
+    let trueCount = 0;
+    let falseCount = 0;
+    
+    for (const val of values) {
+        // Handle different boolean representations
+        if (val === true || val === 1 || String(val).toLowerCase() === 'true') {
+            trueCount++;
+        } else if (val === false || val === 0 || String(val).toLowerCase() === 'false') {
+            falseCount++;
+        }
+    }
+    
+    return {
+        trueCount: trueCount,
+        falseCount: falseCount
+    };
+}
+
+// Calculate statistics for datetime values
+function calculateDateTimeStats(values) {
+    if (values.length === 0) return null;
+    
+    const dates = values.map(v => {
+        if (v instanceof Date) return v;
+        return new Date(v);
+    }).filter(d => !isNaN(d.getTime()));
+    
+    if (dates.length === 0) return null;
+    
+    const timestamps = dates.map(d => d.getTime());
+    const min = new Date(Math.min(...timestamps));
+    const max = new Date(Math.max(...timestamps));
+    
+    return {
+        min: min.toISOString().slice(0, 19).replace('T', ' '),
+        max: max.toISOString().slice(0, 19).replace('T', ' '),
+        range: Math.ceil((max - min) / (1000 * 60 * 60 * 24)) // days
+    };
+}
+
 function updateAggregationStats() {
     const statsPanel = document.getElementById('aggregationStats');
     if (!statsPanel) return;
@@ -6189,50 +6301,122 @@ function updateAggregationStats() {
         return;
     }
     
-    // Collect all values from selections
-    const numericValues = [];
-    const allValues = [];
-    let nullCount = 0;
+    const selections = globalSelection.selections;
+    const columnDefs = globalSelection.columnDefs;
+    const data = globalSelection.data;
     
-    // Handle different selection types
-    if (globalSelection.type === 'cell' || globalSelection.type === 'row' || globalSelection.type === 'column') {
-        for (const selection of globalSelection.selections) {
-            const value = selection.cellValue;
-            
-            // Count null/undefined values
-            if (value === null || value === undefined) {
-                nullCount++;
-                continue;
-            }
-            
-            allValues.push(value);
-            
-            // Check if it's a number
-            if (value !== '') {
-                const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
-                if (!isNaN(num)) {
-                    numericValues.push(num);
+    // Collect values and analyze data types
+    const valuesByColumn = new Map(); // Map<columnIndex, {values: [], sqlType: string}>
+    let nullCount = 0;
+    let totalCount = 0;
+    
+    for (const selection of selections) {
+        totalCount++;
+        const value = selection.cellValue;
+        
+        // Count nulls
+        if (value === null || value === undefined) {
+            nullCount++;
+            continue;
+        }
+        
+        // Group by column if we have column information
+        if (selection.columnIndex !== undefined && columnDefs) {
+            if (!valuesByColumn.has(selection.columnIndex)) {
+                const colDef = columnDefs[selection.columnIndex];
+                
+                // Try to get SQL type from metadata
+                let sqlType = 'unknown';
+                if (resultSetMetadata && resultSetMetadata.length > 0) {
+                    const metadata = resultSetMetadata[0]; // Assuming first result set
+                    const colMetadata = metadata.columns.find(c => c.name === colDef.field);
+                    if (colMetadata) {
+                        sqlType = colMetadata.type;
+                    }
                 }
+                
+                valuesByColumn.set(selection.columnIndex, {
+                    values: [],
+                    sqlType: sqlType,
+                    columnName: colDef.field
+                });
             }
+            valuesByColumn.get(selection.columnIndex).values.push(value);
         }
     }
     
-    // Always show count
-    let statsText = `Count: ${allValues.length}`;
+    const nonNullCount = totalCount - nullCount;
     
-    // Add NULL count if there are any NULL values
+    // Build statistics text
+    let statsText = `Count: ${nonNullCount}`;
+    
     if (nullCount > 0) {
         statsText += ` | NULL: ${nullCount}`;
     }
     
-    // If we have numeric values, calculate statistics
-    if (numericValues.length > 0) {
-        const sum = numericValues.reduce((a, b) => a + b, 0);
-        const avg = sum / numericValues.length;
-        const min = Math.min(...numericValues);
-        const max = Math.max(...numericValues);
+    // Determine if we're selecting a single column or multiple columns/mixed selection
+    if (valuesByColumn.size === 1 && globalSelection.type === 'column') {
+        // Single column selection - show type-specific statistics
+        const [columnIndex, columnData] = Array.from(valuesByColumn.entries())[0];
+        const values = columnData.values;
+        const dataTypeCategory = getDataTypeCategory(columnData.sqlType);
         
-        statsText += ` | Avg: ${avg.toFixed(2)} | Sum: ${sum.toFixed(2)} | Min: ${min} | Max: ${max}`;
+        if (dataTypeCategory === 'numeric') {
+            // Numeric statistics
+            const numericValues = [];
+            for (const val of values) {
+                if (val !== '') {
+                    const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/,/g, ''));
+                    if (!isNaN(num)) {
+                        numericValues.push(num);
+                    }
+                }
+            }
+            
+            if (numericValues.length > 0) {
+                const stats = calculateNumericStats(numericValues);
+                statsText += ` | Avg: ${stats.avg} | Sum: ${stats.sum} | Min: ${stats.min} | Max: ${stats.max}`;
+            }
+            
+        } else if (dataTypeCategory === 'text') {
+            // Text statistics
+            const stats = calculateTextStats(values);
+            if (stats) {
+                statsText += ` | Distinct: ${stats.distinct} | Min Length: ${stats.minLength} | Max Length: ${stats.maxLength}`;
+            }
+            
+        } else if (dataTypeCategory === 'boolean') {
+            // Boolean statistics
+            const stats = calculateBooleanStats(values);
+            if (stats) {
+                statsText += ` | True: ${stats.trueCount} | False: ${stats.falseCount}`;
+            }
+            
+        } else if (dataTypeCategory === 'datetime') {
+            // DateTime statistics
+            const stats = calculateDateTimeStats(values);
+            if (stats) {
+                statsText += ` | Min: ${stats.min} | Max: ${stats.max} | Range: ${stats.range} days`;
+            }
+            
+        } else {
+            // Unknown type - show distinct count only
+            const distinctValues = new Set(values);
+            statsText += ` | Distinct: ${distinctValues.size}`;
+        }
+        
+    } else {
+        // Multiple columns or mixed selection - show general statistics
+        // Calculate distinct count across all selected values
+        const allValues = [];
+        for (const [_, columnData] of valuesByColumn.entries()) {
+            allValues.push(...columnData.values);
+        }
+        
+        if (allValues.length > 0) {
+            const distinctValues = new Set(allValues.map(v => String(v)));
+            statsText += ` | Distinct: ${distinctValues.size}`;
+        }
     }
     
     statsPanel.textContent = statsText;
