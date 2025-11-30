@@ -105,11 +105,27 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 element.contextValue = hasInstructions ? 'databaseWithInstructions' : 'database';
             } else if (element instanceof ConnectionNode) {
                 const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
-                const baseContext = element.isActive ? 'connectionActive' : 'connection';
+                
+                // Determine base context while preserving failed state
+                let baseContext: string;
+                if (element.contextValue === 'connectionFailed') {
+                    baseContext = 'connectionFailed';
+                } else {
+                    baseContext = element.isActive ? 'connectionActive' : 'connectionInactive';
+                }
+                
                 element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
             } else if (element instanceof ServerConnectionNode) {
                 const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
-                const baseContext = element.isActive ? 'serverConnectionActive' : 'serverConnection';
+                
+                // Determine base context while preserving failed state
+                let baseContext: string;
+                if (element.contextValue === 'serverConnectionFailed') {
+                    baseContext = 'serverConnectionFailed';
+                } else {
+                    baseContext = element.isActive ? 'serverConnectionActive' : 'serverConnectionInactive';
+                }
+                
                 element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
             }
         }
