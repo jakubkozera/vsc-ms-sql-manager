@@ -5,6 +5,45 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2025-11-30
+
+### Added
+
+- **Docker SQL Server Support**: Complete Docker integration for containerized SQL Server management
+  - **Automatic Docker Discovery**: Discovers running Docker SQL Server containers and adds them to a dedicated Docker group
+  - **Deploy Docker MS SQL**: Interactive webview to deploy new SQL Server containers with customizable configuration
+  - **Container Configuration**: Support for custom container names, ports, memory limits, and Docker networks
+  - **SQL Server Versions**: Deploy SQL Server 2017, 2019, 2022, or Azure SQL Edge with various editions (Developer, Express, Standard, Enterprise)
+  - **Security Configuration**: Strong password generation with complexity requirements and EULA acceptance
+  - **Connection Testing**: Built-in connection testing to verify deployed containers are ready
+  - **Docker Group Management**: Specialized Docker server group with custom icon and deploy options
+  - **SA Password Management**: Secure storage and retrieval of SA passwords for Docker containers
+  - **Local Server Discovery**: Windows-only discovery of local SQL Server instances (LocalDB, SQL Express)
+  - **More Actions Menu**: Redesigned Database Explorer toolbar with collapsible "More Actions" submenu
+  - **Collapse All**: Quick collapse functionality for the entire database explorer tree
+
+### Enhanced
+
+- **Server Group Icons**: Added custom icons for Docker and Local server groups with theme-aware styling
+- **Context Menu Refinement**: Restricted "Filter Databases" option to only active server connections
+- **Menu Organization**: Improved context menu organization with better grouping and discovery options
+- **Docker Detection**: Automatic Docker runtime detection with conditional menu availability
+- **Connection Provider**: Enhanced connection handling for Docker containers with specialized prompts
+
+### Fixed
+
+- **Context Menu Bug**: Fixed missing context menu options for inactive connections (regression from v0.6.0)
+  - Restored proper contextValue assignment for inactive connections
+  - Fixed "Connect", "Edit Connection", "Delete Connection" options for inactive connections
+  - Added comprehensive regression tests to prevent future contextValue issues
+
+### Technical Improvements
+
+- Added comprehensive Docker discovery utilities with container filtering and environment variable extraction
+- Implemented deploy Docker MS SQL webview with real-time validation and progress tracking
+- Enhanced UnifiedTreeProvider with better contextValue handling for instructions integration
+- Improved server group management with dynamic contextValue assignment
+
 ## [0.6.0] - 2025-11-27
 
 ### Added
