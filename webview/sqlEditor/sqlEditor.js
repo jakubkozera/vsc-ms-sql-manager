@@ -7453,6 +7453,9 @@ function updatePendingChangesCount() {
             }
         }
     }
+    
+    // Update quick save button
+    updateQuickSaveButton();
 }
 
 function renderPendingChanges() {
@@ -7854,5 +7857,50 @@ function previewUpdateStatements() {
 
     } catch (error) {
         console.error('Failed to generate preview:', error);
+    }
+}
+
+/**
+ * Update quick save button visibility and tooltip with UPDATE statements
+ */
+function updateQuickSaveButton() {
+    const quickSaveButton = document.getElementById('quickSaveButton');
+    const tooltip = document.getElementById('quickSaveTooltip');
+    if (!quickSaveButton || !tooltip) return;
+    
+    const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+    
+    if (totalChanges === 0) {
+        quickSaveButton.style.display = 'none';
+        return;
+    }
+    
+    quickSaveButton.style.display = 'inline-flex';
+    
+    // Generate UPDATE statements for tooltip
+    try {
+        const updateStatements = [];
+        
+        pendingChanges.forEach((changes, resultSetIndex) => {
+            const metadata = resultSetMetadata[resultSetIndex];
+            
+            changes.forEach(change => {
+                // Only include UPDATE statements, skip DELETE
+                if (change.type !== 'DELETE') {
+                    const sql = generateUpdateStatement(change, metadata);
+                    updateStatements.push(sql);
+                }
+            });
+        });
+        
+        if (updateStatements.length === 0) {
+            tooltip.textContent = 'Execute all changes\n\nNo UPDATE statements (only DELETE operations)';
+        } else {
+            const tooltipContent = `Execute ${updateStatements.length} UPDATE statement${updateStatements.length !== 1 ? 's' : ''}:\n\n${updateStatements.join('\n\n')}`;
+            tooltip.textContent = tooltipContent;
+        }
+    } catch (error) {
+        console.error('Failed to generate UPDATE statements for tooltip:', error);
+        tooltip.textContent = 'Execute all changes';
     }
 }
