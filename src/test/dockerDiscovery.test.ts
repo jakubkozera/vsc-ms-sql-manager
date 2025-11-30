@@ -1,81 +1,96 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { discoverDockerSqlServers, isDockerInstalled } from '../utils/dockerDiscovery';
 import * as sinon from 'sinon';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+// Mock the child_process module before importing the module under test
+const mockExecAsync = sinon.stub();
+const mockChildProcess = {
+    exec: sinon.stub()
+};
+
+const mockUtil = {
+    promisify: sinon.stub().returns(mockExecAsync)
+};
+
+// Use require with cache manipulation to ensure our mocks are used
+const Module = require('module');
+const originalRequire = Module.prototype.require;
+
+Module.prototype.require = function(id: string) {
+    if (id === 'child_process') {
+        return mockChildProcess;
+    }
+    if (id === 'util') {
+        return mockUtil;
+    }
+    return originalRequire.apply(this, arguments);
+};
+
+// Now import the module under test after setting up mocks
+const { discoverDockerSqlServers, isDockerInstalled } = require('../utils/dockerDiscovery');
 
 suite('Docker Discovery Test Suite', () => {
     let outputChannel: vscode.OutputChannel;
-    let execStub: sinon.SinonStub;
 
     setup(() => {
         outputChannel = vscode.window.createOutputChannel('MS SQL Manager Test');
-        // Stub the exec function from child_process module
-        execStub = sinon.stub();
+        // Reset stubs before each test
+        mockExecAsync.reset();
+        mockChildProcess.exec.reset();
+        mockUtil.promisify.reset();
+        mockUtil.promisify.returns(mockExecAsync);
     });
 
     teardown(() => {
-        sinon.restore();
+        // Clean up
         outputChannel.dispose();
+        // Reset all stubs
+        mockExecAsync.reset();
+        mockChildProcess.exec.reset();
+        mockUtil.promisify.reset();
     });
 
     test('isDockerInstalled returns true when Docker is available', async () => {
         // Mock successful Docker version check
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec').yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
 
         const result = await isDockerInstalled(outputChannel);
         
         assert.strictEqual(result, true);
-        stub.restore();
     });
 
     test('isDockerInstalled returns false when Docker is not available', async () => {
         // Mock failed Docker version check
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec').yields(new Error('command not found'), null, null);
+        mockExecAsync.rejects(new Error('command not found'));
 
         const result = await isDockerInstalled(outputChannel);
         
         assert.strictEqual(result, false);
-        stub.restore();
     });
 
     test('discoverDockerSqlServers returns empty array when Docker is not installed', async () => {
         // Mock Docker not available
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec').yields(new Error('command not found'), null, null);
+        mockExecAsync.rejects(new Error('command not found'));
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         assert.strictEqual(containers.length, 0);
-        stub.restore();
     });
 
     test('discoverDockerSqlServers returns empty array when no containers are running', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // First call: docker --version (success)
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onFirstCall().resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         // Second call: docker ps (no containers)
-        stub.onSecondCall().yields(null, { stdout: '' }, null);
+        mockExecAsync.onSecondCall().resolves({ stdout: '', stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         assert.strictEqual(containers.length, 0);
-        stub.restore();
     });
 
     test('discoverDockerSqlServers filters only SQL Server images', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // Mock docker --version
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onCall(0).resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         
         // Mock docker ps with mixed containers (SQL and non-SQL)
         const dockerPsOutput = [
@@ -84,15 +99,15 @@ suite('Docker Discovery Test Suite', () => {
             '{"ID":"ghi789","Names":"azure-sql-edge-1","Image":"mcr.microsoft.com/azure-sql-edge:latest","Status":"Up 3 hours","CreatedAt":"2024-01-01"}'
         ].join('\n');
         
-        stub.onSecondCall().yields(null, { stdout: dockerPsOutput }, null);
+        mockExecAsync.onCall(1).resolves({ stdout: dockerPsOutput, stderr: '' });
         
         // Mock docker port for SQL containers
-        stub.withArgs('docker port abc123 1433').yields(null, { stdout: '0.0.0.0:1433' }, null);
-        stub.withArgs('docker port ghi789 1433').yields(null, { stdout: '0.0.0.0:14330' }, null);
+        mockExecAsync.withArgs('docker port abc123 1433').resolves({ stdout: '0.0.0.0:1433', stderr: '' });
+        mockExecAsync.withArgs('docker port ghi789 1433').resolves({ stdout: '0.0.0.0:14330', stderr: '' });
         
         // Mock docker inspect for environment variables (no password)
-        stub.withArgs(sinon.match(/docker inspect.*abc123/)).yields(null, { stdout: 'ACCEPT_EULA=Y\n' }, null);
-        stub.withArgs(sinon.match(/docker inspect.*ghi789/)).yields(null, { stdout: 'ACCEPT_EULA=Y\n' }, null);
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*abc123/)).resolves({ stdout: 'ACCEPT_EULA=Y\n', stderr: '' });
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*ghi789/)).resolves({ stdout: 'ACCEPT_EULA=Y\n', stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
@@ -102,117 +117,92 @@ suite('Docker Discovery Test Suite', () => {
         assert.strictEqual(containers[0].image, 'mcr.microsoft.com/mssql/server:2022-latest');
         assert.strictEqual(containers[1].containerId, 'ghi789');
         assert.strictEqual(containers[1].image, 'mcr.microsoft.com/azure-sql-edge:latest');
-        
-        stub.restore();
     });
 
     test('discoverDockerSqlServers extracts SA password from environment', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // Mock docker --version
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onCall(0).resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         
         // Mock docker ps with one SQL container
         const dockerPsOutput = '{"ID":"abc123","Names":"sql-test","Image":"mcr.microsoft.com/mssql/server:2022-latest","Status":"Up","CreatedAt":"2024-01-01"}';
-        stub.onSecondCall().yields(null, { stdout: dockerPsOutput }, null);
+        mockExecAsync.onCall(1).resolves({ stdout: dockerPsOutput, stderr: '' });
         
         // Mock docker port
-        stub.withArgs('docker port abc123 1433').yields(null, { stdout: '0.0.0.0:1433' }, null);
+        mockExecAsync.withArgs('docker port abc123 1433').resolves({ stdout: '0.0.0.0:1433', stderr: '' });
         
         // Mock docker inspect with SA password
         const envOutput = 'ACCEPT_EULA=Y\nMSSQL_SA_PASSWORD=MyStrongP@ssw0rd\nMSSQL_PID=Developer\n';
-        stub.withArgs(sinon.match(/docker inspect.*abc123/)).yields(null, { stdout: envOutput }, null);
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*abc123/)).resolves({ stdout: envOutput, stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         assert.strictEqual(containers.length, 1);
         assert.strictEqual(containers[0].saPassword, 'MyStrongP@ssw0rd');
-        
-        stub.restore();
     });
 
     test('discoverDockerSqlServers handles missing SA password gracefully', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // Mock docker --version
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onCall(0).resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         
         // Mock docker ps
         const dockerPsOutput = '{"ID":"abc123","Names":"sql-test","Image":"mssql/server:2019-latest","Status":"Up","CreatedAt":"2024-01-01"}';
-        stub.onSecondCall().yields(null, { stdout: dockerPsOutput }, null);
+        mockExecAsync.onCall(1).resolves({ stdout: dockerPsOutput, stderr: '' });
         
         // Mock docker port
-        stub.withArgs('docker port abc123 1433').yields(null, { stdout: '0.0.0.0:1433' }, null);
+        mockExecAsync.withArgs('docker port abc123 1433').resolves({ stdout: '0.0.0.0:1433', stderr: '' });
         
         // Mock docker inspect without SA password
-        stub.withArgs(sinon.match(/docker inspect.*abc123/)).yields(null, { stdout: 'ACCEPT_EULA=Y\n' }, null);
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*abc123/)).resolves({ stdout: 'ACCEPT_EULA=Y\n', stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         assert.strictEqual(containers.length, 1);
         assert.strictEqual(containers[0].saPassword, null);
-        
-        stub.restore();
     });
 
     test('discoverDockerSqlServers extracts custom port mapping', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // Mock docker --version
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onCall(0).resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         
         // Mock docker ps
         const dockerPsOutput = '{"ID":"abc123","Names":"sql-custom-port","Image":"mcr.microsoft.com/mssql/server:2022-latest","Status":"Up","CreatedAt":"2024-01-01"}';
-        stub.onSecondCall().yields(null, { stdout: dockerPsOutput }, null);
+        mockExecAsync.onCall(1).resolves({ stdout: dockerPsOutput, stderr: '' });
         
         // Mock docker port with custom port 14330
-        stub.withArgs('docker port abc123 1433').yields(null, { stdout: '0.0.0.0:14330' }, null);
+        mockExecAsync.withArgs('docker port abc123 1433').resolves({ stdout: '0.0.0.0:14330', stderr: '' });
         
         // Mock docker inspect
-        stub.withArgs(sinon.match(/docker inspect.*abc123/)).yields(null, { stdout: 'ACCEPT_EULA=Y\n' }, null);
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*abc123/)).resolves({ stdout: 'ACCEPT_EULA=Y\n', stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         assert.strictEqual(containers.length, 1);
         assert.strictEqual(containers[0].port, 14330);
-        
-        stub.restore();
     });
 
     test('discoverDockerSqlServers handles docker port error with default port', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // Mock docker --version
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onCall(0).resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         
         // Mock docker ps
         const dockerPsOutput = '{"ID":"abc123","Names":"sql-test","Image":"mcr.microsoft.com/mssql/server:2022-latest","Status":"Up","CreatedAt":"2024-01-01"}';
-        stub.onSecondCall().yields(null, { stdout: dockerPsOutput }, null);
+        mockExecAsync.onCall(1).resolves({ stdout: dockerPsOutput, stderr: '' });
         
         // Mock docker port failing
-        stub.withArgs('docker port abc123 1433').yields(new Error('port mapping not found'), null, null);
+        mockExecAsync.withArgs('docker port abc123 1433').rejects(new Error('port mapping not found'));
         
         // Mock docker inspect
-        stub.withArgs(sinon.match(/docker inspect.*abc123/)).yields(null, { stdout: 'ACCEPT_EULA=Y\n' }, null);
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*abc123/)).resolves({ stdout: 'ACCEPT_EULA=Y\n', stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         assert.strictEqual(containers.length, 1);
         assert.strictEqual(containers[0].port, 1433); // Should default to 1433
-        
-        stub.restore();
     });
 
     test('discoverDockerSqlServers handles malformed JSON gracefully', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // Mock docker --version
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onCall(0).resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         
         // Mock docker ps with malformed JSON
         const dockerPsOutput = [
@@ -221,47 +211,45 @@ suite('Docker Discovery Test Suite', () => {
             '{"ID":"def456","Names":"sql-good-2","Image":"mcr.microsoft.com/azure-sql-edge","Status":"Up","CreatedAt":"2024-01-01"}'
         ].join('\n');
         
-        stub.onSecondCall().yields(null, { stdout: dockerPsOutput }, null);
+        mockExecAsync.onCall(1).resolves({ stdout: dockerPsOutput, stderr: '' });
         
         // Mock docker port
-        stub.withArgs('docker port abc123 1433').yields(null, { stdout: '0.0.0.0:1433' }, null);
-        stub.withArgs('docker port def456 1433').yields(null, { stdout: '0.0.0.0:1433' }, null);
+        mockExecAsync.withArgs('docker port abc123 1433').resolves({ stdout: '0.0.0.0:1433', stderr: '' });
+        mockExecAsync.withArgs('docker port def456 1433').resolves({ stdout: '0.0.0.0:1433', stderr: '' });
         
         // Mock docker inspect
-        stub.withArgs(sinon.match(/docker inspect.*abc123/)).yields(null, { stdout: 'ACCEPT_EULA=Y\n' }, null);
-        stub.withArgs(sinon.match(/docker inspect.*def456/)).yields(null, { stdout: 'ACCEPT_EULA=Y\n' }, null);
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*abc123/)).resolves({ stdout: 'ACCEPT_EULA=Y\n', stderr: '' });
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*def456/)).resolves({ stdout: 'ACCEPT_EULA=Y\n', stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         // Should successfully parse 2 valid containers and skip the malformed one
         assert.strictEqual(containers.length, 2);
-        
-        stub.restore();
     });
 
     test('discoverDockerSqlServers recognizes SA_PASSWORD environment variable', async () => {
-        const childProcess = require('child_process');
-        const stub = sinon.stub(childProcess, 'exec');
-        
         // Mock docker --version
-        stub.onFirstCall().yields(null, { stdout: 'Docker version 24.0.0' }, null);
+        mockExecAsync.onCall(0).resolves({ stdout: 'Docker version 24.0.0', stderr: '' });
         
         // Mock docker ps
         const dockerPsOutput = '{"ID":"abc123","Names":"sql-test","Image":"mcr.microsoft.com/mssql/server:2022-latest","Status":"Up","CreatedAt":"2024-01-01"}';
-        stub.onSecondCall().yields(null, { stdout: dockerPsOutput }, null);
+        mockExecAsync.onCall(1).resolves({ stdout: dockerPsOutput, stderr: '' });
         
         // Mock docker port
-        stub.withArgs('docker port abc123 1433').yields(null, { stdout: '0.0.0.0:1433' }, null);
+        mockExecAsync.withArgs('docker port abc123 1433').resolves({ stdout: '0.0.0.0:1433', stderr: '' });
         
         // Mock docker inspect with SA_PASSWORD (alternative format)
         const envOutput = 'ACCEPT_EULA=Y\nSA_PASSWORD=AlternativeP@ss\n';
-        stub.withArgs(sinon.match(/docker inspect.*abc123/)).yields(null, { stdout: envOutput }, null);
+        mockExecAsync.withArgs(sinon.match(/docker inspect.*abc123/)).resolves({ stdout: envOutput, stderr: '' });
 
         const containers = await discoverDockerSqlServers(outputChannel);
         
         assert.strictEqual(containers.length, 1);
         assert.strictEqual(containers[0].saPassword, 'AlternativeP@ss');
-        
-        stub.restore();
+    });
+
+    // Restore the original require function after all tests
+    suiteTeardown(() => {
+        Module.prototype.require = originalRequire;
     });
 });
