@@ -6318,13 +6318,25 @@ function calculateDateTimeStats(values) {
         }
     }
     
-    const range = Math.ceil((max - rangeStart) / (1000 * 60 * 60 * 24)); // days
+    const totalDays = Math.ceil((max - rangeStart) / (1000 * 60 * 60 * 24)); // days
+    
+    // Format range in a human-readable way
+    let rangeText;
+    if (totalDays >= 365) {
+        const years = Math.floor(totalDays / 365);
+        const remainingDays = totalDays % 365;
+        rangeText = years === 1 
+            ? `1 year ${remainingDays} days` 
+            : `${years} years ${remainingDays} days`;
+    } else {
+        rangeText = `${totalDays} days`;
+    }
     
     return {
         min: min.toISOString().slice(0, 19).replace('T', ' '),
         min2: min2 ? min2.toISOString().slice(0, 19).replace('T', ' ') : null,
         max: max.toISOString().slice(0, 19).replace('T', ' '),
-        range: range
+        range: rangeText
     };
 }
 
@@ -6437,7 +6449,7 @@ function updateAggregationStats() {
                 if (stats.min2) {
                     statsText += ` | Min2: ${stats.min2}`;
                 }
-                statsText += ` | Max: ${stats.max} | Range: ${stats.range} days`;
+                statsText += ` | Max: ${stats.max} | Range: ${stats.range}`;
             }
             
         } else {
