@@ -89,6 +89,24 @@
                 <button class="results-tab active" data-tab="results">Results</button>
                 <button class="results-tab" data-tab="messages">Messages</button>
                 <button class="results-tab" data-tab="pendingChanges">Pending Changes <span id="pendingChangesCount" class="tab-badge" style="display: none;">0</span></button>
+                <button id="quickSaveButton" class="quick-save-button" style="display: none;" onclick="commitAllChanges()">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
+                      <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                      <path d="M14 4l0 4l-6 0l0 -4" />
+                    </svg>
+                    <div id="quickSaveTooltip" class="quick-save-tooltip"></div>
+                </button>
                 <button class="results-tab" data-tab="queryPlan" style="display: none;">Query Plan</button>
                 <button class="results-tab" data-tab="planTree" style="display: none;">Plan Tree</button>
                 <button class="results-tab" data-tab="topOperations" style="display: none;">Top Operations</button>

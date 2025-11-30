@@ -16,6 +16,7 @@ let actualPlanEnabled = false;
 let sqlSnippets = []; // SQL snippets loaded from VS Code
 let completionProvider = null; // Reference to current completion provider
 let completionProviderRegistered = false; // Flag to track registration
+let colorPrimaryForeignKeys = true; // Configuration for PK/FK column coloring
 
 // Built-in SQL snippets
 const builtInSnippets = [
@@ -2649,6 +2650,12 @@ window.addEventListener('message', event => {
     const message = event.data;
 
     switch (message.type) {
+        case 'config':
+            if (message.config.colorPrimaryForeignKeys !== undefined) {
+                colorPrimaryForeignKeys = message.config.colorPrimaryForeignKeys;
+                console.log('[CONFIG] colorPrimaryForeignKeys set to:', colorPrimaryForeignKeys);
+            }
+            break;
         case 'update':
             if (editor && message.content !== editor.getValue()) {
                 isUpdatingFromExtension = true;
@@ -3130,6 +3137,31 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
     console.log('[AG-GRID] Metadata:', metadata);
     
+    // Create PK/FK lookup maps from metadata columns
+    // This works for all result sets, regardless of single or multiple tables
+    const pkColumnSet = new Set();
+    const fkColumnMap = new Map(); // Map column name to FK info
+    
+    if (metadata && metadata.columns) {
+        metadata.columns.forEach(col => {
+            if (col.isPrimaryKey) {
+                pkColumnSet.add(col.name);
+            }
+            // Check FK from dbSchema if we have source table info
+            if (col.sourceTable && col.sourceSchema && dbSchema.foreignKeys) {
+                dbSchema.foreignKeys.forEach(fk => {
+                    if (fk.fromTable === col.sourceTable && 
+                        fk.fromSchema === col.sourceSchema && 
+                        fk.fromColumn === col.name) {
+                        fkColumnMap.set(col.name, fk);
+                    }
+                });
+            }
+        });
+        console.log('[AG-GRID] PK columns:', Array.from(pkColumnSet));
+        console.log('[AG-GRID] FK columns:', Array.from(fkColumnMap.keys()));
+    }
+    
     // Virtual scrolling configuration
     const ROW_HEIGHT = 30; // Fixed row height in pixels
     const VISIBLE_ROWS = 30; // Number of rows to render in viewport
@@ -3215,12 +3247,19 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const columnData = rowData.map(row => row[col]);
         const optimalWidth = calculateOptimalColumnWidth(col, columnData, type);
         
+        // Check if this column is a primary key or foreign key
+        // Use PK/FK info from metadata columns (works for all result sets)
+        const isPrimaryKey = pkColumnSet.has(col);
+        const isForeignKey = fkColumnMap.has(col);
+        
         return {
             field: col,
             headerName: col,
             type: type,
             width: optimalWidth,
-            pinned: false
+            pinned: false,
+            isPrimaryKey: isPrimaryKey,
+            isForeignKey: isForeignKey
         };
     });
 
@@ -4220,6 +4259,15 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                     // Update aggregation stats
                     updateAggregationStats();
                 });
+
+                // Apply PK/FK column styling (PK takes priority) if enabled in configuration
+                if (colorPrimaryForeignKeys) {
+                    if (col.isPrimaryKey) {
+                        td.classList.add('pk-column');
+                    } else if (col.isForeignKey) {
+                        td.classList.add('fk-column');
+                    }
+                }
 
                 // Add double-click handler for editing (if editable)
                 if (metadata && metadata.isEditable) {
@@ -6146,6 +6194,152 @@ function applyCellHighlightGlobal(containerEl, rowIndex, colIndex) {
     }
 }
 
+// Helper function to determine SQL data type category
+function getDataTypeCategory(sqlType) {
+    if (!sqlType) return 'unknown';
+    
+    const type = sqlType.toLowerCase();
+    
+    // Numeric types
+    if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(type)) {
+        return 'numeric';
+    }
+    
+    // Boolean/bit type
+    if (type === 'bit') {
+        return 'boolean';
+    }
+    
+    // Date/time types
+    if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(type)) {
+        return 'datetime';
+    }
+    
+    // Text types
+    if (['char', 'varchar', 'nchar', 'nvarchar', 'text', 'ntext'].includes(type)) {
+        return 'text';
+    }
+    
+    // Binary types
+    if (['binary', 'varbinary', 'image'].includes(type)) {
+        return 'binary';
+    }
+    
+    // Default to text for unknown types
+    return 'text';
+}
+
+// Calculate statistics for numeric values
+function calculateNumericStats(values) {
+    if (values.length === 0) return null;
+    
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / values.length;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    
+    return {
+        sum: sum.toFixed(2),
+        avg: avg.toFixed(2),
+        min: min,
+        max: max
+    };
+}
+
+// Calculate statistics for text values
+function calculateTextStats(values) {
+    if (values.length === 0) return null;
+    
+    const distinctValues = new Set(values);
+    const lengths = values.map(v => String(v).length);
+    const minLength = Math.min(...lengths);
+    const maxLength = Math.max(...lengths);
+    
+    return {
+        distinct: distinctValues.size,
+        minLength: minLength,
+        maxLength: maxLength
+    };
+}
+
+// Calculate statistics for boolean values
+function calculateBooleanStats(values) {
+    if (values.length === 0) return null;
+    
+    let trueCount = 0;
+    let falseCount = 0;
+    
+    for (const val of values) {
+        // Handle different boolean representations
+        if (val === true || val === 1 || String(val).toLowerCase() === 'true') {
+            trueCount++;
+        } else if (val === false || val === 0 || String(val).toLowerCase() === 'false') {
+            falseCount++;
+        }
+    }
+    
+    return {
+        trueCount: trueCount,
+        falseCount: falseCount
+    };
+}
+
+// Calculate statistics for datetime values
+function calculateDateTimeStats(values) {
+    if (values.length === 0) return null;
+    
+    const dates = values.map(v => {
+        if (v instanceof Date) return v;
+        return new Date(v);
+    }).filter(d => !isNaN(d.getTime()));
+    
+    if (dates.length === 0) return null;
+    
+    // Sort timestamps to find min, min2, and max
+    const timestamps = dates.map(d => d.getTime()).sort((a, b) => a - b);
+    const min = new Date(timestamps[0]);
+    const max = new Date(timestamps[timestamps.length - 1]);
+    
+    // Check if min is the default date (0001-01-01)
+    const defaultDateThreshold = new Date('0001-01-02').getTime(); // Anything before this is considered default
+    const isMinDefault = timestamps[0] < defaultDateThreshold;
+    
+    let min2 = null;
+    let rangeStart = min;
+    
+    if (isMinDefault && timestamps.length > 1) {
+        // Find the second minimum that's not the default date
+        for (let i = 1; i < timestamps.length; i++) {
+            if (timestamps[i] >= defaultDateThreshold) {
+                min2 = new Date(timestamps[i]);
+                rangeStart = min2; // Use min2 for range calculation
+                break;
+            }
+        }
+    }
+    
+    const totalDays = Math.ceil((max - rangeStart) / (1000 * 60 * 60 * 24)); // days
+    
+    // Format range in a human-readable way
+    let rangeText;
+    if (totalDays >= 365) {
+        const years = Math.floor(totalDays / 365);
+        const remainingDays = totalDays % 365;
+        rangeText = years === 1 
+            ? `1 year ${remainingDays} days` 
+            : `${years} years ${remainingDays} days`;
+    } else {
+        rangeText = `${totalDays} days`;
+    }
+    
+    return {
+        min: min.toISOString().slice(0, 19).replace('T', ' '),
+        min2: min2 ? min2.toISOString().slice(0, 19).replace('T', ' ') : null,
+        max: max.toISOString().slice(0, 19).replace('T', ' '),
+        range: rangeText
+    };
+}
+
 function updateAggregationStats() {
     const statsPanel = document.getElementById('aggregationStats');
     if (!statsPanel) return;
@@ -6156,50 +6350,126 @@ function updateAggregationStats() {
         return;
     }
     
-    // Collect all values from selections
-    const numericValues = [];
-    const allValues = [];
-    let nullCount = 0;
+    const selections = globalSelection.selections;
+    const columnDefs = globalSelection.columnDefs;
+    const data = globalSelection.data;
     
-    // Handle different selection types
-    if (globalSelection.type === 'cell' || globalSelection.type === 'row' || globalSelection.type === 'column') {
-        for (const selection of globalSelection.selections) {
-            const value = selection.cellValue;
-            
-            // Count null/undefined values
-            if (value === null || value === undefined) {
-                nullCount++;
-                continue;
-            }
-            
-            allValues.push(value);
-            
-            // Check if it's a number
-            if (value !== '') {
-                const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
-                if (!isNaN(num)) {
-                    numericValues.push(num);
+    // Collect values and analyze data types
+    const valuesByColumn = new Map(); // Map<columnIndex, {values: [], sqlType: string}>
+    let nullCount = 0;
+    let totalCount = 0;
+    
+    for (const selection of selections) {
+        totalCount++;
+        const value = selection.cellValue;
+        
+        // Count nulls
+        if (value === null || value === undefined) {
+            nullCount++;
+            continue;
+        }
+        
+        // Group by column if we have column information
+        if (selection.columnIndex !== undefined && columnDefs) {
+            if (!valuesByColumn.has(selection.columnIndex)) {
+                const colDef = columnDefs[selection.columnIndex];
+                
+                // Try to get SQL type from metadata
+                let sqlType = 'unknown';
+                if (resultSetMetadata && resultSetMetadata.length > 0) {
+                    const metadata = resultSetMetadata[0]; // Assuming first result set
+                    const colMetadata = metadata.columns.find(c => c.name === colDef.field);
+                    if (colMetadata) {
+                        sqlType = colMetadata.type;
+                    }
                 }
+                
+                valuesByColumn.set(selection.columnIndex, {
+                    values: [],
+                    sqlType: sqlType,
+                    columnName: colDef.field
+                });
             }
+            valuesByColumn.get(selection.columnIndex).values.push(value);
         }
     }
     
-    // Always show count
-    let statsText = `Count: ${allValues.length}`;
+    const nonNullCount = totalCount - nullCount;
     
-    // Add NULL count if there are any NULL values
+    // Build statistics text
+    let statsText = `Count: ${nonNullCount}`;
+    
     if (nullCount > 0) {
         statsText += ` | NULL: ${nullCount}`;
     }
     
-    // If we have numeric values, calculate statistics
-    if (numericValues.length > 0) {
-        const sum = numericValues.reduce((a, b) => a + b, 0);
-        const avg = sum / numericValues.length;
-        const min = Math.min(...numericValues);
-        const max = Math.max(...numericValues);
+    // Determine if we're selecting a single column or multiple columns/mixed selection
+    if (valuesByColumn.size === 1 && globalSelection.type === 'column') {
+        // Single column selection - show type-specific statistics
+        const [columnIndex, columnData] = Array.from(valuesByColumn.entries())[0];
+        const values = columnData.values;
+        const dataTypeCategory = getDataTypeCategory(columnData.sqlType);
         
-        statsText += ` | Avg: ${avg.toFixed(2)} | Sum: ${sum.toFixed(2)} | Min: ${min} | Max: ${max}`;
+        if (dataTypeCategory === 'numeric') {
+            // Numeric statistics
+            const numericValues = [];
+            for (const val of values) {
+                if (val !== '') {
+                    const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/,/g, ''));
+                    if (!isNaN(num)) {
+                        numericValues.push(num);
+                    }
+                }
+            }
+            
+            if (numericValues.length > 0) {
+                const stats = calculateNumericStats(numericValues);
+                statsText += ` | Avg: ${stats.avg} | Sum: ${stats.sum} | Min: ${stats.min} | Max: ${stats.max}`;
+            }
+            
+        } else if (dataTypeCategory === 'text') {
+            // Text statistics
+            const stats = calculateTextStats(values);
+            if (stats) {
+                statsText += ` | Distinct: ${stats.distinct} | Min Length: ${stats.minLength} | Max Length: ${stats.maxLength}`;
+            }
+            
+        } else if (dataTypeCategory === 'boolean') {
+            // Boolean statistics
+            const stats = calculateBooleanStats(values);
+            if (stats) {
+                statsText += ` | True: ${stats.trueCount} | False: ${stats.falseCount}`;
+            }
+            
+        } else if (dataTypeCategory === 'datetime') {
+            // DateTime statistics
+            const stats = calculateDateTimeStats(values);
+            if (stats) {
+                statsText += ` | Min: ${stats.min}`;
+                if (stats.min2) {
+                    statsText += ` | Min2: ${stats.min2}`;
+                }
+                statsText += ` | Max: ${stats.max} | Range: ${stats.range}`;
+            }
+            
+        } else {
+            // Unknown type - show distinct count only
+            const distinctValues = new Set(values);
+            statsText += ` | Distinct: ${distinctValues.size}`;
+        }
+        
+    } else {
+        // Multiple columns or mixed selection - show general statistics
+        // Calculate distinct count across all selected values
+        const allValues = [];
+        for (const [_, columnData] of valuesByColumn.entries()) {
+            allValues.push(...columnData.values);
+        }
+        
+        if (allValues.length > 0) {
+            const distinctValues = new Set(allValues.map(v => String(v)));
+            statsText += ` | Distinct: ${distinctValues.size}`;
+        }
     }
     
     statsPanel.textContent = statsText;
@@ -6269,7 +6539,7 @@ function showQueryPlan(planXml, executionTime, messages, resultSets) {
     
     // If we have result sets (actual plan), display them
     if (resultSets && resultSets.length > 0) {
-        displayResults(resultSets);
+        displayResults(resultSets, planXml);
         displayMessages(messages);
         
         // Switch to results tab first
@@ -7453,6 +7723,9 @@ function updatePendingChangesCount() {
             }
         }
     }
+    
+    // Update quick save button
+    updateQuickSaveButton();
 }
 
 function renderPendingChanges() {
@@ -7856,3 +8129,63 @@ function previewUpdateStatements() {
         console.error('Failed to generate preview:', error);
     }
 }
+
+/**
+ * Update quick save button visibility and tooltip with UPDATE statements
+ */
+function updateQuickSaveButton() {
+    const quickSaveButton = document.getElementById('quickSaveButton');
+    const tooltip = document.getElementById('quickSaveTooltip');
+    if (!quickSaveButton || !tooltip) return;
+    
+    const totalChanges = Array.from(pendingChanges.values()).reduce((sum, changes) => sum + changes.length, 0);
+    
+    if (totalChanges === 0) {
+        quickSaveButton.style.display = 'none';
+        return;
+    }
+    
+    quickSaveButton.style.display = 'inline-flex';
+    
+    // Generate UPDATE statements for tooltip
+    try {
+        const updateStatements = [];
+        
+        pendingChanges.forEach((changes, resultSetIndex) => {
+            const metadata = resultSetMetadata[resultSetIndex];
+            
+            changes.forEach(change => {
+                // Only include UPDATE statements, skip DELETE
+                if (change.type !== 'DELETE') {
+                    const sql = generateUpdateStatement(change, metadata);
+                    updateStatements.push(sql);
+                }
+            });
+        });
+        
+        if (updateStatements.length === 0) {
+            tooltip.textContent = 'Execute all changes\n\nNo UPDATE statements (only DELETE operations)';
+        } else {
+            const tooltipContent = `Execute ${updateStatements.length} UPDATE statement${updateStatements.length !== 1 ? 's' : ''}:\n\n${updateStatements.join('\n\n')}`;
+            tooltip.textContent = tooltipContent;
+        }
+    } catch (error) {
+        console.error('Failed to generate UPDATE statements for tooltip:', error);
+        tooltip.textContent = 'Execute all changes';
+    }
+}
+
+// Position tooltip on hover for fixed positioning
+document.addEventListener('DOMContentLoaded', () => {
+    const quickSaveButton = document.getElementById('quickSaveButton');
+    const tooltip = document.getElementById('quickSaveTooltip');
+    
+    if (quickSaveButton && tooltip) {
+        quickSaveButton.addEventListener('mouseenter', () => {
+            const rect = quickSaveButton.getBoundingClientRect();
+            tooltip.style.left = `${rect.left + rect.width / 2}px`;
+            tooltip.style.top = `${rect.top - 8}px`;
+            tooltip.style.transform = 'translate(-50%, -100%)';
+        });
+    }
+});

@@ -28,6 +28,7 @@ body {
     flex: 1;
     position: relative;
     min-height: 100px;
+    overflow: visible;
 }
 
 #editor {
@@ -406,6 +407,8 @@ body {
     border-bottom: 1px solid var(--vscode-panel-border);
     padding: 0 8px;
     flex-shrink: 0;
+    overflow: visible;
+    position: relative;
 }
 
 .results-tab {
@@ -791,7 +794,14 @@ th {
     position: relative;
 }
 
+/* Primary Key and Foreign Key column styling */
+.pk-column {
+    color: #FFD700 !important;
+}
 
+.fk-column {
+    color: #6496FF !important;
+}
 
 .cell-modified {
     background-color: rgba(255, 143, 0, 0.15) !important;
@@ -823,6 +833,60 @@ th {
     margin-left: 6px;
     min-width: 18px;
     text-align: center;
+}
+
+/* Quick Save Button */
+.quick-save-button {
+    background-color: transparent;
+    border: none;
+    padding: 4px 8px;
+    margin-left: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ff8f00;
+    border-radius: 2px;
+    position: relative;
+    transition: all 0.1s;
+}
+
+.quick-save-button:hover {
+    background-color: var(--vscode-toolbar-hoverBackground);
+    color: #ffa726;
+}
+
+.quick-save-button svg {
+    display: block;
+}
+
+.quick-save-tooltip {
+    position: fixed;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #454545;
+    padding: 8px 12px;
+    border-radius: 3px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    text-align: left;
+    min-width: 300px;
+    max-width: 600px;
+    max-height: 400px;
+    overflow-y: auto;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.2s, visibility 0.2s;
+    z-index: 99999;
+    font-family: 'Consolas', 'Courier New', monospace;
+    line-height: 1.4;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.quick-save-button:hover .quick-save-tooltip {
+    visibility: visible;
+    opacity: 1;
 }
 
 #pendingChangesContent {

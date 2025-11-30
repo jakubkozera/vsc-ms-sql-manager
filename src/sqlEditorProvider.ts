@@ -63,6 +63,16 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         content: document.getText()
                     });
 
+                    // Send configuration settings
+                    const config = vscode.workspace.getConfiguration('mssqlManager');
+                    const colorPrimaryForeignKeys = config.get<boolean>('colorPrimaryForeignKeys', true);
+                    webviewPanel.webview.postMessage({
+                        type: 'config',
+                        config: {
+                            colorPrimaryForeignKeys
+                        }
+                    });
+
                     // Check if there's a preferred database for this new editor
                     const preferredDb = this.connectionProvider.getAndClearNextEditorPreferredDatabase();
                     if (preferredDb) {
@@ -1001,7 +1011,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 finalQuery = `SET STATISTICS XML ON;\n${query}\nSET STATISTICS XML OFF;`;
             }
             
-            const result = await this.queryExecutor.executeQuery(finalQuery, poolToUse);
+            // Execute with the modified query, but pass original query for metadata extraction
+            const result = await this.queryExecutor.executeQuery(finalQuery, poolToUse, query);
             const executionTime = Date.now() - startTime;
 
             // Check if we have an execution plan in the result
@@ -1017,8 +1028,12 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     if (rs.length > 0 && rs[0]['Microsoft SQL Server 2005 XML Showplan']) {
                         planXml = rs[0]['Microsoft SQL Server 2005 XML Showplan'];
                         console.log('[SQL Editor] Found execution plan XML, length:', planXml.length);
-                        // Remove plan result set from results
+                        // Remove plan result set from results AND metadata
                         resultSets = result.recordsets.filter((_, index) => index !== i);
+                        // Also filter metadata to match the resultSets indices
+                        if (result.metadata && result.metadata.length > i) {
+                            result.metadata = result.metadata.filter((_, index) => index !== i);
+                        }
                         break;
                     }
                 }

@@ -42,7 +42,8 @@ export class QueryExecutor {
 
     // Accept an optional `connectionPool` to execute the query against. When not
     // provided, fall back to the provider's active connection.
-    async executeQuery(queryText: string, connectionPool?: DBPool): Promise<QueryResult> {
+    // originalQuery is used for metadata extraction when queryText includes SET statements
+    async executeQuery(queryText: string, connectionPool?: DBPool, originalQuery?: string): Promise<QueryResult> {
         // If a specific pool was provided, use it. Otherwise use the provider's active connection.
         const connection = connectionPool || this.connectionProvider.getConnection();
         if (!connection) {
@@ -88,10 +89,12 @@ export class QueryExecutor {
                 };
 
                 // Extract metadata for SELECT queries to enable editing
-                if (allRecordsets.length > 0 && this.isSelectQuery(queryText)) {
+                // Use originalQuery if provided (when queryText has SET statements)
+                const queryForMetadata = originalQuery || queryText;
+                if (allRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
                         this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
-                        queryResult.metadata = await this.extractResultMetadata(queryText, allRecordsets, connection);
+                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection);
                         this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
                     } catch (error) {
                         this.outputChannel.appendLine(`[QueryExecutor] Failed to extract metadata: ${error}`);
@@ -359,9 +362,18 @@ export class QueryExecutor {
      */
     private isSelectQuery(query: string): boolean {
         const trimmed = query.trim().toUpperCase();
-        // Remove comments and check if it starts with SELECT
+        // Remove comments
         const withoutComments = trimmed.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-        return withoutComments.trim().startsWith('SELECT');
+        // Check if it starts with SELECT or contains SELECT after SET statements
+        const normalized = withoutComments.trim();
+        if (normalized.startsWith('SELECT')) {
+            return true;
+        }
+        // Handle queries with SET statements before SELECT
+        if (normalized.startsWith('SET')) {
+            return normalized.includes('SELECT');
+        }
+        return false;
     }
 
     /**

@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1268,6 +1268,11 @@
           "type": "boolean",
           "default": true,
           "description": "Activate extension immediately when VS Code starts. When false, extension activates only when SQL files are opened."
+        },
+        "mssqlManager.colorPrimaryForeignKeys": {
+          "type": "boolean",
+          "default": true,
+          "description": "Color primary key columns (gold) and foreign key columns (blue) in query results."
         }
       }
     }

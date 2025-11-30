@@ -5,6 +5,27 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2025-11-30
+
+### Added
+
+- **Enhanced Query Results Table**: Comprehensive improvements to SQL query results display and interaction
+  - **Quick Save Button**: Added quick save button with tooltip functionality for editable result sets
+  - **Primary and Foreign Key Styling**: Visual distinction for PK/FK columns with dedicated icons (🔑 for primary keys, 🔗 for foreign keys)
+  - **Advanced Statistics**: Real-time statistical analysis for numeric, date, and string data types
+    - Numeric columns: Sum, average, min, max, range calculations
+    - DateTime columns: Date range display with secondary minimum for readability
+    - String columns: Character length statistics and unique value counts
+  - **Improved Metadata Extraction**: Enhanced query execution to properly handle SET statements and extract accurate metadata
+  - **Smart PK/FK Detection**: Optimized primary and foreign key lookup logic for better performance
+  - **Tooltip Positioning**: Adjusted tooltip positioning for better user experience with quick save button
+
+### Enhanced
+
+- **Query Executor**: Improved handling of SET statements and metadata extraction for more accurate result set information
+- **SQL Editor Provider**: Enhanced metadata processing to support new statistics and key column detection
+- **Result Set Display**: Better formatting and readability for DateTime statistics with range-based display
+
 ## [0.7.0] - 2025-11-30
 
 ### Added
