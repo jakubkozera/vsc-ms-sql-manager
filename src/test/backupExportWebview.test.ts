@@ -24,7 +24,7 @@ suite('BackupExportWebview Test Suite', () => {
 
         connectionProvider = {
             getConnectionConfig: sandbox.stub().returns({
-                authType: 'integrated',
+                authType: 'windows',
                 server: 'test-server',
                 database: 'test-database'
             })
