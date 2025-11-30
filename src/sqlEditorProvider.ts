@@ -63,6 +63,16 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         content: document.getText()
                     });
 
+                    // Send configuration settings
+                    const config = vscode.workspace.getConfiguration('mssqlManager');
+                    const colorPrimaryForeignKeys = config.get<boolean>('colorPrimaryForeignKeys', true);
+                    webviewPanel.webview.postMessage({
+                        type: 'config',
+                        config: {
+                            colorPrimaryForeignKeys
+                        }
+                    });
+
                     // Check if there's a preferred database for this new editor
                     const preferredDb = this.connectionProvider.getAndClearNextEditorPreferredDatabase();
                     if (preferredDb) {

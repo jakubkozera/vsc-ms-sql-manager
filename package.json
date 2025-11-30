@@ -1268,6 +1268,11 @@
           "type": "boolean",
           "default": true,
           "description": "Activate extension immediately when VS Code starts. When false, extension activates only when SQL files are opened."
+        },
+        "mssqlManager.colorPrimaryForeignKeys": {
+          "type": "boolean",
+          "default": true,
+          "description": "Color primary key columns (gold) and foreign key columns (blue) in query results."
         }
       }
     }

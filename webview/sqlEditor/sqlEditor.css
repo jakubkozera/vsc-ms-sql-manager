@@ -794,7 +794,14 @@ th {
     position: relative;
 }
 
+/* Primary Key and Foreign Key column styling */
+.pk-column {
+    color: #FFD700 !important;
+}
 
+.fk-column {
+    color: #6496FF !important;
+}
 
 .cell-modified {
     background-color: rgba(255, 143, 0, 0.15) !important;

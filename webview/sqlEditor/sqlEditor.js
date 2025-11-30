@@ -16,6 +16,7 @@ let actualPlanEnabled = false;
 let sqlSnippets = []; // SQL snippets loaded from VS Code
 let completionProvider = null; // Reference to current completion provider
 let completionProviderRegistered = false; // Flag to track registration
+let colorPrimaryForeignKeys = true; // Configuration for PK/FK column coloring
 
 // Built-in SQL snippets
 const builtInSnippets = [
@@ -2649,6 +2650,12 @@ window.addEventListener('message', event => {
     const message = event.data;
 
     switch (message.type) {
+        case 'config':
+            if (message.config.colorPrimaryForeignKeys !== undefined) {
+                colorPrimaryForeignKeys = message.config.colorPrimaryForeignKeys;
+                console.log('[CONFIG] colorPrimaryForeignKeys set to:', colorPrimaryForeignKeys);
+            }
+            break;
         case 'update':
             if (editor && message.content !== editor.getValue()) {
                 isUpdatingFromExtension = true;
@@ -3130,6 +3137,17 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
     console.log('[AG-GRID] Metadata:', metadata);
     
+    // Create FK lookup cache for this table
+    const fkColumnSet = new Set();
+    if (metadata && metadata.sourceTable && metadata.sourceSchema && dbSchema.foreignKeys) {
+        dbSchema.foreignKeys.forEach(fk => {
+            if (fk.fromTable === metadata.sourceTable && fk.fromSchema === metadata.sourceSchema) {
+                fkColumnSet.add(fk.fromColumn);
+            }
+        });
+        console.log('[AG-GRID] FK columns for table', metadata.sourceTable, ':', Array.from(fkColumnSet));
+    }
+    
     // Virtual scrolling configuration
     const ROW_HEIGHT = 30; // Fixed row height in pixels
     const VISIBLE_ROWS = 30; // Number of rows to render in viewport
@@ -3215,12 +3233,18 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const columnData = rowData.map(row => row[col]);
         const optimalWidth = calculateOptimalColumnWidth(col, columnData, type);
         
+        // Check if this column is a primary key or foreign key
+        const isPrimaryKey = metadata && metadata.primaryKeyColumns && metadata.primaryKeyColumns.includes(col);
+        const isForeignKey = fkColumnSet.has(col);
+        
         return {
             field: col,
             headerName: col,
             type: type,
             width: optimalWidth,
-            pinned: false
+            pinned: false,
+            isPrimaryKey: isPrimaryKey,
+            isForeignKey: isForeignKey
         };
     });
 
@@ -4220,6 +4244,15 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                     // Update aggregation stats
                     updateAggregationStats();
                 });
+
+                // Apply PK/FK column styling (PK takes priority) if enabled in configuration
+                if (colorPrimaryForeignKeys) {
+                    if (col.isPrimaryKey) {
+                        td.classList.add('pk-column');
+                    } else if (col.isForeignKey) {
+                        td.classList.add('fk-column');
+                    }
+                }
 
                 // Add double-click handler for editing (if editable)
                 if (metadata && metadata.isEditable) {
