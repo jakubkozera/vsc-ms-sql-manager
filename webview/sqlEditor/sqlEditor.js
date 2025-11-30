@@ -6280,14 +6280,36 @@ function calculateDateTimeStats(values) {
     
     if (dates.length === 0) return null;
     
-    const timestamps = dates.map(d => d.getTime());
-    const min = new Date(Math.min(...timestamps));
-    const max = new Date(Math.max(...timestamps));
+    // Sort timestamps to find min, min2, and max
+    const timestamps = dates.map(d => d.getTime()).sort((a, b) => a - b);
+    const min = new Date(timestamps[0]);
+    const max = new Date(timestamps[timestamps.length - 1]);
+    
+    // Check if min is the default date (0001-01-01)
+    const defaultDateThreshold = new Date('0001-01-02').getTime(); // Anything before this is considered default
+    const isMinDefault = timestamps[0] < defaultDateThreshold;
+    
+    let min2 = null;
+    let rangeStart = min;
+    
+    if (isMinDefault && timestamps.length > 1) {
+        // Find the second minimum that's not the default date
+        for (let i = 1; i < timestamps.length; i++) {
+            if (timestamps[i] >= defaultDateThreshold) {
+                min2 = new Date(timestamps[i]);
+                rangeStart = min2; // Use min2 for range calculation
+                break;
+            }
+        }
+    }
+    
+    const range = Math.ceil((max - rangeStart) / (1000 * 60 * 60 * 24)); // days
     
     return {
         min: min.toISOString().slice(0, 19).replace('T', ' '),
+        min2: min2 ? min2.toISOString().slice(0, 19).replace('T', ' ') : null,
         max: max.toISOString().slice(0, 19).replace('T', ' '),
-        range: Math.ceil((max - min) / (1000 * 60 * 60 * 24)) // days
+        range: range
     };
 }
 
@@ -6396,7 +6418,11 @@ function updateAggregationStats() {
             // DateTime statistics
             const stats = calculateDateTimeStats(values);
             if (stats) {
-                statsText += ` | Min: ${stats.min} | Max: ${stats.max} | Range: ${stats.range} days`;
+                statsText += ` | Min: ${stats.min}`;
+                if (stats.min2) {
+                    statsText += ` | Min2: ${stats.min2}`;
+                }
+                statsText += ` | Max: ${stats.max} | Range: ${stats.range} days`;
             }
             
         } else {
