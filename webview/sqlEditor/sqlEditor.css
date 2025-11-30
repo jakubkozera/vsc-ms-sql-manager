@@ -28,6 +28,7 @@ body {
     flex: 1;
     position: relative;
     min-height: 100px;
+    overflow: visible;
 }
 
 #editor {
@@ -406,6 +407,8 @@ body {
     border-bottom: 1px solid var(--vscode-panel-border);
     padding: 0 8px;
     flex-shrink: 0;
+    overflow: visible;
+    position: relative;
 }
 
 .results-tab {
@@ -851,10 +854,7 @@ th {
 }
 
 .quick-save-tooltip {
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%) translateY(8px);
+    position: fixed;
     background-color: #1e1e1e;
     color: #d4d4d4;
     border: 1px solid #454545;

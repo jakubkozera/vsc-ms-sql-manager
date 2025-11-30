@@ -7904,3 +7904,18 @@ function updateQuickSaveButton() {
         tooltip.textContent = 'Execute all changes';
     }
 }
+
+// Position tooltip on hover for fixed positioning
+document.addEventListener('DOMContentLoaded', () => {
+    const quickSaveButton = document.getElementById('quickSaveButton');
+    const tooltip = document.getElementById('quickSaveTooltip');
+    
+    if (quickSaveButton && tooltip) {
+        quickSaveButton.addEventListener('mouseenter', () => {
+            const rect = quickSaveButton.getBoundingClientRect();
+            tooltip.style.left = `${rect.left + rect.width / 2}px`;
+            tooltip.style.top = `${rect.top - 8}px`;
+            tooltip.style.transform = 'translate(-50%, -100%)';
+        });
+    }
+});
