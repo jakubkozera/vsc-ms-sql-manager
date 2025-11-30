@@ -6539,7 +6539,7 @@ function showQueryPlan(planXml, executionTime, messages, resultSets) {
     
     // If we have result sets (actual plan), display them
     if (resultSets && resultSets.length > 0) {
-        displayResults(resultSets);
+        displayResults(resultSets, planXml);
         displayMessages(messages);
         
         // Switch to results tab first
