@@ -416,4 +416,276 @@ suite('UnifiedTreeProvider Test Suite', () => {
             assert.deepStrictEqual(children, []);
         });
     });
+
+    suite('ContextValue Regression Tests', () => {
+        let mockDatabaseInstructionsManager: any;
+
+        setup(() => {
+            mockDatabaseInstructionsManager = {
+                hasInstructions: sandbox.stub().returns(false)
+            };
+            unifiedTreeProvider.setDatabaseInstructionsManager(mockDatabaseInstructionsManager);
+        });
+
+        test('should set correct contextValue for inactive ConnectionNode without instructions', () => {
+            const connectionNode = new ConnectionNode(
+                'Test Connection',
+                'localhost',
+                'testdb',
+                'conn1',
+                'sql',
+                false, // isActive = false
+                false  // isPending = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('conn1').returns(false);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(connectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'connectionInactive');
+        });
+
+        test('should set correct contextValue for active ConnectionNode without instructions', () => {
+            const connectionNode = new ConnectionNode(
+                'Test Connection',
+                'localhost',
+                'testdb',
+                'conn1',
+                'sql',
+                true,  // isActive = true
+                false  // isPending = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('conn1').returns(false);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(connectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'connectionActive');
+        });
+
+        test('should set correct contextValue for inactive ConnectionNode with instructions', () => {
+            const connectionNode = new ConnectionNode(
+                'Test Connection',
+                'localhost',
+                'testdb',
+                'conn1',
+                'sql',
+                false, // isActive = false
+                false  // isPending = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('conn1').returns(true);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(connectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'connectionInactiveWithInstructions');
+        });
+
+        test('should set correct contextValue for active ConnectionNode with instructions', () => {
+            const connectionNode = new ConnectionNode(
+                'Test Connection',
+                'localhost',
+                'testdb',
+                'conn1',
+                'sql',
+                true,  // isActive = true
+                false  // isPending = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('conn1').returns(true);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(connectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'connectionActiveWithInstructions');
+        });
+
+        test('should set correct contextValue for inactive ServerConnectionNode without instructions', () => {
+            const serverConnectionNode = new ServerConnectionNode(
+                'Server Connection',
+                'localhost',
+                'srv1',
+                'windows',
+                false, // isActive = false
+                false, // isPending = false
+                false  // hasFilter = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('srv1').returns(false);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(serverConnectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'serverConnectionInactive');
+        });
+
+        test('should set correct contextValue for active ServerConnectionNode without instructions', () => {
+            const serverConnectionNode = new ServerConnectionNode(
+                'Server Connection',
+                'localhost',
+                'srv1',
+                'windows',
+                true,  // isActive = true
+                false, // isPending = false
+                false  // hasFilter = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('srv1').returns(false);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(serverConnectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'serverConnectionActive');
+        });
+
+        test('should set correct contextValue for inactive ServerConnectionNode with instructions', () => {
+            const serverConnectionNode = new ServerConnectionNode(
+                'Server Connection',
+                'localhost',
+                'srv1',
+                'windows',
+                false, // isActive = false
+                false, // isPending = false
+                false  // hasFilter = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('srv1').returns(true);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(serverConnectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'serverConnectionInactiveWithInstructions');
+        });
+
+        test('should set correct contextValue for active ServerConnectionNode with instructions', () => {
+            const serverConnectionNode = new ServerConnectionNode(
+                'Server Connection',
+                'localhost',
+                'srv1',
+                'windows',
+                true,  // isActive = true
+                false, // isPending = false
+                false  // hasFilter = false
+            );
+
+            mockDatabaseInstructionsManager.hasInstructions.withArgs('srv1').returns(true);
+
+            const treeItem = unifiedTreeProvider.getTreeItem(serverConnectionNode);
+            
+            assert.strictEqual(treeItem.contextValue, 'serverConnectionActiveWithInstructions');
+        });
+
+        test('should handle missing DatabaseInstructionsManager gracefully', () => {
+            unifiedTreeProvider.setDatabaseInstructionsManager(undefined);
+
+            const connectionNode = new ConnectionNode(
+                'Test Connection',
+                'localhost',
+                'testdb',
+                'conn1',
+                'sql',
+                false, // isActive = false
+                false  // isPending = false
+            );
+
+            const treeItem = unifiedTreeProvider.getTreeItem(connectionNode);
+            
+            // Should not throw and contextValue should be unchanged
+            assert.ok(treeItem);
+        });
+
+        test('should verify failed connection contextValue matches package.json patterns', () => {
+            // Test ConnectionNode failed state using constructor parameter
+            const failedConnectionNode = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', false, false, true);
+            const connectionTreeItem = unifiedTreeProvider.getTreeItem(failedConnectionNode);
+            
+            // Failed connections should have contextValue 'connectionFailed' (set in constructor)
+            assert.strictEqual(connectionTreeItem.contextValue, 'connectionFailed');
+            
+            // Test ServerConnectionNode failed state
+            const failedServerNode = new ServerConnectionNode('Test', 'srv', 'id', 'sql', false, false, false, true);
+            const serverTreeItem = unifiedTreeProvider.getTreeItem(failedServerNode);
+            
+            // Failed server connections should have contextValue 'serverConnectionFailed' (set in constructor)
+            assert.strictEqual(serverTreeItem.contextValue, 'serverConnectionFailed');
+        });
+
+        test('should verify failed connection contextValue with instructions', () => {
+            const mockDatabaseInstructionsManager = {
+                hasInstructions: sandbox.stub().returns(true)
+            };
+            unifiedTreeProvider.setDatabaseInstructionsManager(mockDatabaseInstructionsManager);
+
+            // Test ConnectionNode failed state with instructions
+            const failedConnectionWithInstructions = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', false, false, true);
+            const connectionTreeItem = unifiedTreeProvider.getTreeItem(failedConnectionWithInstructions);
+            
+            // Failed connections with instructions should have contextValue 'connectionFailedWithInstructions'
+            assert.strictEqual(connectionTreeItem.contextValue, 'connectionFailedWithInstructions');
+            
+            // Test ServerConnectionNode failed state with instructions
+            const failedServerWithInstructions = new ServerConnectionNode('Test', 'srv', 'id', 'sql', false, false, false, true);
+            const serverTreeItem = unifiedTreeProvider.getTreeItem(failedServerWithInstructions);
+            
+            // Failed server connections with instructions should have contextValue 'serverConnectionFailedWithInstructions'
+            assert.strictEqual(serverTreeItem.contextValue, 'serverConnectionFailedWithInstructions');
+        });
+    });
+
+    suite('Context Menu Integration Tests', () => {
+        test('should verify inactive connection contextValue matches package.json patterns', () => {
+            // Test ConnectionNode inactive
+            const inactiveConnectionNode = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', false, false);
+            const connectionTreeItem = unifiedTreeProvider.getTreeItem(inactiveConnectionNode);
+            
+            // Verify contextValue matches package.json patterns for connectionInactive
+            assert.strictEqual(connectionTreeItem.contextValue, 'connectionInactive');
+            
+            // Test ServerConnectionNode inactive
+            const inactiveServerNode = new ServerConnectionNode('Test', 'srv', 'id', 'sql', false, false, false);
+            const serverTreeItem = unifiedTreeProvider.getTreeItem(inactiveServerNode);
+            
+            // Verify contextValue matches package.json patterns for serverConnectionInactive
+            assert.strictEqual(serverTreeItem.contextValue, 'serverConnectionInactive');
+        });
+
+        test('should verify contextValue patterns support expected menu commands', () => {
+            // Based on package.json, these contextValue patterns should support these commands:
+            
+            // connectionInactive should support:
+            // - mssqlManager.connectToSaved (inline@1 and 1_connection@2)
+            // - mssqlManager.editConnection (inline@2)
+            // - mssqlManager.deleteConnection (inline@3)
+            // - mssqlManager.newQuery (1_connection@1)
+            // - mssqlManager.copyConnectionString (2_manage@3)
+            
+            const inactiveConnection = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', false, false);
+            const treeItem = unifiedTreeProvider.getTreeItem(inactiveConnection);
+            
+            assert.strictEqual(treeItem.contextValue, 'connectionInactive');
+            
+            // serverConnectionInactive should support all the above PLUS:
+            // - mssqlManager.filterDatabases (1_connection@3)
+            
+            const inactiveServer = new ServerConnectionNode('Test', 'srv', 'id', 'sql', false, false, false);
+            const serverTreeItem = unifiedTreeProvider.getTreeItem(inactiveServer);
+            
+            assert.strictEqual(serverTreeItem.contextValue, 'serverConnectionInactive');
+        });
+
+        test('should verify contextValue with instructions supports instruction commands', () => {
+            const mockDatabaseInstructionsManager = {
+                hasInstructions: sandbox.stub().returns(true)
+            };
+            unifiedTreeProvider.setDatabaseInstructionsManager(mockDatabaseInstructionsManager);
+
+            // Test inactive connection with instructions
+            const inactiveConnectionWithInstructions = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', false, false);
+            const treeItem = unifiedTreeProvider.getTreeItem(inactiveConnectionWithInstructions);
+            
+            assert.strictEqual(treeItem.contextValue, 'connectionInactiveWithInstructions');
+            
+            // Test active connection with instructions (should support instruction commands)
+            const activeConnectionWithInstructions = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', true, false);
+            const activeTreeItem = unifiedTreeProvider.getTreeItem(activeConnectionWithInstructions);
+            
+            assert.strictEqual(activeTreeItem.contextValue, 'connectionActiveWithInstructions');
+        });
+    });
 });

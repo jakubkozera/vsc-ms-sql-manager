@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -338,6 +338,26 @@
         "icon": "$(cloud)"
       },
       {
+        "command": "mssqlManager.discoverDockerContainers",
+        "title": "Discover Docker SQL Containers",
+        "icon": "$(vm)"
+      },
+      {
+        "command": "mssqlManager.discoverLocalServers",
+        "title": "Discover Local SQL Servers",
+        "icon": "$(server)"
+      },
+      {
+        "command": "mssqlManager.deployDockerMssql",
+        "title": "Deploy Docker MS SQL container",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mssqlManager.collapseAll",
+        "title": "Collapse All",
+        "icon": "$(collapse-all)"
+      },
+      {
         "command": "mssqlManager.openSqlChat",
         "title": "Open SQL Chat",
         "icon": "$(comment-discussion)"
@@ -393,6 +413,11 @@
       ]
     },
     "submenus": [
+      {
+        "id": "mssqlManager.moreActions",
+        "label": "More Actions",
+        "icon": "$(kebab-vertical)"
+      },
       {
         "id": "mssqlManager.scriptProcedureAs",
         "label": "Script Stored Procedure as",
@@ -456,6 +481,30 @@
       }
     ],
     "menus": {
+      "mssqlManager.moreActions": [
+        {
+          "command": "mssqlManager.collapseAll",
+          "group": "0_view@1"
+        },
+        {
+          "command": "mssqlManager.deployDockerMssql",
+          "when": "mssqlManager.dockerRunning",
+          "group": "1_discovery@0"
+        },
+        {
+          "command": "mssqlManager.discoverDockerContainers",
+          "group": "1_discovery@1"
+        },
+        {
+          "command": "mssqlManager.discoverAzureServers",
+          "group": "1_discovery@2"
+        },
+        {
+          "command": "mssqlManager.discoverLocalServers",
+          "when": "isWindows",
+          "group": "1_discovery@3"
+        }
+      ],
       "mssqlManager.scriptProcedureAs": [
         {
           "submenu": "mssqlManager.scriptProcedureCreateTo",
@@ -559,6 +608,11 @@
           "command": "mssqlManager.createServerGroup",
           "when": "view == mssqlManager.explorer",
           "group": "navigation@3"
+        },
+        {
+          "submenu": "mssqlManager.moreActions",
+          "when": "view == mssqlManager.explorer",
+          "group": "navigation@4"
         },
         {
           "command": "mssqlManager.refreshQueryHistory",
@@ -704,33 +758,38 @@
         },
         {
           "command": "mssqlManager.addConnectionToServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@1"
         },
         {
           "command": "mssqlManager.editServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@2"
         },
         {
           "command": "mssqlManager.deleteServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@3"
         },
         {
           "command": "mssqlManager.addConnectionToServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "1_manage@1"
         },
         {
           "command": "mssqlManager.editServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "1_manage@2"
         },
         {
           "command": "mssqlManager.deleteServerGroup",
-          "when": "view == mssqlManager.explorer && viewItem == serverGroup",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "1_manage@3"
+        },
+        {
+          "command": "mssqlManager.deployDockerMssql",
+          "when": "view == mssqlManager.explorer && viewItem == serverGroupDocker",
+          "group": "2_docker@1"
         },
         {
           "command": "mssqlManager.connectToSaved",
@@ -799,7 +858,7 @@
         },
         {
           "command": "mssqlManager.filterDatabases",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnection(Active.*|Inactive|Failed)$/",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "1_connection@3"
         },
         {

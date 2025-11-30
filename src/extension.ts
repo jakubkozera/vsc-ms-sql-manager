@@ -49,9 +49,32 @@ export async function activate(context: vscode.ExtensionContext) {
     await initializeExtension(context);
 }
 
+/**
+ * Check if Docker is running and set context key
+ */
+async function checkDockerStatus(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        const childProcess = require('child_process');
+        const result = childProcess.execSync('docker info', { 
+            encoding: 'utf8', 
+            timeout: 5000,
+            stdio: ['pipe', 'pipe', 'ignore']
+        });
+        const isRunning = result.includes('Server Version');
+        await vscode.commands.executeCommand('setContext', 'mssqlManager.dockerRunning', isRunning);
+        outputChannel.appendLine(`[Extension] Docker status: ${isRunning ? 'running' : 'not running'}`);
+    } catch (error) {
+        await vscode.commands.executeCommand('setContext', 'mssqlManager.dockerRunning', false);
+        outputChannel.appendLine('[Extension] Docker is not running');
+    }
+}
+
 async function initializeExtension(context: vscode.ExtensionContext) {
     // Initialize Azure firewall helper with extension context
     initializeAzureFirewallHelper(context);
+
+    // Check Docker status and set context
+    await checkDockerStatus(context);
 
     // Initialize providers
     const connectionProvider = new ConnectionProvider(context, outputChannel);
@@ -69,6 +92,13 @@ async function initializeExtension(context: vscode.ExtensionContext) {
         await connectionProvider.discoverAzureServersOnce();
     } catch (err) {
         outputChannel.appendLine(`[Extension] Azure discovery error: ${err}`);
+    }
+    
+    // Run one-time Docker SQL Server discovery
+    try {
+        await connectionProvider.discoverDockerServersOnce();
+    } catch (err) {
+        outputChannel.appendLine(`[Extension] Docker discovery error: ${err}`);
     }
     
     // Initialize query history

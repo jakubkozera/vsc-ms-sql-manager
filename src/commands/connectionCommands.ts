@@ -5,6 +5,7 @@ import { ServerGroupWebview } from '../serverGroupWebview';
 import { addFirewallRule, openAzurePortalFirewall, clearAllServerCache, showServerCacheInfo } from '../utils/azureFirewallHelper';
 import { SchemaContextBuilder } from '../schemaContextBuilder';
 import { DatabaseInstructionsManager } from '../databaseInstructions';
+import { DeployDockerMssqlWebview } from '../deployDockerMssql';
 
 export function registerConnectionCommands(
     context: vscode.ExtensionContext,
@@ -834,6 +835,102 @@ export function registerConnectionCommands(
         }
     });
 
+    const discoverDockerContainersCommand = vscode.commands.registerCommand('mssqlManager.discoverDockerContainers', async () => {
+        try {
+            const choice = await vscode.window.showInformationMessage(
+                'This will discover running Docker SQL Server containers and add them to the Docker group. Continue?',
+                { modal: true },
+                'Discover Containers'
+            );
+            
+            if (choice === 'Discover Containers') {
+                outputChannel.appendLine('[Docker Discovery] Manual Docker discovery initiated');
+                
+                // Reset the discovery flag to allow re-running
+                await connectionProvider.resetDockerDiscoveryFlag();
+                
+                // Run discovery
+                await connectionProvider.discoverDockerServersOnce();
+                
+                // Refresh tree
+                unifiedTreeProvider.refresh();
+                
+                // Get discovered containers count
+                const allConnections = await connectionProvider.getSavedConnectionsList();
+                const dockerConnections = allConnections.filter(c => c.id.startsWith('docker-'));
+                const message = dockerConnections.length > 0 
+                    ? `Docker discovery completed. Found ${dockerConnections.length} SQL Server container(s).`
+                    : 'Docker discovery completed. No SQL Server containers found.';
+                
+                vscode.window.showInformationMessage(message);
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to discover Docker containers: ${errorMessage}`);
+            outputChannel.appendLine(`Docker discovery failed: ${errorMessage}`);
+        }
+    });
+
+    const discoverLocalServersCommand = vscode.commands.registerCommand('mssqlManager.discoverLocalServers', async () => {
+        try {
+            // Check if running on Windows
+            if (process.platform !== 'win32') {
+                vscode.window.showWarningMessage('Local SQL Server discovery is only available on Windows.');
+                return;
+            }
+
+            const choice = await vscode.window.showInformationMessage(
+                'This will discover local SQL Server instances (LocalDB, SQL Express, localhost) and add them to the Local group. Continue?',
+                { modal: true },
+                'Discover Servers'
+            );
+            
+            if (choice === 'Discover Servers') {
+                outputChannel.appendLine('[Local Discovery] Manual local discovery initiated');
+                
+                // Reset the discovery flag to allow re-running
+                const context = (connectionProvider as any).context;
+                await context.globalState.update('mssqlManager.localDiscoveryDone', false);
+                
+                // Run discovery
+                await connectionProvider.discoverLocalServersOnce();
+                
+                // Refresh tree
+                unifiedTreeProvider.refresh();
+                
+                vscode.window.showInformationMessage('Local SQL Server discovery completed. Check the Local group in the explorer.');
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to discover local SQL servers: ${errorMessage}`);
+            outputChannel.appendLine(`Local discovery failed: ${errorMessage}`);
+        }
+    });
+
+    const collapseAllCommand = vscode.commands.registerCommand('mssqlManager.collapseAll', async () => {
+        try {
+            await vscode.commands.executeCommand('workbench.actions.treeView.mssqlManager.explorer.collapseAll');
+            
+            outputChannel.appendLine('[Explorer] Collapsed all tree items');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            outputChannel.appendLine(`[Explorer] Error collapsing tree: ${errorMessage}`);
+            // Fallback to manual refresh if built-in command fails
+            unifiedTreeProvider.refresh();
+        }
+    });
+
+    const deployDockerMssqlCommand = vscode.commands.registerCommand('mssqlManager.deployDockerMssql', async () => {
+        try {
+            const deployWebview = new DeployDockerMssqlWebview(connectionProvider, outputChannel, context);
+            await deployWebview.show();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to open Deploy MS SQL webview: ${errorMessage}`);
+            outputChannel.appendLine(`Deploy Docker MSSQL failed: ${errorMessage}`);
+        }
+    });
+
     // Database Instructions Commands
     const addDatabaseInstructionsCommand = vscode.commands.registerCommand('mssqlManager.addDatabaseInstructions', async (node?: any) => {
         try {
@@ -989,6 +1086,10 @@ export function registerConnectionCommands(
         clearAzureServerCacheCommand,
         showAzureServerCacheCommand,
         discoverAzureServersCommand,
+        discoverDockerContainersCommand,
+        discoverLocalServersCommand,
+        collapseAllCommand,
+        deployDockerMssqlCommand,
         addDatabaseInstructionsCommand,
         unlinkDatabaseInstructionsCommand,
         editDatabaseInstructionsCommand
