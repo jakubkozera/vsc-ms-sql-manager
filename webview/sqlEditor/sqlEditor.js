@@ -3347,6 +3347,34 @@ function executeRelationExpansion(relation, keyValue, sourceRow, columnName, tab
 }
 
 /**
+ * Shift rows below expanded row down by height
+ */
+function shiftRowsBelow(tbody, sourceRowIndex, shiftAmount) {
+    // Add small padding to prevent visual overlap
+    const paddedShift = shiftAmount + 5;
+    
+    // Shift regular data rows
+    const allRows = tbody.querySelectorAll('tr[data-row-index]');
+    allRows.forEach(row => {
+        const rowIdx = parseInt(row.dataset.rowIndex || '0');
+        if (rowIdx > sourceRowIndex) {
+            const currentTop = parseInt(row.style.top || '0');
+            row.style.top = `${currentTop + paddedShift}px`;
+        }
+    });
+    
+    // Also shift any expanded rows that are below the source
+    const expandedRows = tbody.querySelectorAll('.expanded-row-content');
+    expandedRows.forEach(expandedRow => {
+        const expandedSourceIndex = parseInt(expandedRow.dataset.sourceRowIndex || '0');
+        if (expandedSourceIndex > sourceRowIndex) {
+            const currentTop = parseInt(expandedRow.style.top || '0');
+            expandedRow.style.top = `${currentTop + paddedShift}px`;
+        }
+    });
+}
+
+/**
  * Insert expanded row with loader
  */
 function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
@@ -3356,31 +3384,43 @@ function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
         existing.remove();
     }
     
-    // Create a div positioned absolutely below the source row
-    // This avoids interfering with table layout and virtual scrolling
-    const expandedDiv = document.createElement('div');
-    expandedDiv.className = 'expanded-row-overlay';
-    expandedDiv.dataset.expandKey = expandKey;
-    expandedDiv.dataset.expansionId = expansionId;
-    
-    // Calculate position based on source row
+    // Calculate source row position
     const sourceTop = parseInt(sourceRow.style.top || '0');
     const sourceHeight = parseInt(sourceRow.style.height || '30');
-    const topPosition = sourceTop + sourceHeight;
+    const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
     
-    // Get viewport width from container
-    const viewport = containerEl || sourceRow.closest('.ag-grid-viewport');
-    const viewportWidth = viewport ? viewport.clientWidth : window.innerWidth;
+    // Create expanded row as a normal TR that will push rows below
+    const expandedRow = document.createElement('tr');
+    expandedRow.className = 'expanded-row-content';
+    expandedRow.dataset.expandKey = expandKey;
+    expandedRow.dataset.expansionId = expansionId;
+    expandedRow.dataset.sourceRowIndex = rowIndex;
     
-    // Position absolutely to avoid table layout issues
-    expandedDiv.style.cssText = `
+    // Initial height
+    const initialHeight = 200;
+    
+    // Get viewport width from parent
+    const viewport = sourceRow.closest('.ag-grid-viewport');
+    const availableWidth = viewport ? viewport.clientWidth : 1024;
+    
+    // Position it right after the source row with width on TR
+    expandedRow.style.cssText = `
         position: absolute;
+        top: ${sourceTop + sourceHeight}px;
         left: 0;
-        top: ${topPosition}px;
-        width: ${viewportWidth}px;
-        background: var(--vscode-editor-background);
+        right: 0;
+        height: ${initialHeight}px;
+        width: ${availableWidth}px;
         border-bottom: 1px solid var(--vscode-panel-border);
-        z-index: 5;
+        background: var(--vscode-editor-background);
+        box-sizing: border-box;
+    `;
+    
+    // Single cell with full width content
+    const cell = document.createElement('td');
+    cell.setAttribute('colspan', '100');
+    cell.style.cssText = `
+        padding: 0;
         box-sizing: border-box;
     `;
     
@@ -3391,12 +3431,16 @@ function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
     loader.className = 'loader-container';
     loader.innerHTML = '<div class="loader"></div>';
     content.appendChild(loader);
-    expandedDiv.appendChild(content);
+    cell.appendChild(content);
+    expandedRow.appendChild(cell);
     
-    // Insert into tbody (same parent as rows)
-    sourceRow.parentNode.appendChild(expandedDiv);
+    // Insert into tbody after source row
+    sourceRow.parentNode.appendChild(expandedRow);
     
-    return expandedDiv;
+    // Shift all rows below this one down by the expanded row height
+    shiftRowsBelow(sourceRow.parentNode, rowIndex, initialHeight);
+    
+    return expandedRow;
 }
 
 /**
@@ -3408,6 +3452,19 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
     
     const content = expandedRow.querySelector('.expanded-content');
     if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
+        // Update height after content is rendered
+        setTimeout(() => {
+            const actualHeight = expandedRow.offsetHeight;
+            const initialHeight = parseInt(expandedRow.style.height || '200');
+            const heightDiff = actualHeight - initialHeight;
+            
+            if (heightDiff !== 0) {
+                expandedRow.style.height = `${actualHeight}px`;
+                // Adjust rows below with the height difference
+                const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
+                shiftRowsBelow(sourceRow.parentNode, rowIndex, heightDiff);
+            }
+        }, 50);
         content.innerHTML = '';
         
         const nestedContainer = document.createElement('div');
@@ -3422,8 +3479,14 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
             border: 1px solid var(--vscode-panel-border);
         `;
         
+        // Calculate width for nested table container based on parent viewport
+        const parentViewport = sourceRow.closest('.ag-grid-viewport');
+        const availableWidth = parentViewport ? parentViewport.clientWidth : 1024;
+        nestedContainer.style.width = `${availableWidth}px`;
+        nestedContainer.style.boxSizing = 'border-box';
+        
         content.appendChild(nestedContainer);
-        console.log('[EXPANSION] Rendering cached nested table with', resultSets[0].length, 'rows');
+        console.log('[EXPANSION] Rendering cached nested table with', resultSets[0].length, 'rows, width:', availableWidth);
         initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
         console.log('[EXPANSION] Cached nested table rendered');
     } else {
@@ -3446,8 +3509,16 @@ function handleChevronClick(event, col, value, row, rowIndex, tableId, container
     
     if (expandedRows.has(expandKey)) {
         const expanded = expandedRows.get(expandKey);
+        const expandedElement = expanded.element;
+        const expandedHeight = parseInt(expandedElement.style.height || '200');
+        const sourceRowIndex = parseInt(expandedElement.dataset.sourceRowIndex || '0');
+        
         chevron.classList.remove('expanded');
-        expanded.element.remove();
+        
+        // Shift rows back up before removing
+        shiftRowsBelow(expandedElement.parentNode, sourceRowIndex, -expandedHeight);
+        
+        expandedElement.remove();
         expandedRows.delete(expandKey);
     } else {
         chevron.classList.add('expanded');
@@ -3651,6 +3722,13 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     console.log('[AG-GRID] Table element:', table, 'border-collapse:', table?.style.borderCollapse);
 
     renderAgGridHeaders(columnDefs, sortConfig, activeFilters, container, filteredData);
+    
+    // Calculate and set table width based on column widths
+    const totalTableWidth = columnDefs.reduce((sum, col) => sum + col.width, 0) + 50; // +50 for row number column
+    table.style.width = `${totalTableWidth}px`;
+    table.style.minWidth = `${totalTableWidth}px`;
+    console.log('[AG-GRID] Table width set to:', totalTableWidth, 'px');
+    
     renderAgGridRows(columnDefs, filteredData, container, 0, ROW_HEIGHT, RENDER_CHUNK_SIZE);
     
     // Set up virtual scrolling
