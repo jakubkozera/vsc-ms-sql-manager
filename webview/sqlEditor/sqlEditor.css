@@ -1362,7 +1362,6 @@ th {
 
 .expanded-content {
     border-left: 3px solid var(--vscode-button-background);
-    margin: 8px;
     background: var(--vscode-editor-background);
     min-height: 100px;
     width: 100%;
@@ -1372,9 +1371,7 @@ th {
 .nested-table-container {
     font-size: 0.9em;
     background: var(--vscode-editor-background);
-    border-radius: 4px;
     overflow: auto;
-    margin: 4px 0;
     min-height: 200px;
     max-height: 400px;
     border: 1px solid var(--vscode-panel-border);

@@ -3177,7 +3177,6 @@ function handleRelationResults(message) {
                 background: var(--vscode-editor-background);
                 border-radius: 4px;
                 overflow: auto;
-                margin: 4px 0;
                 max-height: 400px;
                 min-height: 200px;
                 border: 1px solid var(--vscode-panel-border);
@@ -3473,7 +3472,6 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
             background: var(--vscode-editor-background);
             border-radius: 4px;
             overflow: auto;
-            margin: 4px 0;
             max-height: 400px;
             min-height: 200px;
             border: 1px solid var(--vscode-panel-border);
