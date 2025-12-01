@@ -103,6 +103,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     await this.executeQuery(message.query, message.connectionId, webviewPanel.webview, message.includeActualPlan);
                     break;
 
+                case 'expandRelation':
+                    await this.executeRelationQuery(message.keyValue, message.schema, message.table, message.column, message.expansionId, message.connectionId, webviewPanel.webview);
+                    break;
+
                 case 'executeEstimatedPlan':
                     await this.executeEstimatedPlan(message.query, message.connectionId, webviewPanel.webview);
                     break;
@@ -1098,6 +1102,102 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 type: 'error',
                 error: error.message || 'Query execution failed',
                 messages: [{ type: 'error', text: error.message || 'Query execution failed' }]
+            });
+        }
+    }
+
+    /**
+     * Execute a relation expansion query for FK/PK exploration
+     */
+    private async executeRelationQuery(
+        keyValue: any,
+        schema: string,
+        table: string,
+        column: string,
+        expansionId: string,
+        connectionId: string | null,
+        webview: vscode.Webview
+    ) {
+        // Resolve connection/config and (when needed) create a DB-scoped pool.
+        let config: any = null;
+        let poolToUse: any = null;
+
+        if (connectionId && typeof connectionId === 'string' && connectionId.includes('::')) {
+            const [baseId, dbName] = connectionId.split('::');
+            config = this.connectionProvider.getConnectionConfig(baseId);
+            try {
+                poolToUse = await this.connectionProvider.createDbPool(baseId, dbName);
+            } catch (err) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Failed to create DB pool for relation expansion ${baseId} -> ${dbName}: ${err}`);
+                poolToUse = this.connectionProvider.getConnection(baseId) || this.connectionProvider.getConnection();
+            }
+        } else if (connectionId) {
+            config = this.connectionProvider.getConnectionConfig(connectionId);
+            poolToUse = this.connectionProvider.getConnection(connectionId) || this.connectionProvider.getConnection();
+        } else {
+            config = this.connectionProvider.getCurrentConfig();
+            poolToUse = this.connectionProvider.getConnection();
+        }
+
+        if (!config || !poolToUse) {
+            webview.postMessage({
+                type: 'relationResults',
+                expansionId: expansionId,
+                error: 'No active connection'
+            });
+            return;
+        }
+
+        try {
+            const startTime = Date.now();
+            
+            // Log connection details for debugging
+            let dbName = 'unknown';
+            if (connectionId && connectionId.includes('::')) {
+                dbName = connectionId.split('::')[1];
+            } else if (config) {
+                dbName = config.database || 'default';
+            }
+            
+            this.outputChannel.appendLine(`[SqlEditorProvider] Relation expansion params - schema: "${schema}", table: "${table}", column: "${column}", value: "${keyValue}", database: "${dbName}"`);
+            
+            // Build query with proper SQL Server parameter escaping
+            // Escape single quotes in the value
+            const escapedValue = String(keyValue).replace(/'/g, "''");
+            
+            // If we have a database name from connectionId, prepend USE statement to ensure correct context
+            let query = '';
+            if (connectionId && connectionId.includes('::')) {
+                const [, dbName] = connectionId.split('::');
+                query = `USE [${dbName}];\nSELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
+            } else {
+                query = `SELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
+            }
+            this.outputChannel.appendLine(`[SqlEditorProvider] Executing relation expansion: ${query}`);
+            
+            // Execute query using queryExecutor
+            const result = await this.queryExecutor.executeQuery(query, poolToUse);
+            
+            const executionTime = Date.now() - startTime;
+            
+            // Convert to QueryResult format
+            const resultSets = result.recordsets || [];
+            const metadata = result.metadata || [];
+            
+            webview.postMessage({
+                type: 'relationResults',
+                expansionId: expansionId,
+                resultSets: resultSets,
+                metadata: metadata,
+                executionTime: executionTime,
+                query: query
+            });
+        } catch (error: any) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Relation expansion error: ${error.message}`);
+            webview.postMessage({
+                type: 'relationResults',
+                expansionId: expansionId,
+                error: error.message || 'Failed to execute relation query'
             });
         }
     }

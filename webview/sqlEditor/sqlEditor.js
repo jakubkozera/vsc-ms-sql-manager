@@ -18,6 +18,11 @@ let completionProvider = null; // Reference to current completion provider
 let completionProviderRegistered = false; // Flag to track registration
 let colorPrimaryForeignKeys = true; // Configuration for PK/FK column coloring
 
+// FK expansion state
+let expandedRows = new Map(); // Track expanded rows by unique key: ${tableId}-${rowIndex}-${columnName}
+let expandedResultsCache = new Map(); // Cache expanded results by: ${schema}.${table}.${column}=${value}
+let expansionIdCounter = 0; // Generate unique expansion IDs
+
 // Built-in SQL snippets
 const builtInSnippets = [
     {
@@ -2697,6 +2702,11 @@ window.addEventListener('message', event => {
             showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages, message.planXml);
             break;
 
+        case 'relationResults':
+            // Handle FK/PK expansion query results
+            handleRelationResults(message);
+            break;
+
         case 'queryPlan':
             showQueryPlan(message.planXml, message.executionTime, message.messages, message.resultSets);
             break;
@@ -3131,6 +3141,352 @@ function displayResults(resultSets, planXml) {
     console.log('[SQL EDITOR] resultsContainer height:', resultsContainer?.offsetHeight);
     console.log('[SQL EDITOR] resultsContent height:', resultsContent?.offsetHeight, 'scrollHeight:', resultsContent?.scrollHeight);
 }
+
+// ===== FK/PK EXPANSION FUNCTIONS =====
+
+/**
+ * Handle FK relation expansion results from extension
+ */
+function handleRelationResults(message) {
+    const { expansionId, resultSets, metadata, executionTime, error } = message;
+    
+    if (error) {
+        console.error('[EXPANSION] Error:', error);
+        const expandedRow = document.querySelector(`[data-expansion-id="${expansionId}"]`);
+        if (expandedRow) {
+            const content = expandedRow.querySelector('.expanded-content');
+            if (content) {
+                content.innerHTML = `<div style="color: var(--vscode-errorForeground); padding: 20px; text-align: center;">Error: ${error}</div>`;
+            }
+        }
+        return;
+    }
+    
+    const cacheKey = `expansion-${expansionId}`;
+    expandedResultsCache.set(cacheKey, { resultSets, metadata, executionTime });
+    
+    const expandedRow = document.querySelector(`[data-expansion-id="${expansionId}"]`);
+    if (expandedRow) {
+        const content = expandedRow.querySelector('.expanded-content');
+        if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
+            content.innerHTML = '';
+            
+            const nestedContainer = document.createElement('div');
+            nestedContainer.className = 'nested-table-container';
+            nestedContainer.style.cssText = `
+                background: var(--vscode-editor-background);
+                border-radius: 4px;
+                overflow: auto;
+                margin: 4px 0;
+                max-height: 400px;
+                min-height: 200px;
+                border: 1px solid var(--vscode-panel-border);
+                width: 100%;
+                box-sizing: border-box;
+            `;
+            
+            content.appendChild(nestedContainer);
+            console.log('[EXPANSION] Rendering nested table with', resultSets[0].length, 'rows');
+            initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
+            console.log('[EXPANSION] Nested table rendered, container height:', nestedContainer.offsetHeight);
+        } else {
+            content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
+        }
+    }
+}
+
+/**
+ * Show quick pick modal for FK relation selection
+ */
+function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata) {
+    const existing = document.querySelector('.fk-quick-pick-overlay');
+    if (existing) existing.remove();
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'fk-quick-pick-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    `;
+    
+    const quickPick = document.createElement('div');
+    quickPick.className = 'fk-quick-pick';
+    quickPick.style.cssText = `
+        background: var(--vscode-quickInput-background);
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 4px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        min-width: 500px;
+        max-width: 600px;
+        max-height: 400px;
+        display: flex;
+        flex-direction: column;
+    `;
+    
+    const header = document.createElement('div');
+    header.style.cssText = `
+        padding: 12px 16px;
+        background: var(--vscode-quickInputTitle-background);
+        border-bottom: 1px solid var(--vscode-panel-border);
+        font-weight: 600;
+        color: var(--vscode-foreground);
+    `;
+    header.textContent = 'Select related table';
+    quickPick.appendChild(header);
+    
+    const sortedRelations = [...relations].sort((a, b) => {
+        if (a.isComposite && !b.isComposite) return 1;
+        if (!a.isComposite && b.isComposite) return -1;
+        return 0;
+    });
+    
+    const list = document.createElement('div');
+    list.style.cssText = `overflow-y: auto; max-height: 350px;`;
+    
+    sortedRelations.forEach(rel => {
+        const item = document.createElement('div');
+        item.className = 'fk-quick-pick-item';
+        item.style.cssText = `
+            padding: 10px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            transition: background 0.1s;
+        `;
+        
+        const label = document.createElement('div');
+        label.textContent = `${rel.table} (${rel.schema})${rel.isComposite ? ' - Composite Key' : ''}`;
+        label.style.fontWeight = '500';
+        item.appendChild(label);
+        
+        const query = document.createElement('div');
+        query.textContent = `SELECT * FROM [${rel.schema}].[${rel.table}] WHERE [${rel.column}] = '${keyValue}'`;
+        query.style.cssText = `
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85em;
+            color: var(--vscode-descriptionForeground);
+            margin-top: 4px;
+        `;
+        item.appendChild(query);
+        
+        item.addEventListener('mouseenter', () => item.style.background = 'var(--vscode-list-hoverBackground)');
+        item.addEventListener('mouseleave', () => item.style.background = '');
+        item.addEventListener('click', () => {
+            overlay.remove();
+            executeRelationExpansion(rel, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata);
+        });
+        
+        list.appendChild(item);
+    });
+    
+    quickPick.appendChild(list);
+    overlay.appendChild(quickPick);
+    
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+            const chevron = sourceRow.querySelector(`[data-column="${columnName}"] .chevron-icon`);
+            if (chevron) chevron.classList.remove('expanded');
+        }
+    });
+    
+    document.body.appendChild(overlay);
+}
+
+/**
+ * Execute FK relation expansion query
+ */
+function executeRelationExpansion(relation, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata) {
+    const expandKey = `${tableId}-${rowIndex}-${columnName}`;
+    const cacheKey = `${relation.schema}.${relation.table}.${relation.column}=${keyValue}`;
+    const cached = expandedResultsCache.get(cacheKey);
+    
+    if (cached) {
+        console.log('[EXPANSION] Using cached data for', cacheKey);
+        renderExpandedRow(cached.resultSets, cached.metadata, sourceRow, expandKey, relation, containerEl, metadata);
+        return;
+    }
+    
+    const expansionId = `exp_${Date.now()}_${expansionIdCounter++}`;
+    const expandedRow = insertExpandedRow(sourceRow, expandKey, expansionId, containerEl);
+    
+    // Build full connectionId with database context for server connections
+    let fullConnectionId = currentConnectionId;
+    if (currentConnectionId && currentDatabaseName) {
+        // Check if connectionId already includes database
+        if (!currentConnectionId.includes('::')) {
+            fullConnectionId = `${currentConnectionId}::${currentDatabaseName}`;
+        }
+    }
+    
+    const request = {
+        type: 'expandRelation',
+        keyValue: keyValue,
+        schema: relation.schema,
+        table: relation.table,
+        column: relation.column,
+        expansionId: expansionId,
+        connectionId: fullConnectionId
+    };
+    console.log('[EXPANSION] Sending request:', request);
+    vscode.postMessage(request);
+    
+    expandedRows.set(expandKey, {
+        element: expandedRow,
+        relation: relation,
+        expansionId: expansionId,
+        cacheKey: cacheKey
+    });
+}
+
+/**
+ * Insert expanded row with loader
+ */
+function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
+    // Remove any existing expanded row for this key
+    const existing = document.querySelector(`[data-expand-key="${expandKey}"]`);
+    if (existing) {
+        existing.remove();
+    }
+    
+    // Create a div positioned absolutely below the source row
+    // This avoids interfering with table layout and virtual scrolling
+    const expandedDiv = document.createElement('div');
+    expandedDiv.className = 'expanded-row-overlay';
+    expandedDiv.dataset.expandKey = expandKey;
+    expandedDiv.dataset.expansionId = expansionId;
+    
+    // Calculate position based on source row
+    const sourceTop = parseInt(sourceRow.style.top || '0');
+    const sourceHeight = parseInt(sourceRow.style.height || '30');
+    const topPosition = sourceTop + sourceHeight;
+    
+    // Get viewport width from container
+    const viewport = containerEl || sourceRow.closest('.ag-grid-viewport');
+    const viewportWidth = viewport ? viewport.clientWidth : window.innerWidth;
+    
+    // Position absolutely to avoid table layout issues
+    expandedDiv.style.cssText = `
+        position: absolute;
+        left: 0;
+        top: ${topPosition}px;
+        width: ${viewportWidth}px;
+        background: var(--vscode-editor-background);
+        border-bottom: 1px solid var(--vscode-panel-border);
+        z-index: 5;
+        box-sizing: border-box;
+    `;
+    
+    const content = document.createElement('div');
+    content.className = 'expanded-content';
+    
+    const loader = document.createElement('div');
+    loader.className = 'loader-container';
+    loader.innerHTML = '<div class="loader"></div>';
+    content.appendChild(loader);
+    expandedDiv.appendChild(content);
+    
+    // Insert into tbody (same parent as rows)
+    sourceRow.parentNode.appendChild(expandedDiv);
+    
+    return expandedDiv;
+}
+
+/**
+ * Render expanded row with cached data
+ */
+function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation, containerEl, parentMetadata) {
+    const expansionId = `cached_${Date.now()}_${expansionIdCounter++}`;
+    const expandedRow = insertExpandedRow(sourceRow, expandKey, expansionId, containerEl);
+    
+    const content = expandedRow.querySelector('.expanded-content');
+    if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
+        content.innerHTML = '';
+        
+        const nestedContainer = document.createElement('div');
+        nestedContainer.className = 'nested-table-container';
+        nestedContainer.style.cssText = `
+            background: var(--vscode-editor-background);
+            border-radius: 4px;
+            overflow: auto;
+            margin: 4px 0;
+            max-height: 400px;
+            min-height: 200px;
+            border: 1px solid var(--vscode-panel-border);
+        `;
+        
+        content.appendChild(nestedContainer);
+        console.log('[EXPANSION] Rendering cached nested table with', resultSets[0].length, 'rows');
+        initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
+        console.log('[EXPANSION] Cached nested table rendered');
+    } else {
+        content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
+    }
+    
+    expandedRows.set(expandKey, { element: expandedRow, relation: relation, expansionId: expansionId });
+}
+
+/**
+ * Handle chevron click for FK expansion
+ */
+function handleChevronClick(event, col, value, row, rowIndex, tableId, containerEl, metadata) {
+    event.stopPropagation();
+    event.preventDefault();
+    
+    const chevron = event.currentTarget;
+    const columnName = col.field;
+    const expandKey = `${tableId}-${rowIndex}-${columnName}`;
+    
+    if (expandedRows.has(expandKey)) {
+        const expanded = expandedRows.get(expandKey);
+        chevron.classList.remove('expanded');
+        expanded.element.remove();
+        expandedRows.delete(expandKey);
+    } else {
+        chevron.classList.add('expanded');
+        
+        const colMetadata = metadata?.columns?.find(c => c.name === columnName);
+        console.log('[EXPANSION] Column metadata:', colMetadata);
+        console.log('[EXPANSION] FK references:', colMetadata?.foreignKeyReferences);
+        
+        if (colMetadata && colMetadata.foreignKeyReferences && colMetadata.foreignKeyReferences.length > 0) {
+            if (colMetadata.foreignKeyReferences.length === 1) {
+                console.log('[EXPANSION] Single FK, expanding directly:', colMetadata.foreignKeyReferences[0]);
+                executeRelationExpansion(
+                    colMetadata.foreignKeyReferences[0],
+                    value,
+                    row,
+                    columnName,
+                    tableId,
+                    rowIndex,
+                    containerEl,
+                    metadata
+                );
+            } else {
+                console.log('[EXPANSION] Multiple FKs, showing quick pick');
+                showQuickPick(
+                    colMetadata.foreignKeyReferences,
+                    value,
+                    row,
+                    columnName,
+                    tableId,
+                    rowIndex,
+                    containerEl,
+                    metadata
+                );
+            }
+        }
+    }
+}
+
+// ===== END FK/PK EXPANSION FUNCTIONS =====
 
 function initAgGridTable(rowData, container, isSingleResultSet = false, resultSetIndex = 0, metadata = null) {
     console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows, single result set:', isSingleResultSet);
@@ -4124,6 +4480,72 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                         
                         // Update title to indicate it's clickable
                         td.title = `Click to open ${contentType.toUpperCase()} in new editor\n\n${strValue.substring(0, 200)}${strValue.length > 200 ? '...' : ''}`;
+                    }
+                }
+                
+                // Add FK/PK expansion icon for columns with foreign key references
+                if (metadata && metadata.columns && (col.isPrimaryKey || col.isForeignKey)) {
+                    const colMetadata = metadata.columns.find(c => c.name === col.field);
+                    if (colMetadata && colMetadata.foreignKeyReferences && colMetadata.foreignKeyReferences.length > 0 && value !== null && value !== undefined) {
+                        const originalContent = td.textContent;
+                        td.textContent = '';
+                        td.style.position = 'relative';
+                        td.dataset.column = col.field;
+                        
+                        const wrapper = document.createElement('span');
+                        wrapper.style.cssText = `
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            width: 100%;
+                        `;
+                        
+                        const valueSpan = document.createElement('span');
+                        valueSpan.textContent = originalContent;
+                        valueSpan.style.cssText = `
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                            flex: 1;
+                        `;
+                        wrapper.appendChild(valueSpan);
+                        
+                        const chevron = document.createElement('span');
+                        chevron.className = 'chevron-icon';
+                        chevron.dataset.column = col.field;
+                        chevron.style.cssText = `
+                            display: none;
+                            opacity: 0;
+                            transition: all 0.2s;
+                            cursor: pointer;
+                            color: var(--vscode-button-background);
+                            flex-shrink: 0;
+                        `;
+                        chevron.innerHTML = `
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        `;
+                        
+                        const tableId = `table_${resultSetIndex}`;
+                        chevron.addEventListener('click', (e) => {
+                            handleChevronClick(e, col, value, tr, rowIndex, tableId, containerEl, metadata);
+                        });
+                        
+                        wrapper.appendChild(chevron);
+                        td.appendChild(wrapper);
+                        
+                        // Show/hide chevron on hover
+                        td.addEventListener('mouseenter', () => {
+                            chevron.style.display = 'inline-flex';
+                            chevron.style.opacity = '1';
+                        });
+                        td.addEventListener('mouseleave', () => {
+                            if (!chevron.classList.contains('expanded')) {
+                                chevron.style.display = 'none';
+                                chevron.style.opacity = '0';
+                            }
+                        });
                     }
                 }
                 

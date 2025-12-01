@@ -3,6 +3,15 @@ import { ConnectionProvider } from './connectionProvider';
 import { DBPool } from './dbClient';
 import { QueryHistoryManager } from './queryHistory';
 
+export interface ForeignKeyReference {
+    schema: string;
+    table: string;
+    column: string;
+    isComposite: boolean;
+    compositeColumns: string[];
+    constraintName: string;
+}
+
 export interface ColumnMetadata {
     name: string;
     type: string;
@@ -12,6 +21,7 @@ export interface ColumnMetadata {
     sourceColumn?: string;
     isPrimaryKey: boolean;
     isIdentity: boolean;
+    foreignKeyReferences?: ForeignKeyReference[];
 }
 
 export interface ResultSetMetadata {
@@ -51,7 +61,7 @@ export class QueryExecutor {
         }
 
         const startTime = Date.now();
-        this.outputChannel.appendLine(`Executing query: ${queryText.substring(0, 100)}${queryText.length > 100 ? '...' : ''})`);
+        this.outputChannel.appendLine(`Executing query: ${queryText.substring(0, 100)}${queryText.length > 100 ? '...' : ''}`);
 
         try {
             return await vscode.window.withProgress({
@@ -448,7 +458,7 @@ export class QueryExecutor {
             
             if (result.recordset && result.recordset.length > 0) {
                 const row = result.recordset[0];
-                return {
+                const metadata: Partial<ColumnMetadata> = {
                     type: row.DataType,
                     isNullable: row.IsNullable,
                     sourceTable: row.TableName,
@@ -457,12 +467,153 @@ export class QueryExecutor {
                     isPrimaryKey: row.IsPrimaryKey === 1,
                     isIdentity: row.IsIdentity
                 };
+
+                // Query FK relationships for this column
+                try {
+                    metadata.foreignKeyReferences = await this.getForeignKeyReferences(
+                        connection,
+                        row.SchemaName,
+                        row.TableName,
+                        row.ColumnName
+                    );
+                } catch (error) {
+                    this.outputChannel.appendLine(`[QueryExecutor] Error getting FK references: ${error}`);
+                    metadata.foreignKeyReferences = [];
+                }
+
+                return metadata;
             }
         } catch (error) {
             this.outputChannel.appendLine(`[QueryExecutor] Error getting column info: ${error}`);
         }
         
         return null;
+    }
+
+    /**
+     * Get foreign key relationships for a specific column
+     * Returns both outgoing FKs (this column references another) and incoming FKs (other columns reference this)
+     */
+    private async getForeignKeyReferences(
+        connection: DBPool,
+        schema: string,
+        table: string,
+        column: string
+    ): Promise<ForeignKeyReference[]> {
+        const references: ForeignKeyReference[] = [];
+
+        try {
+            // Query for outgoing FKs (this column references another table)
+            const outgoingQuery = `
+                SELECT 
+                    fk.name AS ConstraintName,
+                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ReferencedSchema,
+                    OBJECT_NAME(fk.referenced_object_id) AS ReferencedTable,
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ReferencedColumn,
+                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                WHERE fk.parent_object_id = OBJECT_ID('${schema}.${table}')
+                AND fkc.parent_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
+            `;
+
+            const outgoingResult = await connection.request().query(outgoingQuery);
+            
+            if (outgoingResult.recordset && outgoingResult.recordset.length > 0) {
+                // Group by constraint to get composite columns
+                const constraintMap = new Map<string, any[]>();
+                for (const row of outgoingResult.recordset) {
+                    if (!constraintMap.has(row.ConstraintName)) {
+                        constraintMap.set(row.ConstraintName, []);
+                    }
+                    constraintMap.get(row.ConstraintName)!.push(row);
+                }
+
+                for (const [constraintName, rows] of constraintMap) {
+                    const isComposite = rows[0].ColumnCount > 1;
+                    
+                    // Get all columns in this constraint if composite
+                    let compositeColumns: string[] = [];
+                    if (isComposite) {
+                        const compositeQuery = `
+                            SELECT COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ColumnName
+                            FROM sys.foreign_key_columns fkc
+                            WHERE fkc.constraint_object_id = OBJECT_ID('${schema}.${constraintName}')
+                            ORDER BY fkc.constraint_column_id
+                        `;
+                        const compositeResult = await connection.request().query(compositeQuery);
+                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
+                    }
+
+                    references.push({
+                        schema: rows[0].ReferencedSchema,
+                        table: rows[0].ReferencedTable,
+                        column: rows[0].ReferencedColumn,
+                        isComposite,
+                        compositeColumns,
+                        constraintName
+                    });
+                }
+            }
+
+            // Query for incoming FKs (other tables reference this column as PK)
+            const incomingQuery = `
+                SELECT 
+                    fk.name AS ConstraintName,
+                    OBJECT_SCHEMA_NAME(fk.parent_object_id) AS ReferencingSchema,
+                    OBJECT_NAME(fk.parent_object_id) AS ReferencingTable,
+                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ReferencingColumn,
+                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                WHERE fk.referenced_object_id = OBJECT_ID('${schema}.${table}')
+                AND fkc.referenced_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
+            `;
+
+            const incomingResult = await connection.request().query(incomingQuery);
+            
+            if (incomingResult.recordset && incomingResult.recordset.length > 0) {
+                // Group by constraint
+                const constraintMap = new Map<string, any[]>();
+                for (const row of incomingResult.recordset) {
+                    if (!constraintMap.has(row.ConstraintName)) {
+                        constraintMap.set(row.ConstraintName, []);
+                    }
+                    constraintMap.get(row.ConstraintName)!.push(row);
+                }
+
+                for (const [constraintName, rows] of constraintMap) {
+                    const isComposite = rows[0].ColumnCount > 1;
+                    
+                    // Get all columns in this constraint if composite
+                    let compositeColumns: string[] = [];
+                    if (isComposite) {
+                        const compositeQuery = `
+                            SELECT COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ColumnName
+                            FROM sys.foreign_key_columns fkc
+                            WHERE fkc.constraint_object_id = OBJECT_ID('${rows[0].ReferencingSchema}.${constraintName}')
+                            ORDER BY fkc.constraint_column_id
+                        `;
+                        const compositeResult = await connection.request().query(compositeQuery);
+                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
+                    }
+
+                    references.push({
+                        schema: rows[0].ReferencingSchema,
+                        table: rows[0].ReferencingTable,
+                        column: rows[0].ReferencingColumn,
+                        isComposite,
+                        compositeColumns,
+                        constraintName
+                    });
+                }
+            }
+
+        } catch (error) {
+            this.outputChannel.appendLine(`[QueryExecutor] Error in getForeignKeyReferences: ${error}`);
+        }
+
+        return references;
     }
 
     /**
