@@ -120,23 +120,44 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
         border: 1px solid var(--vscode-panel-border);
         border-radius: 4px;
         box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-        min-width: 500px;
-        max-width: 600px;
-        max-height: 400px;
+        min-width: 800px;
+        max-width: 900px;
+        height: 500px;
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
     `;
     
+    // Left panel for list
+    const leftPanel = document.createElement('div');
+    leftPanel.style.cssText = `
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--vscode-panel-border);
+        min-width: 300px;
+    `;
+    
+    // Right panel for details
+    const rightPanel = document.createElement('div');
+    rightPanel.style.cssText = `
+        flex: 1;
+        padding: 16px;
+        overflow-y: auto;
+        background: var(--vscode-editor-background);
+        font-family: var(--vscode-font-family);
+        font-size: var(--vscode-font-size);
+    `;
+    rightPanel.innerHTML = '<div style="color: var(--vscode-descriptionForeground); text-align: center; margin-top: 20px;">Select a table to view details</div>';
+
     const header = document.createElement('div');
     header.style.cssText = `
         padding: 12px 16px;
-        background: var(--vscode-quickInputTitle-background);
         border-bottom: 1px solid var(--vscode-panel-border);
         font-weight: 600;
         color: var(--vscode-foreground);
     `;
     header.textContent = 'Select related table';
-    quickPick.appendChild(header);
+    leftPanel.appendChild(header);
     
     // Add filter input
     const filterContainer = document.createElement('div');
@@ -201,17 +222,89 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
     });
 
     let selectedIndex = -1;
+    let selectedElement = null;
+
+    function updateRightPanel(relation) {
+        if (!relation) {
+            rightPanel.innerHTML = '<div style="color: var(--vscode-descriptionForeground); text-align: center; margin-top: 20px;">Select a table to view details</div>';
+            return;
+        }
+
+        // Find table in dbSchema
+        const tableDef = typeof dbSchema !== 'undefined' && dbSchema.tables ? dbSchema.tables.find(t => t.schema === relation.schema && t.name === relation.table) : null;
+        
+        let html = `
+            <div style="margin-bottom: 16px;">
+                <div style="font-weight: 600; font-size: 1.1em; margin-bottom: 4px;">${relation.schema}.${relation.table}</div>
+                <div style="color: var(--vscode-descriptionForeground); font-size: 0.9em;">Relation: ${relation.column}</div>
+            </div>
+        `;
+
+        if (tableDef && tableDef.columns) {
+            html += `
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                    <thead>
+                        <tr style="text-align: left; border-bottom: 1px solid var(--vscode-panel-border);">
+                            <th style="padding: 4px 8px; color: var(--vscode-descriptionForeground);">Column</th>
+                            <th style="padding: 4px 8px; color: var(--vscode-descriptionForeground);">Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            tableDef.columns.forEach(col => {
+                const isPK = col.isPrimaryKey;
+                const isFK = col.isForeignKey; 
+                
+                let keyText = '';
+                if (isPK) keyText += 'PK ';
+                if (isFK) keyText += 'FK';
+                
+                html += `
+                    <tr style="border-bottom: 1px solid var(--vscode-panel-border);">
+                        <td style="padding: 4px 8px;">${col.name}</td>
+                        <td style="padding: 4px 8px; color: var(--vscode-descriptionForeground);">${col.type || ''}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+        } else {
+            html += `<div style="color: var(--vscode-descriptionForeground); font-style: italic;">Table definition not available in cache.</div>`;
+        }
+        
+        rightPanel.innerHTML = html;
+    }
 
     function updateSelection() {
         const visibleItems = Array.from(list.querySelectorAll('.fk-quick-pick-item')).filter(item => item.style.display !== 'none');
+        selectedElement = visibleItems[selectedIndex] || null;
+        
         visibleItems.forEach((item, index) => {
+            const btn = item.querySelector('.open-query-btn');
             if (index === selectedIndex) {
                 item.style.background = 'var(--vscode-list-activeSelectionBackground)';
                 item.style.color = 'var(--vscode-list-activeSelectionForeground)';
                 item.scrollIntoView({ block: 'nearest' });
+                if (btn) {
+                    btn.style.display = 'flex';
+                    btn.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground)';
+                    btn.style.color = 'var(--vscode-list-activeSelectionForeground)';
+                }
+                
+                const relation = JSON.parse(item.dataset.relation);
+                updateRightPanel(relation);
             } else {
                 item.style.background = '';
                 item.style.color = '';
+                if (btn) {
+                    btn.style.display = 'none';
+                    btn.style.backgroundColor = '';
+                    btn.style.color = 'var(--vscode-button-background)';
+                }
             }
         });
     }
@@ -259,7 +352,7 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
     
     filterContainer.appendChild(filterInput);
     filterContainer.appendChild(searchIcon);
-    quickPick.appendChild(filterContainer);
+    leftPanel.appendChild(filterContainer);
     
     const sortedRelations = [...relations].sort((a, b) => {
         if (a.isComposite && !b.isComposite) return 1;
@@ -268,16 +361,18 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
     });
     
     const list = document.createElement('div');
-    list.style.cssText = `overflow-y: auto; max-height: 350px;`;
+    list.style.cssText = `overflow-y: auto; flex: 1;`;
     
     sortedRelations.forEach(rel => {
         const item = document.createElement('div');
         item.className = 'fk-quick-pick-item';
+        item.dataset.relation = JSON.stringify(rel);
         item.style.cssText = `
             padding: 10px 16px;
             cursor: pointer;
             border-bottom: 1px solid var(--vscode-panel-border);
             transition: background 0.1s;
+            position: relative;
         `;
         
         const label = document.createElement('div');
@@ -285,8 +380,9 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
         label.style.fontWeight = '500';
         item.appendChild(label);
         
+        const queryText = `SELECT * FROM [${rel.schema}].[${rel.table}] WHERE [${rel.column}] = '${keyValue}'`;
         const query = document.createElement('div');
-        query.textContent = `SELECT * FROM [${rel.schema}].[${rel.table}] WHERE [${rel.column}] = '${keyValue}'`;
+        query.textContent = queryText;
         query.style.cssText = `
             font-family: 'Consolas', 'Courier New', monospace;
             font-size: 0.85em;
@@ -294,9 +390,93 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
             margin-top: 4px;
         `;
         item.appendChild(query);
+
+        // Add open query button
+        const openQueryBtn = document.createElement('div');
+        openQueryBtn.className = 'open-query-btn';
+        openQueryBtn.title = 'Open in New Query';
+        openQueryBtn.innerHTML = `
+            <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            >
+            <path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6" />
+            <path d="M11 13l9 -9" />
+            <path d="M15 4h5v5" />
+            </svg>
+        `;
+        openQueryBtn.style.cssText = `
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            padding: 4px;
+            border-radius: 4px;
+            color: var(--vscode-button-background);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        `;
         
-        item.addEventListener('mouseenter', () => item.style.background = 'var(--vscode-list-hoverBackground)');
-        item.addEventListener('mouseleave', () => item.style.background = '');
+        openQueryBtn.addEventListener('mouseenter', (e) => {
+            e.stopPropagation();
+            openQueryBtn.style.backgroundColor = 'var(--vscode-button-background)';
+            openQueryBtn.style.color = 'var(--vscode-button-foreground)';
+        });
+        
+        openQueryBtn.addEventListener('mouseleave', (e) => {
+            e.stopPropagation();
+            openQueryBtn.style.backgroundColor = item.style.background;
+            if (item === selectedElement) {
+                openQueryBtn.style.color = 'var(--vscode-list-activeSelectionForeground)';
+            } else {
+                openQueryBtn.style.color = 'var(--vscode-button-background)';
+            }
+        });
+
+        openQueryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Send message to open new query
+            const currentConnectionId = window.currentConnectionId;
+            const currentDatabaseName = window.currentDatabaseName;
+            
+            window.vscode.postMessage({
+                type: 'openNewQuery',
+                query: queryText,
+                connectionId: currentConnectionId,
+                database: currentDatabaseName
+            });
+            
+            overlay.remove();
+        });
+
+        item.appendChild(openQueryBtn);
+        
+        item.addEventListener('mouseenter', () => {
+            item.style.background = 'var(--vscode-list-hoverBackground)';
+            openQueryBtn.style.display = 'flex';
+            openQueryBtn.style.backgroundColor = 'var(--vscode-list-hoverBackground)';
+            openQueryBtn.style.color = 'var(--vscode-button-background)';
+            updateRightPanel(rel);
+        });
+        item.addEventListener('mouseleave', () => {
+            if (item === selectedElement) {
+                item.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                openQueryBtn.style.display = 'flex';
+                openQueryBtn.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground)';
+                openQueryBtn.style.color = 'var(--vscode-list-activeSelectionForeground)';
+            } else {
+                item.style.background = '';
+                openQueryBtn.style.display = 'none';
+            }
+        });
         item.addEventListener('click', () => {
             overlay.remove();
             executeRelationExpansion(rel, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata);
@@ -305,7 +485,9 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
         list.appendChild(item);
     });
     
-    quickPick.appendChild(list);
+    leftPanel.appendChild(list);
+    quickPick.appendChild(leftPanel);
+    quickPick.appendChild(rightPanel);
     overlay.appendChild(quickPick);
     
     overlay.addEventListener('click', (e) => {

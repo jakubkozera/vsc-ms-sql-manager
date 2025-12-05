@@ -243,6 +243,32 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'requestSnippetInput':
                     await this.handleSnippetInputRequest(webviewPanel.webview, message.selectedText);
                     break;
+
+                case 'openNewQuery':
+                    try {
+                        // Resolve connectionId and database
+                        let conn = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null;
+                        let db = message.database || undefined;
+
+                        if (conn && typeof conn === 'string' && conn.includes('::')) {
+                            const parts = conn.split('::');
+                            conn = parts[0];
+                            if (!db && parts.length > 1) {
+                                db = parts[1];
+                            }
+                        }
+
+                        const connectionItem = {
+                            connectionId: conn,
+                            database: db,
+                            label: db || 'Query'
+                        };
+
+                        await vscode.commands.executeCommand('mssqlManager.newQuery', connectionItem, message.query, true);
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] openNewQuery failed: ${err}`);
+                    }
+                    break;
             }
         });
 
