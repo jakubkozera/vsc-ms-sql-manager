@@ -39,7 +39,7 @@ function handleRelationResults(message) {
             const rowCount = resultSets[0].length;
             const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
             const headerHeight = 40; // Approx header height
-            const scrollbarHeight = 10; // Approx scrollbar height
+            const scrollbarHeight = 17; // Approx scrollbar height
             const maxVisibleRows = 5;
             const calculatedHeight = Math.min((Math.min(rowCount, maxVisibleRows) * rowHeight) + headerHeight + scrollbarHeight, 400);
             
@@ -679,7 +679,7 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
             const rowCount = resultSets[0].length;
             const rowHeight = 30; 
             const headerHeight = 40; 
-            const scrollbarHeight = 18; 
+            const scrollbarHeight = 17; 
             const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
             const newHeight = Math.max(calculatedHeight, 80);
 
@@ -702,10 +702,11 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
         const rowCount = resultSets[0].length;
         const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
         const headerHeight = 40; // Approx header height
-        const scrollbarHeight = 18; // Approx scrollbar height
+        const scrollbarHeight = 17; // Approx scrollbar height
         const maxVisibleRows = 5;
         const calculatedHeight = Math.min((Math.min(rowCount, maxVisibleRows) * rowHeight) + headerHeight + scrollbarHeight, 400);
 
+        debugger
         nestedContainer.style.cssText = `
             background: var(--vscode-editor-background);
             border-radius: 4px;
