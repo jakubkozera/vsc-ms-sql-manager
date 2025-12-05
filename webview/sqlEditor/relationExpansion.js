@@ -673,7 +673,7 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
             const rowCount = resultSets[0].length;
             const rowHeight = 30; 
             const headerHeight = 40; 
-            const scrollbarHeight = 15; 
+            const scrollbarHeight = 18; 
             const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
             const newHeight = Math.max(calculatedHeight, 80);
 
@@ -696,7 +696,7 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
         const rowCount = resultSets[0].length;
         const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
         const headerHeight = 40; // Approx header height
-        const scrollbarHeight = 15; // Approx scrollbar height
+        const scrollbarHeight = 18; // Approx scrollbar height
         const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
 
         nestedContainer.style.cssText = `
