@@ -35,12 +35,13 @@ function handleRelationResults(message) {
             const nestedContainer = document.createElement('div');
             nestedContainer.className = 'nested-table-container';
             
-            // Calculate dynamic height based on row count
+            // Calculate dynamic height based on row count (max 5 rows)
             const rowCount = resultSets[0].length;
             const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
             const headerHeight = 40; // Approx header height
             const scrollbarHeight = 10; // Approx scrollbar height
-            const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+            const maxVisibleRows = 5;
+            const calculatedHeight = Math.min((Math.min(rowCount, maxVisibleRows) * rowHeight) + headerHeight + scrollbarHeight, 400);
             
             nestedContainer.style.cssText = `
                 background: var(--vscode-editor-background);
@@ -697,12 +698,13 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
         const nestedContainer = document.createElement('div');
         nestedContainer.className = 'nested-table-container';
         
-        // Calculate dynamic height based on row count
+        // Calculate dynamic height based on row count (max 5 rows)
         const rowCount = resultSets[0].length;
         const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
         const headerHeight = 40; // Approx header height
         const scrollbarHeight = 18; // Approx scrollbar height
-        const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+        const maxVisibleRows = 5;
+        const calculatedHeight = Math.min((Math.min(rowCount, maxVisibleRows) * rowHeight) + headerHeight + scrollbarHeight, 400);
 
         nestedContainer.style.cssText = `
             background: var(--vscode-editor-background);
