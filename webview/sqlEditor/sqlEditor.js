@@ -3879,8 +3879,13 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             return;
         }
         
+        // Check if this is a nested table (expanded relation table)
+        const isNestedTable = containerEl.classList.contains('nested-table-container');
+        console.log('[AG-GRID] Is nested table:', isNestedTable);
+        
         // PRESERVE EXPANDED ROWS: Detach expanded row elements before clearing (don't use innerHTML to preserve them)
-        const expandedRowElements = Array.from(tbody.querySelectorAll('.expanded-row-content'));
+        // Skip for nested tables as they shouldn't have expanded rows
+        const expandedRowElements = isNestedTable ? [] : Array.from(tbody.querySelectorAll('.expanded-row-content'));
         const savedExpandedRows = expandedRowElements.map(el => {
             // Detach from DOM but keep the element
             const parent = el.parentNode;
@@ -3904,8 +3909,11 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const totalHeight = data.length * rowHeight;
         const offsetY = startRow * rowHeight;
         
-        // Set tbody height to accommodate all rows (for scrolling)
-        tbody.style.height = totalHeight + 'px';
+        // For nested tables, don't use virtual scrolling height (render all rows naturally)
+        // For main tables, set tbody height to accommodate all rows (for scrolling)
+        if (!isNestedTable) {
+            tbody.style.height = totalHeight + 'px';
+        }
         
         console.log('[AG-GRID] Rendering rows', startRow, 'to', endRow, '- offset:', offsetY, 'total height:', totalHeight);
 
@@ -3916,10 +3924,15 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             
             const tr = document.createElement('tr');
             tr.dataset.rowIndex = rowIndex;
+            
+            // For nested tables, use relative positioning within the nested container
+            // For main tables, use absolute positioning based on actual row index
+            const rowPosition = isNestedTable ? (i - startRow) * rowHeight : i * rowHeight;
+            
             // Position rows absolutely with calculated offset
             tr.style.cssText = `
                 position: absolute;
-                top: ${i * rowHeight}px;
+                top: ${rowPosition}px;
                 left: 0;
                 right: 0;
                 height: ${rowHeight}px;
@@ -4388,8 +4401,8 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         console.log('[AG-GRID] Rendered', endRow - startRow, 'rows successfully (from', startRow, 'to', endRow, ')');
         
         // RESTORE EXPANDED ROWS: Re-attach saved expanded row DOM elements back into tbody
-        // They will be positioned absolutely based on their sourceRowIndex, so they don't need to be in the visible range
-        if (savedExpandedRows.length > 0) {
+        // Skip for nested tables as they shouldn't have expanded rows
+        if (!isNestedTable && savedExpandedRows.length > 0) {
             console.log('[AG-GRID] Restoring', savedExpandedRows.length, 'expanded rows');
             savedExpandedRows.forEach(saved => {
                 // Re-attach the actual DOM element (not a copy)

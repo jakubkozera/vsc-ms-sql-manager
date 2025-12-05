@@ -561,9 +561,14 @@ function shiftRowsBelow(tbody, sourceRowIndex, shiftAmount) {
     // Add small padding to prevent visual overlap
     const paddedShift = shiftAmount;
     
-    // Shift regular data rows
+    // Shift regular data rows (but not rows inside nested tables)
     const allRows = tbody.querySelectorAll('tr[data-row-index]');
     allRows.forEach(row => {
+        // Skip rows that are inside nested table containers
+        if (row.closest('.nested-table-container')) {
+            return;
+        }
+        
         const rowIdx = parseInt(row.dataset.rowIndex || '0');
         if (rowIdx > sourceRowIndex) {
             const currentTop = parseInt(row.style.top || '0');
