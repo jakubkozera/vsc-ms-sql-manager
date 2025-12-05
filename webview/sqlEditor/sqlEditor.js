@@ -434,7 +434,15 @@ require.config({
 
 require(['vs/editor/editor.main'], function () {
     // Detect VS Code theme
-    const theme = document.body && document.body.classList.contains('vscode-dark') ? 'vs-dark' : 'vs';
+    function detectTheme() {
+        const body = document.body;
+        if (body.classList.contains('vscode-dark') || body.classList.contains('vscode-high-contrast')) {
+            return 'vs-dark';
+        }
+        return 'vs';
+    }
+    
+    const theme = detectTheme();
     
     const editorElement = document.getElementById('editor');
     if (editorElement) {
@@ -450,6 +458,18 @@ require(['vs/editor/editor.main'], function () {
             renderWhitespace: 'selection',
             tabSize: 4,
             insertSpaces: true
+        });
+
+        // Watch for theme changes
+        const observer = new MutationObserver(() => {
+            const newTheme = detectTheme();
+            if (editor) {
+                monaco.editor.setTheme(newTheme);
+            }
+        });
+        observer.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['class']
         });
     }
 

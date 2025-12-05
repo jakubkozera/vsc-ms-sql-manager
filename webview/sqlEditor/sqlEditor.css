@@ -796,11 +796,22 @@ th {
 
 /* Primary Key and Foreign Key column styling */
 .pk-column {
-    color: #FFD700 !important;
+    color: #7b3814 !important; /* Darker gold for light theme */
 }
 
 .fk-column {
-    color: #6496FF !important;
+    color: #0066cc !important; /* Darker blue for light theme */
+}
+
+/* Dark theme colors */
+body.vscode-dark .pk-column,
+body.vscode-high-contrast .pk-column {
+    color: #FFD700 !important; /* Bright gold for dark theme */
+}
+
+body.vscode-dark .fk-column,
+body.vscode-high-contrast .fk-column {
+    color: #6496FF !important; /* Bright blue for dark theme */
 }
 
 .cell-modified {
