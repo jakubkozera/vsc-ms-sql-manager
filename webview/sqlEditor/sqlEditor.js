@@ -3173,12 +3173,21 @@ function handleRelationResults(message) {
             
             const nestedContainer = document.createElement('div');
             nestedContainer.className = 'nested-table-container';
+            
+            // Calculate dynamic height based on row count
+            const rowCount = resultSets[0].length;
+            const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
+            const headerHeight = 40; // Approx header height
+            const scrollbarHeight = 10; // Approx scrollbar height
+            const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+            
             nestedContainer.style.cssText = `
                 background: var(--vscode-editor-background);
                 border-radius: 4px;
                 overflow: auto;
                 max-height: 400px;
-                min-height: 200px;
+                height: ${calculatedHeight}px;
+                min-height: 80px;
                 border: 1px solid var(--vscode-panel-border);
                 width: 100%;
                 box-sizing: border-box;
@@ -3188,6 +3197,21 @@ function handleRelationResults(message) {
             console.log('[EXPANSION] Rendering nested table with', resultSets[0].length, 'rows');
             initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
             console.log('[EXPANSION] Nested table rendered, container height:', nestedContainer.offsetHeight);
+
+            // Update height after content is rendered
+            setTimeout(() => {
+                // Use the calculated height for the row, respecting min-height of container
+                const newHeight = Math.max(calculatedHeight, 80);
+                const currentHeight = parseInt(expandedRow.style.height || '200');
+                const heightDiff = newHeight - currentHeight;
+                
+                if (heightDiff !== 0) {
+                    expandedRow.style.height = `${newHeight}px`;
+                    // Adjust rows below with the height difference
+                    const rowIndex = parseInt(expandedRow.dataset.sourceRowIndex || '0');
+                    shiftRowsBelow(expandedRow.parentNode, rowIndex, heightDiff);
+                }
+            }, 50);
         } else {
             content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
         }
@@ -3453,12 +3477,20 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
     if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
         // Update height after content is rendered
         setTimeout(() => {
-            const actualHeight = expandedRow.offsetHeight;
-            const initialHeight = parseInt(expandedRow.style.height || '200');
-            const heightDiff = actualHeight - initialHeight;
+            // Use the calculated height for the row, respecting min-height of container
+            // We need to recalculate here or pass it, but recalculating is safer as we have resultSets
+            const rowCount = resultSets[0].length;
+            const rowHeight = 30; 
+            const headerHeight = 40; 
+            const scrollbarHeight = 15; 
+            const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+            const newHeight = Math.max(calculatedHeight, 80);
+
+            const currentHeight = parseInt(expandedRow.style.height || '200');
+            const heightDiff = newHeight - currentHeight;
             
             if (heightDiff !== 0) {
-                expandedRow.style.height = `${actualHeight}px`;
+                expandedRow.style.height = `${newHeight}px`;
                 // Adjust rows below with the height difference
                 const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
                 shiftRowsBelow(sourceRow.parentNode, rowIndex, heightDiff);
@@ -3468,12 +3500,21 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
         
         const nestedContainer = document.createElement('div');
         nestedContainer.className = 'nested-table-container';
+        
+        // Calculate dynamic height based on row count
+        const rowCount = resultSets[0].length;
+        const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
+        const headerHeight = 40; // Approx header height
+        const scrollbarHeight = 15; // Approx scrollbar height
+        const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+
         nestedContainer.style.cssText = `
             background: var(--vscode-editor-background);
             border-radius: 4px;
             overflow: auto;
             max-height: 400px;
-            min-height: 200px;
+            height: ${calculatedHeight}px;
+            min-height: 80px;
             border: 1px solid var(--vscode-panel-border);
         `;
         

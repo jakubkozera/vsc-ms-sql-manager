@@ -1363,7 +1363,6 @@ th {
 .expanded-content {
     border-left: 3px solid var(--vscode-button-background);
     background: var(--vscode-editor-background);
-    min-height: 100px;
     width: 100%;
     box-sizing: border-box;
 }
