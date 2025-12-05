@@ -1,6 +1,5 @@
 // FK expansion state
 let expandedRows = new Map(); // Track expanded rows by unique key: ${tableId}-${rowIndex}-${columnName}
-let expandedResultsCache = new Map(); // Cache expanded results by: ${schema}.${table}.${column}=${value}
 let expansionIdCounter = 0; // Generate unique expansion IDs
 
 // ===== FK/PK EXPANSION FUNCTIONS =====
@@ -22,9 +21,6 @@ function handleRelationResults(message) {
         }
         return;
     }
-    
-    const cacheKey = `expansion-${expansionId}`;
-    expandedResultsCache.set(cacheKey, { resultSets, metadata, executionTime });
     
     const expandedRow = document.querySelector(`[data-expansion-id="${expansionId}"]`);
     if (expandedRow) {
@@ -510,15 +506,6 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
  */
 function executeRelationExpansion(relation, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata) {
     const expandKey = `${tableId}-${rowIndex}-${columnName}`;
-    const cacheKey = `${relation.schema}.${relation.table}.${relation.column}=${keyValue}`;
-    const cached = expandedResultsCache.get(cacheKey);
-    
-    if (cached) {
-        console.log('[EXPANSION] Using cached data for', cacheKey);
-        renderExpandedRow(cached.resultSets, cached.metadata, sourceRow, expandKey, relation, containerEl, metadata);
-        return;
-    }
-    
     const expansionId = `exp_${Date.now()}_${expansionIdCounter++}`;
     const expandedRow = insertExpandedRow(sourceRow, expandKey, expansionId, containerEl);
     
@@ -550,8 +537,7 @@ function executeRelationExpansion(relation, keyValue, sourceRow, columnName, tab
     expandedRows.set(expandKey, {
         element: expandedRow,
         relation: relation,
-        expansionId: expansionId,
-        cacheKey: cacheKey
+        expansionId: expansionId
     });
 }
 
@@ -663,88 +649,7 @@ function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
     return expandedRow;
 }
 
-/**
- * Render expanded row with cached data
- */
-function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation, containerEl, parentMetadata) {
-    const expansionId = `cached_${Date.now()}_${expansionIdCounter++}`;
-    const expandedRow = insertExpandedRow(sourceRow, expandKey, expansionId, containerEl);
-    
-    const content = expandedRow.querySelector('.expanded-content');
-    if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
-        // Update height after content is rendered
-        setTimeout(() => {
-            // Use the calculated height for the row, respecting min-height of container
-            // We need to recalculate here or pass it, but recalculating is safer as we have resultSets
-            const rowCount = resultSets[0].length;
-            const rowHeight = 30; 
-            const headerHeight = 40; 
-            const scrollbarHeight = 17; 
-            const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
-            const newHeight = Math.max(calculatedHeight, 80);
 
-            const currentHeight = parseInt(expandedRow.style.height || '200');
-            const heightDiff = newHeight - currentHeight;
-            
-            if (heightDiff !== 0) {
-                expandedRow.style.height = `${newHeight}px`;
-                // Adjust rows below with the height difference
-                const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
-                shiftRowsBelow(sourceRow.parentNode, rowIndex, heightDiff);
-            }
-        }, 50);
-        content.innerHTML = '';
-        
-        const nestedContainer = document.createElement('div');
-        nestedContainer.className = 'nested-table-container';
-        
-        // Calculate dynamic height based on row count (max 5 rows)
-        const rowCount = resultSets[0].length;
-        const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
-        const headerHeight = 40; // Approx header height
-        const scrollbarHeight = 17; // Approx scrollbar height
-        const maxVisibleRows = 5;
-        const calculatedHeight = Math.min((Math.min(rowCount, maxVisibleRows) * rowHeight) + headerHeight + scrollbarHeight, 400);
-
-        debugger
-        nestedContainer.style.cssText = `
-            background: var(--vscode-editor-background);
-            border-radius: 4px;
-            overflow: auto;
-            max-height: 400px;
-            height: ${calculatedHeight}px;
-            min-height: 80px;
-            border: 1px solid var(--vscode-panel-border);
-        `;
-        
-        // Calculate width for nested table container based on parent viewport
-        const parentViewport = sourceRow.closest('.ag-grid-viewport');
-        const availableWidth = parentViewport ? parentViewport.clientWidth : 1024;
-        nestedContainer.style.width = `${availableWidth}px`;
-        nestedContainer.style.boxSizing = 'border-box';
-        
-        content.appendChild(nestedContainer);
-        console.log('[EXPANSION] Rendering cached nested table with', resultSets[0].length, 'rows, width:', availableWidth);
-        initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
-        console.log('[EXPANSION] Cached nested table rendered');
-    } else {
-        content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
-        
-        // Resize for empty state
-        const newHeight = 60;
-        const currentHeight = parseInt(expandedRow.style.height || '200');
-        const heightDiff = newHeight - currentHeight;
-        
-        if (heightDiff !== 0) {
-            expandedRow.style.height = `${newHeight}px`;
-            // Adjust rows below with the height difference
-            const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
-            shiftRowsBelow(sourceRow.parentNode, rowIndex, heightDiff);
-        }
-    }
-    
-    expandedRows.set(expandKey, { element: expandedRow, relation: relation, expansionId: expansionId });
-}
 
 /**
  * Handle chevron click for FK expansion
