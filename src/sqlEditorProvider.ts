@@ -1204,8 +1204,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             }
             this.outputChannel.appendLine(`[SqlEditorProvider] Executing relation expansion: ${query}`);
             
-            // Execute query using queryExecutor
-            const result = await this.queryExecutor.executeQuery(query, poolToUse);
+            // Execute query using queryExecutor (skip history for relation expansions)
+            const result = await this.queryExecutor.executeQuery(query, poolToUse, undefined, true);
             
             const executionTime = Date.now() - startTime;
             

@@ -53,7 +53,8 @@ export class QueryExecutor {
     // Accept an optional `connectionPool` to execute the query against. When not
     // provided, fall back to the provider's active connection.
     // originalQuery is used for metadata extraction when queryText includes SET statements
-    async executeQuery(queryText: string, connectionPool?: DBPool, originalQuery?: string): Promise<QueryResult> {
+    // skipHistory - when true, query will not be added to query history (e.g., for relation expansions)
+    async executeQuery(queryText: string, connectionPool?: DBPool, originalQuery?: string, skipHistory?: boolean): Promise<QueryResult> {
         // If a specific pool was provided, use it. Otherwise use the provider's active connection.
         const connection = connectionPool || this.connectionProvider.getConnection();
         if (!connection) {
@@ -122,8 +123,8 @@ export class QueryExecutor {
                     this.outputChannel.appendLine(`Query completed successfully`);
                 }
 
-                // Add to query history
-                if (this.historyManager) {
+                // Add to query history (unless skipHistory is true)
+                if (this.historyManager && !skipHistory) {
                     const activeConnectionInfo = this.connectionProvider.getActiveConnectionInfo();
                     console.log('[QueryExecutor] Adding query to history, activeConnection:', activeConnectionInfo?.name);
                     if (activeConnectionInfo) {
@@ -160,6 +161,8 @@ export class QueryExecutor {
                     } else {
                         console.log('[QueryExecutor] No active connection info, skipping history');
                     }
+                } else if (skipHistory) {
+                    console.log('[QueryExecutor] Skipping history (skipHistory=true)');
                 } else {
                     console.log('[QueryExecutor] History manager not available');
                 }
