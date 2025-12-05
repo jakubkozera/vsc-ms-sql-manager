@@ -763,6 +763,35 @@ function handleChevronClick(event, col, value, row, rowIndex, tableId, container
         expandedElement.remove();
         expandedRows.delete(expandKey);
     } else {
+        // Close any other expanded rows from the same row (different columns)
+        const keysToClose = [];
+        expandedRows.forEach((expanded, key) => {
+            // Check if key starts with same tableId-rowIndex but different column
+            if (key.startsWith(`${tableId}-${rowIndex}-`) && key !== expandKey) {
+                keysToClose.push(key);
+            }
+        });
+        
+        keysToClose.forEach(key => {
+            const expanded = expandedRows.get(key);
+            const expandedElement = expanded.element;
+            const expandedHeight = parseInt(expandedElement.style.height || '200');
+            const sourceRowIndex = parseInt(expandedElement.dataset.sourceRowIndex || '0');
+            
+            // Remove expanded class from chevron
+            const columnNameFromKey = key.split('-').slice(2).join('-');
+            const chevronToClose = row.querySelector(`[data-column="${columnNameFromKey}"] .chevron-icon`);
+            if (chevronToClose) {
+                chevronToClose.classList.remove('expanded');
+            }
+            
+            // Shift rows back up before removing
+            shiftRowsBelow(expandedElement.parentNode, sourceRowIndex, -expandedHeight);
+            
+            expandedElement.remove();
+            expandedRows.delete(key);
+        });
+        
         chevron.classList.add('expanded');
         
         const colMetadata = metadata?.columns?.find(c => c.name === columnName);
