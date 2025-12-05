@@ -1,0 +1,462 @@
+// FK expansion state
+let expandedRows = new Map(); // Track expanded rows by unique key: ${tableId}-${rowIndex}-${columnName}
+let expandedResultsCache = new Map(); // Cache expanded results by: ${schema}.${table}.${column}=${value}
+let expansionIdCounter = 0; // Generate unique expansion IDs
+
+// ===== FK/PK EXPANSION FUNCTIONS =====
+
+/**
+ * Handle FK relation expansion results from extension
+ */
+function handleRelationResults(message) {
+    const { expansionId, resultSets, metadata, executionTime, error } = message;
+    
+    if (error) {
+        console.error('[EXPANSION] Error:', error);
+        const expandedRow = document.querySelector(`[data-expansion-id="${expansionId}"]`);
+        if (expandedRow) {
+            const content = expandedRow.querySelector('.expanded-content');
+            if (content) {
+                content.innerHTML = `<div style="color: var(--vscode-errorForeground); padding: 20px; text-align: center;">Error: ${error}</div>`;
+            }
+        }
+        return;
+    }
+    
+    const cacheKey = `expansion-${expansionId}`;
+    expandedResultsCache.set(cacheKey, { resultSets, metadata, executionTime });
+    
+    const expandedRow = document.querySelector(`[data-expansion-id="${expansionId}"]`);
+    if (expandedRow) {
+        const content = expandedRow.querySelector('.expanded-content');
+        if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
+            content.innerHTML = '';
+            
+            const nestedContainer = document.createElement('div');
+            nestedContainer.className = 'nested-table-container';
+            
+            // Calculate dynamic height based on row count
+            const rowCount = resultSets[0].length;
+            const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
+            const headerHeight = 40; // Approx header height
+            const scrollbarHeight = 10; // Approx scrollbar height
+            const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+            
+            nestedContainer.style.cssText = `
+                background: var(--vscode-editor-background);
+                border-radius: 4px;
+                overflow: auto;
+                max-height: 400px;
+                height: ${calculatedHeight}px;
+                min-height: 80px;
+                border: 1px solid var(--vscode-panel-border);
+                width: 100%;
+                box-sizing: border-box;
+            `;
+            
+            content.appendChild(nestedContainer);
+            console.log('[EXPANSION] Rendering nested table with', resultSets[0].length, 'rows');
+            initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
+            console.log('[EXPANSION] Nested table rendered, container height:', nestedContainer.offsetHeight);
+
+            // Update height after content is rendered
+            setTimeout(() => {
+                // Use the calculated height for the row, respecting min-height of container
+                const newHeight = Math.max(calculatedHeight, 80);
+                const currentHeight = parseInt(expandedRow.style.height || '200');
+                const heightDiff = newHeight - currentHeight;
+                
+                if (heightDiff !== 0) {
+                    expandedRow.style.height = `${newHeight}px`;
+                    // Adjust rows below with the height difference
+                    const rowIndex = parseInt(expandedRow.dataset.sourceRowIndex || '0');
+                    shiftRowsBelow(expandedRow.parentNode, rowIndex, heightDiff);
+                }
+            }, 50);
+        } else {
+            content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
+        }
+    }
+}
+
+/**
+ * Show quick pick modal for FK relation selection
+ */
+function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata) {
+    const existing = document.querySelector('.fk-quick-pick-overlay');
+    if (existing) existing.remove();
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'fk-quick-pick-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    `;
+    
+    const quickPick = document.createElement('div');
+    quickPick.className = 'fk-quick-pick';
+    quickPick.style.cssText = `
+        background: var(--vscode-quickInput-background);
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 4px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        min-width: 500px;
+        max-width: 600px;
+        max-height: 400px;
+        display: flex;
+        flex-direction: column;
+    `;
+    
+    const header = document.createElement('div');
+    header.style.cssText = `
+        padding: 12px 16px;
+        background: var(--vscode-quickInputTitle-background);
+        border-bottom: 1px solid var(--vscode-panel-border);
+        font-weight: 600;
+        color: var(--vscode-foreground);
+    `;
+    header.textContent = 'Select related table';
+    quickPick.appendChild(header);
+    
+    const sortedRelations = [...relations].sort((a, b) => {
+        if (a.isComposite && !b.isComposite) return 1;
+        if (!a.isComposite && b.isComposite) return -1;
+        return 0;
+    });
+    
+    const list = document.createElement('div');
+    list.style.cssText = `overflow-y: auto; max-height: 350px;`;
+    
+    sortedRelations.forEach(rel => {
+        const item = document.createElement('div');
+        item.className = 'fk-quick-pick-item';
+        item.style.cssText = `
+            padding: 10px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            transition: background 0.1s;
+        `;
+        
+        const label = document.createElement('div');
+        label.textContent = `${rel.table} (${rel.schema})${rel.isComposite ? ' - Composite Key' : ''}`;
+        label.style.fontWeight = '500';
+        item.appendChild(label);
+        
+        const query = document.createElement('div');
+        query.textContent = `SELECT * FROM [${rel.schema}].[${rel.table}] WHERE [${rel.column}] = '${keyValue}'`;
+        query.style.cssText = `
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85em;
+            color: var(--vscode-descriptionForeground);
+            margin-top: 4px;
+        `;
+        item.appendChild(query);
+        
+        item.addEventListener('mouseenter', () => item.style.background = 'var(--vscode-list-hoverBackground)');
+        item.addEventListener('mouseleave', () => item.style.background = '');
+        item.addEventListener('click', () => {
+            overlay.remove();
+            executeRelationExpansion(rel, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata);
+        });
+        
+        list.appendChild(item);
+    });
+    
+    quickPick.appendChild(list);
+    overlay.appendChild(quickPick);
+    
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+            const chevron = sourceRow.querySelector(`[data-column="${columnName}"] .chevron-icon`);
+            if (chevron) chevron.classList.remove('expanded');
+        }
+    });
+    
+    document.body.appendChild(overlay);
+}
+
+/**
+ * Execute FK relation expansion query
+ */
+function executeRelationExpansion(relation, keyValue, sourceRow, columnName, tableId, rowIndex, containerEl, metadata) {
+    const expandKey = `${tableId}-${rowIndex}-${columnName}`;
+    const cacheKey = `${relation.schema}.${relation.table}.${relation.column}=${keyValue}`;
+    const cached = expandedResultsCache.get(cacheKey);
+    
+    if (cached) {
+        console.log('[EXPANSION] Using cached data for', cacheKey);
+        renderExpandedRow(cached.resultSets, cached.metadata, sourceRow, expandKey, relation, containerEl, metadata);
+        return;
+    }
+    
+    const expansionId = `exp_${Date.now()}_${expansionIdCounter++}`;
+    const expandedRow = insertExpandedRow(sourceRow, expandKey, expansionId, containerEl);
+    
+    // Build full connectionId with database context for server connections
+    // Access global variables from sqlEditor.js
+    const currentConnectionId = window.currentConnectionId;
+    const currentDatabaseName = window.currentDatabaseName;
+    
+    let fullConnectionId = currentConnectionId;
+    if (currentConnectionId && currentDatabaseName) {
+        // Check if connectionId already includes database
+        if (!currentConnectionId.includes('::')) {
+            fullConnectionId = `${currentConnectionId}::${currentDatabaseName}`;
+        }
+    }
+    
+    const request = {
+        type: 'expandRelation',
+        keyValue: keyValue,
+        schema: relation.schema,
+        table: relation.table,
+        column: relation.column,
+        expansionId: expansionId,
+        connectionId: fullConnectionId
+    };
+    console.log('[EXPANSION] Sending request:', request);
+    window.vscode.postMessage(request);
+    
+    expandedRows.set(expandKey, {
+        element: expandedRow,
+        relation: relation,
+        expansionId: expansionId,
+        cacheKey: cacheKey
+    });
+}
+
+/**
+ * Shift rows below expanded row down by height
+ */
+function shiftRowsBelow(tbody, sourceRowIndex, shiftAmount) {
+    // Add small padding to prevent visual overlap
+    const paddedShift = shiftAmount + 5;
+    
+    // Shift regular data rows
+    const allRows = tbody.querySelectorAll('tr[data-row-index]');
+    allRows.forEach(row => {
+        const rowIdx = parseInt(row.dataset.rowIndex || '0');
+        if (rowIdx > sourceRowIndex) {
+            const currentTop = parseInt(row.style.top || '0');
+            row.style.top = `${currentTop + paddedShift}px`;
+        }
+    });
+    
+    // Also shift any expanded rows that are below the source
+    const expandedRows = tbody.querySelectorAll('.expanded-row-content');
+    expandedRows.forEach(expandedRow => {
+        const expandedSourceIndex = parseInt(expandedRow.dataset.sourceRowIndex || '0');
+        if (expandedSourceIndex > sourceRowIndex) {
+            const currentTop = parseInt(expandedRow.style.top || '0');
+            expandedRow.style.top = `${currentTop + paddedShift}px`;
+        }
+    });
+}
+
+/**
+ * Insert expanded row with loader
+ */
+function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
+    // Remove any existing expanded row for this key
+    const existing = document.querySelector(`[data-expand-key="${expandKey}"]`);
+    if (existing) {
+        existing.remove();
+    }
+    
+    // Calculate source row position
+    const sourceTop = parseInt(sourceRow.style.top || '0');
+    const sourceHeight = parseInt(sourceRow.style.height || '30');
+    const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
+    
+    // Create expanded row as a normal TR that will push rows below
+    const expandedRow = document.createElement('tr');
+    expandedRow.className = 'expanded-row-content';
+    expandedRow.dataset.expandKey = expandKey;
+    expandedRow.dataset.expansionId = expansionId;
+    expandedRow.dataset.sourceRowIndex = rowIndex;
+    
+    // Initial height
+    const initialHeight = 200;
+    
+    // Get viewport width from parent
+    const viewport = sourceRow.closest('.ag-grid-viewport');
+    const availableWidth = viewport ? viewport.clientWidth : 1024;
+    
+    // Position it right after the source row with width on TR
+    expandedRow.style.cssText = `
+        position: absolute;
+        top: ${sourceTop + sourceHeight}px;
+        left: 0;
+        right: 0;
+        height: ${initialHeight}px;
+        width: ${availableWidth}px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+        background: var(--vscode-editor-background);
+        box-sizing: border-box;
+    `;
+    
+    // Single cell with full width content
+    const cell = document.createElement('td');
+    cell.setAttribute('colspan', '100');
+    cell.style.cssText = `
+        padding: 0;
+        box-sizing: border-box;
+    `;
+    
+    const content = document.createElement('div');
+    content.className = 'expanded-content';
+    
+    const loader = document.createElement('div');
+    loader.className = 'loader-container';
+    loader.innerHTML = '<div class="loader"></div>';
+    content.appendChild(loader);
+    cell.appendChild(content);
+    expandedRow.appendChild(cell);
+    
+    // Insert into tbody after source row
+    sourceRow.parentNode.appendChild(expandedRow);
+    
+    // Shift all rows below this one down by the expanded row height
+    shiftRowsBelow(sourceRow.parentNode, rowIndex, initialHeight);
+    
+    return expandedRow;
+}
+
+/**
+ * Render expanded row with cached data
+ */
+function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation, containerEl, parentMetadata) {
+    const expansionId = `cached_${Date.now()}_${expansionIdCounter++}`;
+    const expandedRow = insertExpandedRow(sourceRow, expandKey, expansionId, containerEl);
+    
+    const content = expandedRow.querySelector('.expanded-content');
+    if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
+        // Update height after content is rendered
+        setTimeout(() => {
+            // Use the calculated height for the row, respecting min-height of container
+            // We need to recalculate here or pass it, but recalculating is safer as we have resultSets
+            const rowCount = resultSets[0].length;
+            const rowHeight = 30; 
+            const headerHeight = 40; 
+            const scrollbarHeight = 15; 
+            const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+            const newHeight = Math.max(calculatedHeight, 80);
+
+            const currentHeight = parseInt(expandedRow.style.height || '200');
+            const heightDiff = newHeight - currentHeight;
+            
+            if (heightDiff !== 0) {
+                expandedRow.style.height = `${newHeight}px`;
+                // Adjust rows below with the height difference
+                const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
+                shiftRowsBelow(sourceRow.parentNode, rowIndex, heightDiff);
+            }
+        }, 50);
+        content.innerHTML = '';
+        
+        const nestedContainer = document.createElement('div');
+        nestedContainer.className = 'nested-table-container';
+        
+        // Calculate dynamic height based on row count
+        const rowCount = resultSets[0].length;
+        const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
+        const headerHeight = 40; // Approx header height
+        const scrollbarHeight = 15; // Approx scrollbar height
+        const calculatedHeight = Math.min((rowCount * rowHeight) + headerHeight + scrollbarHeight, 400);
+
+        nestedContainer.style.cssText = `
+            background: var(--vscode-editor-background);
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 400px;
+            height: ${calculatedHeight}px;
+            min-height: 80px;
+            border: 1px solid var(--vscode-panel-border);
+        `;
+        
+        // Calculate width for nested table container based on parent viewport
+        const parentViewport = sourceRow.closest('.ag-grid-viewport');
+        const availableWidth = parentViewport ? parentViewport.clientWidth : 1024;
+        nestedContainer.style.width = `${availableWidth}px`;
+        nestedContainer.style.boxSizing = 'border-box';
+        
+        content.appendChild(nestedContainer);
+        console.log('[EXPANSION] Rendering cached nested table with', resultSets[0].length, 'rows, width:', availableWidth);
+        initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
+        console.log('[EXPANSION] Cached nested table rendered');
+    } else {
+        content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
+    }
+    
+    expandedRows.set(expandKey, { element: expandedRow, relation: relation, expansionId: expansionId });
+}
+
+/**
+ * Handle chevron click for FK expansion
+ */
+function handleChevronClick(event, col, value, row, rowIndex, tableId, containerEl, metadata) {
+    event.stopPropagation();
+    event.preventDefault();
+    
+    const chevron = event.currentTarget;
+    const columnName = col.field;
+    const expandKey = `${tableId}-${rowIndex}-${columnName}`;
+    
+    if (expandedRows.has(expandKey)) {
+        const expanded = expandedRows.get(expandKey);
+        const expandedElement = expanded.element;
+        const expandedHeight = parseInt(expandedElement.style.height || '200');
+        const sourceRowIndex = parseInt(expandedElement.dataset.sourceRowIndex || '0');
+        
+        chevron.classList.remove('expanded');
+        
+        // Shift rows back up before removing
+        shiftRowsBelow(expandedElement.parentNode, sourceRowIndex, -expandedHeight);
+        
+        expandedElement.remove();
+        expandedRows.delete(expandKey);
+    } else {
+        chevron.classList.add('expanded');
+        
+        const colMetadata = metadata?.columns?.find(c => c.name === columnName);
+        console.log('[EXPANSION] Column metadata:', colMetadata);
+        console.log('[EXPANSION] FK references:', colMetadata?.foreignKeyReferences);
+        
+        if (colMetadata && colMetadata.foreignKeyReferences && colMetadata.foreignKeyReferences.length > 0) {
+            if (colMetadata.foreignKeyReferences.length === 1) {
+                console.log('[EXPANSION] Single FK, expanding directly:', colMetadata.foreignKeyReferences[0]);
+                executeRelationExpansion(
+                    colMetadata.foreignKeyReferences[0],
+                    value,
+                    row,
+                    columnName,
+                    tableId,
+                    rowIndex,
+                    containerEl,
+                    metadata
+                );
+            } else {
+                console.log('[EXPANSION] Multiple FKs, showing quick pick');
+                showQuickPick(
+                    colMetadata.foreignKeyReferences,
+                    value,
+                    row,
+                    columnName,
+                    tableId,
+                    rowIndex,
+                    containerEl,
+                    metadata
+                );
+            }
+        }
+    }
+}

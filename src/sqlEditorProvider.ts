@@ -562,12 +562,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         const htmlPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.html');
         const stylePath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.css');
         const scriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.js');
+        const relationExpansionScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'relationExpansion.js');
 
         // Convert to webview URIs for proper loading
         // Add cache buster to force reload
         const cacheBuster = Date.now();
         const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
         const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
+        const relationExpansionScriptUri = webview.asWebviewUri(relationExpansionScriptPath).toString() + `?v=${cacheBuster}`;
 
         // Read base HTML template
         let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
@@ -576,6 +578,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         html = html
             .replace(/{{styleUri}}/g, styleUri)
             .replace(/{{scriptUri}}/g, scriptUri)
+            .replace(/{{relationExpansionScriptUri}}/g, relationExpansionScriptUri)
             .replace(/{{monacoLoaderUri}}/g, monacoLoaderUri)
             .replace(/{{cspSource}}/g, webview.cspSource);
 
