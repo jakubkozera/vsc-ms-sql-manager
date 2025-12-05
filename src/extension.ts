@@ -195,7 +195,21 @@ async function initializeExtension(context: vscode.ExtensionContext) {
         
         // Create chat participant with proper ID from package.json
         const chatParticipant = vscode.chat.createChatParticipant('ms-sql-manager.sql', sqlChatHandler.handleChatRequest.bind(sqlChatHandler));
-        chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'resources', 'database-dark.svg');
+        
+        // Set icon based on theme
+        const updateChatIcon = () => {
+            const theme = vscode.window.activeColorTheme.kind;
+            const iconFile = theme === vscode.ColorThemeKind.Light || theme === vscode.ColorThemeKind.HighContrastLight
+                ? 'database-light.svg'
+                : 'database-dark.svg';
+            chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'resources', iconFile);
+        };
+        updateChatIcon();
+        
+        // Update icon when theme changes
+        context.subscriptions.push(
+            vscode.window.onDidChangeActiveColorTheme(() => updateChatIcon())
+        );
         
         // Set up follow-up provider
         chatParticipant.followupProvider = {
