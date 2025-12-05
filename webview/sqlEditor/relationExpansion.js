@@ -138,6 +138,129 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
     header.textContent = 'Select related table';
     quickPick.appendChild(header);
     
+    // Add filter input
+    const filterContainer = document.createElement('div');
+    filterContainer.style.cssText = `
+        padding: 8px 16px;
+        background: var(--vscode-quickInput-background);
+        border-bottom: 1px solid var(--vscode-panel-border);
+        position: relative;
+        display: flex;
+        align-items: center;
+    `;
+    
+    const filterInput = document.createElement('input');
+    filterInput.type = 'text';
+    filterInput.placeholder = 'Type to filter tables...';
+    filterInput.style.cssText = `
+        width: 100%;
+        padding: 6px 30px 6px 8px;
+        background: var(--vscode-input-background);
+        color: var(--vscode-input-foreground);
+        border: 1px solid var(--vscode-input-border);
+        border-radius: 2px;
+        outline: none;
+        box-sizing: border-box;
+    `;
+
+    const searchIcon = document.createElement('div');
+    searchIcon.innerHTML = `
+        <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        >
+        <path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" />
+        <path d="M21 21l-6 -6" />
+        </svg>
+    `;
+    searchIcon.style.cssText = `
+        position: absolute;
+        right: 24px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--vscode-input-foreground);
+        opacity: 0.7;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+    `;
+    
+    filterInput.addEventListener('focus', () => {
+        filterInput.style.borderColor = 'var(--vscode-focusBorder)';
+    });
+    
+    filterInput.addEventListener('blur', () => {
+        filterInput.style.borderColor = 'var(--vscode-input-border)';
+    });
+
+    let selectedIndex = -1;
+
+    function updateSelection() {
+        const visibleItems = Array.from(list.querySelectorAll('.fk-quick-pick-item')).filter(item => item.style.display !== 'none');
+        visibleItems.forEach((item, index) => {
+            if (index === selectedIndex) {
+                item.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                item.style.color = 'var(--vscode-list-activeSelectionForeground)';
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.style.background = '';
+                item.style.color = '';
+            }
+        });
+    }
+    
+    filterInput.addEventListener('input', (e) => {
+        const filterText = e.target.value.toLowerCase();
+        const items = list.querySelectorAll('.fk-quick-pick-item');
+        let visibleCount = 0;
+        
+        items.forEach(item => {
+            const label = item.querySelector('div:first-child').textContent.toLowerCase();
+            if (label.includes(filterText)) {
+                item.style.display = 'block';
+                visibleCount++;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+
+        selectedIndex = visibleCount === 1 ? 0 : -1;
+        updateSelection();
+    });
+
+    filterInput.addEventListener('keydown', (e) => {
+        const visibleItems = Array.from(list.querySelectorAll('.fk-quick-pick-item')).filter(item => item.style.display !== 'none');
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, visibleItems.length - 1);
+            if (selectedIndex === -1 && visibleItems.length > 0) selectedIndex = 0;
+            updateSelection();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+            updateSelection();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (visibleItems.length === 1) {
+                visibleItems[0].click();
+            } else if (selectedIndex >= 0 && selectedIndex < visibleItems.length) {
+                visibleItems[selectedIndex].click();
+            }
+        }
+    });
+    
+    filterContainer.appendChild(filterInput);
+    filterContainer.appendChild(searchIcon);
+    quickPick.appendChild(filterContainer);
+    
     const sortedRelations = [...relations].sort((a, b) => {
         if (a.isComposite && !b.isComposite) return 1;
         if (!a.isComposite && b.isComposite) return -1;
@@ -194,6 +317,9 @@ function showQuickPick(relations, keyValue, sourceRow, columnName, tableId, rowI
     });
     
     document.body.appendChild(overlay);
+    
+    // Focus the filter input
+    setTimeout(() => filterInput.focus(), 50);
 }
 
 /**
