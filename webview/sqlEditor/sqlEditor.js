@@ -3879,6 +3879,23 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             return;
         }
         
+        // PRESERVE EXPANDED ROWS: Detach expanded row elements before clearing (don't use innerHTML to preserve them)
+        const expandedRowElements = Array.from(tbody.querySelectorAll('.expanded-row-content'));
+        const savedExpandedRows = expandedRowElements.map(el => {
+            // Detach from DOM but keep the element
+            const parent = el.parentNode;
+            if (parent) {
+                parent.removeChild(el);
+            }
+            return {
+                element: el, // Keep the actual DOM element
+                sourceRowIndex: parseInt(el.dataset.sourceRowIndex || '0'),
+                expansionId: el.dataset.expansionId,
+                expandKey: el.dataset.expandKey
+            };
+        });
+        console.log('[AG-GRID] Preserving', savedExpandedRows.length, 'expanded rows before clearing');
+        
         // Clear existing rows
         tbody.innerHTML = '';
         
@@ -4369,6 +4386,36 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         }
         
         console.log('[AG-GRID] Rendered', endRow - startRow, 'rows successfully (from', startRow, 'to', endRow, ')');
+        
+        // RESTORE EXPANDED ROWS: Re-attach saved expanded row DOM elements back into tbody
+        // They will be positioned absolutely based on their sourceRowIndex, so they don't need to be in the visible range
+        if (savedExpandedRows.length > 0) {
+            console.log('[AG-GRID] Restoring', savedExpandedRows.length, 'expanded rows');
+            savedExpandedRows.forEach(saved => {
+                // Re-attach the actual DOM element (not a copy)
+                tbody.appendChild(saved.element);
+                
+                // Update the reference in expandedRows map using expandKey
+                if (saved.expandKey && typeof expandedRows !== 'undefined') {
+                    const existingEntry = expandedRows.get(saved.expandKey);
+                    if (existingEntry) {
+                        existingEntry.element = saved.element;
+                        console.log('[AG-GRID] Updated expandedRows map reference for key:', saved.expandKey);
+                    } else {
+                        console.warn('[AG-GRID] No existing entry in expandedRows map for key:', saved.expandKey);
+                    }
+                }
+                
+                console.log('[AG-GRID] Restored expanded row for source index:', saved.sourceRowIndex, 'expandKey:', saved.expandKey);
+                
+                // IMPORTANT: Re-apply row shifting to push rows below down by the expanded row's height
+                if (typeof shiftRowsBelow !== 'undefined') {
+                    const expandedHeight = parseInt(saved.element.style.height || '60');
+                    shiftRowsBelow(tbody, saved.sourceRowIndex, expandedHeight);
+                    console.log('[AG-GRID] Re-applied row shifting for expanded row at index:', saved.sourceRowIndex, 'height:', expandedHeight);
+                }
+            });
+        }
         
         // Reapply selection if this is the selected table
         if (globalSelection.tableContainer === containerEl) {
