@@ -75,6 +75,18 @@ function handleRelationResults(message) {
             }, 50);
         } else {
             content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
+            
+            // Resize for empty state
+            const newHeight = 60;
+            const currentHeight = parseInt(expandedRow.style.height || '200');
+            const heightDiff = newHeight - currentHeight;
+            
+            if (heightDiff !== 0) {
+                expandedRow.style.height = `${newHeight}px`;
+                // Adjust rows below with the height difference
+                const rowIndex = parseInt(expandedRow.dataset.sourceRowIndex || '0');
+                shiftRowsBelow(expandedRow.parentNode, rowIndex, heightDiff);
+            }
         }
     }
 }
@@ -239,7 +251,7 @@ function executeRelationExpansion(relation, keyValue, sourceRow, columnName, tab
  */
 function shiftRowsBelow(tbody, sourceRowIndex, shiftAmount) {
     // Add small padding to prevent visual overlap
-    const paddedShift = shiftAmount + 5;
+    const paddedShift = shiftAmount;
     
     // Shift regular data rows
     const allRows = tbody.querySelectorAll('tr[data-row-index]');
@@ -395,6 +407,18 @@ function renderExpandedRow(resultSets, metadata, sourceRow, expandKey, relation,
         console.log('[EXPANSION] Cached nested table rendered');
     } else {
         content.innerHTML = `<div style="color: var(--vscode-descriptionForeground); font-style: italic; padding: 20px; text-align: center;">No related data found</div>`;
+        
+        // Resize for empty state
+        const newHeight = 60;
+        const currentHeight = parseInt(expandedRow.style.height || '200');
+        const heightDiff = newHeight - currentHeight;
+        
+        if (heightDiff !== 0) {
+            expandedRow.style.height = `${newHeight}px`;
+            // Adjust rows below with the height difference
+            const rowIndex = parseInt(sourceRow.dataset.rowIndex || '0');
+            shiftRowsBelow(sourceRow.parentNode, rowIndex, heightDiff);
+        }
     }
     
     expandedRows.set(expandKey, { element: expandedRow, relation: relation, expansionId: expansionId });
