@@ -605,7 +605,7 @@ function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
     expandedRow.dataset.sourceRowIndex = rowIndex;
     
     // Initial height
-    const initialHeight = 200;
+    const initialHeight = 60;
     
     // Get viewport width from parent
     const viewport = sourceRow.closest('.ag-grid-viewport');
@@ -637,7 +637,13 @@ function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
     
     const loader = document.createElement('div');
     loader.className = 'loader-container';
-    loader.innerHTML = '<div class="loader"></div>';
+    loader.style.cssText = `
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100%;
+    `;
+    loader.innerHTML = '<div class="loading-spinner"></div>';
     content.appendChild(loader);
     cell.appendChild(content);
     expandedRow.appendChild(cell);
