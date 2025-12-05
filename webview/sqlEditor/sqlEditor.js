@@ -3289,7 +3289,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     const viewportClass = isSingleResultSet ? 'ag-grid-viewport full-height' : 'ag-grid-viewport';
     const tableHtml = `
         <div class="${viewportClass}" style="overflow: auto; position: relative; height: 100%; width: 100%;">
-            <table class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; width: 100%;">
+            <table id="${tableId}" class="ag-grid-table" style="border-collapse: collapse; table-layout: auto; width: 100%;">
                 <thead class="ag-grid-thead"></thead>
                 <tbody class="ag-grid-tbody" style="position: relative;"></tbody>
             </table>
@@ -4188,7 +4188,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                             </svg>
                         `;
                         
-                        const tableId = `table_${resultSetIndex}`;
                         chevron.addEventListener('click', (e) => {
                             handleChevronClick(e, col, value, tr, rowIndex, tableId, containerEl, metadata);
                         });
@@ -4855,7 +4854,7 @@ function createContextMenu(cellData) {
 }
 
 // Create context menu HTML for row number cells
-function createRowContextMenu(metadata, resultSetIndex) {
+function createRowContextMenu(metadata, resultSetIndex, rowIndex, tableId) {
     const menu = document.createElement('div');
     menu.className = 'context-menu';
     menu.style.display = 'none';
@@ -4890,6 +4889,23 @@ function createRowContextMenu(metadata, resultSetIndex) {
             <div class="context-menu-separator"></div>
             <div class="context-menu-item context-menu-item-delete" data-action="delete-row">${deleteLabel}</div>
         `;
+    }
+
+    // Check expansion state
+    if (typeof getRowExpansionState === 'function' && rowIndex !== undefined && tableId) {
+        const state = getRowExpansionState(tableId, rowIndex);
+        
+        if (state.hasExpanded) {
+            menuHtml += `
+                <div class="context-menu-separator"></div>
+                <div class="context-menu-item" data-action="collapse-row">Collapse Row</div>
+            `;
+        } else if (state.hasCollapsed) {
+            menuHtml += `
+                <div class="context-menu-separator"></div>
+                <div class="context-menu-item" data-action="expand-row">Expand Row</div>
+            `;
+        }
     }
     
     menu.innerHTML = menuHtml;
@@ -5036,7 +5052,7 @@ function showRowContextMenu(e, cellData) {
         rowContextMenu.remove();
     }
     
-    rowContextMenu = createRowContextMenu(cellData.metadata, cellData.resultSetIndex);
+    rowContextMenu = createRowContextMenu(cellData.metadata, cellData.resultSetIndex, cellData.rowIndex, cellData.table.id);
     contextMenuData = cellData;
     
     // Position menu at cursor
@@ -5101,6 +5117,18 @@ function handleContextMenuAction(action) {
     let textToCopy = '';
     
     switch (action) {
+        case 'collapse-row':
+            if (typeof collapseRowRelations === 'function') {
+                collapseRowRelations(table.id, rowIndex);
+            }
+            return;
+            
+        case 'expand-row':
+            if (typeof expandRowRelations === 'function') {
+                expandRowRelations(table.id, rowIndex);
+            }
+            return;
+
         case 'copy-cell':
             if (globalSelection && globalSelection.selections && globalSelection.selections.length > 1 && globalSelection.type === 'cell') {
                 // Copy all selected cells (tab-separated on same row, newline for different rows)
