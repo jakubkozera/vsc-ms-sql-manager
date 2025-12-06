@@ -1223,12 +1223,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             // Convert to QueryResult format
             const resultSets = result.recordsets || [];
             const metadata = result.metadata || [];
+            const columnNames = result.columnNames || [];
             
             webview.postMessage({
                 type: 'relationResults',
                 expansionId: expansionId,
                 resultSets: resultSets,
                 metadata: metadata,
+                columnNames: columnNames,
                 executionTime: executionTime,
                 query: query
             });

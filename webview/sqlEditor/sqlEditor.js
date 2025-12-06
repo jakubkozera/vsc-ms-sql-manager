@@ -5,6 +5,7 @@ let editor;
 let isUpdatingFromExtension = false;
 let currentTab = 'results';
 let lastResults = null;
+let lastColumnNames = null;
 let lastMessages = [];
 let isResizing = false;
 let activeConnections = [];
@@ -2985,6 +2986,7 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml,
     stopLoadingTimer();
     
     lastResults = resultSets;
+    lastColumnNames = columnNames;
     lastMessages = messages || [];
     
     executeButton.disabled = false;
@@ -3721,6 +3723,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             globalSelection.tableContainer = containerEl;
             globalSelection.data = filteredData;
             globalSelection.columnDefs = colDefs;
+            globalSelection.resultSetIndex = resultSetIndex;
         } else if (ctrlPressed && sameTable && sameType) {
             // Ctrl: toggle individual selection
             const existingIndex = globalSelection.selections.findIndex(s => s.columnIndex === colIndex);
@@ -3793,7 +3796,9 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                     columnDef: colDefs[colIndex],
                     data: filteredData,
                     columnDefs: colDefs,
-                    lastClickedIndex: colIndex
+                    lastClickedIndex: colIndex,
+                    resultSetIndex: resultSetIndex,
+                    metadata: metadata
                 };
                 
                 // Apply highlighting
@@ -4058,6 +4063,8 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                     globalSelection.tableContainer = containerEl;
                     globalSelection.data = data;
                     globalSelection.columnDefs = colDefs;
+                    globalSelection.resultSetIndex = resultSetIndex;
+                    globalSelection.metadata = metadata;
                 } else if (ctrlPressed && sameTable && sameType) {
                     // Ctrl: toggle individual selection
                     const existingIndex = globalSelection.selections.findIndex(s => s.rowIndex === rowIndex);
@@ -4128,7 +4135,9 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                             selections: rowSelections,
                             data: data,
                             columnDefs: colDefs,
-                            lastClickedIndex: rowIndex
+                            lastClickedIndex: rowIndex,
+                            resultSetIndex: resultSetIndex,
+                            metadata: metadata
                         };
                         
                         // Apply highlighting
@@ -4336,6 +4345,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                         globalSelection.tableContainer = containerEl;
                         globalSelection.data = data;
                         globalSelection.columnDefs = colDefs;
+                        globalSelection.resultSetIndex = resultSetIndex;
                     } else if (ctrlPressed && sameTable && sameType) {
                         // Ctrl: toggle individual cell
                         const existingIndex = globalSelection.selections.findIndex(
@@ -4411,7 +4421,8 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                                 columnDef: colDefs[colIndex],
                                 data: data,
                                 columnDefs: colDefs,
-                                lastClickedIndex: { rowIndex, colIndex }
+                                lastClickedIndex: { rowIndex, colIndex },
+                                resultSetIndex: resultSetIndex
                             };
                             
                             // Apply highlighting
@@ -5144,7 +5155,9 @@ function showRowContextMenu(e, cellData) {
             selections: [{ rowIndex }],
             data: data,
             columnDefs: columnDefs,
-            lastClickedIndex: rowIndex
+            lastClickedIndex: rowIndex,
+            resultSetIndex: cellData.resultSetIndex,
+            metadata: cellData.metadata
         };
         
         // Apply highlighting
@@ -6575,6 +6588,7 @@ function updateAggregationStats() {
     const selections = globalSelection.selections;
     const columnDefs = globalSelection.columnDefs;
     const data = globalSelection.data;
+    const resultSetIndex = globalSelection.resultSetIndex !== undefined ? globalSelection.resultSetIndex : 0;
     
     // Collect values and analyze data types
     const valuesByColumn = new Map(); // Map<columnIndex, {values: [], sqlType: string}>
@@ -6598,9 +6612,29 @@ function updateAggregationStats() {
                 
                 // Try to get SQL type from metadata
                 let sqlType = 'unknown';
-                if (resultSetMetadata && resultSetMetadata.length > 0) {
-                    const metadata = resultSetMetadata[0]; // Assuming first result set
-                    const colMetadata = metadata.columns.find(c => c.name === colDef.field);
+                
+                // Get metadata from globalSelection (for nested tables) or global store
+                let metadata = globalSelection.metadata;
+                if (!metadata && resultSetMetadata && resultSetIndex >= 0 && resultSetIndex < resultSetMetadata.length) {
+                    metadata = resultSetMetadata[resultSetIndex];
+                }
+
+                if (metadata) {
+                    let colMetadata = null;
+
+                    // Check if field is an index (numeric string) - Array Mode
+                    if (/^\d+$/.test(colDef.field)) {
+                        const index = parseInt(colDef.field, 10);
+                        if (metadata.columns && index < metadata.columns.length) {
+                            colMetadata = metadata.columns[index];
+                        }
+                    } 
+                    
+                    // Fallback to name lookup if not found by index (or if field is not an index) - Object Mode
+                    if (!colMetadata && metadata.columns) {
+                         colMetadata = metadata.columns.find(c => c.name === colDef.field);
+                    }
+
                     if (colMetadata) {
                         sqlType = colMetadata.type;
                     }
@@ -7944,7 +7978,8 @@ function refreshResultSetTable(resultSetIndex) {
     
     // Re-initialize the table with updated data
     const metadata = resultSetMetadata[resultSetIndex];
-    initAgGridTable(lastResults[resultSetIndex], tableContainer, isSingleResultSet, resultSetIndex, metadata);
+    const columns = lastColumnNames ? lastColumnNames[resultSetIndex] : null;
+    initAgGridTable(lastResults[resultSetIndex], tableContainer, isSingleResultSet, resultSetIndex, metadata, columns);
 }
 
 /**

@@ -8,7 +8,7 @@ let expansionIdCounter = 0; // Generate unique expansion IDs
  * Handle FK relation expansion results from extension
  */
 function handleRelationResults(message) {
-    const { expansionId, resultSets, metadata, executionTime, error } = message;
+    const { expansionId, resultSets, metadata, columnNames, executionTime, error } = message;
     
     if (error) {
         console.error('[EXPANSION] Error:', error);
@@ -53,7 +53,7 @@ function handleRelationResults(message) {
             
             content.appendChild(nestedContainer);
             console.log('[EXPANSION] Rendering nested table with', resultSets[0].length, 'rows');
-            initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata[0]);
+            initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata ? metadata[0] : null, columnNames ? columnNames[0] : null);
             console.log('[EXPANSION] Nested table rendered, container height:', nestedContainer.offsetHeight);
 
             // Update height after content is rendered
