@@ -4509,6 +4509,18 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     }
 
     function handleSort(col, colDefs, sortCfg, filters, containerEl) {
+        // Clear any expanded rows before sorting
+        const tbody = containerEl.querySelector('.ag-grid-tbody');
+        if (tbody) {
+            const expandedRows = tbody.querySelectorAll('.expanded-row-content');
+            expandedRows.forEach(row => row.remove());
+        }
+        
+        // Clear expansion state
+        if (typeof clearAllExpandedRows === 'function') {
+            clearAllExpandedRows();
+        }
+
         if (sortCfg.field === col.field) {
             if (sortCfg.direction === 'asc') {
                 sortCfg.direction = 'desc';
@@ -4613,6 +4625,18 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         popup.querySelector('#agFilterClear').onclick = () => {
             delete filters[col.field];
             
+            // Clear any expanded rows before clearing filter
+            const tbody = containerEl.querySelector('.ag-grid-tbody');
+            if (tbody) {
+                const expandedRows = tbody.querySelectorAll('.expanded-row-content');
+                expandedRows.forEach(row => row.remove());
+            }
+            
+            // Clear expansion state
+            if (typeof clearAllExpandedRows === 'function') {
+                clearAllExpandedRows();
+            }
+
             currentStartRow = 0; // Reset to top after clearing filter
             const viewport = containerEl.querySelector('.ag-grid-viewport');
             if (viewport) viewport.scrollTop = 0;
@@ -4633,6 +4657,18 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             });
             filters[col.field] = { values };
             
+            // Clear any expanded rows before applying filter
+            const tbody = containerEl.querySelector('.ag-grid-tbody');
+            if (tbody) {
+                const expandedRows = tbody.querySelectorAll('.expanded-row-content');
+                expandedRows.forEach(row => row.remove());
+            }
+            
+            // Clear expansion state
+            if (typeof clearAllExpandedRows === 'function') {
+                clearAllExpandedRows();
+            }
+
             currentStartRow = 0; // Reset to top after filter
             const viewport = containerEl.querySelector('.ag-grid-viewport');
             if (viewport) viewport.scrollTop = 0;
@@ -5595,11 +5631,21 @@ function copySelectionToClipboard() {
 
 // Global helper functions for selection management across all tables
 function clearAllSelections() {
-    // Find all result tables
-    const allTables = document.querySelectorAll('.result-set-table .ag-grid-table');
+    // Find all result tables, including nested ones
+    // .result-set-table .ag-grid-table finds main tables
+    // .nested-table-container .ag-grid-table finds nested tables
+    // We want to clear ALL tables.
+    const allTables = document.querySelectorAll('.ag-grid-table');
     
     allTables.forEach(table => {
         // Clear column highlights
+        // Use direct children selectors to avoid clearing nested tables if they are not part of the selection
+        // But actually, we want to clear EVERYTHING, so querySelectorAll is fine here as it goes deep.
+        // However, if we want to be precise, we can iterate.
+        // The issue reported was about SELECTION, not clearing.
+        // But let's make sure we don't accidentally clear styles we shouldn't.
+        // For clearing, it's safer to clear everything to be sure.
+        
         const allCells = table.querySelectorAll('th, td');
         allCells.forEach(cell => {
             if (!cell.classList.contains('ag-grid-row-number-cell') && 
@@ -5610,6 +5656,15 @@ function clearAllSelections() {
         });
         
         // Clear row selections
+        // Use direct children to avoid clearing nested tables' rows if we are iterating main tables
+        // But wait, allTables includes nested tables too because they have .ag-grid-table class?
+        // Let's check how allTables is selected: document.querySelectorAll('.result-set-table .ag-grid-table');
+        // Nested tables are in .nested-table-container .ag-grid-table.
+        // .result-set-table is the container for the main table.
+        // So allTables might NOT include nested tables if they are not direct descendants of .result-set-table or if the selector is specific.
+        // Actually, nested tables are inside .result-set-table (deeply).
+        // So allTables includes nested tables.
+        
         const allRows = table.querySelectorAll('tbody tr');
         allRows.forEach(row => {
             row.classList.remove('selected');
@@ -5648,10 +5703,32 @@ function applyColumnHighlightGlobal(containerEl, colIndex) {
     if (!table) return;
     
     // Highlight the selected column (colIndex + 2 because row number is column 1)
-    const columnCells = table.querySelectorAll(`th:nth-child(${colIndex + 2}), td:nth-child(${colIndex + 2})`);
-    columnCells.forEach(cell => {
-        cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
-    });
+    // Use direct children selectors to avoid selecting cells in nested tables
+    // Note: :scope is not supported in all contexts in querySelectorAll in some browsers/environments, 
+    // but in VS Code webview (Chromium) it should be fine.
+    // Alternatively, we can iterate rows and select children.
+    
+    // Using :scope > ...
+    try {
+        const columnCells = table.querySelectorAll(`:scope > thead > tr > th:nth-child(${colIndex + 2}), :scope > tbody > tr > td:nth-child(${colIndex + 2})`);
+        columnCells.forEach(cell => {
+            cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+        });
+    } catch (e) {
+        // Fallback if :scope is not supported (unlikely in VS Code)
+        const rows = table.querySelectorAll('tr');
+        rows.forEach(row => {
+            // Check if row is direct child of thead or tbody of THIS table
+            if (row.parentElement.parentElement === table) {
+                const cell = row.children[colIndex + 1]; // +1 because row number is 0-th index in children collection? No, row number is 1st child.
+                // nth-child is 1-based. children array is 0-based.
+                // colIndex + 2 in nth-child means index + 1 in children array.
+                if (cell) {
+                    cell.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground, #094771)';
+                }
+            }
+        });
+    }
 }
 
 // Select all columns when clicking on row number header "#"

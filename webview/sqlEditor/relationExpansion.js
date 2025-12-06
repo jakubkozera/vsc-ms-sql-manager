@@ -2,6 +2,14 @@
 let expandedRows = new Map(); // Track expanded rows by unique key: ${tableId}-${rowIndex}-${columnName}
 let expansionIdCounter = 0; // Generate unique expansion IDs
 
+/**
+ * Clear all expanded rows state
+ */
+function clearAllExpandedRows() {
+    console.log('[EXPANSION] Clearing all expanded rows state');
+    expandedRows.clear();
+}
+
 // ===== FK/PK EXPANSION FUNCTIONS =====
 
 /**
