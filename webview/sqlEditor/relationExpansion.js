@@ -654,7 +654,7 @@ function insertExpandedRow(sourceRow, expandKey, expansionId, containerEl) {
 /**
  * Handle chevron click for FK expansion
  */
-function handleChevronClick(event, col, value, row, rowIndex, tableId, containerEl, metadata) {
+function handleChevronClick(event, col, value, row, rowIndex, tableId, containerEl, metadata, colIndex) {
     event.stopPropagation();
     event.preventDefault();
     
@@ -707,7 +707,14 @@ function handleChevronClick(event, col, value, row, rowIndex, tableId, container
         
         chevron.classList.add('expanded');
         
-        const colMetadata = metadata?.columns?.find(c => c.name === columnName);
+        // Use colIndex if available, otherwise fallback to name lookup (for backward compatibility)
+        let colMetadata;
+        if (typeof colIndex !== 'undefined' && metadata?.columns) {
+            colMetadata = metadata.columns[colIndex];
+        } else {
+            colMetadata = metadata?.columns?.find(c => c.name === columnName);
+        }
+        
         console.log('[EXPANSION] Column metadata:', colMetadata);
         console.log('[EXPANSION] FK references:', colMetadata?.foreignKeyReferences);
         

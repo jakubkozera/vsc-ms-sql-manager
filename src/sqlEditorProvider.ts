@@ -1051,18 +1051,28 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             // Check if we have an execution plan in the result
             let planXml = null;
             let resultSets = result.recordsets || [];
+            let resultColumnNames = result.columnNames || [];
             
             if (includeActualPlan && result.recordsets) {
                 console.log('[SQL Editor] Checking for execution plan in', result.recordsets.length, 'result sets');
                 // Look for the XML plan in the result sets
                 for (let i = 0; i < result.recordsets.length; i++) {
                     const rs = result.recordsets[i];
-                    console.log('[SQL Editor] Result set', i, 'columns:', rs.length > 0 ? Object.keys(rs[0]) : 'empty');
-                    if (rs.length > 0 && rs[0]['Microsoft SQL Server 2005 XML Showplan']) {
-                        planXml = rs[0]['Microsoft SQL Server 2005 XML Showplan'];
-                        console.log('[SQL Editor] Found execution plan XML, length:', planXml.length);
-                        // Remove plan result set from results AND metadata
+                    const cols = resultColumnNames[i] || [];
+                    
+                    // Check if this result set has the plan column
+                    // The plan column name is usually 'Microsoft SQL Server 2005 XML Showplan'
+                    const planColIndex = cols.indexOf('Microsoft SQL Server 2005 XML Showplan');
+                    
+                    if (rs.length > 0 && planColIndex !== -1) {
+                        // rs[0] is an array of values
+                        planXml = rs[0][planColIndex];
+                        console.log('[SQL Editor] Found execution plan XML, length:', planXml ? planXml.length : 0);
+                        
+                        // Remove plan result set from results AND metadata AND columnNames
                         resultSets = result.recordsets.filter((_, index) => index !== i);
+                        resultColumnNames = resultColumnNames.filter((_, index) => index !== i);
+                        
                         // Also filter metadata to match the resultSets indices
                         if (result.metadata && result.metadata.length > i) {
                             result.metadata = result.metadata.filter((_, index) => index !== i);
@@ -1119,6 +1129,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             webview.postMessage({
                 type: 'results',
                 resultSets: resultSets,
+                columnNames: resultColumnNames,
                 executionTime: executionTime,
                 rowsAffected: result.rowsAffected?.[0] || 0,
                 messages: messages,

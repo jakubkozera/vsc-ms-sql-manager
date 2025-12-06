@@ -39,6 +39,7 @@ export interface QueryResult {
     executionTime: number;
     query: string;
     metadata?: ResultSetMetadata[]; // Metadata for each result set
+    columnNames?: string[][]; // Column names for each result set
 }
 
 export class QueryExecutor {
@@ -75,6 +76,11 @@ export class QueryExecutor {
                 const request = connection.request();
                 this.currentRequest = request;
                 
+                // Enable array row mode to handle duplicate column names
+                if (request.setArrayRowMode) {
+                    request.setArrayRowMode(true);
+                }
+                
                 // Execute query as a single batch to handle multiple SELECT statements
                 progress.report({ message: 'Running query...' });
                 
@@ -83,29 +89,75 @@ export class QueryExecutor {
                 const result = await request.query(queryText);
 
                 // Support both mssql.Result and our msnodesqlv8 normalized object
-                const allRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
+                const rawRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
                 const totalRowsAffected: number[] = result.rowsAffected || result.rowsAffected || (Array.isArray(result.rowsAffected) ? result.rowsAffected : (result.rowsAffected ? [result.rowsAffected] : []));
 
-                this.outputChannel.appendLine(`Query completed. Result sets: ${allRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
+                // Extract column names and normalize recordsets to array of arrays
+                const resultColumnNames: string[][] = [];
+                const normalizedRecordsets: any[][] = [];
+
+                for (const rs of rawRecordsets) {
+                    let columns: string[] = [];
+                    let rows: any[] = [];
+
+                    // Try to get columns from metadata
+                    if ((rs as any).columns) {
+                        if (Array.isArray((rs as any).columns)) {
+                            columns = (rs as any).columns.map((c: any) => c.name);
+                        } else {
+                            // Object map (mssql object mode)
+                            // Note: keys might be unique-ified by mssql if duplicates exist in object mode
+                            columns = Object.keys((rs as any).columns);
+                        }
+                    }
+
+                    if (rs.length > 0) {
+                        // Check if rows are arrays (arrayRowMode) or objects
+                        if (Array.isArray(rs[0])) {
+                            // Array row mode
+                            rows = rs;
+                            // If columns weren't found in metadata (unlikely for mssql), we can't infer them easily from array
+                        } else {
+                            // Object mode (fallback)
+                            if (columns.length === 0) {
+                                columns = Object.keys(rs[0]);
+                            }
+                            rows = rs.map((r: any) => {
+                                // Map object values to array based on columns order if possible, or just values
+                                // If we have columns from metadata, use them to map
+                                if (columns.length > 0) {
+                                    return columns.map(col => r[col]);
+                                }
+                                return Object.values(r);
+                            });
+                        }
+                    }
+                    
+                    resultColumnNames.push(columns);
+                    normalizedRecordsets.push(rows);
+                }
+
+                this.outputChannel.appendLine(`Query completed. Result sets: ${normalizedRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
 
                 this.currentRequest = null;
                 const executionTime = Date.now() - startTime;
                 this.outputChannel.appendLine(`Total execution time: ${executionTime}ms`);
 
                 const queryResult: QueryResult = {
-                    recordsets: allRecordsets,
+                    recordsets: normalizedRecordsets,
                     rowsAffected: totalRowsAffected,
                     executionTime,
-                    query: queryText
+                    query: queryText,
+                    columnNames: resultColumnNames
                 };
 
                 // Extract metadata for SELECT queries to enable editing
                 // Use originalQuery if provided (when queryText has SET statements)
                 const queryForMetadata = originalQuery || queryText;
-                if (allRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
+                if (normalizedRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
                         this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
-                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection);
+                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, normalizedRecordsets, connection, resultColumnNames);
                         this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
                     } catch (error) {
                         this.outputChannel.appendLine(`[QueryExecutor] Failed to extract metadata: ${error}`);
@@ -114,9 +166,9 @@ export class QueryExecutor {
                 }
 
                 // Log results summary
-                if (allRecordsets.length > 0) {
-                    const totalRows = allRecordsets.reduce((sum, rs) => sum + rs.length, 0);
-                    this.outputChannel.appendLine(`Query returned ${allRecordsets.length} result set(s) with ${totalRows} total row(s)`);
+                if (normalizedRecordsets.length > 0) {
+                    const totalRows = normalizedRecordsets.reduce((sum, rs) => sum + rs.length, 0);
+                    this.outputChannel.appendLine(`Query returned ${normalizedRecordsets.length} result set(s) with ${totalRows} total row(s)`);
                 } else if (totalRowsAffected.length > 0) {
                     this.outputChannel.appendLine(`Query affected ${totalRowsAffected.reduce((a, b) => a + b, 0)} row(s)`);
                 } else {
@@ -129,7 +181,7 @@ export class QueryExecutor {
                     console.log('[QueryExecutor] Adding query to history, activeConnection:', activeConnectionInfo?.name);
                     if (activeConnectionInfo) {
                         // Calculate row counts for each result set
-                        const rowCounts = allRecordsets.map(recordset => recordset.length);
+                        const rowCounts = normalizedRecordsets.map(recordset => recordset.length);
                         
                         // Strip SET commands and execution summary comments from query for history
                         const cleanedQuery = this.cleanQueryForHistory(queryText);
@@ -153,7 +205,7 @@ export class QueryExecutor {
                             connectionName: activeConnectionInfo.name,
                             database: finalDatabase,
                             server: activeConnectionInfo.server,
-                            resultSetCount: allRecordsets.length,
+                            resultSetCount: normalizedRecordsets.length,
                             rowCounts: rowCounts,
                             duration: executionTime
                         });
@@ -300,11 +352,14 @@ export class QueryExecutor {
      * Extract metadata for result sets to determine editability
      * This analyzes the query and result columns to detect source tables and primary keys
      */
-    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool): Promise<ResultSetMetadata[]> {
+    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool, columnNamesList?: string[][]): Promise<ResultSetMetadata[]> {
         const metadata: ResultSetMetadata[] = [];
 
-        for (const recordset of recordsets) {
-            if (!recordset || recordset.length === 0) {
+        for (let i = 0; i < recordsets.length; i++) {
+            const recordset = recordsets[i];
+            const providedColumnNames = columnNamesList ? columnNamesList[i] : undefined;
+
+            if (!recordset || (recordset.length === 0 && !providedColumnNames)) {
                 // Empty result set - not editable
                 metadata.push({
                     columns: [],
@@ -315,7 +370,13 @@ export class QueryExecutor {
                 continue;
             }
 
-            const columnNames = Object.keys(recordset[0]);
+            let columnNames: string[] = [];
+            if (providedColumnNames) {
+                columnNames = providedColumnNames;
+            } else if (recordset.length > 0 && !Array.isArray(recordset[0])) {
+                columnNames = Object.keys(recordset[0]);
+            }
+            
             const columns: ColumnMetadata[] = [];
             
             // Try to detect source tables from the query

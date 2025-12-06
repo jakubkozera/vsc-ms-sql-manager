@@ -2715,7 +2715,7 @@ window.addEventListener('message', event => {
             // Store metadata and original query for editable result sets
             resultSetMetadata = message.metadata || [];
             originalQuery = message.originalQuery || '';
-            showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages, message.planXml);
+            showResults(message.resultSets, message.executionTime, message.rowsAffected, message.messages, message.planXml, message.columnNames);
             break;
 
         case 'relationResults':
@@ -2976,7 +2976,7 @@ function stopLoadingTimer() {
     }
 }
 
-function showResults(resultSets, executionTime, rowsAffected, messages, planXml) {
+function showResults(resultSets, executionTime, rowsAffected, messages, planXml, columnNames) {
     const executeButton = document.getElementById('executeButton');
     const cancelButton = document.getElementById('cancelButton');
     const statusLabel = document.getElementById('statusLabel');
@@ -3022,7 +3022,7 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     }
 
     // Always update both containers
-    displayResults(resultSets, planXml);
+    displayResults(resultSets, planXml, columnNames);
     displayMessages(messages);
     
     // Determine which tab to show by default
@@ -3075,7 +3075,7 @@ function showResults(resultSets, executionTime, rowsAffected, messages, planXml)
     }
 }
 
-function displayResults(resultSets, planXml) {
+function displayResults(resultSets, planXml, columnNames) {
     console.log('[SQL EDITOR] displayResults called with', resultSets.length, 'result set(s)');
     console.log('[SQL EDITOR] planXml present:', !!planXml, 'length:', planXml ? planXml.length : 0);
     const resultsContent = document.getElementById('resultsContent');
@@ -3104,7 +3104,10 @@ function displayResults(resultSets, planXml) {
     // Create a table for each result set
     resultSets.forEach((results, index) => {
         if (!results || results.length === 0) {
-            return;
+            // Even if empty, we might want to show headers if we have columnNames
+            if (!columnNames || !columnNames[index] || columnNames[index].length === 0) {
+                return;
+            }
         }
 
         // Create container for this result set
@@ -3124,7 +3127,8 @@ function displayResults(resultSets, planXml) {
         // Initialize AG-Grid-like table for this result set
         console.log('[SQL EDITOR] Creating table for result set', index + 1, 'with', results.length, 'rows');
         const metadata = resultSetMetadata[index];
-        initAgGridTable(results, tableContainer, isSingleResultSet, index, metadata);
+        const columns = columnNames ? columnNames[index] : null;
+        initAgGridTable(results, tableContainer, isSingleResultSet, index, metadata, columns);
         
         resultSetContainer.appendChild(tableContainer);
         resultsContent.appendChild(resultSetContainer);
@@ -3162,7 +3166,7 @@ function displayResults(resultSets, planXml) {
 // Moved to relationExpansion.js
 // ===== END FK/PK EXPANSION FUNCTIONS =====
 
-function initAgGridTable(rowData, container, isSingleResultSet = false, resultSetIndex = 0, metadata = null) {
+function initAgGridTable(rowData, container, isSingleResultSet = false, resultSetIndex = 0, metadata = null, providedColumns = null) {
     console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows, single result set:', isSingleResultSet);
     console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
     console.log('[AG-GRID] Metadata:', metadata);
@@ -3258,11 +3262,26 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     }
 
     // Detect column types and create columnDefs
-    const columns = Object.keys(rowData[0]);
+    let columns = [];
+    if (providedColumns) {
+        columns = providedColumns;
+    } else if (rowData.length > 0 && !Array.isArray(rowData[0])) {
+        columns = Object.keys(rowData[0]);
+    } else {
+        columns = [];
+    }
     console.log('[AG-GRID] Detected columns:', columns);
     
-    const columnDefs = columns.map(col => {
-        const sampleValue = rowData[0][col];
+    const columnDefs = columns.map((col, colIndex) => {
+        let sampleValue = null;
+        if (rowData.length > 0) {
+            if (Array.isArray(rowData[0])) {
+                sampleValue = rowData[0][colIndex];
+            } else {
+                sampleValue = rowData[0][col];
+            }
+        }
+        
         let type = 'string';
         
         if (typeof sampleValue === 'number') {
@@ -3274,7 +3293,13 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         }
         
         // Extract column data for width calculation
-        const columnData = rowData.map(row => row[col]);
+        const columnData = rowData.map(row => {
+            if (Array.isArray(row)) {
+                return row[colIndex];
+            } else {
+                return row[col];
+            }
+        });
         const optimalWidth = calculateOptimalColumnWidth(col, columnData, type);
         
         // Check if this column is a primary key or foreign key
@@ -3283,13 +3308,19 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const isForeignKey = fkColumnMap.has(col);
         
         return {
-            field: col,
+            field: (rowData.length > 0 && Array.isArray(rowData[0])) ? String(colIndex) : col,
             headerName: col,
             type: type,
             width: optimalWidth,
             pinned: false,
             isPrimaryKey: isPrimaryKey,
-            isForeignKey: isForeignKey
+            isForeignKey: isForeignKey,
+            valueGetter: (params) => {
+                if (Array.isArray(params.data)) {
+                    return params.data[colIndex];
+                }
+                return params.data[col];
+            }
         };
     });
 
@@ -4196,7 +4227,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                 
                 // Add FK/PK expansion icon for columns with foreign key references
                 if (metadata && metadata.columns && (col.isPrimaryKey || col.isForeignKey)) {
-                    const colMetadata = metadata.columns.find(c => c.name === col.field);
+                    const colMetadata = metadata.columns[colIndex];
                     if (colMetadata && colMetadata.foreignKeyReferences && colMetadata.foreignKeyReferences.length > 0 && value !== null && value !== undefined) {
                         const originalContent = td.textContent;
                         td.textContent = '';
@@ -4239,7 +4270,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                         `;
                         
                         chevron.addEventListener('click', (e) => {
-                            handleChevronClick(e, col, value, tr, rowIndex, tableId, containerEl, metadata);
+                            handleChevronClick(e, col, value, tr, rowIndex, tableId, containerEl, metadata, colIndex);
                         });
                         
                         wrapper.appendChild(chevron);
@@ -7467,18 +7498,23 @@ function enterEditMode(tdElement, rowData, columnDef, rowIndex, columnIndex, dat
     }
 
     const columnName = columnDef.field;
-    const currentValue = rowData[columnName];
+    let currentValue;
+    if (Array.isArray(rowData)) {
+        currentValue = rowData[columnIndex];
+    } else {
+        currentValue = rowData[columnName];
+    }
     
     // Find column metadata
-    const colMetadata = metadata.columns.find(c => c.name === columnName);
+    const colMetadata = metadata.columns[columnIndex];
     if (!colMetadata) {
-        console.log('[EDIT] No metadata found for column', columnName);
+        console.log('[EDIT] No metadata found for column index', columnIndex);
         return;
     }
 
     // Don't allow editing identity columns or columns without source table
     if (colMetadata.isIdentity) {
-        console.warn('Cannot edit identity column:', columnName);
+        console.warn('Cannot edit identity column:', colMetadata.name);
         return;
     }
 
@@ -7646,17 +7682,27 @@ function exitEditMode(saveChanges) {
 
     if (saveChanges && normalizedNew !== normalizedOriginal) {
         // Value changed - record the change
-        recordChange(resultSetIndex, rowIndex, columnDef.field, originalValue, newValue, rowData, metadata);
+        recordChange(resultSetIndex, rowIndex, columnDef.field, originalValue, newValue, rowData, metadata, columnIndex);
         
         // Update the data
-        rowData[columnDef.field] = newValue;
+        if (Array.isArray(rowData)) {
+            rowData[columnIndex] = newValue;
+        } else {
+            rowData[columnDef.field] = newValue;
+        }
         
         // Mark cell as modified
         tdElement.classList.add('cell-modified');
     }
 
     // Restore cell display
-    const value = rowData[columnDef.field];
+    let value;
+    if (Array.isArray(rowData)) {
+        value = rowData[columnIndex];
+    } else {
+        value = rowData[columnDef.field];
+    }
+    
     if (value === null || value === undefined) {
         tdElement.textContent = 'NULL';
         tdElement.style.color = 'var(--vscode-descriptionForeground)';
@@ -7682,8 +7728,8 @@ function exitEditMode(saveChanges) {
 /**
  * Record a cell change in pending changes
  */
-function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, rowData, metadata) {
-    console.log('[EDIT] Recording change:', { resultSetIndex, rowIndex, columnName, oldValue, newValue });
+function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, rowData, metadata, columnIndex) {
+    console.log('[EDIT] Recording change:', { resultSetIndex, rowIndex, columnName, oldValue, newValue, columnIndex });
 
     // Get or create change list for this result set
     if (!pendingChanges.has(resultSetIndex)) {
@@ -7692,7 +7738,12 @@ function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, 
     const changes = pendingChanges.get(resultSetIndex);
 
     // Find column metadata first to know the source table
-    const colMetadata = metadata.columns.find(c => c.name === columnName);
+    let colMetadata;
+    if (typeof columnIndex !== 'undefined') {
+        colMetadata = metadata.columns[columnIndex];
+    } else {
+        colMetadata = metadata.columns.find(c => c.name === columnName);
+    }
     
     if (!colMetadata || !colMetadata.sourceTable) {
         console.error('[EDIT] Cannot record change - no source table for column:', columnName);
@@ -7701,17 +7752,31 @@ function recordChange(resultSetIndex, rowIndex, columnName, oldValue, newValue, 
 
     // Extract primary key values for WHERE clause - only for the source table of this column
     const primaryKeyValues = {};
-    metadata.primaryKeyColumns.forEach(pkCol => {
-        // Find the column metadata for this primary key
-        const pkColMetadata = metadata.columns.find(c => c.name === pkCol);
-        
-        // Only include primary keys that belong to the same table as the edited column
-        if (pkColMetadata && 
-            pkColMetadata.sourceTable === colMetadata.sourceTable && 
-            pkColMetadata.sourceSchema === colMetadata.sourceSchema) {
-            primaryKeyValues[pkCol] = rowData[pkCol];
-        }
-    });
+    
+    // If rowData is array, we need to find indices of PK columns
+    if (Array.isArray(rowData)) {
+        metadata.columns.forEach((col, idx) => {
+            // Check if this column is a PK for the same table as the edited column
+            if (col.isPrimaryKey && 
+                col.sourceTable === colMetadata.sourceTable && 
+                col.sourceSchema === colMetadata.sourceSchema) {
+                primaryKeyValues[col.name] = rowData[idx];
+            }
+        });
+    } else {
+        // Object mode (legacy)
+        metadata.primaryKeyColumns.forEach(pkCol => {
+            // Find the column metadata for this primary key
+            const pkColMetadata = metadata.columns.find(c => c.name === pkCol);
+            
+            // Only include primary keys that belong to the same table as the edited column
+            if (pkColMetadata && 
+                pkColMetadata.sourceTable === colMetadata.sourceTable && 
+                pkColMetadata.sourceSchema === colMetadata.sourceSchema) {
+                primaryKeyValues[pkCol] = rowData[pkCol];
+            }
+        });
+    }
 
     // Check if we already have a change for this cell
     const existingChangeIndex = changes.findIndex(

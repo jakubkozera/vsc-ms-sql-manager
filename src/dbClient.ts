@@ -9,6 +9,7 @@ export interface DBRequest {
     execute?(proc: string, params?: any): Promise<any>;
     // mssql.Request has `input` for parameters; optional here for msnodesqlv8 wrapper
     input?: (name: string, value: any) => void;
+    setArrayRowMode?(enabled: boolean): void;
 }
 
 export interface DBPool {
@@ -181,6 +182,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         request() {
             const request = poolInstance.request();
             return {
+                setArrayRowMode(enabled: boolean) {
+                    (request as any).arrayRowMode = enabled;
+                },
                 query(sqlText: string) {
                     return request.query(sqlText);
                 },
