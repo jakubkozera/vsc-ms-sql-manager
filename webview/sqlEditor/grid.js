@@ -2317,6 +2317,31 @@ function updateQuickSaveButton() {
     if (totalChanges > 0) {
         quickSaveButton.style.display = 'inline-flex';
         
+        // Add positioning handler
+        quickSaveButton.onmouseenter = () => {
+            if (!tooltip) return;
+            
+            const rect = quickSaveButton.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            
+            // Position above the button
+            let top = rect.top - tooltipRect.height - 10;
+            let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+            
+            // Prevent going off-screen
+            if (left < 10) left = 10;
+            if (left + tooltipRect.width > window.innerWidth - 10) {
+                left = window.innerWidth - tooltipRect.width - 10;
+            }
+            if (top < 10) {
+                // If not enough space above, show below
+                top = rect.bottom + 10;
+            }
+            
+            tooltip.style.top = `${top}px`;
+            tooltip.style.left = `${left}px`;
+        };
+
         if (tooltip) {
             // Generate preview text
             if (totalChanges <= 5) {
