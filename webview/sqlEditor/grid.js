@@ -850,7 +850,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                 const isDeleted = changes.some(c => c.type === 'DELETE' && c.rowIndex === rowIndex);
                 if (isDeleted) {
                     tr.classList.add('row-marked-for-deletion');
-                    tr.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
+                    // tr.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
                 }
             }
 
@@ -1037,6 +1037,10 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                 td.style.display = 'table-cell';
                 td.style.verticalAlign = 'middle';
                 
+                if (tr.classList.contains('row-marked-for-deletion')) {
+                    td.style.textDecoration = 'line-through';
+                }
+                
                 if (col.pinned) {
                     const leftOffset = calculatePinnedOffset(colDefs, colIndex);
                     td.style.left = leftOffset + 'px';
@@ -1116,6 +1120,12 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                             white-space: nowrap;
                             flex: 1;
                         `;
+                        
+                        // Apply strikethrough if row is deleted
+                        if (tr.classList.contains('row-marked-for-deletion')) {
+                            valueSpan.style.textDecoration = 'line-through';
+                        }
+                        
                         wrapper.appendChild(valueSpan);
                         
                         const chevron = document.createElement('span');
@@ -1828,11 +1838,15 @@ function markRowForDeletion(table, rowIndex) {
     
     if (row) {
         row.classList.add('row-marked-for-deletion');
-        row.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
-        
         // Also mark all cells in the row
         row.querySelectorAll('td').forEach(cell => {
-            cell.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
+            cell.style.textDecoration = 'line-through';
+            
+            // Also handle nested spans in PK/FK columns
+            const valueSpan = cell.querySelector('span > span:first-child');
+            if (valueSpan) {
+                valueSpan.style.textDecoration = 'line-through';
+            }
         });
     }
 }
@@ -1853,6 +1867,13 @@ function unmarkRowForDeletion(table, rowIndex) {
         // Unmark cells
         row.querySelectorAll('td').forEach(cell => {
             cell.style.backgroundColor = '';
+            cell.style.textDecoration = '';
+            
+            // Also handle nested spans in PK/FK columns
+            const valueSpan = cell.querySelector('span > span:first-child');
+            if (valueSpan) {
+                valueSpan.style.textDecoration = '';
+            }
         });
     }
 }
