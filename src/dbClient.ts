@@ -82,21 +82,29 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                             const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
                             const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
                             
+                            const recordsets: any[][] = [];
+                            
+                            const queryCallback = (err: any, rows: any, more: boolean) => {
+                                if (err) { return reject(err); }
+                                
+                                // Normalize result to match mssql result shape
+                                const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                recordsets.push(recs);
+                                
+                                if (!more) {
+                                    resolve({ 
+                                        recordset: recordsets[0], 
+                                        recordsets: recordsets, 
+                                        rowsAffected: recordsets.map(r => r.length) 
+                                    });
+                                }
+                            };
+
                             if (timeoutMs > 0) {
-                                msnv8.query(connectionString, sqlText, queryOptions, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    // Normalize result to match mssql result shape
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, sqlText, queryOptions, queryCallback);
                             } else {
                                 // No timeout
-                                msnv8.query(connectionString, sqlText, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    // Normalize result to match mssql result shape
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, sqlText, queryCallback);
                             }
                         });
                     },
@@ -110,19 +118,28 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                             const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
                             const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
                             
+                            const recordsets: any[][] = [];
+                            
+                            const queryCallback = (err: any, rows: any, more: boolean) => {
+                                if (err) { return reject(err); }
+                                
+                                const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                recordsets.push(recs);
+                                
+                                if (!more) {
+                                    resolve({ 
+                                        recordset: recordsets[0], 
+                                        recordsets: recordsets, 
+                                        rowsAffected: recordsets.map(r => r.length) 
+                                    });
+                                }
+                            };
+
                             if (timeoutMs > 0) {
-                                msnv8.query(connectionString, execSql, queryOptions, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, execSql, queryOptions, queryCallback);
                             } else {
                                 // No timeout
-                                msnv8.query(connectionString, execSql, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, execSql, queryCallback);
                             }
                         });
                     },
