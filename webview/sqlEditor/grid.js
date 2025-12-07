@@ -843,14 +843,25 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                 width: 100%;
                 table-layout: fixed;
             `;
+
+            // Check for pending delete
+            if (typeof pendingChanges !== 'undefined' && pendingChanges.has(resultSetIndex)) {
+                const changes = pendingChanges.get(resultSetIndex);
+                const isDeleted = changes.some(c => c.type === 'DELETE' && c.rowIndex === rowIndex);
+                if (isDeleted) {
+                    tr.classList.add('row-marked-for-deletion');
+                    tr.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
+                }
+            }
+
             // Mouse hover handling
             tr.addEventListener('mouseenter', function() {
-                if (!this.classList.contains('selected')) {
+                if (!this.classList.contains('selected') && !this.classList.contains('row-marked-for-deletion')) {
                     this.style.backgroundColor = 'var(--vscode-list-hoverBackground, #2a2d2e)';
                 }
             });
             tr.addEventListener('mouseleave', function() {
-                if (!this.classList.contains('selected')) {
+                if (!this.classList.contains('selected') && !this.classList.contains('row-marked-for-deletion')) {
                     this.style.backgroundColor = '';
                 }
             });
@@ -1742,6 +1753,110 @@ function cancelEdit() {
     currentEditingCell = null;
 }
 
+/**
+ * Record a row deletion in pending changes
+ */
+function recordRowDeletion(resultSetIndex, rowIndex, rowData, metadata) {
+    console.log('[EDIT] Recording row deletion:', { resultSetIndex, rowIndex, rowData });
+
+    // Get or create change list for this result set
+    if (!pendingChanges.has(resultSetIndex)) {
+        pendingChanges.set(resultSetIndex, []);
+    }
+    const changes = pendingChanges.get(resultSetIndex);
+
+    // Extract primary key values for WHERE clause
+    const primaryKeyValues = {};
+    if (metadata && metadata.primaryKeyColumns) {
+        metadata.primaryKeyColumns.forEach(pkCol => {
+            const pkColMetadata = metadata.columns.find(c => c.name === pkCol);
+            if (pkColMetadata) {
+                // Check if rowData is array or object
+                if (Array.isArray(rowData)) {
+                    // Find index of this column
+                    const colIndex = metadata.columns.findIndex(c => c.name === pkCol);
+                    if (colIndex >= 0) {
+                        primaryKeyValues[pkCol] = rowData[colIndex];
+                    }
+                } else {
+                    primaryKeyValues[pkCol] = rowData[pkCol];
+                }
+            }
+        });
+    }
+
+    // Get table info from first column (all columns should be from same table in single-table query)
+    const firstCol = metadata.columns[0];
+    
+    const deleteRecord = {
+        type: 'DELETE',
+        rowIndex,
+        pk: primaryKeyValues,
+        sourceTable: firstCol.sourceTable,
+        sourceSchema: firstCol.sourceSchema,
+        rowData: Array.isArray(rowData) ? [...rowData] : { ...rowData } // Store copy of row data for display
+    };
+
+    // Check if this row already has a delete pending
+    const existingDeleteIndex = changes.findIndex(
+        c => c.type === 'DELETE' && c.rowIndex === rowIndex
+    );
+
+    if (existingDeleteIndex >= 0) {
+        console.log('[EDIT] Row already marked for deletion');
+        return;
+    }
+
+    // Add delete record
+    changes.push(deleteRecord);
+    console.log('[EDIT] Added row deletion to pending');
+
+    // Update pending changes tab badge
+    updatePendingChangesCount();
+    renderPendingChanges();
+}
+
+/**
+ * Mark a row visually as marked for deletion
+ */
+function markRowForDeletion(table, rowIndex) {
+    const tbody = table.querySelector('.ag-grid-tbody');
+    if (!tbody) return;
+    
+    // Find the row by dataset index, not just by position because of virtual scrolling
+    const row = Array.from(tbody.querySelectorAll('tr')).find(tr => parseInt(tr.dataset.rowIndex) === rowIndex);
+    
+    if (row) {
+        row.classList.add('row-marked-for-deletion');
+        row.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
+        
+        // Also mark all cells in the row
+        row.querySelectorAll('td').forEach(cell => {
+            cell.style.backgroundColor = 'rgba(244, 135, 113, 0.2)';
+        });
+    }
+}
+
+/**
+ * Remove visual deletion marking from a row
+ */
+function unmarkRowForDeletion(table, rowIndex) {
+    const tbody = table.querySelector('.ag-grid-tbody');
+    if (!tbody) return;
+    
+    const row = Array.from(tbody.querySelectorAll('tr')).find(tr => parseInt(tr.dataset.rowIndex) === rowIndex);
+    
+    if (row) {
+        row.classList.remove('row-marked-for-deletion');
+        row.style.backgroundColor = '';
+        
+        // Unmark cells
+        row.querySelectorAll('td').forEach(cell => {
+            cell.style.backgroundColor = '';
+        });
+    }
+}
+
 function updatePendingChangesCount() {
     let totalChanges = 0;
     pendingChanges.forEach(changes => {
@@ -1849,7 +1964,7 @@ function renderPendingChanges() {
             // We need to enhance the change object or look up metadata here.
             // Let's try to find the column metadata
             let colMetadata = null;
-            if (metadata && metadata.columns) {
+            if (columnName && metadata && metadata.columns) {
                 // Try exact match first, then case-insensitive
                 colMetadata = metadata.columns.find(c => c.name === columnName) || 
                               metadata.columns.find(c => c.name.toLowerCase() === columnName.toLowerCase());
@@ -1859,8 +1974,8 @@ function renderPendingChanges() {
             // Note: The extension sends metadata with tableName and schemaName if available
             
             // Fallback to result set metadata if column metadata doesn't have table info
-            let tableNameVal = colMetadata && colMetadata.tableName ? colMetadata.tableName : (metadata ? metadata.sourceTable : null);
-            let schemaNameVal = colMetadata && colMetadata.schemaName ? colMetadata.schemaName : (metadata ? metadata.sourceSchema : 'dbo');
+            let tableNameVal = (colMetadata && colMetadata.tableName) || change.sourceTable || (metadata ? metadata.sourceTable : null);
+            let schemaNameVal = (colMetadata && colMetadata.schemaName) || change.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
 
             // For display purposes:
             const tableName = schemaNameVal ? `${schemaNameVal}.${tableNameVal || 'Table'}` : (tableNameVal || 'Table');
@@ -2216,27 +2331,25 @@ function updateQuickSaveButton() {
                 pendingChanges.forEach((changes, resultSetIndex) => {
                     const metadata = resultSetMetadata[resultSetIndex];
                     changes.forEach(change => {
-                        if (change.type !== 'DELETE') {
-                             // Prepare change object for generateUpdateStatement
-                            let colMetadata = null;
-                            if (metadata && metadata.columns) {
-                                colMetadata = metadata.columns.find(c => c.name === change.column);
-                            }
-                            
-                            const changeForSql = {
-                                ...change,
-                                columnName: change.column,
-                                sourceColumn: change.column,
-                                sourceTable: colMetadata ? colMetadata.tableName : null,
-                                sourceSchema: colMetadata ? colMetadata.schemaName : null,
-                                primaryKeyValues: change.pk
-                            };
-                            
-                            try {
-                                updateStatements.push(generateUpdateStatement(changeForSql, metadata));
-                            } catch (e) {
-                                // Ignore errors for tooltip
-                            }
+                        // Prepare change object for generateUpdateStatement
+                        let colMetadata = null;
+                        if (change.type !== 'DELETE' && metadata && metadata.columns) {
+                            colMetadata = metadata.columns.find(c => c.name === change.column);
+                        }
+                        
+                        const changeForSql = {
+                            ...change,
+                            columnName: change.column,
+                            sourceColumn: change.column,
+                            sourceTable: (colMetadata ? colMetadata.tableName : null) || change.sourceTable,
+                            sourceSchema: (colMetadata ? colMetadata.schemaName : null) || change.sourceSchema,
+                            primaryKeyValues: change.pk
+                        };
+                        
+                        try {
+                            updateStatements.push(generateUpdateStatement(changeForSql, metadata));
+                        } catch (e) {
+                            // Ignore errors for tooltip
                         }
                     });
                 });
@@ -2280,8 +2393,8 @@ function previewUpdateStatements() {
                     ...change,
                     columnName: change.column,
                     sourceColumn: change.column,
-                    sourceTable: colMetadata ? colMetadata.tableName : null,
-                    sourceSchema: colMetadata ? colMetadata.schemaName : null,
+                    sourceTable: (colMetadata ? colMetadata.tableName : null) || change.sourceTable,
+                    sourceSchema: (colMetadata ? colMetadata.schemaName : null) || change.sourceSchema,
                     primaryKeyValues: change.pk
                 };
                 
@@ -2340,8 +2453,8 @@ function commitAllChanges() {
             }
             
             // Fallback to result set metadata if column metadata doesn't have table info
-            let tableNameVal = colMetadata && colMetadata.tableName ? colMetadata.tableName : (metadata ? metadata.sourceTable : null);
-            let schemaNameVal = colMetadata && colMetadata.schemaName ? colMetadata.schemaName : (metadata ? metadata.sourceSchema : 'dbo');
+            let tableNameVal = (colMetadata && colMetadata.tableName) || change.sourceTable || (metadata ? metadata.sourceTable : null);
+            let schemaNameVal = (colMetadata && colMetadata.schemaName) || change.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
 
             const changeForSql = {
                 ...change,
@@ -2717,6 +2830,7 @@ function handleContextMenuAction(action) {
     if (!contextMenuData) return;
     
     const { table, rowIndex, columnIndex, columnDefs, data } = contextMenuData;
+    const hasMultipleSelections = globalSelection && globalSelection.selections && globalSelection.selections.length > 1;
     let textToCopy = '';
     
     switch (action) {
