@@ -613,10 +613,11 @@ function provideSqlCompletions(model, position) {
         }
         
         // Determine if this is a user snippet or built-in
-        const isUserSnippet = sqlSnippets.some(userSnippet => userSnippet.prefix === snippet.prefix);
+        const isUserSnippet = sqlSnippets.includes(snippet) || sqlSnippets.some(userSnippet => userSnippet.prefix === snippet.prefix);
         const snippetType = isUserSnippet ? 'User' : 'Built-in';
         const iconPrefix = isUserSnippet ? '\uD83D\uDCDD' : '\u26A1';
-        const sortPrefix = isUserSnippet ? '00_user' : '01_builtin';
+        // Ensure user snippets (database generated) are always on top
+        const sortPrefix = isUserSnippet ? '00_user' : 'zz_builtin';
         
         suggestions.push({
             label: snippet.prefix,
