@@ -1644,7 +1644,8 @@ function enterEditMode(td, row, col, rowIndex, colIndex, data, colDefs, containe
         originalValue,
         resultSetIndex,
         metadata,
-        originalPadding
+        originalPadding,
+        containerEl
     };
 
     // Clear cell and add input
@@ -1681,10 +1682,110 @@ function enterEditMode(td, row, col, rowIndex, colIndex, data, colDefs, containe
     });
 }
 
+function restoreCellContent(td, value, col, metadata, colIndex, rowIndex, containerEl) {
+    // Clear content
+    td.innerHTML = '';
+    td.textContent = '';
+    
+    if (value === null || value === undefined) {
+        td.textContent = 'NULL';
+        td.classList.add('null-value');
+        return;
+    }
+    
+    td.classList.remove('null-value');
+    
+    if (col.type === 'boolean') {
+        td.textContent = value ? '✓' : '✗';
+        return;
+    }
+    
+    // Check for PK/FK expansion
+    if (metadata && metadata.columns && (col.isPrimaryKey || col.isForeignKey)) {
+        const colMetadata = metadata.columns[colIndex];
+        if (colMetadata && colMetadata.foreignKeyReferences && colMetadata.foreignKeyReferences.length > 0) {
+            td.style.position = 'relative';
+            td.dataset.column = col.field;
+            
+            const wrapper = document.createElement('span');
+            wrapper.style.cssText = `
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                width: 100%;
+            `;
+            
+            const valueSpan = document.createElement('span');
+            valueSpan.textContent = String(value);
+            valueSpan.style.cssText = `
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                flex: 1;
+            `;
+            
+            // Check if row is marked for deletion to apply strikethrough
+            const tr = td.parentElement;
+            if (tr && tr.classList.contains('row-marked-for-deletion')) {
+                valueSpan.style.textDecoration = 'line-through';
+            }
+            
+            wrapper.appendChild(valueSpan);
+            
+            const chevron = document.createElement('span');
+            chevron.className = 'chevron-icon';
+            chevron.dataset.column = col.field;
+            chevron.style.cssText = `
+                display: none;
+                opacity: 0;
+                transition: all 0.2s;
+                cursor: pointer;
+                color: var(--vscode-button-background);
+                flex-shrink: 0;
+            `;
+            chevron.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            `;
+            
+            // Get table ID
+            const table = containerEl.querySelector('.ag-grid-table');
+            const tableId = table ? table.id : '';
+            
+            chevron.addEventListener('click', (e) => {
+                if (typeof handleChevronClick === 'function') {
+                    handleChevronClick(e, col, value, tr, rowIndex, tableId, containerEl, metadata, colIndex);
+                }
+            });
+            
+            wrapper.appendChild(chevron);
+            td.appendChild(wrapper);
+            
+            // Add hover listeners
+            td.addEventListener('mouseenter', () => {
+                chevron.style.display = 'inline-flex';
+                chevron.style.opacity = '1';
+            });
+            td.addEventListener('mouseleave', () => {
+                if (!chevron.classList.contains('expanded')) {
+                    chevron.style.display = 'none';
+                    chevron.style.opacity = '0';
+                }
+            });
+            
+            return;
+        }
+    }
+    
+    // Default text content
+    td.textContent = String(value);
+}
+
 function commitEdit(newValue) {
     if (!currentEditingCell) return;
 
-    const { td, row, col, rowIndex, colIndex, originalValue, resultSetIndex, metadata, originalPadding } = currentEditingCell;
+    const { td, row, col, rowIndex, colIndex, originalValue, resultSetIndex, metadata, originalPadding, containerEl } = currentEditingCell;
     
     // Check if value changed
     let valueChanged = false;
@@ -1741,15 +1842,7 @@ function commitEdit(newValue) {
     td.style.padding = originalPadding || '0 8px';
     td.style.border = '';
     
-    if (col.type === 'boolean') {
-        td.textContent = newValue ? '✓' : '✗';
-    } else if (newValue === null) {
-        td.classList.add('null-value');
-        td.textContent = 'NULL';
-    } else {
-        td.textContent = newValue;
-        td.classList.remove('null-value');
-    }
+    restoreCellContent(td, newValue, col, metadata, colIndex, rowIndex, containerEl);
     
     currentEditingCell = null;
 }
@@ -1757,11 +1850,11 @@ function commitEdit(newValue) {
 function cancelEdit() {
     if (!currentEditingCell) return;
     
-    const { td, originalValue, originalPadding } = currentEditingCell;
+    const { td, originalValue, originalPadding, col, metadata, colIndex, rowIndex, containerEl } = currentEditingCell;
     td.style.padding = originalPadding || '0 8px';
     td.style.border = '';
-    td.textContent = originalValue === null ? 'NULL' : String(originalValue);
-    if (originalValue === null) td.classList.add('null-value');
+    
+    restoreCellContent(td, originalValue, col, metadata, colIndex, rowIndex, containerEl);
     
     currentEditingCell = null;
 }
