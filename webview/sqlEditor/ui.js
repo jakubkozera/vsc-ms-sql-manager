@@ -64,7 +64,10 @@ function showError(error, messages) {
     const resultsContent = document.getElementById('resultsContent');
     const messagesContent = document.getElementById('messagesContent');
     
-    if (resultsContent) resultsContent.style.display = 'none';
+    if (resultsContent) {
+        resultsContent.style.display = 'none';
+        resultsContent.innerHTML = ''; // Clear loading spinner
+    }
     if (messagesContent) messagesContent.style.display = 'block';
 
     displayMessages(lastMessages);
