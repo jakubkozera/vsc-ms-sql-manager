@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ConnectionProvider } from './connectionProvider';
 import { QueryExecutor, QueryResult } from './queryExecutor';
+import { QueryHistoryManager } from './queryHistory';
 import { ChatConnectionContext } from './sqlChatHandler';
 import type { SqlEditorProvider } from './sqlEditorProvider';
 
@@ -21,6 +22,7 @@ export class SqlExecutionService {
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel,
+        private historyManager: QueryHistoryManager,
         private sqlEditorProvider?: SqlEditorProvider
     ) {}
 
@@ -194,7 +196,7 @@ export class SqlExecutionService {
         }
 
         // Create QueryExecutor instance for this execution
-        const queryExecutor = new QueryExecutor(this.connectionProvider, this.outputChannel);
+        const queryExecutor = new QueryExecutor(this.connectionProvider, this.outputChannel, this.historyManager);
         
         return await queryExecutor.executeQuery(query, connection);
     }

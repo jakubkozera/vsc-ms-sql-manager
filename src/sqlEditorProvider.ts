@@ -102,7 +102,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'executeQuery':
-                    await this.executeQuery(message.query, message.connectionId, webviewPanel.webview, message.includeActualPlan);
+                    let execConnectionId = message.connectionId;
+                    if (message.databaseName && execConnectionId && !execConnectionId.includes('::')) {
+                        execConnectionId = `${execConnectionId}::${message.databaseName}`;
+                    }
+                    await this.executeQuery(message.query, execConnectionId, webviewPanel.webview, message.includeActualPlan);
                     break;
 
                 case 'expandRelation':
@@ -110,7 +114,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'executeEstimatedPlan':
-                    await this.executeEstimatedPlan(message.query, message.connectionId, webviewPanel.webview);
+                    let planConnectionId = message.connectionId;
+                    if (message.databaseName && planConnectionId && !planConnectionId.includes('::')) {
+                        planConnectionId = `${planConnectionId}::${message.databaseName}`;
+                    }
+                    await this.executeEstimatedPlan(message.query, planConnectionId, webviewPanel.webview);
                     break;
 
                 case 'cancelQuery':
@@ -179,7 +187,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'commitChanges':
-                    await this.commitChanges(message.statements, message.connectionId, message.originalQuery, webviewPanel.webview);
+                    // Use the connection ID from the message, or fall back to the one stored for this webview
+                    let commitConnectionId = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview);
+                    
+                    // If we have a database name in the message, ensure it's part of the connection ID
+                    if (message.databaseName && commitConnectionId && !commitConnectionId.includes('::')) {
+                        commitConnectionId = `${commitConnectionId}::${message.databaseName}`;
+                    }
+
+                    await this.commitChanges(message.statements, commitConnectionId, message.originalQuery, webviewPanel.webview);
                     break;
 
                 case 'confirmAction':

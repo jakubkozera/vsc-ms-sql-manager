@@ -56,7 +56,12 @@ suite('Core Functionality Test Suite', () => {
         } as any;
 
         connectionProvider = new ConnectionProvider(context, outputChannel);
-        queryExecutor = new QueryExecutor(connectionProvider, outputChannel);
+        const historyManager = {
+            addEntry: sandbox.stub(),
+            getEntries: sandbox.stub().returns([]),
+            clearHistory: sandbox.stub()
+        } as any;
+        queryExecutor = new QueryExecutor(connectionProvider, outputChannel, historyManager);
     });
 
     teardown(() => {

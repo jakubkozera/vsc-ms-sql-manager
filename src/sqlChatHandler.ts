@@ -3,6 +3,7 @@ import { ConnectionProvider, ConnectionConfig } from './connectionProvider';
 import { SchemaContextBuilder } from './schemaContextBuilder';
 import { SqlExecutionService } from './sqlExecutionService';
 import { DatabaseInstructionsManager } from './databaseInstructions';
+import { QueryHistoryManager } from './queryHistory';
 
 export interface ChatConnectionContext {
     connectionId: string;
@@ -34,11 +35,12 @@ export class SqlChatHandler {
         private context: vscode.ExtensionContext,
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel,
-        databaseInstructionsManager: DatabaseInstructionsManager
+        databaseInstructionsManager: DatabaseInstructionsManager,
+        private historyManager: QueryHistoryManager
     ) {
         this.databaseInstructionsManager = databaseInstructionsManager;
         this.schemaContextBuilder = new SchemaContextBuilder(connectionProvider, outputChannel, context);
-        this.sqlExecutionService = new SqlExecutionService(connectionProvider, outputChannel);
+        this.sqlExecutionService = new SqlExecutionService(connectionProvider, outputChannel, historyManager);
         this.databaseInstructionsManager = databaseInstructionsManager;
         
         // Load persisted conversation states

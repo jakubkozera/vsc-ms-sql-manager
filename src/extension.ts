@@ -191,7 +191,7 @@ async function initializeExtension(context: vscode.ExtensionContext) {
 
     // Register chat participant
     try {
-        const sqlChatHandler = new SqlChatHandler(context, connectionProvider, outputChannel, databaseInstructionsManager);
+        const sqlChatHandler = new SqlChatHandler(context, connectionProvider, outputChannel, databaseInstructionsManager, historyManager);
         
         // Create chat participant with proper ID from package.json
         const chatParticipant = vscode.chat.createChatParticipant('ms-sql-manager.sql', sqlChatHandler.handleChatRequest.bind(sqlChatHandler));

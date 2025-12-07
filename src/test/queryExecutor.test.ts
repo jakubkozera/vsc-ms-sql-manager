@@ -135,7 +135,7 @@ suite('QueryExecutor Basic Tests', () => {
     });
 
     test('should initialize without history manager', () => {
-        const executorWithoutHistory = new QueryExecutor(connectionProvider, outputChannel);
+        const executorWithoutHistory = new QueryExecutor(connectionProvider, outputChannel, undefined as any);
         
         assert.ok(executorWithoutHistory);
         assert.strictEqual((executorWithoutHistory as any).historyManager, undefined);
