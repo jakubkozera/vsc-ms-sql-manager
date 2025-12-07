@@ -1609,8 +1609,8 @@ function enterEditMode(td, row, col, rowIndex, colIndex, data, colDefs, containe
         input.className = 'cell-editor';
         input.style.width = '100%';
         input.style.height = '100%';
-        input.style.border = 'none';
-        input.style.outline = '2px solid var(--vscode-focusBorder)';
+        input.style.border = '1px solid var(--vscode-focusBorder)';
+        input.style.outline = 'none';
         input.style.background = 'var(--vscode-input-background)';
         input.style.color = 'var(--vscode-input-foreground)';
         input.style.padding = '0 8px';
