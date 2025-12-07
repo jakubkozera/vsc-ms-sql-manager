@@ -5,6 +5,17 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2025-12-07
+
+### Added
+
+- **Related Tables Expansion**: Interactive exploration of related data directly within query results
+  - **Expandable Foreign Keys**: Click on foreign key values to instantly view related records from the referenced table
+  - **Reverse Relationship Discovery**: Expand primary key values to find related records in other tables that reference the selected row
+  - **Nested Result Grids**: Related data appears in inline nested grids without losing context of the main query
+  - **Recursive Exploration**: Drill down through multiple levels of relationships (e.g., Order -> Customer -> Address)
+  - **Smart Context**: Automatically detects relationships based on database schema metadata
+
 ## [0.7.1] - 2025-11-30
 
 ### Added
