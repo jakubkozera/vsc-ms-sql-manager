@@ -1619,7 +1619,7 @@ function enterEditMode(td, row, col, rowIndex, colIndex, data, colDefs, containe
         input.className = 'cell-editor';
         input.style.width = '100%';
         input.style.height = '100%';
-        input.style.border = '1px solid var(--vscode-focusBorder)';
+        input.style.border = 'none';
         input.style.outline = 'none';
         input.style.background = 'var(--vscode-input-background)';
         input.style.color = 'var(--vscode-input-foreground)';
@@ -1650,6 +1650,7 @@ function enterEditMode(td, row, col, rowIndex, colIndex, data, colDefs, containe
     // Clear cell and add input
     td.style.padding = '0';
     td.innerHTML = '';
+    td.style.border = '1px solid rgba(255, 143, 0, 0.5)';
     td.appendChild(input);
     input.focus();
 
@@ -1738,6 +1739,7 @@ function commitEdit(newValue) {
 
     // Restore cell display
     td.style.padding = originalPadding || '0 8px';
+    td.style.border = '';
     
     if (col.type === 'boolean') {
         td.textContent = newValue ? '✓' : '✗';
@@ -1757,6 +1759,7 @@ function cancelEdit() {
     
     const { td, originalValue, originalPadding } = currentEditingCell;
     td.style.padding = originalPadding || '0 8px';
+    td.style.border = '';
     td.textContent = originalValue === null ? 'NULL' : String(originalValue);
     if (originalValue === null) td.classList.add('null-value');
     
