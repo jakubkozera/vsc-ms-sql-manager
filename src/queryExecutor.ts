@@ -3,6 +3,15 @@ import { ConnectionProvider } from './connectionProvider';
 import { DBPool } from './dbClient';
 import { QueryHistoryManager } from './queryHistory';
 
+export interface ForeignKeyReference {
+    schema: string;
+    table: string;
+    column: string;
+    isComposite: boolean;
+    compositeColumns: string[];
+    constraintName: string;
+}
+
 export interface ColumnMetadata {
     name: string;
     type: string;
@@ -12,6 +21,7 @@ export interface ColumnMetadata {
     sourceColumn?: string;
     isPrimaryKey: boolean;
     isIdentity: boolean;
+    foreignKeyReferences?: ForeignKeyReference[];
 }
 
 export interface ResultSetMetadata {
@@ -29,6 +39,7 @@ export interface QueryResult {
     executionTime: number;
     query: string;
     metadata?: ResultSetMetadata[]; // Metadata for each result set
+    columnNames?: string[][]; // Column names for each result set
 }
 
 export class QueryExecutor {
@@ -37,13 +48,28 @@ export class QueryExecutor {
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel,
-        private historyManager?: QueryHistoryManager
+        private historyManager: QueryHistoryManager
     ) {}
+
+    public cancel() {
+        if (this.currentRequest) {
+            this.outputChannel.appendLine('[QueryExecutor] Cancelling current request...');
+            try {
+                this.currentRequest.cancel();
+                this.outputChannel.appendLine('[QueryExecutor] Request cancelled.');
+            } catch (error) {
+                this.outputChannel.appendLine(`[QueryExecutor] Error cancelling request: ${error}`);
+            }
+        } else {
+            this.outputChannel.appendLine('[QueryExecutor] No active request to cancel.');
+        }
+    }
 
     // Accept an optional `connectionPool` to execute the query against. When not
     // provided, fall back to the provider's active connection.
     // originalQuery is used for metadata extraction when queryText includes SET statements
-    async executeQuery(queryText: string, connectionPool?: DBPool, originalQuery?: string): Promise<QueryResult> {
+    // skipHistory - when true, query will not be added to query history (e.g., for relation expansions)
+    async executeQuery(queryText: string, connectionPool?: DBPool, originalQuery?: string, skipHistory?: boolean, token?: vscode.CancellationToken): Promise<QueryResult> {
         // If a specific pool was provided, use it. Otherwise use the provider's active connection.
         const connection = connectionPool || this.connectionProvider.getConnection();
         if (!connection) {
@@ -51,7 +77,7 @@ export class QueryExecutor {
         }
 
         const startTime = Date.now();
-        this.outputChannel.appendLine(`Executing query: ${queryText.substring(0, 100)}${queryText.length > 100 ? '...' : ''})`);
+        this.outputChannel.appendLine(`Executing query: ${queryText.substring(0, 100)}${queryText.length > 100 ? '...' : ''}`);
 
         try {
             return await vscode.window.withProgress({
@@ -64,6 +90,24 @@ export class QueryExecutor {
                 const request = connection.request();
                 this.currentRequest = request;
                 
+                if (token) {
+                    token.onCancellationRequested(() => {
+                        this.outputChannel.appendLine('[QueryExecutor] Cancellation requested via token');
+                        if (this.currentRequest) {
+                            try {
+                                this.currentRequest.cancel();
+                            } catch (e) {
+                                // Ignore cancel errors
+                            }
+                        }
+                    });
+                }
+
+                // Enable array row mode to handle duplicate column names
+                if (request.setArrayRowMode) {
+                    request.setArrayRowMode(true);
+                }
+                
                 // Execute query as a single batch to handle multiple SELECT statements
                 progress.report({ message: 'Running query...' });
                 
@@ -72,53 +116,106 @@ export class QueryExecutor {
                 const result = await request.query(queryText);
 
                 // Support both mssql.Result and our msnodesqlv8 normalized object
-                const allRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
+                const rawRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
                 const totalRowsAffected: number[] = result.rowsAffected || result.rowsAffected || (Array.isArray(result.rowsAffected) ? result.rowsAffected : (result.rowsAffected ? [result.rowsAffected] : []));
 
-                this.outputChannel.appendLine(`Query completed. Result sets: ${allRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
+                // Extract column names and normalize recordsets to array of arrays
+                const resultColumnNames: string[][] = [];
+                const normalizedRecordsets: any[][] = [];
+
+                for (const rs of rawRecordsets) {
+                    let columns: string[] = [];
+                    let rows: any[] = [];
+
+                    // Try to get columns from metadata
+                    if ((rs as any).columns) {
+                        if (Array.isArray((rs as any).columns)) {
+                            columns = (rs as any).columns.map((c: any) => c.name);
+                        } else {
+                            // Object map (mssql object mode)
+                            // Note: keys might be unique-ified by mssql if duplicates exist in object mode
+                            columns = Object.keys((rs as any).columns);
+                        }
+                    }
+
+                    if (rs.length > 0) {
+                        // Check if rows are arrays (arrayRowMode) or objects
+                        if (Array.isArray(rs[0])) {
+                            // Array row mode
+                            rows = rs;
+                            // If columns weren't found in metadata (unlikely for mssql), we can't infer them easily from array
+                        } else {
+                            // Object mode (fallback)
+                            if (columns.length === 0) {
+                                columns = Object.keys(rs[0]);
+                            }
+                            rows = rs.map((r: any) => {
+                                // Map object values to array based on columns order if possible, or just values
+                                // If we have columns from metadata, use them to map
+                                if (columns.length > 0) {
+                                    return columns.map(col => r[col]);
+                                }
+                                return Object.values(r);
+                            });
+                        }
+                    }
+                    
+                    resultColumnNames.push(columns);
+                    normalizedRecordsets.push(rows);
+                }
+
+                this.outputChannel.appendLine(`Query completed. Result sets: ${normalizedRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
 
                 this.currentRequest = null;
                 const executionTime = Date.now() - startTime;
                 this.outputChannel.appendLine(`Total execution time: ${executionTime}ms`);
 
                 const queryResult: QueryResult = {
-                    recordsets: allRecordsets,
+                    recordsets: normalizedRecordsets,
                     rowsAffected: totalRowsAffected,
                     executionTime,
-                    query: queryText
+                    query: queryText,
+                    columnNames: resultColumnNames
                 };
 
                 // Extract metadata for SELECT queries to enable editing
                 // Use originalQuery if provided (when queryText has SET statements)
                 const queryForMetadata = originalQuery || queryText;
-                if (allRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
+                if (normalizedRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
                         this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
-                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection);
+                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, normalizedRecordsets, connection, resultColumnNames, token);
                         this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
                     } catch (error) {
+                        if (token && token.isCancellationRequested) {
+                            throw new Error('Query cancelled');
+                        }
                         this.outputChannel.appendLine(`[QueryExecutor] Failed to extract metadata: ${error}`);
                         // Continue without metadata - result set will be read-only
                     }
                 }
 
+                if (token && token.isCancellationRequested) {
+                    throw new Error('Query cancelled');
+                }
+
                 // Log results summary
-                if (allRecordsets.length > 0) {
-                    const totalRows = allRecordsets.reduce((sum, rs) => sum + rs.length, 0);
-                    this.outputChannel.appendLine(`Query returned ${allRecordsets.length} result set(s) with ${totalRows} total row(s)`);
+                if (normalizedRecordsets.length > 0) {
+                    const totalRows = normalizedRecordsets.reduce((sum, rs) => sum + rs.length, 0);
+                    this.outputChannel.appendLine(`Query returned ${normalizedRecordsets.length} result set(s) with ${totalRows} total row(s)`);
                 } else if (totalRowsAffected.length > 0) {
                     this.outputChannel.appendLine(`Query affected ${totalRowsAffected.reduce((a, b) => a + b, 0)} row(s)`);
                 } else {
                     this.outputChannel.appendLine(`Query completed successfully`);
                 }
 
-                // Add to query history
-                if (this.historyManager) {
+                // Add to query history (unless skipHistory is true)
+                if (this.historyManager && !skipHistory) {
                     const activeConnectionInfo = this.connectionProvider.getActiveConnectionInfo();
                     console.log('[QueryExecutor] Adding query to history, activeConnection:', activeConnectionInfo?.name);
                     if (activeConnectionInfo) {
                         // Calculate row counts for each result set
-                        const rowCounts = allRecordsets.map(recordset => recordset.length);
+                        const rowCounts = normalizedRecordsets.map(recordset => recordset.length);
                         
                         // Strip SET commands and execution summary comments from query for history
                         const cleanedQuery = this.cleanQueryForHistory(queryText);
@@ -142,7 +239,7 @@ export class QueryExecutor {
                             connectionName: activeConnectionInfo.name,
                             database: finalDatabase,
                             server: activeConnectionInfo.server,
-                            resultSetCount: allRecordsets.length,
+                            resultSetCount: normalizedRecordsets.length,
                             rowCounts: rowCounts,
                             duration: executionTime
                         });
@@ -150,6 +247,8 @@ export class QueryExecutor {
                     } else {
                         console.log('[QueryExecutor] No active connection info, skipping history');
                     }
+                } else if (skipHistory) {
+                    console.log('[QueryExecutor] Skipping history (skipHistory=true)');
                 } else {
                     console.log('[QueryExecutor] History manager not available');
                 }
@@ -287,11 +386,17 @@ export class QueryExecutor {
      * Extract metadata for result sets to determine editability
      * This analyzes the query and result columns to detect source tables and primary keys
      */
-    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool): Promise<ResultSetMetadata[]> {
+    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool, columnNamesList?: string[][], token?: vscode.CancellationToken): Promise<ResultSetMetadata[]> {
         const metadata: ResultSetMetadata[] = [];
 
-        for (const recordset of recordsets) {
-            if (!recordset || recordset.length === 0) {
+        for (let i = 0; i < recordsets.length; i++) {
+            if (token && token.isCancellationRequested) {
+                throw new Error('Operation cancelled');
+            }
+            const recordset = recordsets[i];
+            const providedColumnNames = columnNamesList ? columnNamesList[i] : undefined;
+
+            if (!recordset || (recordset.length === 0 && !providedColumnNames)) {
                 // Empty result set - not editable
                 metadata.push({
                     columns: [],
@@ -302,7 +407,13 @@ export class QueryExecutor {
                 continue;
             }
 
-            const columnNames = Object.keys(recordset[0]);
+            let columnNames: string[] = [];
+            if (providedColumnNames) {
+                columnNames = providedColumnNames;
+            } else if (recordset.length > 0 && !Array.isArray(recordset[0])) {
+                columnNames = Object.keys(recordset[0]);
+            }
+            
             const columns: ColumnMetadata[] = [];
             
             // Try to detect source tables from the query
@@ -310,6 +421,9 @@ export class QueryExecutor {
             
             // For each column, try to determine its source
             for (const colName of columnNames) {
+                if (token && token.isCancellationRequested) {
+                    throw new Error('Operation cancelled');
+                }
                 const colMetadata: ColumnMetadata = {
                     name: colName,
                     type: 'unknown',
@@ -448,7 +562,7 @@ export class QueryExecutor {
             
             if (result.recordset && result.recordset.length > 0) {
                 const row = result.recordset[0];
-                return {
+                const metadata: Partial<ColumnMetadata> = {
                     type: row.DataType,
                     isNullable: row.IsNullable,
                     sourceTable: row.TableName,
@@ -457,12 +571,153 @@ export class QueryExecutor {
                     isPrimaryKey: row.IsPrimaryKey === 1,
                     isIdentity: row.IsIdentity
                 };
+
+                // Query FK relationships for this column
+                try {
+                    metadata.foreignKeyReferences = await this.getForeignKeyReferences(
+                        connection,
+                        row.SchemaName,
+                        row.TableName,
+                        row.ColumnName
+                    );
+                } catch (error) {
+                    this.outputChannel.appendLine(`[QueryExecutor] Error getting FK references: ${error}`);
+                    metadata.foreignKeyReferences = [];
+                }
+
+                return metadata;
             }
         } catch (error) {
             this.outputChannel.appendLine(`[QueryExecutor] Error getting column info: ${error}`);
         }
         
         return null;
+    }
+
+    /**
+     * Get foreign key relationships for a specific column
+     * Returns both outgoing FKs (this column references another) and incoming FKs (other columns reference this)
+     */
+    private async getForeignKeyReferences(
+        connection: DBPool,
+        schema: string,
+        table: string,
+        column: string
+    ): Promise<ForeignKeyReference[]> {
+        const references: ForeignKeyReference[] = [];
+
+        try {
+            // Query for outgoing FKs (this column references another table)
+            const outgoingQuery = `
+                SELECT 
+                    fk.name AS ConstraintName,
+                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ReferencedSchema,
+                    OBJECT_NAME(fk.referenced_object_id) AS ReferencedTable,
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ReferencedColumn,
+                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                WHERE fk.parent_object_id = OBJECT_ID('${schema}.${table}')
+                AND fkc.parent_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
+            `;
+
+            const outgoingResult = await connection.request().query(outgoingQuery);
+            
+            if (outgoingResult.recordset && outgoingResult.recordset.length > 0) {
+                // Group by constraint to get composite columns
+                const constraintMap = new Map<string, any[]>();
+                for (const row of outgoingResult.recordset) {
+                    if (!constraintMap.has(row.ConstraintName)) {
+                        constraintMap.set(row.ConstraintName, []);
+                    }
+                    constraintMap.get(row.ConstraintName)!.push(row);
+                }
+
+                for (const [constraintName, rows] of constraintMap) {
+                    const isComposite = rows[0].ColumnCount > 1;
+                    
+                    // Get all columns in this constraint if composite
+                    let compositeColumns: string[] = [];
+                    if (isComposite) {
+                        const compositeQuery = `
+                            SELECT COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ColumnName
+                            FROM sys.foreign_key_columns fkc
+                            WHERE fkc.constraint_object_id = OBJECT_ID('${schema}.${constraintName}')
+                            ORDER BY fkc.constraint_column_id
+                        `;
+                        const compositeResult = await connection.request().query(compositeQuery);
+                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
+                    }
+
+                    references.push({
+                        schema: rows[0].ReferencedSchema,
+                        table: rows[0].ReferencedTable,
+                        column: rows[0].ReferencedColumn,
+                        isComposite,
+                        compositeColumns,
+                        constraintName
+                    });
+                }
+            }
+
+            // Query for incoming FKs (other tables reference this column as PK)
+            const incomingQuery = `
+                SELECT 
+                    fk.name AS ConstraintName,
+                    OBJECT_SCHEMA_NAME(fk.parent_object_id) AS ReferencingSchema,
+                    OBJECT_NAME(fk.parent_object_id) AS ReferencingTable,
+                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ReferencingColumn,
+                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                WHERE fk.referenced_object_id = OBJECT_ID('${schema}.${table}')
+                AND fkc.referenced_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
+            `;
+
+            const incomingResult = await connection.request().query(incomingQuery);
+            
+            if (incomingResult.recordset && incomingResult.recordset.length > 0) {
+                // Group by constraint
+                const constraintMap = new Map<string, any[]>();
+                for (const row of incomingResult.recordset) {
+                    if (!constraintMap.has(row.ConstraintName)) {
+                        constraintMap.set(row.ConstraintName, []);
+                    }
+                    constraintMap.get(row.ConstraintName)!.push(row);
+                }
+
+                for (const [constraintName, rows] of constraintMap) {
+                    const isComposite = rows[0].ColumnCount > 1;
+                    
+                    // Get all columns in this constraint if composite
+                    let compositeColumns: string[] = [];
+                    if (isComposite) {
+                        const compositeQuery = `
+                            SELECT COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ColumnName
+                            FROM sys.foreign_key_columns fkc
+                            WHERE fkc.constraint_object_id = OBJECT_ID('${rows[0].ReferencingSchema}.${constraintName}')
+                            ORDER BY fkc.constraint_column_id
+                        `;
+                        const compositeResult = await connection.request().query(compositeQuery);
+                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
+                    }
+
+                    references.push({
+                        schema: rows[0].ReferencingSchema,
+                        table: rows[0].ReferencingTable,
+                        column: rows[0].ReferencingColumn,
+                        isComposite,
+                        compositeColumns,
+                        constraintName
+                    });
+                }
+            }
+
+        } catch (error) {
+            this.outputChannel.appendLine(`[QueryExecutor] Error in getForeignKeyReferences: ${error}`);
+        }
+
+        return references;
     }
 
     /**

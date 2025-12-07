@@ -796,11 +796,22 @@ th {
 
 /* Primary Key and Foreign Key column styling */
 .pk-column {
-    color: #FFD700 !important;
+    color: #7b3814 !important; /* Darker gold for light theme */
 }
 
 .fk-column {
-    color: #6496FF !important;
+    color: #0066cc !important; /* Darker blue for light theme */
+}
+
+/* Dark theme colors */
+body.vscode-dark .pk-column,
+body.vscode-high-contrast .pk-column {
+    color: #FFD700 !important; /* Bright gold for dark theme */
+}
+
+body.vscode-dark .fk-column,
+body.vscode-high-contrast .fk-column {
+    color: #6496FF !important; /* Bright blue for dark theme */
 }
 
 .cell-modified {
@@ -1325,3 +1336,125 @@ th {
     border-right: 4px solid transparent;
     border-top: 4px solid currentColor;
 }
+
+/* FK/PK Expansion Styles */
+.chevron-icon.expanded {
+    transform: rotate(180deg);
+    display: inline-flex !important;
+    opacity: 1 !important;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Expanded row overlay - positioned absolutely to avoid table layout issues */
+.expanded-row-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    width: 100%;
+    background: var(--vscode-editor-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    z-index: 5;
+    box-sizing: border-box;
+}
+
+/* Legacy support for old expanded-row class */
+.expanded-row {
+    background: var(--vscode-editor-background);
+    table-layout: auto !important;
+}
+
+.expanded-row td {
+    padding: 0;
+}
+
+.expanded-content {
+    border-left: 3px solid var(--vscode-button-background);
+    background: var(--vscode-editor-background);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.nested-table-container {
+    font-size: 0.9em;
+    background: var(--vscode-editor-background);
+    overflow: auto;
+    min-height: 200px;
+    max-height: 400px;
+    border: 1px solid var(--vscode-panel-border);
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.nested-table-container .ag-grid-table {
+    border: 1px solid var(--vscode-panel-border);
+    display: table;
+    width: 100%;
+    min-width: 100%;
+}
+
+.nested-table-container .ag-grid-viewport {
+    overflow: auto !important;
+    height: 100% !important;
+    display: block;
+    width: 100%;
+}
+
+.fk-quick-pick-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fk-quick-pick {
+    background: var(--vscode-quickInput-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    min-width: 500px;
+    max-width: 600px;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+}
+
+.fk-quick-pick-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    transition: background 0.1s;
+}
+
+.fk-quick-pick-item:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.fk-quick-pick-item:active {
+    background: var(--vscode-list-activeSelectionBackground);
+}
+
+.change-commit {
+    padding: 4px 8px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: 1px solid transparent;
+    border-radius: 2px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.change-commit:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+

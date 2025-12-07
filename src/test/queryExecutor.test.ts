@@ -84,7 +84,8 @@ suite('QueryExecutor Basic Tests', () => {
         assert.ok(result.recordsets);
         assert.strictEqual(result.recordsets.length, 1);
         assert.strictEqual(result.recordsets[0].length, 2);
-        assert.strictEqual(result.recordsets[0][0].id, 1);
+        // Result rows are now arrays of values, not objects
+        assert.strictEqual(result.recordsets[0][0][0], 1);
         assert.strictEqual(result.query, queryText);
         assert.ok(typeof result.executionTime === 'number');
         assert.ok(Array.isArray(result.rowsAffected));
@@ -134,7 +135,7 @@ suite('QueryExecutor Basic Tests', () => {
     });
 
     test('should initialize without history manager', () => {
-        const executorWithoutHistory = new QueryExecutor(connectionProvider, outputChannel);
+        const executorWithoutHistory = new QueryExecutor(connectionProvider, outputChannel, undefined as any);
         
         assert.ok(executorWithoutHistory);
         assert.strictEqual((executorWithoutHistory as any).historyManager, undefined);

@@ -11,6 +11,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private webviewSelectedConnection = new Map<vscode.Webview, string | null>();
     // Track webview to document URI mapping for connection updates
     private webviewToDocument = new Map<vscode.Webview, vscode.Uri>();
+    // Track cancellation tokens for running queries
+    private webviewCancellationSources = new Map<vscode.Webview, vscode.CancellationTokenSource>();
     // SQL snippets cache
     private sqlSnippets: any[] = [];
 
@@ -100,16 +102,34 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'executeQuery':
-                    await this.executeQuery(message.query, message.connectionId, webviewPanel.webview, message.includeActualPlan);
+                    let execConnectionId = message.connectionId;
+                    if (message.databaseName && execConnectionId && !execConnectionId.includes('::')) {
+                        execConnectionId = `${execConnectionId}::${message.databaseName}`;
+                    }
+                    await this.executeQuery(message.query, execConnectionId, webviewPanel.webview, message.includeActualPlan);
+                    break;
+
+                case 'expandRelation':
+                    await this.executeRelationQuery(message.keyValue, message.schema, message.table, message.column, message.expansionId, message.connectionId, webviewPanel.webview);
                     break;
 
                 case 'executeEstimatedPlan':
-                    await this.executeEstimatedPlan(message.query, message.connectionId, webviewPanel.webview);
+                    let planConnectionId = message.connectionId;
+                    if (message.databaseName && planConnectionId && !planConnectionId.includes('::')) {
+                        planConnectionId = `${planConnectionId}::${message.databaseName}`;
+                    }
+                    await this.executeEstimatedPlan(message.query, planConnectionId, webviewPanel.webview);
                     break;
 
                 case 'cancelQuery':
-                    // Query cancellation is handled automatically by VS Code progress API
                     this.outputChannel.appendLine('Query cancellation requested');
+                    // Cancel via token
+                    if (this.webviewCancellationSources.has(webviewPanel.webview)) {
+                        this.webviewCancellationSources.get(webviewPanel.webview)?.cancel();
+                        this.outputChannel.appendLine('Cancelled via token source');
+                    }
+                    // Also call legacy cancel for safety (though token should handle it)
+                    this.queryExecutor.cancel();
                     break;
 
                 case 'manageConnections':
@@ -167,7 +187,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'commitChanges':
-                    await this.commitChanges(message.statements, message.connectionId, message.originalQuery, webviewPanel.webview);
+                    // Use the connection ID from the message, or fall back to the one stored for this webview
+                    let commitConnectionId = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview);
+                    
+                    // If we have a database name in the message, ensure it's part of the connection ID
+                    if (message.databaseName && commitConnectionId && !commitConnectionId.includes('::')) {
+                        commitConnectionId = `${commitConnectionId}::${message.databaseName}`;
+                    }
+
+                    await this.commitChanges(message.statements, commitConnectionId, message.originalQuery, webviewPanel.webview);
                     break;
 
                 case 'confirmAction':
@@ -238,6 +266,32 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     
                 case 'requestSnippetInput':
                     await this.handleSnippetInputRequest(webviewPanel.webview, message.selectedText);
+                    break;
+
+                case 'openNewQuery':
+                    try {
+                        // Resolve connectionId and database
+                        let conn = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null;
+                        let db = message.database || undefined;
+
+                        if (conn && typeof conn === 'string' && conn.includes('::')) {
+                            const parts = conn.split('::');
+                            conn = parts[0];
+                            if (!db && parts.length > 1) {
+                                db = parts[1];
+                            }
+                        }
+
+                        const connectionItem = {
+                            connectionId: conn,
+                            database: db,
+                            label: db || 'Query'
+                        };
+
+                        await vscode.commands.executeCommand('mssqlManager.newQuery', connectionItem, message.query, true);
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] openNewQuery failed: ${err}`);
+                    }
                     break;
             }
         });
@@ -557,21 +611,57 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         // Build file paths
         const htmlPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.html');
         const stylePath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.css');
+        
+        // Modular scripts
+        const snippetsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'snippets.js');
+        const utilsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'utils.js');
+        const uiScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'ui.js');
+        const gridScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'grid.js');
+        const tabsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'tabs.js');
+        const editorScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'editor.js');
+        const queryScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'query.js');
+        const planScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'plan.js');
         const scriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.js');
+        const relationExpansionScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'relationExpansion.js');
 
         // Convert to webview URIs for proper loading
         // Add cache buster to force reload
         const cacheBuster = Date.now();
         const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
+        
+        const snippetsScriptUri = webview.asWebviewUri(snippetsScriptPath).toString() + `?v=${cacheBuster}`;
+        const utilsScriptUri = webview.asWebviewUri(utilsScriptPath).toString() + `?v=${cacheBuster}`;
+        const uiScriptUri = webview.asWebviewUri(uiScriptPath).toString() + `?v=${cacheBuster}`;
+        const gridScriptUri = webview.asWebviewUri(gridScriptPath).toString() + `?v=${cacheBuster}`;
+        const tabsScriptUri = webview.asWebviewUri(tabsScriptPath).toString() + `?v=${cacheBuster}`;
+        const editorScriptUri = webview.asWebviewUri(editorScriptPath).toString() + `?v=${cacheBuster}`;
+        const queryScriptUri = webview.asWebviewUri(queryScriptPath).toString() + `?v=${cacheBuster}`;
+        const planScriptUri = webview.asWebviewUri(planScriptPath).toString() + `?v=${cacheBuster}`;
         const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
+        const relationExpansionScriptUri = webview.asWebviewUri(relationExpansionScriptPath).toString() + `?v=${cacheBuster}`;
 
         // Read base HTML template
         let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
 
         // Replace placeholders defined in template
+        // We inject the new scripts before the main script
+        const scriptsBlock = `
+    <script src="${snippetsScriptUri}"></script>
+    <script src="${utilsScriptUri}"></script>
+    <script src="${uiScriptUri}"></script>
+    <script src="${gridScriptUri}"></script>
+    <script src="${tabsScriptUri}"></script>
+    <script src="${editorScriptUri}"></script>
+    <script src="${queryScriptUri}"></script>
+    <script src="${planScriptUri}"></script>
+    <script src="${scriptUri}"></script>
+        `;
+
         html = html
             .replace(/{{styleUri}}/g, styleUri)
-            .replace(/{{scriptUri}}/g, scriptUri)
+            .replace(/<script src="{{scriptUri}}"><\/script>/g, scriptsBlock)
+            .replace(/{{scriptUri}}/g, scriptUri) // Fallback if regex above doesn't match
+            .replace(/{{relationExpansionScriptUri}}/g, relationExpansionScriptUri)
             .replace(/{{monacoLoaderUri}}/g, monacoLoaderUri)
             .replace(/{{cspSource}}/g, webview.cspSource);
 
@@ -1001,6 +1091,16 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             type: 'executing'
         });
 
+        // Cancel any existing query for this webview
+        if (this.webviewCancellationSources.has(webview)) {
+            this.webviewCancellationSources.get(webview)?.cancel();
+            this.webviewCancellationSources.get(webview)?.dispose();
+        }
+
+        // Create new cancellation source
+        const cancellationSource = new vscode.CancellationTokenSource();
+        this.webviewCancellationSources.set(webview, cancellationSource);
+
         try {
             const startTime = Date.now();
             this.outputChannel.appendLine(`[SqlEditorProvider] Executing query. config:${config?.id || 'none'} pool:${poolToUse ? (poolToUse?.connected ? 'connected' : 'not-connected') : 'none'} db:${connectionId?.includes('::') ? connectionId.split('::')[1] : (config?.database || 'unknown')}`);
@@ -1012,24 +1112,34 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             }
             
             // Execute with the modified query, but pass original query for metadata extraction
-            const result = await this.queryExecutor.executeQuery(finalQuery, poolToUse, query);
+            const result = await this.queryExecutor.executeQuery(finalQuery, poolToUse, query, false, cancellationSource.token);
             const executionTime = Date.now() - startTime;
 
             // Check if we have an execution plan in the result
             let planXml = null;
             let resultSets = result.recordsets || [];
+            let resultColumnNames = result.columnNames || [];
             
             if (includeActualPlan && result.recordsets) {
                 console.log('[SQL Editor] Checking for execution plan in', result.recordsets.length, 'result sets');
                 // Look for the XML plan in the result sets
                 for (let i = 0; i < result.recordsets.length; i++) {
                     const rs = result.recordsets[i];
-                    console.log('[SQL Editor] Result set', i, 'columns:', rs.length > 0 ? Object.keys(rs[0]) : 'empty');
-                    if (rs.length > 0 && rs[0]['Microsoft SQL Server 2005 XML Showplan']) {
-                        planXml = rs[0]['Microsoft SQL Server 2005 XML Showplan'];
-                        console.log('[SQL Editor] Found execution plan XML, length:', planXml.length);
-                        // Remove plan result set from results AND metadata
+                    const cols = resultColumnNames[i] || [];
+                    
+                    // Check if this result set has the plan column
+                    // The plan column name is usually 'Microsoft SQL Server 2005 XML Showplan'
+                    const planColIndex = cols.indexOf('Microsoft SQL Server 2005 XML Showplan');
+                    
+                    if (rs.length > 0 && planColIndex !== -1) {
+                        // rs[0] is an array of values
+                        planXml = rs[0][planColIndex];
+                        console.log('[SQL Editor] Found execution plan XML, length:', planXml ? planXml.length : 0);
+                        
+                        // Remove plan result set from results AND metadata AND columnNames
                         resultSets = result.recordsets.filter((_, index) => index !== i);
+                        resultColumnNames = resultColumnNames.filter((_, index) => index !== i);
+                        
                         // Also filter metadata to match the resultSets indices
                         if (result.metadata && result.metadata.length > i) {
                             result.metadata = result.metadata.filter((_, index) => index !== i);
@@ -1086,6 +1196,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             webview.postMessage({
                 type: 'results',
                 resultSets: resultSets,
+                columnNames: resultColumnNames,
                 executionTime: executionTime,
                 rowsAffected: result.rowsAffected?.[0] || 0,
                 messages: messages,
@@ -1094,10 +1205,122 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 originalQuery: query // Store original query for UPDATE generation
             });
         } catch (error: any) {
+            // Check if cancelled
+            if (cancellationSource.token.isCancellationRequested || error.message === 'Query cancelled' || error.message === 'Operation cancelled') {
+                 webview.postMessage({
+                    type: 'queryCancelled'
+                });
+                return;
+            }
+
             webview.postMessage({
                 type: 'error',
                 error: error.message || 'Query execution failed',
                 messages: [{ type: 'error', text: error.message || 'Query execution failed' }]
+            });
+        } finally {
+            // Clean up
+            if (this.webviewCancellationSources.get(webview) === cancellationSource) {
+                this.webviewCancellationSources.delete(webview);
+            }
+            cancellationSource.dispose();
+        }
+    }
+
+    /**
+     * Execute a relation expansion query for FK/PK exploration
+     */
+    private async executeRelationQuery(
+        keyValue: any,
+        schema: string,
+        table: string,
+        column: string,
+        expansionId: string,
+        connectionId: string | null,
+        webview: vscode.Webview
+    ) {
+        // Resolve connection/config and (when needed) create a DB-scoped pool.
+        let config: any = null;
+        let poolToUse: any = null;
+
+        if (connectionId && typeof connectionId === 'string' && connectionId.includes('::')) {
+            const [baseId, dbName] = connectionId.split('::');
+            config = this.connectionProvider.getConnectionConfig(baseId);
+            try {
+                poolToUse = await this.connectionProvider.createDbPool(baseId, dbName);
+            } catch (err) {
+                this.outputChannel.appendLine(`[SqlEditorProvider] Failed to create DB pool for relation expansion ${baseId} -> ${dbName}: ${err}`);
+                poolToUse = this.connectionProvider.getConnection(baseId) || this.connectionProvider.getConnection();
+            }
+        } else if (connectionId) {
+            config = this.connectionProvider.getConnectionConfig(connectionId);
+            poolToUse = this.connectionProvider.getConnection(connectionId) || this.connectionProvider.getConnection();
+        } else {
+            config = this.connectionProvider.getCurrentConfig();
+            poolToUse = this.connectionProvider.getConnection();
+        }
+
+        if (!config || !poolToUse) {
+            webview.postMessage({
+                type: 'relationResults',
+                expansionId: expansionId,
+                error: 'No active connection'
+            });
+            return;
+        }
+
+        try {
+            const startTime = Date.now();
+            
+            // Log connection details for debugging
+            let dbName = 'unknown';
+            if (connectionId && connectionId.includes('::')) {
+                dbName = connectionId.split('::')[1];
+            } else if (config) {
+                dbName = config.database || 'default';
+            }
+            
+            this.outputChannel.appendLine(`[SqlEditorProvider] Relation expansion params - schema: "${schema}", table: "${table}", column: "${column}", value: "${keyValue}", database: "${dbName}"`);
+            
+            // Build query with proper SQL Server parameter escaping
+            // Escape single quotes in the value
+            const escapedValue = String(keyValue).replace(/'/g, "''");
+            
+            // If we have a database name from connectionId, prepend USE statement to ensure correct context
+            let query = '';
+            if (connectionId && connectionId.includes('::')) {
+                const [, dbName] = connectionId.split('::');
+                query = `USE [${dbName}];\nSELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
+            } else {
+                query = `SELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
+            }
+            this.outputChannel.appendLine(`[SqlEditorProvider] Executing relation expansion: ${query}`);
+            
+            // Execute query using queryExecutor (skip history for relation expansions)
+            const result = await this.queryExecutor.executeQuery(query, poolToUse, undefined, true);
+            
+            const executionTime = Date.now() - startTime;
+            
+            // Convert to QueryResult format
+            const resultSets = result.recordsets || [];
+            const metadata = result.metadata || [];
+            const columnNames = result.columnNames || [];
+            
+            webview.postMessage({
+                type: 'relationResults',
+                expansionId: expansionId,
+                resultSets: resultSets,
+                metadata: metadata,
+                columnNames: columnNames,
+                executionTime: executionTime,
+                query: query
+            });
+        } catch (error: any) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Relation expansion error: ${error.message}`);
+            webview.postMessage({
+                type: 'relationResults',
+                expansionId: expansionId,
+                error: error.message || 'Failed to execute relation query'
             });
         }
     }

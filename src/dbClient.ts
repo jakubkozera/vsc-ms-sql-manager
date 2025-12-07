@@ -7,8 +7,10 @@ import * as os from 'os';
 export interface DBRequest {
     query(sql: string): Promise<any>;
     execute?(proc: string, params?: any): Promise<any>;
+    cancel?(): void;
     // mssql.Request has `input` for parameters; optional here for msnodesqlv8 wrapper
     input?: (name: string, value: any) => void;
+    setArrayRowMode?(enabled: boolean): void;
 }
 
 export interface DBPool {
@@ -80,21 +82,29 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                             const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
                             const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
                             
+                            const recordsets: any[][] = [];
+                            
+                            const queryCallback = (err: any, rows: any, more: boolean) => {
+                                if (err) { return reject(err); }
+                                
+                                // Normalize result to match mssql result shape
+                                const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                recordsets.push(recs);
+                                
+                                if (!more) {
+                                    resolve({ 
+                                        recordset: recordsets[0], 
+                                        recordsets: recordsets, 
+                                        rowsAffected: recordsets.map(r => r.length) 
+                                    });
+                                }
+                            };
+
                             if (timeoutMs > 0) {
-                                msnv8.query(connectionString, sqlText, queryOptions, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    // Normalize result to match mssql result shape
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, sqlText, queryOptions, queryCallback);
                             } else {
                                 // No timeout
-                                msnv8.query(connectionString, sqlText, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    // Normalize result to match mssql result shape
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, sqlText, queryCallback);
                             }
                         });
                     },
@@ -108,21 +118,34 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                             const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
                             const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
                             
+                            const recordsets: any[][] = [];
+                            
+                            const queryCallback = (err: any, rows: any, more: boolean) => {
+                                if (err) { return reject(err); }
+                                
+                                const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                recordsets.push(recs);
+                                
+                                if (!more) {
+                                    resolve({ 
+                                        recordset: recordsets[0], 
+                                        recordsets: recordsets, 
+                                        rowsAffected: recordsets.map(r => r.length) 
+                                    });
+                                }
+                            };
+
                             if (timeoutMs > 0) {
-                                msnv8.query(connectionString, execSql, queryOptions, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, execSql, queryOptions, queryCallback);
                             } else {
                                 // No timeout
-                                msnv8.query(connectionString, execSql, (err: any, rows: any) => {
-                                    if (err) { return reject(err); }
-                                    const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                    resolve({ recordset: recs, recordsets: [recs], rowsAffected: [recs.length] });
-                                });
+                                msnv8.query(connectionString, execSql, queryCallback);
                             }
                         });
+                    },
+                    cancel() {
+                        // Cancellation not yet implemented for msnodesqlv8 wrapper
+                        // We just prevent the crash here
                     }
                 } as DBRequest;
             }
@@ -181,6 +204,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         request() {
             const request = poolInstance.request();
             return {
+                setArrayRowMode(enabled: boolean) {
+                    (request as any).arrayRowMode = enabled;
+                },
                 query(sqlText: string) {
                     return request.query(sqlText);
                 },
@@ -192,6 +218,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                         }
                     }
                     return request.execute(proc);
+                },
+                cancel() {
+                    request.cancel();
                 }
             } as DBRequest;
         }
