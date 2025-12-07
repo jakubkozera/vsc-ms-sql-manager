@@ -64,6 +64,30 @@ window.addEventListener('message', event => {
             showError(message.error, message.messages);
             break;
 
+        case 'queryCancelled':
+            // Reset UI
+            const executeButton = document.getElementById('executeButton');
+            const cancelButton = document.getElementById('cancelButton');
+            const statusLabel = document.getElementById('statusLabel');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resizer = document.getElementById('resizer');
+            
+            if (executeButton) executeButton.disabled = false;
+            if (cancelButton) cancelButton.disabled = true;
+            if (statusLabel) statusLabel.textContent = 'Query cancelled';
+            
+            // Hide results panel completely
+            if (resultsContainer) resultsContainer.classList.remove('visible');
+            if (resizer) resizer.classList.remove('visible');
+            
+            // Stop timer
+            if (typeof stopLoadingTimer === 'function') {
+                stopLoadingTimer();
+            }
+            
+            displayMessages([{ type: 'info', text: 'Query execution cancelled.' }]);
+            break;
+
         case 'commitSuccess':
             // Clear pending changes after successful commit
             pendingChanges.clear();
@@ -154,6 +178,13 @@ const cancelButton = document.getElementById('cancelButton');
 if (cancelButton) {
     cancelButton.addEventListener('click', () => {
         vscode.postMessage({ type: 'cancelQuery' });
+        
+        // UI updates
+        cancelButton.disabled = true;
+        const statusLabel = document.getElementById('statusLabel');
+        if (statusLabel) {
+            statusLabel.textContent = 'Cancelling query...';
+        }
     });
 }
 

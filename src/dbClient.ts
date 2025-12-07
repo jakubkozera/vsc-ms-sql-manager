@@ -7,6 +7,7 @@ import * as os from 'os';
 export interface DBRequest {
     query(sql: string): Promise<any>;
     execute?(proc: string, params?: any): Promise<any>;
+    cancel?(): void;
     // mssql.Request has `input` for parameters; optional here for msnodesqlv8 wrapper
     input?: (name: string, value: any) => void;
     setArrayRowMode?(enabled: boolean): void;
@@ -124,6 +125,10 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                 });
                             }
                         });
+                    },
+                    cancel() {
+                        // Cancellation not yet implemented for msnodesqlv8 wrapper
+                        // We just prevent the crash here
                     }
                 } as DBRequest;
             }
@@ -196,6 +201,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                         }
                     }
                     return request.execute(proc);
+                },
+                cancel() {
+                    request.cancel();
                 }
             } as DBRequest;
         }

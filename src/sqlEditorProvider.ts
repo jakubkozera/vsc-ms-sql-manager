@@ -11,6 +11,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private webviewSelectedConnection = new Map<vscode.Webview, string | null>();
     // Track webview to document URI mapping for connection updates
     private webviewToDocument = new Map<vscode.Webview, vscode.Uri>();
+    // Track cancellation tokens for running queries
+    private webviewCancellationSources = new Map<vscode.Webview, vscode.CancellationTokenSource>();
     // SQL snippets cache
     private sqlSnippets: any[] = [];
 
@@ -112,8 +114,14 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
 
                 case 'cancelQuery':
-                    // Query cancellation is handled automatically by VS Code progress API
                     this.outputChannel.appendLine('Query cancellation requested');
+                    // Cancel via token
+                    if (this.webviewCancellationSources.has(webviewPanel.webview)) {
+                        this.webviewCancellationSources.get(webviewPanel.webview)?.cancel();
+                        this.outputChannel.appendLine('Cancelled via token source');
+                    }
+                    // Also call legacy cancel for safety (though token should handle it)
+                    this.queryExecutor.cancel();
                     break;
 
                 case 'manageConnections':
@@ -1067,6 +1075,16 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             type: 'executing'
         });
 
+        // Cancel any existing query for this webview
+        if (this.webviewCancellationSources.has(webview)) {
+            this.webviewCancellationSources.get(webview)?.cancel();
+            this.webviewCancellationSources.get(webview)?.dispose();
+        }
+
+        // Create new cancellation source
+        const cancellationSource = new vscode.CancellationTokenSource();
+        this.webviewCancellationSources.set(webview, cancellationSource);
+
         try {
             const startTime = Date.now();
             this.outputChannel.appendLine(`[SqlEditorProvider] Executing query. config:${config?.id || 'none'} pool:${poolToUse ? (poolToUse?.connected ? 'connected' : 'not-connected') : 'none'} db:${connectionId?.includes('::') ? connectionId.split('::')[1] : (config?.database || 'unknown')}`);
@@ -1078,7 +1096,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             }
             
             // Execute with the modified query, but pass original query for metadata extraction
-            const result = await this.queryExecutor.executeQuery(finalQuery, poolToUse, query);
+            const result = await this.queryExecutor.executeQuery(finalQuery, poolToUse, query, false, cancellationSource.token);
             const executionTime = Date.now() - startTime;
 
             // Check if we have an execution plan in the result
@@ -1171,11 +1189,25 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 originalQuery: query // Store original query for UPDATE generation
             });
         } catch (error: any) {
+            // Check if cancelled
+            if (cancellationSource.token.isCancellationRequested || error.message === 'Query cancelled' || error.message === 'Operation cancelled') {
+                 webview.postMessage({
+                    type: 'queryCancelled'
+                });
+                return;
+            }
+
             webview.postMessage({
                 type: 'error',
                 error: error.message || 'Query execution failed',
                 messages: [{ type: 'error', text: error.message || 'Query execution failed' }]
             });
+        } finally {
+            // Clean up
+            if (this.webviewCancellationSources.get(webview) === cancellationSource) {
+                this.webviewCancellationSources.delete(webview);
+            }
+            cancellationSource.dispose();
         }
     }
 

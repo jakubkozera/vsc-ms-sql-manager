@@ -48,14 +48,28 @@ export class QueryExecutor {
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel,
-        private historyManager?: QueryHistoryManager
+        private historyManager: QueryHistoryManager
     ) {}
+
+    public cancel() {
+        if (this.currentRequest) {
+            this.outputChannel.appendLine('[QueryExecutor] Cancelling current request...');
+            try {
+                this.currentRequest.cancel();
+                this.outputChannel.appendLine('[QueryExecutor] Request cancelled.');
+            } catch (error) {
+                this.outputChannel.appendLine(`[QueryExecutor] Error cancelling request: ${error}`);
+            }
+        } else {
+            this.outputChannel.appendLine('[QueryExecutor] No active request to cancel.');
+        }
+    }
 
     // Accept an optional `connectionPool` to execute the query against. When not
     // provided, fall back to the provider's active connection.
     // originalQuery is used for metadata extraction when queryText includes SET statements
     // skipHistory - when true, query will not be added to query history (e.g., for relation expansions)
-    async executeQuery(queryText: string, connectionPool?: DBPool, originalQuery?: string, skipHistory?: boolean): Promise<QueryResult> {
+    async executeQuery(queryText: string, connectionPool?: DBPool, originalQuery?: string, skipHistory?: boolean, token?: vscode.CancellationToken): Promise<QueryResult> {
         // If a specific pool was provided, use it. Otherwise use the provider's active connection.
         const connection = connectionPool || this.connectionProvider.getConnection();
         if (!connection) {
@@ -76,6 +90,19 @@ export class QueryExecutor {
                 const request = connection.request();
                 this.currentRequest = request;
                 
+                if (token) {
+                    token.onCancellationRequested(() => {
+                        this.outputChannel.appendLine('[QueryExecutor] Cancellation requested via token');
+                        if (this.currentRequest) {
+                            try {
+                                this.currentRequest.cancel();
+                            } catch (e) {
+                                // Ignore cancel errors
+                            }
+                        }
+                    });
+                }
+
                 // Enable array row mode to handle duplicate column names
                 if (request.setArrayRowMode) {
                     request.setArrayRowMode(true);
@@ -157,12 +184,19 @@ export class QueryExecutor {
                 if (normalizedRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
                         this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
-                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, normalizedRecordsets, connection, resultColumnNames);
+                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, normalizedRecordsets, connection, resultColumnNames, token);
                         this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
                     } catch (error) {
+                        if (token && token.isCancellationRequested) {
+                            throw new Error('Query cancelled');
+                        }
                         this.outputChannel.appendLine(`[QueryExecutor] Failed to extract metadata: ${error}`);
                         // Continue without metadata - result set will be read-only
                     }
+                }
+
+                if (token && token.isCancellationRequested) {
+                    throw new Error('Query cancelled');
                 }
 
                 // Log results summary
@@ -352,10 +386,13 @@ export class QueryExecutor {
      * Extract metadata for result sets to determine editability
      * This analyzes the query and result columns to detect source tables and primary keys
      */
-    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool, columnNamesList?: string[][]): Promise<ResultSetMetadata[]> {
+    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool, columnNamesList?: string[][], token?: vscode.CancellationToken): Promise<ResultSetMetadata[]> {
         const metadata: ResultSetMetadata[] = [];
 
         for (let i = 0; i < recordsets.length; i++) {
+            if (token && token.isCancellationRequested) {
+                throw new Error('Operation cancelled');
+            }
             const recordset = recordsets[i];
             const providedColumnNames = columnNamesList ? columnNamesList[i] : undefined;
 
@@ -384,6 +421,9 @@ export class QueryExecutor {
             
             // For each column, try to determine its source
             for (const colName of columnNames) {
+                if (token && token.isCancellationRequested) {
+                    throw new Error('Operation cancelled');
+                }
                 const colMetadata: ColumnMetadata = {
                     name: colName,
                     type: 'unknown',
