@@ -587,6 +587,16 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         // Build file paths
         const htmlPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.html');
         const stylePath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.css');
+        
+        // Modular scripts
+        const snippetsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'snippets.js');
+        const utilsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'utils.js');
+        const uiScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'ui.js');
+        const gridScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'grid.js');
+        const tabsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'tabs.js');
+        const editorScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'editor.js');
+        const queryScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'query.js');
+        const planScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'plan.js');
         const scriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.js');
         const relationExpansionScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'relationExpansion.js');
 
@@ -594,6 +604,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         // Add cache buster to force reload
         const cacheBuster = Date.now();
         const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
+        
+        const snippetsScriptUri = webview.asWebviewUri(snippetsScriptPath).toString() + `?v=${cacheBuster}`;
+        const utilsScriptUri = webview.asWebviewUri(utilsScriptPath).toString() + `?v=${cacheBuster}`;
+        const uiScriptUri = webview.asWebviewUri(uiScriptPath).toString() + `?v=${cacheBuster}`;
+        const gridScriptUri = webview.asWebviewUri(gridScriptPath).toString() + `?v=${cacheBuster}`;
+        const tabsScriptUri = webview.asWebviewUri(tabsScriptPath).toString() + `?v=${cacheBuster}`;
+        const editorScriptUri = webview.asWebviewUri(editorScriptPath).toString() + `?v=${cacheBuster}`;
+        const queryScriptUri = webview.asWebviewUri(queryScriptPath).toString() + `?v=${cacheBuster}`;
+        const planScriptUri = webview.asWebviewUri(planScriptPath).toString() + `?v=${cacheBuster}`;
         const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
         const relationExpansionScriptUri = webview.asWebviewUri(relationExpansionScriptPath).toString() + `?v=${cacheBuster}`;
 
@@ -601,9 +620,23 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
 
         // Replace placeholders defined in template
+        // We inject the new scripts before the main script
+        const scriptsBlock = `
+    <script src="${snippetsScriptUri}"></script>
+    <script src="${utilsScriptUri}"></script>
+    <script src="${uiScriptUri}"></script>
+    <script src="${gridScriptUri}"></script>
+    <script src="${tabsScriptUri}"></script>
+    <script src="${editorScriptUri}"></script>
+    <script src="${queryScriptUri}"></script>
+    <script src="${planScriptUri}"></script>
+    <script src="${scriptUri}"></script>
+        `;
+
         html = html
             .replace(/{{styleUri}}/g, styleUri)
-            .replace(/{{scriptUri}}/g, scriptUri)
+            .replace(/<script src="{{scriptUri}}"><\/script>/g, scriptsBlock)
+            .replace(/{{scriptUri}}/g, scriptUri) // Fallback if regex above doesn't match
             .replace(/{{relationExpansionScriptUri}}/g, relationExpansionScriptUri)
             .replace(/{{monacoLoaderUri}}/g, monacoLoaderUri)
             .replace(/{{cspSource}}/g, webview.cspSource);
