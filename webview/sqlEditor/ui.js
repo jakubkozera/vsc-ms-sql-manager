@@ -310,9 +310,6 @@ function updateConnectionsList(connections, currentId, currentDatabase) {
         selected: c.id === currentId
     }));
 
-    // Add "Manage Connections" option
-    items.push({ value: 'manage', text: 'Manage Connections...', selected: false });
-
     connectionDropdown.setItems(items);
     
     // Update current selection text if found
@@ -322,14 +319,21 @@ function updateConnectionsList(connections, currentId, currentDatabase) {
         if (typeof currentConnectionId !== 'undefined') currentConnectionId = current.id;
         if (typeof currentDatabaseName !== 'undefined') currentDatabaseName = currentDatabase;
         
-        // Show database dropdown if connected
+        // Show database dropdown if connected AND connection type is 'server'
         if (databaseDropdown) {
-            databaseDropdown.show();
-            // If we have a database, update the label
-            if (currentDatabase) {
-                databaseDropdown.setValue(currentDatabase, currentDatabase);
+            const databaseLabel = document.getElementById('databaseLabel');
+            if (current.connectionType === 'server') {
+                if (databaseLabel) databaseLabel.style.display = 'inline-block';
+                databaseDropdown.show();
+                // If we have a database, update the label
+                if (currentDatabase) {
+                    databaseDropdown.setValue(currentDatabase, currentDatabase);
+                } else {
+                    databaseDropdown.setValue('', 'Select database');
+                }
             } else {
-                databaseDropdown.setValue('', 'Select database');
+                if (databaseLabel) databaseLabel.style.display = 'none';
+                databaseDropdown.hide();
             }
         }
     } else {
@@ -337,6 +341,8 @@ function updateConnectionsList(connections, currentId, currentDatabase) {
         if (typeof currentConnectionId !== 'undefined') currentConnectionId = null;
         if (typeof currentDatabaseName !== 'undefined') currentDatabaseName = null;
         if (databaseDropdown) {
+            const databaseLabel = document.getElementById('databaseLabel');
+            if (databaseLabel) databaseLabel.style.display = 'none';
             databaseDropdown.hide();
         }
     }
