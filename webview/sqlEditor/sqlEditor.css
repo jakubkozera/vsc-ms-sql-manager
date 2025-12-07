@@ -1444,3 +1444,17 @@ body.vscode-high-contrast .fk-column {
     background: var(--vscode-list-activeSelectionBackground);
 }
 
+.change-commit {
+    padding: 4px 8px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: 1px solid transparent;
+    border-radius: 2px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.change-commit:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+

@@ -2012,7 +2012,10 @@ function renderPendingChanges() {
                                 </svg>
                                 ${tableName} (Row ${rowIndex + 1}) - DELETE
                             </div>
-                            <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                            <div class="change-actions" style="display: flex; gap: 8px;">
+                                <button class="change-commit" onclick="commitSingleChange(${resultSetIndex}, ${changeIndex})">Commit</button>
+                                <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                            </div>
                         </div>
                         <div class="change-sql">${escapeHtml(sql)}</div>
                     </div>
@@ -2033,7 +2036,10 @@ function renderPendingChanges() {
                     <div class="change-item">
                         <div class="change-header">
                             <div class="change-location">${tableName}.${columnName} (Row ${rowIndex + 1})</div>
-                            <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                            <div class="change-actions" style="display: flex; gap: 8px;">
+                                <button class="change-commit" onclick="commitSingleChange(${resultSetIndex}, ${changeIndex})">Commit</button>
+                                <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                            </div>
                         </div>
                         <div class="change-details">
                             <div class="change-label">Old value:</div>
@@ -2150,6 +2156,56 @@ function sqlEscape(value) {
     // String - escape single quotes and wrap in quotes
     const strValue = String(value);
     return `'${strValue.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Commit a single change
+ */
+function commitSingleChange(resultSetIndex, changeIndex) {
+    const changes = pendingChanges.get(resultSetIndex);
+    if (!changes || changeIndex >= changes.length) return;
+
+    const change = changes[changeIndex];
+    const metadata = resultSetMetadata[resultSetIndex];
+    
+    // Generate SQL for this single change
+    let colMetadata = null;
+    if (change.column && metadata && metadata.columns) {
+        colMetadata = metadata.columns.find(c => c.name === change.column) || 
+                      metadata.columns.find(c => c.name.toLowerCase() === change.column.toLowerCase());
+    }
+    
+    let tableNameVal = (colMetadata && colMetadata.tableName) || change.sourceTable || (metadata ? metadata.sourceTable : null);
+    let schemaNameVal = (colMetadata && colMetadata.schemaName) || change.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
+
+    const changeForSql = {
+        ...change,
+        columnName: change.column,
+        sourceColumn: change.column,
+        sourceTable: tableNameVal,
+        sourceSchema: schemaNameVal,
+        primaryKeyValues: change.pk
+    };
+    
+    let sql = '';
+    try {
+        sql = generateUpdateStatement(changeForSql, metadata);
+    } catch (error) {
+        console.error('Error generating SQL for single commit:', error);
+        vscode.postMessage({
+            type: 'error',
+            error: 'Failed to generate SQL: ' + error.message
+        });
+        return;
+    }
+    
+    // Send message to extension
+    vscode.postMessage({
+        type: 'commitChanges',
+        changes: [{ ...change, resultSetIndex }],
+        statements: [sql],
+        originalQuery: originalQuery
+    });
 }
 
 /**
@@ -2480,7 +2536,7 @@ function commitAllChanges() {
             // Generate SQL
              // Prepare change object for generateUpdateStatement
             let colMetadata = null;
-            if (metadata && metadata.columns) {
+            if (change.column && metadata && metadata.columns) {
                 // Try exact match first, then case-insensitive
                 colMetadata = metadata.columns.find(c => c.name === change.column) || 
                               metadata.columns.find(c => c.name.toLowerCase() === change.column.toLowerCase());
