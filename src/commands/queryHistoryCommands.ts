@@ -187,14 +187,14 @@ export function registerQueryHistoryCommands(
                         await vscode.workspace.applyEdit(edit);
                         outputChannel.appendLine(`[QueryHistory] Updated content in existing history.sql editor`);
                         
-                        // Focus the existing tab - this might be causing the issue
-                        outputChannel.appendLine(`[QueryHistory] Attempting to focus existing document`);
-                        // Don't call showTextDocument as it might open a new tab - just return
-                        // await vscode.window.showTextDocument(historyDoc, { 
-                        //     viewColumn: vscode.ViewColumn.Active,
-                        //     preview: false 
-                        // });
-                        outputChannel.appendLine(`[QueryHistory] Skipping showTextDocument to avoid opening new tab`);
+                        // Focus the existing history.sql tab
+                        outputChannel.appendLine(`[QueryHistory] Focusing existing history.sql document`);
+                        await vscode.window.showTextDocument(historyDoc, { 
+                            viewColumn: vscode.ViewColumn.Active,
+                            preview: false,
+                            preserveFocus: false
+                        });
+                        outputChannel.appendLine(`[QueryHistory] Successfully focused history.sql`);
                     } else {
                         outputChannel.appendLine(`[QueryHistory] Warning: Could not find existing history document despite successful tab update`);
                     }
