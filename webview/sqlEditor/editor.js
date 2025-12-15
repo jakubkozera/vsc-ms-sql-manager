@@ -13,12 +13,12 @@ function extractTablesFromQuery(query) {
     // Match FROM and JOIN clauses with optional aliases
     // Patterns: FROM schema.table alias, FROM [schema].[table] alias, FROM table alias, JOIN schema.table alias, etc.
     const patterns = [
-        // Pattern for bracketed identifiers: FROM [schema].[table] alias or FROM [table] alias
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
+        // Pattern for bracketed identifiers: FROM [schema].[table] [alias] or FROM [table] [alias]
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
         // Pattern for schema.table with alias (must have dot)
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
         // Pattern for just table name with alias (no schema)
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi
     ];
     
     patterns.forEach((pattern, patternIndex) => {
@@ -32,20 +32,20 @@ function extractTablesFromQuery(query) {
             // Pattern-specific parsing
             let schema, table, alias;
             if (patternIndex === 0) {
-                // Bracketed: [schema].[table] or [table]
+                // Bracketed: [schema].[table] [alias] or [table] [alias]
                 schema = match[1] || 'dbo';
                 table = match[2];
-                alias = match[3];
+                alias = match[3] || match[4]; // [alias] or alias
             } else if (patternIndex === 1) {
-                // schema.table (with dot)
+                // schema.table [alias] or alias (with dot)
                 schema = match[1];
                 table = match[2];
-                alias = match[3];
+                alias = match[3] || match[4]; // [alias] or alias
             } else {
-                // table only (no schema)
+                // table only (no schema) [alias] or alias
                 schema = 'dbo';
                 table = match[1];
-                alias = match[2];
+                alias = match[2] || match[3]; // [alias] or alias
             }
             
             console.log('[SQL-COMPLETION] Parsed - schema:', schema, 'table:', table, 'alias:', alias);
@@ -99,10 +99,14 @@ function findTableForAlias(query, alias) {
     const lowerQuery = query.toLowerCase();
     const lowerAlias = alias.toLowerCase();
 
-    // Pattern: FROM tableName alias or JOIN tableName alias
+    // Pattern: FROM tableName alias or JOIN tableName alias (with or without brackets)
     const patterns = [
-        new RegExp(`from\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?${lowerAlias}(?:\\s|,|$)`, 'i'),
-        new RegExp(`join\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?${lowerAlias}(?:\\s|,|$)`, 'i')
+        // Pattern with brackets: FROM [schema].[table] [alias] or FROM [table] [alias]
+        new RegExp(`from\\s+(?:\\[(\\w+)\\]\\.)?\\[(\\w+)\\]\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i'),
+        new RegExp(`join\\s+(?:\\[(\\w+)\\]\\.)?\\[(\\w+)\\]\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i'),
+        // Pattern without brackets: FROM schema.table alias or FROM table alias
+        new RegExp(`from\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i'),
+        new RegExp(`join\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i')
     ];
 
     for (const pattern of patterns) {
