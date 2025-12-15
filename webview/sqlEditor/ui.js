@@ -121,6 +121,14 @@ class CustomDropdown {
     toggle() {
         if (!this.menu || !this.trigger) return;
         
+        // If no connection is selected (selectedValue is empty), open connection selector
+        if (!this.selectedValue || this.selectedValue === '') {
+            vscode.postMessage({
+                type: 'manageConnections'
+            });
+            return;
+        }
+        
         const isOpen = this.menu.classList.contains('open');
 
         // Close all other dropdowns

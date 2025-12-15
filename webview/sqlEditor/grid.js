@@ -2020,21 +2020,33 @@ function renderPendingChanges() {
 
     let html = `
         <div class="pending-changes-header">
-            <div class="pending-changes-title">${totalChanges} Pending Change${totalChanges !== 1 ? 's' : ''}</div>
             <div class="pending-changes-actions">
-                <button onclick="previewUpdateStatements()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6" /></svg>
-                    Preview SQL
+                <button class="icon-button" onclick="commitAllChanges()" title="Commit All">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
+                        <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                        <path d="M14 4l0 4l-6 0l0 -4" />
+                    </svg>
                 </button>
-                <button class="secondary" onclick="revertAllChanges()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>
-                    Revert All
+                <button class="icon-button" onclick="revertAllChanges()" title="Revert All">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M13 14l-4 -4l4 -4" />
+                        <path d="M8 14l-4 -4l4 -4" />
+                        <path d="M9 10h7a4 4 0 1 1 0 8h-1" />
+                    </svg>
                 </button>
-                <button onclick="commitAllChanges()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12l5 5l10 -10" /></svg>
-                    Commit All
+                <button class="icon-button" onclick="previewUpdateStatements()" title="Preview SQL">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                        <path d="M5 20.25c0 .414 .336 .75 .75 .75h1.25a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1h-1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1h1.25a.75 .75 0 0 1 .75 .75" />
+                        <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+                        <path d="M18 15v6h2" />
+                        <path d="M13 15a2 2 0 0 1 2 2v2a2 2 0 1 1 -4 0v-2a2 2 0 0 1 2 -2z" />
+                        <path d="M14 20l1.5 1.5" />
+                    </svg>
                 </button>
             </div>
+            <div class="pending-changes-title">${totalChanges} Pending Change${totalChanges !== 1 ? 's' : ''}</div>
         </div>
         <div class="pending-changes-list">
     `;
@@ -2042,128 +2054,180 @@ function renderPendingChanges() {
     pendingChanges.forEach((changes, resultSetIndex) => {
         const metadata = resultSetMetadata[resultSetIndex];
         
+        // Group changes by row (using primary key as identifier)
+        const groupedByRow = new Map();
+        
         changes.forEach((change, changeIndex) => {
-            const { type, rowIndex, column: columnName, originalValue: oldValue, newValue, pk: primaryKeyValues } = change;
+            const { type, rowIndex, pk: primaryKeyValues } = change;
             
-            // Map new structure to old structure expected by generateUpdateStatement
-            // The new structure uses 'column', 'originalValue', 'pk'
-            // The old structure used 'columnName', 'oldValue', 'primaryKeyValues'
-            // We need to adapt the change object or the generateUpdateStatement function
-            // Let's adapt the change object here for display purposes
+            // Create a unique key for each row based on primary key values
+            const rowKey = JSON.stringify(primaryKeyValues);
             
-            // Also need sourceTable and sourceSchema which might be in metadata or change object
-            // In grid.js commitEdit, we didn't save sourceTable/Schema explicitly in the change object
-            // We need to retrieve it from metadata
+            if (!groupedByRow.has(rowKey)) {
+                groupedByRow.set(rowKey, {
+                    rowIndex,
+                    primaryKeyValues,
+                    type,
+                    changes: []
+                });
+            }
             
+            groupedByRow.get(rowKey).changes.push({ ...change, changeIndex });
+        });
+        
+        // Render each row group
+        groupedByRow.forEach((rowGroup, rowKey) => {
+            const { rowIndex, primaryKeyValues, type, changes: rowChanges } = rowGroup;
+            
+            // Get table info from first change
+            const firstChange = rowChanges[0];
             let sourceTable = 'UnknownTable';
             let sourceSchema = 'dbo';
-            let sourceColumn = columnName;
             
-            if (metadata && metadata.columns) {
-                const colDef = metadata.columns.find(c => c.name === columnName);
+            // For DELETE, use sourceTable/sourceSchema from the change directly
+            if (type === 'DELETE') {
+                sourceTable = firstChange.sourceTable || (metadata ? metadata.sourceTable : null) || sourceTable;
+                sourceSchema = firstChange.sourceSchema || (metadata ? metadata.sourceSchema : null) || sourceSchema;
+            } else if (metadata && metadata.columns) {
+                // For UPDATE, find by column name
+                const colDef = metadata.columns.find(c => c.name === firstChange.column);
                 if (colDef) {
-                    // If metadata has table info (it should if it came from the extension)
-                    // But wait, the metadata structure in grid.js might be different
-                    // Let's assume for now we can get it or fallback
+                    sourceTable = colDef.tableName || metadata.sourceTable || sourceTable;
+                    sourceSchema = colDef.schemaName || metadata.sourceSchema || sourceSchema;
                 }
             }
             
-            // For now, let's try to use what we have. 
-            // The generateUpdateStatement needs to be robust.
+            const tableName = `${sourceSchema}.${sourceTable}`;
             
-            // Construct a change object compatible with generateUpdateStatement
-            // We need to ensure we have table info. 
-            // In the new grid.js, we might need to look up table info from metadata.
+            // Generate WHERE clause from primary keys
+            const whereClause = Object.entries(primaryKeyValues)
+                .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                .join(' AND ');
             
-            // Let's look at how commitEdit saves the change.
-            // It saves: type, rowIndex, column, originalValue, newValue, pk
-            
-            // We need to enhance the change object or look up metadata here.
-            // Let's try to find the column metadata
-            let colMetadata = null;
-            if (columnName && metadata && metadata.columns) {
-                // Try exact match first, then case-insensitive
-                colMetadata = metadata.columns.find(c => c.name === columnName) || 
-                              metadata.columns.find(c => c.name.toLowerCase() === columnName.toLowerCase());
-            }
-            
-            // If we have column metadata, use it for table name
-            // Note: The extension sends metadata with tableName and schemaName if available
-            
-            // Fallback to result set metadata if column metadata doesn't have table info
-            let tableNameVal = (colMetadata && colMetadata.tableName) || change.sourceTable || (metadata ? metadata.sourceTable : null);
-            let schemaNameVal = (colMetadata && colMetadata.schemaName) || change.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
-
-            // For display purposes:
-            const tableName = schemaNameVal ? `${schemaNameVal}.${tableNameVal || 'Table'}` : (tableNameVal || 'Table');
-            
-            // Prepare change object for generateUpdateStatement
-            const changeForSql = {
-                ...change,
-                columnName: columnName,
-                sourceColumn: columnName,
-                sourceTable: tableNameVal,
-                sourceSchema: schemaNameVal,
-                primaryKeyValues: primaryKeyValues
-            };
-            
-            let sql = '';
-            try {
-                sql = generateUpdateStatement(changeForSql, metadata);
-            } catch (error) {
-                sql = `-- Error: ${error.message}`;
-            }
-            
-            // Handle DELETE display differently
+            // Handle DELETE differently
             if (type === 'DELETE') {
+                const deleteChange = rowChanges[0];
+                const sql = `DELETE FROM [${sourceSchema}].[${sourceTable}] WHERE ${whereClause};`;
+                
                 html += `
                     <div class="change-item change-item-delete">
                         <div class="change-header">
                             <div class="change-location" style="display: flex; align-items: center; gap: 6px;">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M4 7l16 0" />
-                                    <path d="M10 11l0 6" />
-                                    <path d="M14 11l0 6" />
-                                    <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
-                                    <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
-                                </svg>
-                                ${tableName} (Row ${rowIndex + 1}) - DELETE
-                            </div>
-                            <div class="change-actions" style="display: flex; gap: 8px;">
-                                <button class="change-commit" onclick="commitSingleChange(${resultSetIndex}, ${changeIndex})">Commit</button>
-                                <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                                <div style="display: flex; gap: 8px; margin-right: 8px;">
+                                    <button class="change-commit" onclick="commitSingleChange(${resultSetIndex}, ${deleteChange.changeIndex})" title="Delete Row">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M4 7l16 0" />
+                                            <path d="M10 11l0 6" />
+                                            <path d="M14 11l0 6" />
+                                            <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+                                            <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+                                        </svg>
+                                    </button>
+                                    <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${deleteChange.changeIndex})" title="Revert">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M9 14l-4 -4l4 -4" />
+                                            <path d="M5 10h11a4 4 0 1 1 0 8h-1" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <span>${tableName} - Row WHERE ${whereClause}</span>
                             </div>
                         </div>
                         <div class="change-sql">${escapeHtml(sql)}</div>
                     </div>
                 `;
             } else {
-                // UPDATE display
-                // Normalize boolean values to 0/1 for display
-                const normalizeValue = (val) => {
-                    if (val === null || val === undefined) return 'NULL';
-                    if (typeof val === 'boolean') return val ? '1' : '0';
-                    return String(val);
-                };
+                // UPDATE - aggregate all SET clauses for this row
+                const setClausesArray = rowChanges.map(change => 
+                    `    [${change.column}] = ${sqlEscape(change.newValue)}`
+                );
                 
-                const oldDisplay = normalizeValue(oldValue);
-                const newDisplay = normalizeValue(newValue);
+                const sql = `UPDATE [${sourceSchema}].[${sourceTable}]\nSET ${setClausesArray.join(',\n    ')}\nWHERE ${whereClause};`;
+                
+                // Check if this row has multiple column changes
+                const hasMultipleChanges = rowChanges.length > 1;
+                const expandId = `expand-${resultSetIndex}-${rowKey.replace(/[^a-z0-9]/gi, '')}`;
                 
                 html += `
                     <div class="change-item">
                         <div class="change-header">
-                            <div class="change-location">${tableName}.${columnName} (Row ${rowIndex + 1})</div>
-                            <div class="change-actions" style="display: flex; gap: 8px;">
-                                <button class="change-commit" onclick="commitSingleChange(${resultSetIndex}, ${changeIndex})">Commit</button>
-                                <button class="change-revert" onclick="revertChange(${resultSetIndex}, ${changeIndex})">Revert</button>
+                            <div class="change-location" style="display: flex; align-items: center; gap: 6px;">
+                                ${hasMultipleChanges ? `
+                                    <button class="change-expand-btn" onclick="toggleChangeExpand('${expandId}')" style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center;">
+                                        <svg id="${expandId}-icon" class="change-expand-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-foreground)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;">
+                                            <path d="M6 9l6 6l6 -6" />
+                                        </svg>
+                                    </button>
+                                ` : ''}
+                                <div style="display: flex; gap: 8px; margin-right: 8px;">
+                                    <button class="change-commit" onclick="commitRowChanges(${resultSetIndex}, [${rowChanges.map(c => c.changeIndex).join(',')}])" title="Commit">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
+                                            <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                                            <path d="M14 4l0 4l-6 0l0 -4" />
+                                        </svg>
+                                    </button>
+                                    <button class="change-revert" onclick="revertRowChanges(${resultSetIndex}, [${rowChanges.map(c => c.changeIndex).join(',')}])" title="Revert">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M9 14l-4 -4l4 -4" />
+                                            <path d="M5 10h11a4 4 0 1 1 0 8h-1" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <span>${tableName} - ${rowChanges.length} change${rowChanges.length > 1 ? 's' : ''} - Row WHERE ${whereClause}</span>
                             </div>
                         </div>
-                        <div class="change-details">
-                            <div class="change-label">Old value:</div>
-                            <div class="change-value change-value-old">${escapeHtml(oldDisplay)}</div>
-                            <div class="change-label">New value:</div>
-                            <div class="change-value change-value-new">${escapeHtml(newDisplay)}</div>
-                        </div>
+                        ${hasMultipleChanges ? `
+                            <div id="${expandId}" class="change-details-expanded" style="display: none; margin-top: 8px; padding-left: 22px;">
+                                ${rowChanges.map(change => {
+                                    const normalizeValue = (val) => {
+                                        if (val === null || val === undefined) return 'NULL';
+                                        if (typeof val === 'boolean') return val ? '1' : '0';
+                                        return String(val);
+                                    };
+                                    const oldDisplay = normalizeValue(change.originalValue);
+                                    const newDisplay = normalizeValue(change.newValue);
+                                    
+                                    return `
+                                        <div class="change-detail-item" style="margin-bottom: 8px; padding: 8px; background: var(--vscode-editor-background); border-radius: 4px;">
+                                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                                <div style="display: flex; gap: 6px;">
+                                                    <button class="change-commit" style="padding: 4px;" onclick="commitSingleChange(${resultSetIndex}, ${change.changeIndex})" title="Commit">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                            <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
+                                                            <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                                                            <path d="M14 4l0 4l-6 0l0 -4" />
+                                                        </svg>
+                                                    </button>
+                                                    <button class="change-revert" style="padding: 4px;" onclick="revertChange(${resultSetIndex}, ${change.changeIndex})" title="Revert">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                            <path d="M9 14l-4 -4l4 -4" />
+                                                            <path d="M5 10h11a4 4 0 1 1 0 8h-1" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                <div style="font-weight: 500;">${change.column}</div>
+                                            </div>
+                                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 12px;">
+                                                <div style="color: var(--vscode-descriptionForeground);">Old:</div>
+                                                <div class="change-value change-value-old">${escapeHtml(oldDisplay)}</div>
+                                                <div style="color: var(--vscode-descriptionForeground);">New:</div>
+                                                <div class="change-value change-value-new">${escapeHtml(newDisplay)}</div>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        ` : `
+                            <div class="change-details">
+                                <div class="change-label">Column:</div>
+                                <div class="change-value">${escapeHtml(rowChanges[0].column)}</div>
+                                <div class="change-label">Old value:</div>
+                                <div class="change-value change-value-old">${escapeHtml(String(rowChanges[0].originalValue || 'NULL'))}</div>
+                                <div class="change-label">New value:</div>
+                                <div class="change-value change-value-new">${escapeHtml(String(rowChanges[0].newValue || 'NULL'))}</div>
+                            </div>
+                        `}
                         <div class="change-sql">${escapeHtml(sql)}</div>
                     </div>
                 `;
@@ -2173,6 +2237,100 @@ function renderPendingChanges() {
 
     html += '</div>';
     container.innerHTML = html;
+}
+
+// Toggle expand/collapse for change details
+function toggleChangeExpand(expandId) {
+    const detailsDiv = document.getElementById(expandId);
+    const iconSvg = document.getElementById(expandId + '-icon');
+    
+    if (detailsDiv && iconSvg) {
+        if (detailsDiv.style.display === 'none') {
+            detailsDiv.style.display = 'block';
+            iconSvg.style.transform = 'rotate(180deg)';
+        } else {
+            detailsDiv.style.display = 'none';
+            iconSvg.style.transform = 'rotate(0deg)';
+        }
+    }
+}
+
+// Commit all changes for a specific row
+function commitRowChanges(resultSetIndex, changeIndices) {
+    const changes = pendingChanges.get(resultSetIndex);
+    if (!changes || changeIndices.length === 0) return;
+    
+    const metadata = resultSetMetadata[resultSetIndex];
+    
+    // Get all changes for this row
+    const rowChanges = changeIndices.map(index => ({
+        ...changes[index],
+        changeIndex: index,
+        resultSetIndex
+    }));
+    
+    // Verify all changes have the same primary key (should be same row)
+    const firstPk = JSON.stringify(rowChanges[0].pk);
+    const allSamePk = rowChanges.every(change => JSON.stringify(change.pk) === firstPk);
+    
+    if (!allSamePk) {
+        console.error('commitRowChanges called with changes from different rows!');
+        vscode.postMessage({
+            type: 'error',
+            error: 'Internal error: Cannot commit changes from different rows together'
+        });
+        return;
+    }
+    
+    const primaryKeyValues = rowChanges[0].pk;
+    const type = rowChanges[0].type;
+    
+    // Get table info from first change
+    const firstChange = rowChanges[0];
+    let colMetadata = null;
+    if (metadata && metadata.columns) {
+        colMetadata = metadata.columns.find(c => c.name === firstChange.column);
+    }
+    
+    const sourceTable = (colMetadata ? colMetadata.tableName : null) || firstChange.sourceTable || (metadata ? metadata.sourceTable : null);
+    const sourceSchema = (colMetadata ? colMetadata.schemaName : null) || firstChange.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
+    
+    let sql = '';
+    
+    if (type === 'DELETE') {
+        // Handle DELETE
+        const whereClause = Object.entries(primaryKeyValues)
+            .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+            .join(' AND ');
+        sql = `DELETE FROM [${sourceSchema}].[${sourceTable}] WHERE ${whereClause};`;
+    } else {
+        // Handle UPDATE - aggregate all SET clauses
+        const setClausesArray = rowChanges.map(change => 
+            `    [${change.column}] = ${sqlEscape(change.newValue)}`
+        );
+        const whereClause = Object.entries(primaryKeyValues)
+            .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+            .join(' AND ');
+        
+        sql = `UPDATE [${sourceSchema}].[${sourceTable}]\nSET ${setClausesArray.join(',\n    ')}\nWHERE ${whereClause};`;
+    }
+    
+    // Send single message with all changes and aggregated SQL (remove rowData to avoid sending unnecessary data)
+    const cleanedChanges = rowChanges.map(({ rowData, ...change }) => change);
+    vscode.postMessage({
+        type: 'commitChanges',
+        changes: cleanedChanges,
+        statements: [sql],
+        originalQuery: originalQuery
+    });
+}
+
+// Revert all changes for a specific row
+function revertRowChanges(resultSetIndex, changeIndices) {
+    // Revert changes in reverse order to maintain correct indices
+    changeIndices.sort((a, b) => b - a).forEach(index => {
+        revertChange(resultSetIndex, index);
+    });
 }
 
 function generateUpdateStatement(change, metadata) {
@@ -2316,10 +2474,11 @@ function commitSingleChange(resultSetIndex, changeIndex) {
         return;
     }
     
-    // Send message to extension
+    // Send message to extension (remove rowData to avoid sending unnecessary data)
+    const { rowData, ...changeWithoutRowData } = change;
     vscode.postMessage({
         type: 'commitChanges',
-        changes: [{ ...change, resultSetIndex }],
+        changes: [{ ...changeWithoutRowData, resultSetIndex }],
         statements: [sql],
         originalQuery: originalQuery
     });
@@ -2532,31 +2691,56 @@ function updateQuickSaveButton() {
                 tooltip.textContent = `Save ${totalChanges} pending changes`;
             }
             
-            // Try to generate SQL preview for tooltip
+            // Try to generate SQL preview for tooltip (aggregated by row)
             try {
                 const updateStatements = [];
                 pendingChanges.forEach((changes, resultSetIndex) => {
                     const metadata = resultSetMetadata[resultSetIndex];
+                    
+                    // Group changes by row (using primary key as identifier)
+                    const groupedByRow = new Map();
+                    
                     changes.forEach(change => {
-                        // Prepare change object for generateUpdateStatement
-                        let colMetadata = null;
-                        if (change.type !== 'DELETE' && metadata && metadata.columns) {
-                            colMetadata = metadata.columns.find(c => c.name === change.column);
+                        const rowKey = JSON.stringify(change.pk);
+                        
+                        if (!groupedByRow.has(rowKey)) {
+                            groupedByRow.set(rowKey, {
+                                primaryKeyValues: change.pk,
+                                type: change.type,
+                                changes: []
+                            });
                         }
                         
-                        const changeForSql = {
-                            ...change,
-                            columnName: change.column,
-                            sourceColumn: change.column,
-                            sourceTable: (colMetadata ? colMetadata.tableName : null) || change.sourceTable,
-                            sourceSchema: (colMetadata ? colMetadata.schemaName : null) || change.sourceSchema,
-                            primaryKeyValues: change.pk
-                        };
+                        groupedByRow.get(rowKey).changes.push(change);
+                    });
+                    
+                    // Generate SQL for each row group
+                    groupedByRow.forEach((rowGroup) => {
+                        const { primaryKeyValues, type, changes: rowChanges } = rowGroup;
                         
-                        try {
-                            updateStatements.push(generateUpdateStatement(changeForSql, metadata));
-                        } catch (e) {
-                            // Ignore errors for tooltip
+                        const firstChange = rowChanges[0];
+                        let colMetadata = null;
+                        if (metadata && metadata.columns) {
+                            colMetadata = metadata.columns.find(c => c.name === firstChange.column);
+                        }
+                        
+                        const sourceTable = (colMetadata ? colMetadata.tableName : null) || firstChange.sourceTable || (metadata ? metadata.sourceTable : null);
+                        const sourceSchema = (colMetadata ? colMetadata.schemaName : null) || firstChange.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
+                        
+                        if (type === 'DELETE') {
+                            const whereClause = Object.entries(primaryKeyValues)
+                                .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                                .join(' AND ');
+                            updateStatements.push(`DELETE FROM [${sourceSchema}].[${sourceTable}] WHERE ${whereClause};`);
+                        } else {
+                            const setClausesArray = rowChanges.map(change => 
+                                `[${change.column}] = ${sqlEscape(change.newValue)}`
+                            );
+                            const whereClause = Object.entries(primaryKeyValues)
+                                .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                                .join(' AND ');
+                            
+                            updateStatements.push(`UPDATE [${sourceSchema}].[${sourceTable}] SET ${setClausesArray.join(', ')} WHERE ${whereClause};`);
                         }
                     });
                 });
@@ -2589,28 +2773,55 @@ function previewUpdateStatements() {
             const metadata = resultSetMetadata[resultSetIndex];
             console.log(`[PREVIEW] Processing result set ${resultSetIndex}, changes:`, changes.length);
             
+            // Group changes by row (using primary key as identifier)
+            const groupedByRow = new Map();
+            
             changes.forEach(change => {
-                 // Prepare change object for generateUpdateStatement
-                let colMetadata = null;
-                if (metadata && metadata.columns) {
-                    colMetadata = metadata.columns.find(c => c.name === change.column);
+                const rowKey = JSON.stringify(change.pk);
+                
+                if (!groupedByRow.has(rowKey)) {
+                    groupedByRow.set(rowKey, {
+                        primaryKeyValues: change.pk,
+                        type: change.type,
+                        changes: []
+                    });
                 }
                 
-                const changeForSql = {
-                    ...change,
-                    columnName: change.column,
-                    sourceColumn: change.column,
-                    sourceTable: (colMetadata ? colMetadata.tableName : null) || change.sourceTable,
-                    sourceSchema: (colMetadata ? colMetadata.schemaName : null) || change.sourceSchema,
-                    primaryKeyValues: change.pk
-                };
+                groupedByRow.get(rowKey).changes.push(change);
+            });
+            
+            // Generate SQL for each row group
+            groupedByRow.forEach((rowGroup) => {
+                const { primaryKeyValues, type, changes: rowChanges } = rowGroup;
                 
-                try {
-                    const sql = generateUpdateStatement(changeForSql, metadata);
+                // Get table info from first change
+                const firstChange = rowChanges[0];
+                let colMetadata = null;
+                if (metadata && metadata.columns) {
+                    colMetadata = metadata.columns.find(c => c.name === firstChange.column);
+                }
+                
+                const sourceTable = (colMetadata ? colMetadata.tableName : null) || firstChange.sourceTable || (metadata ? metadata.sourceTable : null);
+                const sourceSchema = (colMetadata ? colMetadata.schemaName : null) || firstChange.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
+                
+                if (type === 'DELETE') {
+                    // Handle DELETE
+                    const whereClause = Object.entries(primaryKeyValues)
+                        .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                        .join(' AND ');
+                    const sql = `DELETE FROM [${sourceSchema}].[${sourceTable}] WHERE ${whereClause};`;
                     updateStatements.push(sql);
-                } catch (error) {
-                    console.error('[PREVIEW] Error generating SQL:', error);
-                    updateStatements.push(`-- Error generating SQL for ${change.column}: ${error.message}`);
+                } else {
+                    // Handle UPDATE - aggregate all SET clauses
+                    const setClausesArray = rowChanges.map(change => 
+                        `    [${change.column}] = ${sqlEscape(change.newValue)}`
+                    );
+                    const whereClause = Object.entries(primaryKeyValues)
+                        .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                        .join(' AND ');
+                    
+                    const sql = `UPDATE [${sourceSchema}].[${sourceTable}]\nSET ${setClausesArray.join(',\n    ')}\nWHERE ${whereClause};`;
+                    updateStatements.push(sql);
                 }
             });
         });
@@ -2621,7 +2832,7 @@ function previewUpdateStatements() {
         // Since we can't easily create a modal, let's send it to the extension to open in a new editor
         vscode.postMessage({
             type: 'openInNewEditor',
-            content: updateStatements.join('\n'),
+            content: updateStatements.join('\n\n'),
             language: 'sql'
         });
         
@@ -2643,49 +2854,79 @@ function commitAllChanges() {
     pendingChanges.forEach((changes, resultSetIndex) => {
         const metadata = resultSetMetadata[resultSetIndex];
         
-        changes.forEach(change => {
-            // Add resultSetIndex to each change
-            allChanges.push({
-                ...change,
-                resultSetIndex
-            });
+        // Group changes by row (using primary key as identifier)
+        const groupedByRow = new Map();
+        
+        changes.forEach((change, changeIndex) => {
+            const rowKey = JSON.stringify(change.pk);
             
-            // Generate SQL
-             // Prepare change object for generateUpdateStatement
-            let colMetadata = null;
-            if (change.column && metadata && metadata.columns) {
-                // Try exact match first, then case-insensitive
-                colMetadata = metadata.columns.find(c => c.name === change.column) || 
-                              metadata.columns.find(c => c.name.toLowerCase() === change.column.toLowerCase());
+            if (!groupedByRow.has(rowKey)) {
+                groupedByRow.set(rowKey, {
+                    primaryKeyValues: change.pk,
+                    type: change.type,
+                    changes: []
+                });
             }
             
-            // Fallback to result set metadata if column metadata doesn't have table info
-            let tableNameVal = (colMetadata && colMetadata.tableName) || change.sourceTable || (metadata ? metadata.sourceTable : null);
-            let schemaNameVal = (colMetadata && colMetadata.schemaName) || change.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
-
-            const changeForSql = {
+            groupedByRow.get(rowKey).changes.push({
                 ...change,
-                columnName: change.column,
-                sourceColumn: change.column,
-                sourceTable: tableNameVal,
-                sourceSchema: schemaNameVal,
-                primaryKeyValues: change.pk
-            };
+                resultSetIndex,
+                changeIndex
+            });
+        });
+        
+        // Generate SQL for each row group
+        groupedByRow.forEach((rowGroup) => {
+            const { primaryKeyValues, type, changes: rowChanges } = rowGroup;
             
-            try {
-                const sql = generateUpdateStatement(changeForSql, metadata);
+            // Add all changes from this row to allChanges
+            rowChanges.forEach(change => {
+                allChanges.push({
+                    ...change,
+                    resultSetIndex
+                });
+            });
+            
+            // Get table info from first change
+            const firstChange = rowChanges[0];
+            let colMetadata = null;
+            if (metadata && metadata.columns) {
+                colMetadata = metadata.columns.find(c => c.name === firstChange.column);
+            }
+            
+            const sourceTable = (colMetadata ? colMetadata.tableName : null) || firstChange.sourceTable || (metadata ? metadata.sourceTable : null);
+            const sourceSchema = (colMetadata ? colMetadata.schemaName : null) || firstChange.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
+            
+            if (type === 'DELETE') {
+                // Handle DELETE
+                const whereClause = Object.entries(primaryKeyValues)
+                    .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                    .join(' AND ');
+                const sql = `DELETE FROM [${sourceSchema}].[${sourceTable}] WHERE ${whereClause};`;
                 updateStatements.push(sql);
-            } catch (error) {
-                console.error('Error generating SQL for commit:', error);
+            } else {
+                // Handle UPDATE - aggregate all SET clauses
+                const setClausesArray = rowChanges.map(change => 
+                    `    [${change.column}] = ${sqlEscape(change.newValue)}`
+                );
+                const whereClause = Object.entries(primaryKeyValues)
+                    .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                    .join(' AND ');
+                
+                const sql = `UPDATE [${sourceSchema}].[${sourceTable}]\nSET ${setClausesArray.join(',\n    ')}\nWHERE ${whereClause};`;
+                updateStatements.push(sql);
             }
         });
     });
     
     if (allChanges.length === 0) return;
     
+    // Remove rowData from all changes to avoid sending unnecessary data
+    const cleanedChanges = allChanges.map(({ rowData, ...change }) => change);
+    
     vscode.postMessage({
         type: 'commitChanges',
-        changes: allChanges,
+        changes: cleanedChanges,
         statements: updateStatements,
         originalQuery: originalQuery
     });
@@ -4690,4 +4931,7 @@ window.updatePendingChangesCount = updatePendingChangesCount;
 window.commitAllChanges = commitAllChanges;
 window.previewUpdateStatements = previewUpdateStatements;
 window.executeRevertAll = executeRevertAll;
+window.toggleChangeExpand = toggleChangeExpand;
+window.commitRowChanges = commitRowChanges;
+window.revertRowChanges = revertRowChanges;
 

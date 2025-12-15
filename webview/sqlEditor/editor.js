@@ -13,12 +13,12 @@ function extractTablesFromQuery(query) {
     // Match FROM and JOIN clauses with optional aliases
     // Patterns: FROM schema.table alias, FROM [schema].[table] alias, FROM table alias, JOIN schema.table alias, etc.
     const patterns = [
-        // Pattern for bracketed identifiers: FROM [schema].[table] alias or FROM [table] alias
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
+        // Pattern for bracketed identifiers: FROM [schema].[table] [alias] or FROM [table] [alias]
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
         // Pattern for schema.table with alias (must have dot)
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
         // Pattern for just table name with alias (no schema)
-        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?([a-zA-Z_][a-zA-Z0-9_]*))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi
+        /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi
     ];
     
     patterns.forEach((pattern, patternIndex) => {
@@ -32,20 +32,20 @@ function extractTablesFromQuery(query) {
             // Pattern-specific parsing
             let schema, table, alias;
             if (patternIndex === 0) {
-                // Bracketed: [schema].[table] or [table]
+                // Bracketed: [schema].[table] [alias] or [table] [alias]
                 schema = match[1] || 'dbo';
                 table = match[2];
-                alias = match[3];
+                alias = match[3] || match[4]; // [alias] or alias
             } else if (patternIndex === 1) {
-                // schema.table (with dot)
+                // schema.table [alias] or alias (with dot)
                 schema = match[1];
                 table = match[2];
-                alias = match[3];
+                alias = match[3] || match[4]; // [alias] or alias
             } else {
-                // table only (no schema)
+                // table only (no schema) [alias] or alias
                 schema = 'dbo';
                 table = match[1];
-                alias = match[2];
+                alias = match[2] || match[3]; // [alias] or alias
             }
             
             console.log('[SQL-COMPLETION] Parsed - schema:', schema, 'table:', table, 'alias:', alias);
@@ -99,10 +99,14 @@ function findTableForAlias(query, alias) {
     const lowerQuery = query.toLowerCase();
     const lowerAlias = alias.toLowerCase();
 
-    // Pattern: FROM tableName alias or JOIN tableName alias
+    // Pattern: FROM tableName alias or JOIN tableName alias (with or without brackets)
     const patterns = [
-        new RegExp(`from\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?${lowerAlias}(?:\\s|,|$)`, 'i'),
-        new RegExp(`join\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?${lowerAlias}(?:\\s|,|$)`, 'i')
+        // Pattern with brackets: FROM [schema].[table] [alias] or FROM [table] [alias]
+        new RegExp(`from\\s+(?:\\[(\\w+)\\]\\.)?\\[(\\w+)\\]\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i'),
+        new RegExp(`join\\s+(?:\\[(\\w+)\\]\\.)?\\[(\\w+)\\]\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i'),
+        // Pattern without brackets: FROM schema.table alias or FROM table alias
+        new RegExp(`from\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i'),
+        new RegExp(`join\\s+(?:(\\w+)\\.)?(\\w+)\\s+(?:as\\s+)?(?:\\[${lowerAlias}\\]|${lowerAlias})(?:\\s|,|$)`, 'i')
     ];
 
     for (const pattern of patterns) {
@@ -181,32 +185,69 @@ function getRelatedTables(tablesInQuery) {
             
             // Find foreign keys FROM this table (this table references other tables)
             dbSchema.foreignKeys.forEach(fk => {
-                if (fk.fromTable.toLowerCase() === tableName && fk.fromSchema === tableInfo.schema) {
-                    // Add the referenced table if not already in query
-                    if (!existingTableNames.includes(fk.toTable.toLowerCase())) {
+                if (fk.fromTable.toLowerCase() === tableName && 
+                    !existingTableNames.includes(fk.toTable.toLowerCase())) {
+                    
+                    const table = dbSchema.tables.find(t => 
+                        t.name.toLowerCase() === fk.toTable.toLowerCase() && 
+                        t.schema === fk.toSchema
+                    );
+                    
+                    if (table && !relatedTables.find(rt => 
+                        rt.name.toLowerCase() === table.name.toLowerCase() && 
+                        rt.schema === table.schema
+                    )) {
                         relatedTables.push({
-                            schema: fk.toSchema,
-                            table: fk.toTable,
-                            relationship: 'referenced',
-                            fk: fk
+                            ...table,
+                            foreignKeyInfo: {
+                                direction: 'to',
+                                fromTable: fk.fromTable,
+                                fromAlias: tableInfo.alias,
+                                fromHasExplicitAlias: tableInfo.hasExplicitAlias,
+                                fromColumn: fk.fromColumn,
+                                toTable: fk.toTable,
+                                toColumn: fk.toColumn
+                            }
                         });
                     }
                 }
                 
                 // Find foreign keys TO this table (other tables reference this table)
-                if (fk.toTable.toLowerCase() === tableName && fk.toSchema === tableInfo.schema) {
-                    // Add the referencing table if not already in query
-                    if (!existingTableNames.includes(fk.fromTable.toLowerCase())) {
+                if (fk.toTable.toLowerCase() === tableName && 
+                    !existingTableNames.includes(fk.fromTable.toLowerCase())) {
+                    
+                    const table = dbSchema.tables.find(t => 
+                        t.name.toLowerCase() === fk.fromTable.toLowerCase() && 
+                        t.schema === fk.fromSchema
+                    );
+                    
+                    if (table && !relatedTables.find(rt => 
+                        rt.name.toLowerCase() === table.name.toLowerCase() && 
+                        rt.schema === table.schema
+                    )) {
                         relatedTables.push({
-                            schema: fk.fromSchema,
-                            table: fk.fromTable,
-                            relationship: 'referencing',
-                            fk: fk
+                            ...table,
+                            foreignKeyInfo: {
+                                direction: 'from',
+                                fromTable: fk.fromTable,
+                                fromAlias: tableInfo.alias,
+                                fromHasExplicitAlias: tableInfo.hasExplicitAlias,
+                                fromColumn: fk.fromColumn,
+                                toTable: fk.toTable,
+                                toColumn: fk.toColumn
+                            }
                         });
                     }
                 }
             });
         });
+    }
+    
+    // If no related tables found or no FK info, return all tables except those already in query
+    if (relatedTables.length === 0) {
+        return dbSchema.tables.filter(table => 
+            !existingTableNames.includes(table.name.toLowerCase())
+        );
     }
     
     return relatedTables;
@@ -286,7 +327,7 @@ function provideSqlCompletions(model, position) {
                 console.log('[SQL-COMPLETION] Related tables:', relatedTables.map(t => ({ name: t.name, hasFKInfo: !!t.foreignKeyInfo })));
                 
                 return {
-                    suggestions: relatedTables.map(table => {
+                    suggestions: relatedTables.filter(t => t && t.name).map(table => {
                         const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
                         
                         // Generate smart alias
@@ -496,11 +537,13 @@ function provideSqlCompletions(model, position) {
             
             // Only add if no conflict with user snippets (user snippets take priority)
             if (!hasConflict100) {
+                const bracketedName = `[${table.schema}].[${table.name}]`;
+                const aliasName = generateSmartAlias(table.name);
                 suggestions.push({
                     label: table100Label,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName}`,
-                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${table.name}_100`, // High priority
@@ -511,11 +554,13 @@ function provideSqlCompletions(model, position) {
             }
             
             if (!hasConflictAll) {
+                const bracketedName = `[${table.schema}].[${table.name}]`;
+                const aliasName = generateSmartAlias(table.name);
                 suggestions.push({
                     label: tableAllLabel,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName}`,
-                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${table.name}_all`,
@@ -552,11 +597,13 @@ function provideSqlCompletions(model, position) {
             
             // Only add if no conflict with user snippets
             if (!hasConflict100) {
+                const bracketedName = `[${view.schema}].[${view.name}]`;
+                const aliasName = generateSmartAlias(view.name);
                 suggestions.push({
                     label: view100Label,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName} (View)`,
-                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${view.name}_100`,
@@ -567,11 +614,13 @@ function provideSqlCompletions(model, position) {
             }
             
             if (!hasConflictAll) {
+                const bracketedName = `[${view.schema}].[${view.name}]`;
+                const aliasName = generateSmartAlias(view.name);
                 suggestions.push({
                     label: viewAllLabel,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName} (View)`,
-                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${view.name}_all`,
@@ -1181,6 +1230,8 @@ function getSqlOperators(range) {
 }
 
 function generateSmartAlias(tableName) {
+    if (!tableName) return 't';
+
     // Handle short table names (3 characters or less)
     if (tableName.length <= 3) {
         return tableName.toLowerCase();
