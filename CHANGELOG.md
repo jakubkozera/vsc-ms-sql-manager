@@ -5,6 +5,49 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2025-12-15
+
+### Enhanced
+
+- **SQL Editor Results - Pending Changes UI/UX Improvements**: Major redesign of pending changes interface for better usability
+  - **Aggregated row changes**: Multiple column changes in the same row now displayed as single UPDATE with multiple SET clauses
+  - **Icon-only action buttons**: Cleaner interface with icon-only buttons (Commit, Revert, Preview) without text labels
+  - **Reorganized layout**: Action buttons moved before title in header with new order (Commit All, Revert All, Preview SQL)
+  - **Expandable change details**: Multi-column changes now expandable with chevron icon showing individual column modifications
+  - **Per-column actions**: Commit or revert individual columns within expanded details for granular control
+  - **Optimized DELETE display**: DELETE operations now show 2 icons instead of 3 (trash icon commits delete, arrow reverts)
+  - **Theme-aware styling**: Chevron icons and buttons properly adapt to light/dark themes
+  - **Removed hover effects**: Cleaner visual experience without distracting hover backgrounds on change items
+
+- **SQL Code Generation - Bracket Notation**: Comprehensive SQL formatting improvements with proper identifier escaping
+  - **Consistent bracket notation**: All SQL snippets now use `[schema].[table] [alias]` format for maximum compatibility
+  - **Dynamic autocomplete**: Table, schema, and alias names properly wrapped in square brackets `[]`
+  - **Built-in snippets**: All 33+ built-in SQL snippets updated to use bracket notation
+  - **Backend commands**: "Generate SELECT Script" and "Select Top 1000" commands updated with bracket notation
+  - **JOIN autocomplete**: Fixed to work correctly with bracketed aliases (e.g., `[alias]` and `alias` formats)
+
+- **Connection Management Improvements**: Enhanced connection workflow and user experience
+  - **Last connection tracking**: Automatically saves and displays last connection time for each saved connection
+  - **Smart connection sorting**: Quick pick now sorts connections by most recently used (newest first)
+  - **Friendly time display**: Shows connection age as "5m ago", "2h ago", "yesterday", etc. in connection selector
+  - **Quick connect from empty state**: Clicking "Not Connected" dropdown now opens connection selector instead of showing empty menu
+  - **Connection metadata**: Added `lastConnected` field to connection configuration with ISO date string
+
+### Fixed
+
+- **DELETE operation data transmission**: Fixed unnecessary data being sent to backend during row deletion
+  - Removed `rowData` from DELETE messages to backend (only sends primary keys and metadata)
+  - Applies to `commitSingleChange`, `commitRowChanges`, and `commitAllChanges` functions
+  - Significantly reduces message payload size for DELETE operations
+
+- **DELETE UnknownTable display**: Fixed "UnknownTable" appearing for DELETE operations in pending changes
+  - DELETE operations now correctly use `sourceTable` and `sourceSchema` from change object
+  - Proper table name resolution for both DELETE and UPDATE operations
+
+- **Pending changes UI positioning**: Improved button and text positioning in change items
+  - Action buttons now consistently placed before text labels for better visual flow
+  - Expanded detail buttons positioned before column names for easier access
+
 ## [0.8.0] - 2025-12-07
 
 ### Added
