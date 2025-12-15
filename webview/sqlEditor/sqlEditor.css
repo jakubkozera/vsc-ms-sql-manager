@@ -908,7 +908,6 @@ body.vscode-high-contrast .fk-column {
 .pending-changes-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--vscode-panel-border);
@@ -922,32 +921,48 @@ body.vscode-high-contrast .fk-column {
 .pending-changes-actions {
     display: flex;
     gap: 8px;
+    margin-right: 12px;
 }
 
-.pending-changes-actions button {
-    padding: 6px 12px;
-    background-color: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
+.icon-button {
+    padding: 4px;
+    background-color: transparent;
+    color: var(--vscode-foreground);
     border: none;
     border-radius: 2px;
     cursor: pointer;
-    font-size: 13px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+}
+
+.icon-button:hover {
+    background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.pending-changes-actions button {
+    padding: 4px;
+    background-color: transparent;
+    color: var(--vscode-foreground);
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .pending-changes-actions button:hover {
-    background-color: var(--vscode-button-hoverBackground);
+    background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 .pending-changes-actions button.secondary {
-    background-color: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
+    background-color: transparent;
+    color: var(--vscode-foreground);
 }
 
 .pending-changes-actions button.secondary:hover {
-    background-color: var(--vscode-button-secondaryHoverBackground);
+    background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 .change-item {
@@ -957,11 +972,6 @@ body.vscode-high-contrast .fk-column {
     border-radius: 3px;
     padding: 12px;
     margin-bottom: 12px;
-    transition: background-color 0.1s;
-}
-
-.change-item:hover {
-    background-color: var(--vscode-list-hoverBackground);
 }
 
 .change-item-delete {
@@ -985,17 +995,19 @@ body.vscode-high-contrast .fk-column {
 }
 
 .change-revert {
-    padding: 4px 8px;
+    padding: 4px;
     background-color: transparent;
     color: var(--vscode-foreground);
-    border: 1px solid var(--vscode-panel-border);
+    border: none;
     border-radius: 2px;
     cursor: pointer;
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .change-revert:hover {
-    background-color: var(--vscode-list-hoverBackground);
+    background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 .change-details {
@@ -1445,16 +1457,18 @@ body.vscode-high-contrast .fk-column {
 }
 
 .change-commit {
-    padding: 4px 8px;
-    background-color: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-    border: 1px solid transparent;
+    padding: 4px;
+    background-color: transparent;
+    color: var(--vscode-foreground);
+    border: none;
     border-radius: 2px;
     cursor: pointer;
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .change-commit:hover {
-    background-color: var(--vscode-button-hoverBackground);
+    background-color: var(--vscode-toolbar-hoverBackground);
 }
 
