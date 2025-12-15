@@ -57,6 +57,7 @@ export interface ConnectionConfig {
     connectionString?: string;
     useConnectionString?: boolean;
     serverGroupId?: string; // New field for server group
+    lastConnected?: string; // ISO date string of last successful connection
 }
 
 export class ConnectionProvider {
@@ -281,7 +282,20 @@ export class ConnectionProvider {
                 detail: 'Configure a new SQL Server connection',
                 action: 'new'
             },
-            ...availableConnections.map(conn => {
+            ...availableConnections
+                // Sort by lastConnected date (most recent first), then by name
+                .sort((a, b) => {
+                    // If both have lastConnected, compare dates (descending)
+                    if (a.lastConnected && b.lastConnected) {
+                        return new Date(b.lastConnected).getTime() - new Date(a.lastConnected).getTime();
+                    }
+                    // Put connections with lastConnected first
+                    if (a.lastConnected && !b.lastConnected) return -1;
+                    if (!a.lastConnected && b.lastConnected) return 1;
+                    // If neither has lastConnected, sort by name
+                    return a.name.localeCompare(b.name);
+                })
+                .map(conn => {
                 // Try to find server group color if available
                 const group = conn.serverGroupId ? serverGroups.find(g => g.id === conn.serverGroupId) : undefined;
                 const groupColor = group ? group.color || '#000000' : '#000000';
@@ -292,10 +306,38 @@ export class ConnectionProvider {
                         : new vscode.ThemeIcon('server-environment'))
                     : createDatabaseIcon(this.isConnectionActive(conn.id));
 
+                // Format last connected date
+                let authDetail = `Auth: ${conn.authType}`;
+                if (conn.lastConnected) {
+                    const lastConnectedDate = new Date(conn.lastConnected);
+                    const now = new Date();
+                    const diffMs = now.getTime() - lastConnectedDate.getTime();
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMs / 3600000);
+                    const diffDays = Math.floor(diffMs / 86400000);
+                    
+                    let timeAgo = '';
+                    if (diffMins < 1) {
+                        timeAgo = 'just now';
+                    } else if (diffMins < 60) {
+                        timeAgo = `${diffMins}m ago`;
+                    } else if (diffHours < 24) {
+                        timeAgo = `${diffHours}h ago`;
+                    } else if (diffDays === 1) {
+                        timeAgo = 'yesterday';
+                    } else if (diffDays < 7) {
+                        timeAgo = `${diffDays}d ago`;
+                    } else {
+                        timeAgo = lastConnectedDate.toLocaleDateString();
+                    }
+                    
+                    authDetail += ` • Last connection: ${timeAgo}`;
+                }
+
                 return {
                     label: conn.name,
                     description: `${conn.server}/${conn.database}`,
-                    detail: `Auth: ${conn.authType}`,
+                    detail: authDetail,
                     action: 'connect',
                     config: conn,
                     iconPath: icon
@@ -436,6 +478,9 @@ export class ConnectionProvider {
                 
                 const displayDb = config.connectionType === 'server' ? 'server' : config.database;
                 this.outputChannel.appendLine(`Successfully connected to ${config.server}/${displayDb}`);
+                
+                // Update lastConnected timestamp
+                await this.updateLastConnected(config.id);
                 
                 // Final progress update
                 progress.report({ message: `Successfully connected!` });
@@ -858,6 +903,17 @@ export class ConnectionProvider {
         
         this.outputChannel.appendLine(`[ConnectionProvider] Connection saved: ${connection.name}. Total connections: ${savedConnections.length}`);
         this.outputChannel.appendLine(`[ConnectionProvider] All saved connections: ${JSON.stringify(savedConnections.map(c => ({id: c.id, name: c.name, serverGroupId: c.serverGroupId})))}`);
+    }
+
+    private async updateLastConnected(connectionId: string): Promise<void> {
+        const savedConnections = this.getSavedConnections();
+        const connectionIndex = savedConnections.findIndex(conn => conn.id === connectionId);
+        
+        if (connectionIndex >= 0) {
+            savedConnections[connectionIndex].lastConnected = new Date().toISOString();
+            await this.context.globalState.update('mssqlManager.connections', savedConnections);
+            this.outputChannel.appendLine(`[ConnectionProvider] Updated lastConnected for ${connectionId}`);
+        }
     }
 
     async deleteConnection(connectionId: string): Promise<void> {
