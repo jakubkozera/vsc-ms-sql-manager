@@ -2644,31 +2644,56 @@ function updateQuickSaveButton() {
                 tooltip.textContent = `Save ${totalChanges} pending changes`;
             }
             
-            // Try to generate SQL preview for tooltip
+            // Try to generate SQL preview for tooltip (aggregated by row)
             try {
                 const updateStatements = [];
                 pendingChanges.forEach((changes, resultSetIndex) => {
                     const metadata = resultSetMetadata[resultSetIndex];
+                    
+                    // Group changes by row (using primary key as identifier)
+                    const groupedByRow = new Map();
+                    
                     changes.forEach(change => {
-                        // Prepare change object for generateUpdateStatement
-                        let colMetadata = null;
-                        if (change.type !== 'DELETE' && metadata && metadata.columns) {
-                            colMetadata = metadata.columns.find(c => c.name === change.column);
+                        const rowKey = JSON.stringify(change.pk);
+                        
+                        if (!groupedByRow.has(rowKey)) {
+                            groupedByRow.set(rowKey, {
+                                primaryKeyValues: change.pk,
+                                type: change.type,
+                                changes: []
+                            });
                         }
                         
-                        const changeForSql = {
-                            ...change,
-                            columnName: change.column,
-                            sourceColumn: change.column,
-                            sourceTable: (colMetadata ? colMetadata.tableName : null) || change.sourceTable,
-                            sourceSchema: (colMetadata ? colMetadata.schemaName : null) || change.sourceSchema,
-                            primaryKeyValues: change.pk
-                        };
+                        groupedByRow.get(rowKey).changes.push(change);
+                    });
+                    
+                    // Generate SQL for each row group
+                    groupedByRow.forEach((rowGroup) => {
+                        const { primaryKeyValues, type, changes: rowChanges } = rowGroup;
                         
-                        try {
-                            updateStatements.push(generateUpdateStatement(changeForSql, metadata));
-                        } catch (e) {
-                            // Ignore errors for tooltip
+                        const firstChange = rowChanges[0];
+                        let colMetadata = null;
+                        if (metadata && metadata.columns) {
+                            colMetadata = metadata.columns.find(c => c.name === firstChange.column);
+                        }
+                        
+                        const sourceTable = (colMetadata ? colMetadata.tableName : null) || firstChange.sourceTable || (metadata ? metadata.sourceTable : null);
+                        const sourceSchema = (colMetadata ? colMetadata.schemaName : null) || firstChange.sourceSchema || (metadata ? metadata.sourceSchema : 'dbo');
+                        
+                        if (type === 'DELETE') {
+                            const whereClause = Object.entries(primaryKeyValues)
+                                .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                                .join(' AND ');
+                            updateStatements.push(`DELETE FROM [${sourceSchema}].[${sourceTable}] WHERE ${whereClause};`);
+                        } else {
+                            const setClausesArray = rowChanges.map(change => 
+                                `[${change.column}] = ${sqlEscape(change.newValue)}`
+                            );
+                            const whereClause = Object.entries(primaryKeyValues)
+                                .map(([pkCol, pkValue]) => `[${pkCol}] = ${sqlEscape(pkValue)}`)
+                                .join(' AND ');
+                            
+                            updateStatements.push(`UPDATE [${sourceSchema}].[${sourceTable}] SET ${setClausesArray.join(', ')} WHERE ${whereClause};`);
                         }
                     });
                 });
