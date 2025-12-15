@@ -103,20 +103,20 @@ export function registerQueryCommands(
                     
                     if (columnsResult.recordset && columnsResult.recordset.length > 0) {
                         const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
-                        query = `SELECT TOP (1000) ${columns}\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
+                        query = `SELECT TOP (1000) ${columns}\n  FROM [${schemaName}].[${tableName}] [${tableAlias}]`;
                     } else {
                         // Fallback to * if we can't get columns
-                        query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
+                        query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] [${tableAlias}]`;
                     }
                 } catch (error) {
                     // Fallback to * if column query fails
                     outputChannel.appendLine(`Failed to get columns for ${fullLabel}, using *: ${error}`);
-                    query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
+                    query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] [${tableAlias}]`;
                 }
             } else {
                 // No connection available or not connected, use basic query
                 outputChannel.appendLine(`No active connection available for ${fullLabel}, using basic query`);
-                query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] ${tableAlias}`;
+                query = `SELECT TOP (1000) *\n  FROM [${schemaName}].[${tableName}] [${tableAlias}]`;
             }
             
             // Set the preferred database context if available and execute query

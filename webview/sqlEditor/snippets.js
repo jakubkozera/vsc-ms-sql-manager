@@ -99,79 +99,79 @@ const builtInSnippets = [
     {
         name: "SELECT * FROM",
         prefix: "sel",
-        body: "SELECT ${1:*} FROM ${2:dbo}.${3:Table} ${4:AS t}${0}",
+        body: "SELECT ${1:*} FROM [${2:dbo}].[${3:Table}] [${4:t}]${0}",
         description: "Basic SELECT statement"
     },
     {
         name: "SELECT with NOLOCK",
         prefix: "self",
-        body: "SELECT * FROM ${1:dbo}.${2:Table} WITH (NOLOCK)${0}",
+        body: "SELECT * FROM [${1:dbo}].[${2:Table}] [t] WITH (NOLOCK)${0}",
         description: "SELECT with NOLOCK hint"
     },
     {
         name: "SELECT with NOLOCK",
         prefix: "nolock",
-        body: "SELECT * FROM ${1:dbo}.${2:Table} WITH (NOLOCK)${0}",
+        body: "SELECT * FROM [${1:dbo}].[${2:Table}] [t] WITH (NOLOCK)${0}",
         description: "SELECT with NOLOCK hint"
     },
     {
         name: "SELECT TOP 1000",
         prefix: "top",
-        body: "SELECT TOP (1000) ${1:*}",
+        body: "SELECT TOP (1000) ${1:*} FROM [${2:dbo}].[${3:Table}] [${4:t}]",
         description: "Quick preview"
     },
     {
         name: "COUNT(*)",
         prefix: "selc",
-        body: "SELECT COUNT(*) FROM ${1:dbo}.${2:Table}${0}",
+        body: "SELECT COUNT(*) FROM [${1:dbo}].[${2:Table}]${0}",
         description: "Count all records"
     },
     {
         name: "INSERT INTO",
         prefix: "ins",
-        body: "INSERT INTO ${1:dbo}.${2:Table} (${3:Column}) VALUES (${4:value})${0}",
+        body: "INSERT INTO [${1:dbo}].[${2:Table}] ([${3:Column}]) VALUES (${4:value})${0}",
         description: "Basic INSERT statement"
     },
     {
         name: "INSERT SELECT",
         prefix: "insel",
-        body: "INSERT INTO ${1:dbo}.${2:Target} (${3:Columns})\nSELECT ${4:Columns} FROM ${5:dbo}.${6:Source}${0}",
+        body: "INSERT INTO [${1:dbo}].[${2:Target}] ([${3:Columns}])\nSELECT [${4:Columns}] FROM [${5:dbo}].[${6:Source}]${0}",
         description: "INSERT with SELECT"
     },
     {
         name: "UPDATE",
         prefix: "upd",
-        body: "UPDATE ${1:t}\nSET ${2:t.Column = value}\nFROM ${3:dbo}.${4:Table} AS t${5: WHERE <condition>}${0}",
+        body: "UPDATE [${1:t}]\nSET [${1:t}].[${2:Column}] = ${3:value}\nFROM [${4:dbo}].[${5:Table}] [${1:t}]${6: WHERE <condition>}${0}",
         description: "UPDATE with FROM clause"
     },
     {
         name: "DELETE",
         prefix: "del",
-        body: "DELETE FROM ${1:dbo}.${2:Table} WHERE ${3:Id = @Id}${0}",
+        body: "DELETE FROM [${1:dbo}].[${2:Table}] WHERE ${3:Id = @Id}${0}",
         description: "Basic DELETE statement"
     },
     {
         name: "TRUNCATE TABLE",
         prefix: "trunc",
-        body: "TRUNCATE TABLE ${1:dbo}.${2:Table}",
+        body: "TRUNCATE TABLE [${1:dbo}].[${2:Table}]",
         description: "Truncate table (fast delete)"
     },
     {
         name: "MERGE",
         prefix: "merge",
-        body: "MERGE ${1:dbo}.${2:Target} AS t\nUSING ${3:Source} AS s ON t.${4:Key} = s.${4:Key}\nWHEN MATCHED THEN UPDATE SET ${5:t.Col = s.Col}\nWHEN NOT MATCHED BY TARGET THEN INSERT (${6:Cols}) VALUES (${7:s.Cols})\nWHEN NOT MATCHED BY SOURCE THEN DELETE;\nGO",
+        body: "MERGE [${1:dbo}].[${2:Target}] AS [t]\nUSING [${3:Source}] AS [s] ON [t].[${4:Key}] = [s].[${4:Key}]\nWHEN MATCHED THEN UPDATE SET [${5:t.Col}] = [${6:s.Col}]\nWHEN NOT MATCHED BY TARGET THEN INSERT ([${7:Cols}]) VALUES ([${8:s.Cols}])\nWHEN NOT MATCHED BY SOURCE THEN DELETE;\nGO",
         description: "MERGE statement (UPSERT)"
     },
     {
         name: "Common Table Expression",
         prefix: "cte",
-        body: "WITH ${1:cteName} AS (\n\t${2:-- query}\n)\nSELECT * FROM ${1:cteName}${0}",
+        body: "WITH [${1:cteName}] AS (\n\t${2:-- query}\n)\nSELECT * FROM [${1:cteName}]${0}",
         description: "CTE (Common Table Expression)"
     },
     {
         name: "IF EXISTS",
         prefix: "exists",
-        body: "IF EXISTS (SELECT 1 FROM ${1:dbo}.${2:Table} WHERE ${3:Id = @Id})\nBEGIN\n\t${0:-- code}\nEND",
+        body: "IF EXISTS (SELECT 1 FROM [${1:dbo}].[${2:Table}] WHERE ${3:Id = @Id})\nBEGIN\n\t${0:-- code}\nEND",
         description: "IF EXISTS conditional block"
     },
     {

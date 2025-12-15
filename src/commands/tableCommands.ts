@@ -60,15 +60,15 @@ export function registerTableCommands(
                 
                 if (columnsResult.recordset && columnsResult.recordset.length > 0) {
                     const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
-                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}] ${tableAlias}`;
+                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}] [${tableAlias}]`;
                 } else {
                     // Fallback to * if we can't get columns
-                    query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] ${tableAlias}`;
+                    query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] [${tableAlias}]`;
                 }
             } catch (error) {
                 // Fallback to * if column query fails
                 outputChannel.appendLine(`Failed to get columns for ${tableName}, using *: ${error}`);
-                query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] ${tableAlias}`;
+                query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] [${tableAlias}]`;
             }
             
             // Set the preferred database context and open in SQL editor with auto-execute

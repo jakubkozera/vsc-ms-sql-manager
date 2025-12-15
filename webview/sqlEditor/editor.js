@@ -533,11 +533,13 @@ function provideSqlCompletions(model, position) {
             
             // Only add if no conflict with user snippets (user snippets take priority)
             if (!hasConflict100) {
+                const bracketedName = `[${table.schema}].[${table.name}]`;
+                const aliasName = generateSmartAlias(table.name);
                 suggestions.push({
                     label: table100Label,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName}`,
-                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${table.name}_100`, // High priority
@@ -548,11 +550,13 @@ function provideSqlCompletions(model, position) {
             }
             
             if (!hasConflictAll) {
+                const bracketedName = `[${table.schema}].[${table.name}]`;
+                const aliasName = generateSmartAlias(table.name);
                 suggestions.push({
                     label: tableAllLabel,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName}`,
-                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${table.name}_all`,
@@ -589,11 +593,13 @@ function provideSqlCompletions(model, position) {
             
             // Only add if no conflict with user snippets
             if (!hasConflict100) {
+                const bracketedName = `[${view.schema}].[${view.name}]`;
+                const aliasName = generateSmartAlias(view.name);
                 suggestions.push({
                     label: view100Label,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT TOP 100 from ${fullName} (View)`,
-                    insertText: `SELECT TOP 100 *\nFROM ${fullName}`,
+                    insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${view.name}_100`,
@@ -604,11 +610,13 @@ function provideSqlCompletions(model, position) {
             }
             
             if (!hasConflictAll) {
+                const bracketedName = `[${view.schema}].[${view.name}]`;
+                const aliasName = generateSmartAlias(view.name);
                 suggestions.push({
                     label: viewAllLabel,
                     kind: monaco.languages.CompletionItemKind.Snippet,
                     detail: `\uD83D\uDCC5 Generate SELECT * from ${fullName} (View)`,
-                    insertText: `SELECT *\nFROM ${fullName}`,
+                    insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
                     insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                     range: range,
                     sortText: `0_${view.name}_all`,
