@@ -181,32 +181,69 @@ function getRelatedTables(tablesInQuery) {
             
             // Find foreign keys FROM this table (this table references other tables)
             dbSchema.foreignKeys.forEach(fk => {
-                if (fk.fromTable.toLowerCase() === tableName && fk.fromSchema === tableInfo.schema) {
-                    // Add the referenced table if not already in query
-                    if (!existingTableNames.includes(fk.toTable.toLowerCase())) {
+                if (fk.fromTable.toLowerCase() === tableName && 
+                    !existingTableNames.includes(fk.toTable.toLowerCase())) {
+                    
+                    const table = dbSchema.tables.find(t => 
+                        t.name.toLowerCase() === fk.toTable.toLowerCase() && 
+                        t.schema === fk.toSchema
+                    );
+                    
+                    if (table && !relatedTables.find(rt => 
+                        rt.name.toLowerCase() === table.name.toLowerCase() && 
+                        rt.schema === table.schema
+                    )) {
                         relatedTables.push({
-                            schema: fk.toSchema,
-                            table: fk.toTable,
-                            relationship: 'referenced',
-                            fk: fk
+                            ...table,
+                            foreignKeyInfo: {
+                                direction: 'to',
+                                fromTable: fk.fromTable,
+                                fromAlias: tableInfo.alias,
+                                fromHasExplicitAlias: tableInfo.hasExplicitAlias,
+                                fromColumn: fk.fromColumn,
+                                toTable: fk.toTable,
+                                toColumn: fk.toColumn
+                            }
                         });
                     }
                 }
                 
                 // Find foreign keys TO this table (other tables reference this table)
-                if (fk.toTable.toLowerCase() === tableName && fk.toSchema === tableInfo.schema) {
-                    // Add the referencing table if not already in query
-                    if (!existingTableNames.includes(fk.fromTable.toLowerCase())) {
+                if (fk.toTable.toLowerCase() === tableName && 
+                    !existingTableNames.includes(fk.fromTable.toLowerCase())) {
+                    
+                    const table = dbSchema.tables.find(t => 
+                        t.name.toLowerCase() === fk.fromTable.toLowerCase() && 
+                        t.schema === fk.fromSchema
+                    );
+                    
+                    if (table && !relatedTables.find(rt => 
+                        rt.name.toLowerCase() === table.name.toLowerCase() && 
+                        rt.schema === table.schema
+                    )) {
                         relatedTables.push({
-                            schema: fk.fromSchema,
-                            table: fk.fromTable,
-                            relationship: 'referencing',
-                            fk: fk
+                            ...table,
+                            foreignKeyInfo: {
+                                direction: 'from',
+                                fromTable: fk.fromTable,
+                                fromAlias: tableInfo.alias,
+                                fromHasExplicitAlias: tableInfo.hasExplicitAlias,
+                                fromColumn: fk.fromColumn,
+                                toTable: fk.toTable,
+                                toColumn: fk.toColumn
+                            }
                         });
                     }
                 }
             });
         });
+    }
+    
+    // If no related tables found or no FK info, return all tables except those already in query
+    if (relatedTables.length === 0) {
+        return dbSchema.tables.filter(table => 
+            !existingTableNames.includes(table.name.toLowerCase())
+        );
     }
     
     return relatedTables;
@@ -286,7 +323,7 @@ function provideSqlCompletions(model, position) {
                 console.log('[SQL-COMPLETION] Related tables:', relatedTables.map(t => ({ name: t.name, hasFKInfo: !!t.foreignKeyInfo })));
                 
                 return {
-                    suggestions: relatedTables.map(table => {
+                    suggestions: relatedTables.filter(t => t && t.name).map(table => {
                         const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
                         
                         // Generate smart alias
@@ -1181,6 +1218,8 @@ function getSqlOperators(range) {
 }
 
 function generateSmartAlias(tableName) {
+    if (!tableName) return 't';
+
     // Handle short table names (3 characters or less)
     if (tableName.length <= 3) {
         return tableName.toLowerCase();
