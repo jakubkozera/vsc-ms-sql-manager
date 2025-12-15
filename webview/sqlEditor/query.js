@@ -25,6 +25,23 @@ function executeQuery() {
         return;
     }
 
+    // Format before run if enabled
+    if (typeof window.shouldFormatBeforeRun === 'function' && window.shouldFormatBeforeRun()) {
+        console.log('[QUERY] Format before run is enabled, formatting code...');
+        if (typeof window.formatSqlCode === 'function') {
+            window.formatSqlCode();
+            // Get the updated query after formatting
+            if (editor) {
+                const selection = editor.getSelection();
+                if (selection && !selection.isEmpty()) {
+                    query = editor.getModel().getValueInRange(selection);
+                } else {
+                    query = editor.getValue();
+                }
+            }
+        }
+    }
+
     // Check for actual plan
     const actualPlanCheckbox = document.getElementById('actualPlanCheckbox');
     const includeActualPlan = actualPlanCheckbox ? actualPlanCheckbox.checked : false;

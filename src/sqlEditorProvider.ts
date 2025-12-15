@@ -622,6 +622,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         const queryScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'query.js');
         const planScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'plan.js');
         const scriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.js');
+        const sqlFormatterScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlFormatter.js');
         const relationExpansionScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'relationExpansion.js');
 
         // Convert to webview URIs for proper loading
@@ -638,6 +639,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         const queryScriptUri = webview.asWebviewUri(queryScriptPath).toString() + `?v=${cacheBuster}`;
         const planScriptUri = webview.asWebviewUri(planScriptPath).toString() + `?v=${cacheBuster}`;
         const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
+        const sqlFormatterScriptUri = webview.asWebviewUri(sqlFormatterScriptPath).toString() + `?v=${cacheBuster}`;
         const relationExpansionScriptUri = webview.asWebviewUri(relationExpansionScriptPath).toString() + `?v=${cacheBuster}`;
 
         // Read base HTML template
@@ -661,6 +663,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             .replace(/{{styleUri}}/g, styleUri)
             .replace(/<script src="{{scriptUri}}"><\/script>/g, scriptsBlock)
             .replace(/{{scriptUri}}/g, scriptUri) // Fallback if regex above doesn't match
+            .replace(/{{sqlFormatterScriptUri}}/g, sqlFormatterScriptUri)
             .replace(/{{relationExpansionScriptUri}}/g, relationExpansionScriptUri)
             .replace(/{{monacoLoaderUri}}/g, monacoLoaderUri)
             .replace(/{{cspSource}}/g, webview.cspSource);
