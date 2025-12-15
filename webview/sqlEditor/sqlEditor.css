@@ -36,6 +36,193 @@ body {
     height: 100%;
 }
 
+/* Format button container */
+.format-button-container {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 1001;
+}
+
+/* Format button - tylko ikona bez tła */
+.format-icon-only-button {
+    background: none;
+    border: none;
+    color: var(--vscode-foreground);
+    padding: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    outline: none;
+}
+
+.format-icon-only-button svg {
+    width: 22px;
+    height: 22px;
+}
+
+.format-icon-only-button:hover {
+    color: var(--vscode-button-foreground);
+}
+
+/* Format options icon button (bez tła, tylko ikona) */
+.format-options-icon-button {
+    background: none;
+    border: none;
+    color: var(--vscode-foreground);
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    outline: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-5px);
+    max-height: 0;
+    overflow: hidden;
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-5px);
+    margin-top: 2px;
+}
+
+.format-options-icon-button svg {
+    width: 22px;
+    height: 22px;
+}
+
+.format-options-icon-button:hover {
+    color: var(--vscode-button-foreground);
+    transform: translateX(-50%) translateY(0);
+}
+
+.format-button-container:hover .format-options-icon-button {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+    max-height: 40px;
+}
+
+/* Popup z opcjami formatowania */
+.format-options-popup {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: var(--vscode-editorWidget-background);
+    border: 1px solid var(--vscode-editorWidget-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 2000;
+    width: 400px;
+    max-width: 90vw;
+}
+
+.format-options-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.format-options-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--vscode-foreground);
+}
+
+.close-popup {
+    background: none;
+    border: none;
+    color: var(--vscode-foreground);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.close-popup:hover {
+    background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.format-options-content {
+    padding: 16px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.format-option {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.format-option label {
+    flex: 1;
+    font-size: 13px;
+    color: var(--vscode-foreground);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.format-option input[type="number"],
+.format-option select {
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 13px;
+    outline: none;
+    width: 80px;
+}
+
+.format-option input[type="checkbox"] {
+    margin: 0;
+}
+
+.format-option select {
+    width: 120px;
+}
+
+.format-options-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--vscode-panel-border);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.apply-format-button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 6px 16px;
+    border-radius: 3px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.apply-format-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
 #toolbar {
     display: flex;
     align-items: center;

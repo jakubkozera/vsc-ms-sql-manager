@@ -5,13 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'none';
-        script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://d3js.org {{cspSource}};
+        script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://d3js.org {{cspSource}};
         style-src 'unsafe-inline' https://cdnjs.cloudflare.com {{cspSource}};
         font-src https://cdnjs.cloudflare.com;
         worker-src blob:;
         img-src data: https: {{cspSource}};
     ">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sql-formatter@15.0.2/dist/sql-formatter.min.js"></script>
+    <script>
+        if (typeof sqlFormatter !== 'undefined') {
+            window.sqlFormatter = sqlFormatter;
+        }
+    </script>
     <title>SQL Editor</title>
     <link rel="stylesheet" href="{{styleUri}}">
 </head>
@@ -64,6 +70,24 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5z" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5z" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" /></svg>
                 Connect
             </button>
+            <div class="format-button-container">
+                <button id="formatButton" class="format-icon-only-button" title="Format SQL (T-SQL)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                        <path d="M12 21h-5a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v3.5" />
+                        <path d="M9 9h1" />
+                        <path d="M9 13h6" />
+                        <path d="M9 17h3" />
+                        <path d="M19 22.5a4.75 4.75 0 0 1 3.5 -3.5a4.75 4.75 0 0 1 -3.5 -3.5a4.75 4.75 0 0 1 -3.5 3.5a4.75 4.75 0 0 1 3.5 3.5" />
+                    </svg>
+                </button>
+                <button id="formatOptionsButton" class="format-options-icon-button" title="Formatting options">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+                        <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+                    </svg>
+                </button>
+            </div>
             <button class="toolbar-button secondary" id="estimatedPlanButton" title="Display Estimated Execution Plan" style="display: none;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 16l6 -7l5 5l5 -6" />
@@ -80,6 +104,78 @@
         
         <div id="editorContainer">
             <div id="editor"></div>
+            
+            <!-- Popup z opcjami formatowania -->
+            <div id="formatOptionsPopup" class="format-options-popup" style="display: none;">
+                <div class="format-options-header">
+                    <h3>Formatting Options</h3>
+                    <button class="close-popup" id="closePopupButton">×</button>
+                </div>
+                <div class="format-options-content">
+                    <div class="format-option">
+                        <label for="indentOption">Indent:</label>
+                        <input type="number" id="indentOption" value="2" min="1" max="8" />
+                    </div>
+                    <div class="format-option">
+                        <label for="uppercaseOption">
+                            <input type="checkbox" id="uppercaseOption" checked />
+                            Uppercase keywords
+                        </label>
+                    </div>
+                    <div class="format-option">
+                        <label for="linesBetweenQueriesOption">Lines between queries:</label>
+                        <input type="number" id="linesBetweenQueriesOption" value="1" min="0" max="5" />
+                    </div>
+                    <div class="format-option">
+                        <label for="keywordCaseOption">Keyword case:</label>
+                        <select id="keywordCaseOption">
+                            <option value="upper" selected>UPPER</option>
+                            <option value="lower">lower</option>
+                            <option value="preserve">Preserve</option>
+                        </select>
+                    </div>
+                    <div class="format-option">
+                        <label for="dataTypeOption">Data type case:</label>
+                        <select id="dataTypeOption">
+                            <option value="upper" selected>UPPER</option>
+                            <option value="lower">lower</option>
+                            <option value="preserve">Preserve</option>
+                        </select>
+                    </div>
+                    <div class="format-option">
+                        <label for="functionCaseOption">Function case:</label>
+                        <select id="functionCaseOption">
+                            <option value="upper" selected>UPPER</option>
+                            <option value="lower">lower</option>
+                            <option value="preserve">Preserve</option>
+                        </select>
+                    </div>
+                    <div class="format-option">
+                        <label for="indentStyleOption">Indentation style:</label>
+                        <select id="indentStyleOption">
+                            <option value="standard" selected>Standard</option>
+                            <option value="tabularLeft">Tabular, Left</option>
+                            <option value="tabularRight">Tabular, Right</option>
+                        </select>
+                    </div>
+                    <div class="format-option">
+                        <label for="logicalOperatorNewlineOption">AND/OR newlines:</label>
+                        <select id="logicalOperatorNewlineOption">
+                            <option value="before" selected>before</option>
+                            <option value="after">after</option>
+                        </select>
+                    </div>
+                    <div class="format-option" style="border-top: 1px solid var(--vscode-panel-border); padding-top: 12px; margin-top: 12px;">
+                        <label for="formatBeforeRunOption">
+                            <input type="checkbox" id="formatBeforeRunOption" />
+                            Format before run
+                        </label>
+                    </div>
+                </div>
+                <div class="format-options-footer">
+                    <button id="applyFormatButton" class="apply-format-button">Apply & Format</button>
+                </div>
+            </div>
         </div>
 
         <div class="resizer" id="resizer"></div>
@@ -124,6 +220,7 @@
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="{{monacoLoaderUri}}"></script>
     <script src="{{scriptUri}}"></script>
+    <script src="{{sqlFormatterScriptUri}}"></script>
     <script src="{{relationExpansionScriptUri}}"></script>
 </body>
 </html>

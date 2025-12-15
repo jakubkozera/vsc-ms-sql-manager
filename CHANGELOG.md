@@ -5,6 +5,23 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2025-12-15
+
+### Added
+
+- **SQL Code Formatting**: Integrated T-SQL code formatter with customizable options
+  - **sql-formatter library**: Integrated sql-formatter v15.0.2 from CDN for professional SQL formatting
+  - **Format button**: Icon-only format button in SQL Editor toolbar (after Connect button)
+  - **Formatting options**: Hover-activated options button with configurable formatting settings
+    - Language selection: T-SQL, SQL, PL/SQL, MySQL
+    - Indentation control: Configurable tab width (1-8 spaces)
+    - Case options: Keyword, data type, and function case (UPPER, lower, Preserve)
+    - Lines between queries: Adjustable spacing (0-5 lines)
+  - **Format before run**: Optional auto-formatting before query execution
+  - **Persistent preferences**: Formatting options saved to localStorage for consistency across sessions
+  - **Clean UI design**: Icon-only buttons without backgrounds, integrated seamlessly into toolbar
+  - **Popup configuration**: Modal popup for detailed formatting configuration with Apply & Format action
+
 ## [0.8.1] - 2025-12-15
 
 ### Enhanced
