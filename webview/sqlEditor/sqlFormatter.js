@@ -82,7 +82,6 @@ function showFormatOptionsPopup() {
     if (!popup) return;
     
     // Populate form with current options
-    const languageOption = document.getElementById('languageOption');
     const indentOption = document.getElementById('indentOption');
     const uppercaseOption = document.getElementById('uppercaseOption');
     const linesBetweenQueriesOption = document.getElementById('linesBetweenQueriesOption');
@@ -93,7 +92,6 @@ function showFormatOptionsPopup() {
     const logicalOperatorNewlineOption = document.getElementById('logicalOperatorNewlineOption');
     const formatBeforeRunOption = document.getElementById('formatBeforeRunOption');
     
-    if (languageOption) languageOption.value = formattingOptions.language;
     if (indentOption) indentOption.value = formattingOptions.tabWidth;
     if (linesBetweenQueriesOption) linesBetweenQueriesOption.value = formattingOptions.linesBetweenQueries;
     if (keywordCaseOption) keywordCaseOption.value = formattingOptions.keywordCase;
@@ -117,7 +115,6 @@ function hideFormatOptionsPopup() {
 }
 
 function saveFormattingOptions() {
-    const languageOption = document.getElementById('languageOption');
     const indentOption = document.getElementById('indentOption');
     const linesBetweenQueriesOption = document.getElementById('linesBetweenQueriesOption');
     const keywordCaseOption = document.getElementById('keywordCaseOption');
@@ -127,7 +124,6 @@ function saveFormattingOptions() {
     const logicalOperatorNewlineOption = document.getElementById('logicalOperatorNewlineOption');
     const formatBeforeRunOption = document.getElementById('formatBeforeRunOption');
     
-    if (languageOption) formattingOptions.language = languageOption.value;
     if (indentOption) formattingOptions.tabWidth = parseInt(indentOption.value, 10);
     if (linesBetweenQueriesOption) formattingOptions.linesBetweenQueries = parseInt(linesBetweenQueriesOption.value, 10);
     if (keywordCaseOption) formattingOptions.keywordCase = keywordCaseOption.value;
@@ -263,10 +259,142 @@ console.log('[SQL-FORMATTER] window.sqlFormatter:', typeof window.sqlFormatter);
 console.log('[SQL-FORMATTER] All window props with "sql":', Object.keys(window).filter(k => k.toLowerCase().includes('sql')));
 console.log('[SQL-FORMATTER] All window props with "format":', Object.keys(window).filter(k => k.toLowerCase().includes('format')));
 
+// Register Document and Selection Formatting Providers
+function registerFormattingProviders() {
+    if (!monaco || !monaco.languages) {
+        console.log('[FORMATTER] Monaco not ready for formatting provider registration');
+        return;
+    }
+
+    try {
+        // Register Document Formatting Provider (Format Document)
+        monaco.languages.registerDocumentFormattingEditProvider('sql', {
+            provideDocumentFormattingEdits: function(model, options, token) {
+                console.log('[FORMATTER] Document formatting requested');
+                
+                // Get current document content
+                const documentText = model.getValue();
+                
+                // Check if formatter is available
+                let formatter = null;
+                if (typeof window !== 'undefined') {
+                    formatter = window.sqlFormatter || window.SqlFormatter || window.sqlFormat;
+                }
+                if (!formatter && typeof sqlFormatter !== 'undefined') {
+                    formatter = sqlFormatter;
+                }
+                
+                if (!formatter) {
+                    console.error('[FORMATTER] sql-formatter library not loaded');
+                    return [];
+                }
+                
+                try {
+                    // Use current formatting options (always T-SQL)
+                    const formatOptions = {
+                        language: 'tsql',
+                        tabWidth: formattingOptions.tabWidth,
+                        keywordCase: formattingOptions.keywordCase,
+                        dataTypeCase: formattingOptions.dataTypeCase,
+                        functionCase: formattingOptions.functionCase,
+                        linesBetweenQueries: formattingOptions.linesBetweenQueries,
+                        indentStyle: formattingOptions.indentStyle,
+                        logicalOperatorNewline: formattingOptions.logicalOperatorNewline
+                    };
+                    
+                    // Format the document
+                    let formattedText;
+                    if (typeof formatter.format === 'function') {
+                        formattedText = formatter.format(documentText, formatOptions);
+                    } else if (typeof formatter === 'function') {
+                        formattedText = formatter(documentText, formatOptions);
+                    } else {
+                        console.error('[FORMATTER] formatter does not have a format method');
+                        return [];
+                    }
+                    
+                    // Return edit that replaces entire document
+                    const fullRange = model.getFullModelRange();
+                    return [{
+                        range: fullRange,
+                        text: formattedText
+                    }];
+                } catch (error) {
+                    console.error('[FORMATTER] Error formatting document:', error);
+                    return [];
+                }
+            }
+        });
+        
+        // Register Document Range Formatting Provider (Format Selection)
+        monaco.languages.registerDocumentRangeFormattingEditProvider('sql', {
+            provideDocumentRangeFormattingEdits: function(model, range, options, token) {
+                console.log('[FORMATTER] Selection formatting requested for range:', range);
+                
+                // Get selected text
+                const selectedText = model.getValueInRange(range);
+                
+                // Check if formatter is available
+                let formatter = null;
+                if (typeof window !== 'undefined') {
+                    formatter = window.sqlFormatter || window.SqlFormatter || window.sqlFormat;
+                }
+                if (!formatter && typeof sqlFormatter !== 'undefined') {
+                    formatter = sqlFormatter;
+                }
+                
+                if (!formatter) {
+                    console.error('[FORMATTER] sql-formatter library not loaded');
+                    return [];
+                }
+                
+                try {
+                    // Use current formatting options (always T-SQL)
+                    const formatOptions = {
+                        language: 'tsql',
+                        tabWidth: formattingOptions.tabWidth,
+                        keywordCase: formattingOptions.keywordCase,
+                        dataTypeCase: formattingOptions.dataTypeCase,
+                        functionCase: formattingOptions.functionCase,
+                        linesBetweenQueries: formattingOptions.linesBetweenQueries,
+                        indentStyle: formattingOptions.indentStyle,
+                        logicalOperatorNewline: formattingOptions.logicalOperatorNewline
+                    };
+                    
+                    // Format the selection
+                    let formattedText;
+                    if (typeof formatter.format === 'function') {
+                        formattedText = formatter.format(selectedText, formatOptions);
+                    } else if (typeof formatter === 'function') {
+                        formattedText = formatter(selectedText, formatOptions);
+                    } else {
+                        console.error('[FORMATTER] formatter does not have a format method');
+                        return [];
+                    }
+                    
+                    // Return edit that replaces selected range
+                    return [{
+                        range: range,
+                        text: formattedText
+                    }];
+                } catch (error) {
+                    console.error('[FORMATTER] Error formatting selection:', error);
+                    return [];
+                }
+            }
+        });
+        
+        console.log('[FORMATTER] Document and selection formatting providers registered');
+    } catch (error) {
+        console.error('[FORMATTER] Error registering formatting providers:', error);
+    }
+}
+
 // Export functions globally so they can be used by other scripts
 window.formatSqlCode = formatSqlCode;
 window.getFormattingOptions = function() { return formattingOptions; };
 window.shouldFormatBeforeRun = function() { return formattingOptions.formatBeforeRun; };
+window.registerFormattingProviders = registerFormattingProviders;
 
 // Call initialization when DOM is ready
 if (document.readyState === 'loading') {
@@ -276,6 +404,10 @@ if (document.readyState === 'loading') {
         setTimeout(() => {
             console.log('[SQL-FORMATTER] After delay - window.sqlFormatter:', typeof window.sqlFormatter);
             initializeFormatButton();
+            // Register formatting providers after editor is initialized
+            if (typeof monaco !== 'undefined' && typeof window.registerFormattingProviders === 'function') {
+                window.registerFormattingProviders();
+            }
         }, 1000);
     });
 } else {
@@ -285,9 +417,19 @@ if (document.readyState === 'loading') {
         console.log('[SQL-FORMATTER] After delay - window.sqlFormatter:', typeof window.sqlFormatter);
         if (typeof editor !== 'undefined' && editor) {
             initializeFormatButton();
+            // Register formatting providers after editor is initialized
+            if (typeof monaco !== 'undefined' && typeof window.registerFormattingProviders === 'function') {
+                window.registerFormattingProviders();
+            }
         } else {
             // Wait more for editor initialization
-            setTimeout(initializeFormatButton, 1000);
+            setTimeout(() => {
+                initializeFormatButton();
+                // Register formatting providers after editor is initialized
+                if (typeof monaco !== 'undefined' && typeof window.registerFormattingProviders === 'function') {
+                    window.registerFormattingProviders();
+                }
+            }, 1000);
         }
     }, 1000);
 }
