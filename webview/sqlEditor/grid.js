@@ -3050,6 +3050,7 @@ function createRowContextMenu(metadata, resultSetIndex, rowIndex, tableId) {
         menuHtml += `
             <div class="context-menu-separator"></div>
             <div class="context-menu-item context-menu-item-delete" data-action="delete-row">${deleteLabel}</div>
+            <div class="context-menu-item" data-action="delete-row-with-references">Delete Row with References</div>
         `;
     }
 
@@ -3480,6 +3481,56 @@ function handleContextMenuAction(action) {
                 markRowForDeletion(table, rowIndex);
             }
             return; // Don't copy to clipboard for delete action
+            
+        case 'delete-row-with-references':
+            // Generate cascading delete script
+            const rowContextMenu = document.querySelector('.context-menu');
+            if (!rowContextMenu) return;
+            
+            const rsIndex = parseInt(rowContextMenu.dataset.resultSetIndex);
+            const meta = JSON.parse(rowContextMenu.dataset.metadata);
+            
+            // Get the row data (only handle single row for now)
+            const targetRow = data[rowIndex];
+            
+            // Convert array-based row data to object with column names as keys
+            // Use headerName (actual column name) instead of field (which might be numeric index)
+            const rowDataObject = {};
+            if (Array.isArray(targetRow)) {
+                // If targetRow is an array, map it using columnDefs
+                columnDefs.forEach((colDef, index) => {
+                    rowDataObject[colDef.headerName] = targetRow[index];
+                });
+            } else {
+                // If it's already an object, use it directly with headerName mapping
+                columnDefs.forEach(colDef => {
+                    const value = targetRow[colDef.field];
+                    rowDataObject[colDef.headerName] = value;
+                });
+            }
+            
+            // Extract schema and table name from metadata
+            // metadata.sourceTable and metadata.sourceSchema contain the table info
+            const sourceTable = meta.sourceTable;
+            const sourceSchema = meta.sourceSchema || 'dbo';
+            
+            if (!sourceTable) {
+                vscode.postMessage({
+                    type: 'showError',
+                    message: 'Cannot determine source table for this result set. Delete with references is only available for single-table queries.'
+                });
+                return;
+            }
+            
+            // Send message to extension to generate script
+            vscode.postMessage({
+                type: 'scriptRowDelete',
+                schema: sourceSchema,
+                tableName: sourceTable,
+                rowData: rowDataObject
+            });
+            
+            return; // Don't copy to clipboard
     }
     
     // Copy to clipboard (skip for delete action)

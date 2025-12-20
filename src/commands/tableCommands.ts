@@ -557,7 +557,7 @@ GO`;
         }
     });
 
-    const scriptRowDeleteCommand = vscode.commands.registerCommand('mssqlManager.scriptRowDelete', async (tableNode?: any) => {
+    const scriptRowDeleteCommand = vscode.commands.registerCommand('mssqlManager.scriptRowDelete', async (tableNode?: any, rowData?: any) => {
         try {
             if (!tableNode || !tableNode.connectionId || !tableNode.label) {
                 vscode.window.showErrorMessage('Invalid table item');
@@ -692,7 +692,43 @@ GO`;
             if (pkResult.recordset.length > 0) {
                 deleteScript += `    -- Define the target record to delete\n`;
                 pkResult.recordset.forEach((pk: any) => {
-                    deleteScript += `    DECLARE @Target_${pk.COLUMN_NAME} NVARCHAR(MAX) = NULL;  -- Set the value for ${pk.COLUMN_NAME}\n`;
+                    let pkValue = 'NULL';
+                    
+                    // If rowData is provided, use actual values
+                    // Try case-insensitive lookup since column names might have different casing
+                    if (rowData) {
+                        const pkColumnName = pk.COLUMN_NAME;
+                        let actualValue: any = undefined;
+                        
+                        // Try exact match first
+                        if (rowData[pkColumnName] !== undefined) {
+                            actualValue = rowData[pkColumnName];
+                        } else {
+                            // Try case-insensitive match
+                            const keys = Object.keys(rowData);
+                            const matchingKey = keys.find(key => key.toLowerCase() === pkColumnName.toLowerCase());
+                            if (matchingKey) {
+                                actualValue = rowData[matchingKey];
+                            }
+                        }
+                        
+                        if (actualValue !== undefined && actualValue !== null) {
+                            // Format based on data type
+                            if (typeof actualValue === 'string') {
+                                pkValue = `N'${actualValue.replace(/'/g, "''")}'`;
+                            } else if (typeof actualValue === 'number') {
+                                pkValue = String(actualValue);
+                            } else if (actualValue instanceof Date) {
+                                pkValue = `'${actualValue.toISOString()}'`;
+                            } else if (typeof actualValue === 'boolean') {
+                                pkValue = actualValue ? '1' : '0';
+                            } else {
+                                pkValue = `'${String(actualValue).replace(/'/g, "''")}'`;
+                            }
+                        }
+                    }
+                    
+                    deleteScript += `    DECLARE @Target_${pk.COLUMN_NAME} NVARCHAR(MAX) = ${pkValue};  -- ${rowData && pkValue !== 'NULL' ? 'Actual value from row' : 'Set the value for ' + pk.COLUMN_NAME}\n`;
                 });
                 deleteScript += `\n`;
             }

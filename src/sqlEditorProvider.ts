@@ -198,6 +198,35 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     await this.commitChanges(message.statements, commitConnectionId, message.originalQuery, webviewPanel.webview);
                     break;
 
+                case 'scriptRowDelete':
+                    // Generate cascading DELETE script for a specific row
+                    const scriptConnectionId = this.webviewSelectedConnection.get(webviewPanel.webview);
+                    if (!scriptConnectionId) {
+                        vscode.window.showErrorMessage('No connection selected');
+                        break;
+                    }
+
+                    // Parse connection ID to get database
+                    const [baseConnId, dbName] = scriptConnectionId.includes('::') 
+                        ? scriptConnectionId.split('::')
+                        : [scriptConnectionId, undefined];
+
+                    // Create a table node object for the command
+                    const tableNode = {
+                        label: `${message.schema}.${message.tableName}`,
+                        connectionId: baseConnId,
+                        database: dbName
+                    };
+
+                    // Execute the scriptRowDelete command with row data
+                    await vscode.commands.executeCommand('mssqlManager.scriptRowDelete', tableNode, message.rowData);
+                    break;
+
+                case 'showError':
+                    // Display error message from webview
+                    vscode.window.showErrorMessage(message.message);
+                    break;
+
                 case 'confirmAction':
                     // Handle confirmation dialogs (since confirm() is blocked in sandboxed webviews)
                     const result = await vscode.window.showWarningMessage(
