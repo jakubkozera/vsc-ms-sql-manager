@@ -87,104 +87,119 @@ export class QueryExecutor {
             }, async (progress) => {
                 progress.report({ message: 'Running query...' });
 
-                const request = connection.request();
-                this.currentRequest = request;
-                
-                if (token) {
-                    token.onCancellationRequested(() => {
-                        this.outputChannel.appendLine('[QueryExecutor] Cancellation requested via token');
-                        if (this.currentRequest) {
-                            try {
-                                this.currentRequest.cancel();
-                            } catch (e) {
-                                // Ignore cancel errors
-                            }
-                        }
-                    });
-                }
+                // Split query by GO statements (SQL Server batch separator)
+                const batches = this.splitByGO(queryText);
+                this.outputChannel.appendLine(`[QueryExecutor] Split query into ${batches.length} batch(es)`);
 
-                // Enable array row mode to handle duplicate column names
-                if (request.setArrayRowMode) {
-                    request.setArrayRowMode(true);
-                }
-                
-                // Execute query as a single batch to handle multiple SELECT statements
-                progress.report({ message: 'Running query...' });
-                
-                this.outputChannel.appendLine(`Executing query batch`);
+                const allRecordsets: any[][] = [];
+                const allRowsAffected: number[] = [];
+                const allColumnNames: string[][] = [];
 
-                const result = await request.query(queryText);
-
-                // Support both mssql.Result and our msnodesqlv8 normalized object
-                const rawRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
-                const totalRowsAffected: number[] = result.rowsAffected || result.rowsAffected || (Array.isArray(result.rowsAffected) ? result.rowsAffected : (result.rowsAffected ? [result.rowsAffected] : []));
-
-                // Extract column names and normalize recordsets to array of arrays
-                const resultColumnNames: string[][] = [];
-                const normalizedRecordsets: any[][] = [];
-
-                for (const rs of rawRecordsets) {
-                    let columns: string[] = [];
-                    let rows: any[] = [];
-
-                    // Try to get columns from metadata
-                    if ((rs as any).columns) {
-                        if (Array.isArray((rs as any).columns)) {
-                            columns = (rs as any).columns.map((c: any) => c.name);
-                        } else {
-                            // Object map (mssql object mode)
-                            // Note: keys might be unique-ified by mssql if duplicates exist in object mode
-                            columns = Object.keys((rs as any).columns);
-                        }
-                    }
-
-                    if (rs.length > 0) {
-                        // Check if rows are arrays (arrayRowMode) or objects
-                        if (Array.isArray(rs[0])) {
-                            // Array row mode
-                            rows = rs;
-                            // If columns weren't found in metadata (unlikely for mssql), we can't infer them easily from array
-                        } else {
-                            // Object mode (fallback)
-                            if (columns.length === 0) {
-                                columns = Object.keys(rs[0]);
-                            }
-                            rows = rs.map((r: any) => {
-                                // Map object values to array based on columns order if possible, or just values
-                                // If we have columns from metadata, use them to map
-                                if (columns.length > 0) {
-                                    return columns.map(col => r[col]);
-                                }
-                                return Object.values(r);
-                            });
-                        }
-                    }
+                // Execute each batch separately
+                for (let i = 0; i < batches.length; i++) {
+                    const batch = batches[i];
                     
-                    resultColumnNames.push(columns);
-                    normalizedRecordsets.push(rows);
-                }
+                    if (token && token.isCancellationRequested) {
+                        throw new Error('Query cancelled');
+                    }
 
-                this.outputChannel.appendLine(`Query completed. Result sets: ${normalizedRecordsets.length}, Rows affected: ${totalRowsAffected.join(', ') || '0'}`);
+                    progress.report({ message: `Running batch ${i + 1}/${batches.length}...` });
+                    this.outputChannel.appendLine(`[QueryExecutor] Executing batch ${i + 1}/${batches.length}: ${batch.substring(0, 100)}${batch.length > 100 ? '...' : ''}`);
+
+                    const request = connection.request();
+                    this.currentRequest = request;
+                    
+                    if (token) {
+                        token.onCancellationRequested(() => {
+                            this.outputChannel.appendLine('[QueryExecutor] Cancellation requested via token');
+                            if (this.currentRequest) {
+                                try {
+                                    this.currentRequest.cancel();
+                                } catch (e) {
+                                    // Ignore cancel errors
+                                }
+                            }
+                        });
+                    }
+
+                    // Enable array row mode to handle duplicate column names
+                    if (request.setArrayRowMode) {
+                        request.setArrayRowMode(true);
+                    }
+
+                    const result = await request.query(batch);
+
+                    // Support both mssql.Result and our msnodesqlv8 normalized object
+                    const rawRecordsets: any[][] = (result.recordsets || (result.recordsets === undefined && result.recordset ? [result.recordset] : result.recordsets)) as any[][] || (result.recordsets ? result.recordsets : (result.recordset ? [result.recordset] : []));
+                    const batchRowsAffected: number[] = result.rowsAffected || result.rowsAffected || (Array.isArray(result.rowsAffected) ? result.rowsAffected : (result.rowsAffected ? [result.rowsAffected] : []));
+
+                    // Extract column names and normalize recordsets to array of arrays
+                    for (const rs of rawRecordsets) {
+                        let columns: string[] = [];
+                        let rows: any[] = [];
+
+                        // Try to get columns from metadata
+                        if ((rs as any).columns) {
+                            if (Array.isArray((rs as any).columns)) {
+                                columns = (rs as any).columns.map((c: any) => c.name);
+                            } else {
+                                // Object map (mssql object mode)
+                                // Note: keys might be unique-ified by mssql if duplicates exist in object mode
+                                columns = Object.keys((rs as any).columns);
+                            }
+                        }
+
+                        if (rs.length > 0) {
+                            // Check if rows are arrays (arrayRowMode) or objects
+                            if (Array.isArray(rs[0])) {
+                                // Array row mode
+                                rows = rs;
+                                // If columns weren't found in metadata (unlikely for mssql), we can't infer them easily from array
+                            } else {
+                                // Object mode (fallback)
+                                if (columns.length === 0) {
+                                    columns = Object.keys(rs[0]);
+                                }
+                                rows = rs.map((r: any) => {
+                                    // Map object values to array based on columns order if possible, or just values
+                                    // If we have columns from metadata, use them to map
+                                    if (columns.length > 0) {
+                                        return columns.map(col => r[col]);
+                                    }
+                                    return Object.values(r);
+                                });
+                            }
+                        }
+                        
+                        allColumnNames.push(columns);
+                        allRecordsets.push(rows);
+                    }
+
+                    // Accumulate rows affected
+                    allRowsAffected.push(...batchRowsAffected);
+
+                    this.outputChannel.appendLine(`[QueryExecutor] Batch ${i + 1} completed. Result sets: ${rawRecordsets.length}, Rows affected: ${batchRowsAffected.join(', ') || '0'}`);
+                }
 
                 this.currentRequest = null;
                 const executionTime = Date.now() - startTime;
                 this.outputChannel.appendLine(`Total execution time: ${executionTime}ms`);
 
                 const queryResult: QueryResult = {
-                    recordsets: normalizedRecordsets,
-                    rowsAffected: totalRowsAffected,
+                    recordsets: allRecordsets,
+                    rowsAffected: allRowsAffected,
                     executionTime,
                     query: queryText,
-                    columnNames: resultColumnNames
+                    columnNames: allColumnNames
                 };
 
                 // Extract metadata for SELECT queries to enable editing
                 // Use originalQuery if provided (when queryText has SET statements)
                 const queryForMetadata = originalQuery || queryText;
-                if (normalizedRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
+                if (allRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
                         this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
-                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, normalizedRecordsets, connection, resultColumnNames, token);
+                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection, allColumnNames, token);
                         this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
                     } catch (error) {
                         if (token && token.isCancellationRequested) {
@@ -200,11 +215,11 @@ export class QueryExecutor {
                 }
 
                 // Log results summary
-                if (normalizedRecordsets.length > 0) {
-                    const totalRows = normalizedRecordsets.reduce((sum, rs) => sum + rs.length, 0);
-                    this.outputChannel.appendLine(`Query returned ${normalizedRecordsets.length} result set(s) with ${totalRows} total row(s)`);
-                } else if (totalRowsAffected.length > 0) {
-                    this.outputChannel.appendLine(`Query affected ${totalRowsAffected.reduce((a, b) => a + b, 0)} row(s)`);
+                if (allRecordsets.length > 0) {
+                    const totalRows = allRecordsets.reduce((sum, rs) => sum + rs.length, 0);
+                    this.outputChannel.appendLine(`Query returned ${allRecordsets.length} result set(s) with ${totalRows} total row(s)`);
+                } else if (allRowsAffected.length > 0) {
+                    this.outputChannel.appendLine(`Query affected ${allRowsAffected.reduce((a, b) => a + b, 0)} row(s)`);
                 } else {
                     this.outputChannel.appendLine(`Query completed successfully`);
                 }
@@ -215,7 +230,7 @@ export class QueryExecutor {
                     console.log('[QueryExecutor] Adding query to history, activeConnection:', activeConnectionInfo?.name);
                     if (activeConnectionInfo) {
                         // Calculate row counts for each result set
-                        const rowCounts = normalizedRecordsets.map(recordset => recordset.length);
+                        const rowCounts = allRecordsets.map(recordset => recordset.length);
                         
                         // Strip SET commands and execution summary comments from query for history
                         const cleanedQuery = this.cleanQueryForHistory(queryText);
@@ -239,7 +254,7 @@ export class QueryExecutor {
                             connectionName: activeConnectionInfo.name,
                             database: finalDatabase,
                             server: activeConnectionInfo.server,
-                            resultSetCount: normalizedRecordsets.length,
+                            resultSetCount: allRecordsets.length,
                             rowCounts: rowCounts,
                             duration: executionTime
                         });
@@ -289,6 +304,49 @@ export class QueryExecutor {
                 this.outputChannel.appendLine(`Failed to cancel query: ${error}`);
             }
         }
+    }
+
+    /**
+     * Split query text by GO statements (SQL Server batch separator)
+     * GO must be on its own line and is case-insensitive
+     * Returns array of batches, with empty/whitespace-only batches filtered out
+     */
+    private splitByGO(queryText: string): string[] {
+        this.outputChannel.appendLine(`[QueryExecutor] splitByGO input length: ${queryText.length}`);
+        
+        // Split by GO on its own line (case-insensitive)
+        // GO must be separated from other statements (preceded and followed by newline or string boundaries)
+        const goRegex = /(?:^|[\r\n]+)\s*GO\s*(?:--[^\r\n]*)?(?=[\r\n]+|$)/gmi;
+        
+        // Test if GO exists
+        const hasGo = goRegex.test(queryText);
+        goRegex.lastIndex = 0; // Reset regex state
+        
+        this.outputChannel.appendLine(`[QueryExecutor] GO detected: ${hasGo}`);
+        
+        const batches = queryText.split(goRegex);
+        
+        this.outputChannel.appendLine(`[QueryExecutor] splitByGO found ${batches.length} batch(es) after split`);
+        
+        // Log each batch for debugging
+        batches.forEach((batch, index) => {
+            this.outputChannel.appendLine(`[QueryExecutor] Batch ${index} length: ${batch.length}, starts with: ${batch.substring(0, 50).replace(/\n/g, '\\n')}`);
+        });
+        
+        // Filter out empty batches and trim each batch
+        const filteredBatches = batches
+            .map(batch => batch.trim())
+            .filter(batch => batch.length > 0);
+        
+        this.outputChannel.appendLine(`[QueryExecutor] After filtering: ${filteredBatches.length} non-empty batch(es)`);
+        
+        // If no GO statements found, return the whole query as a single batch
+        if (filteredBatches.length === 0 && queryText.trim().length > 0) {
+            this.outputChannel.appendLine(`[QueryExecutor] No batches found, returning original query as single batch`);
+            return [queryText.trim()];
+        }
+        
+        return filteredBatches;
     }
 
     private parseQueries(queryText: string): string[] {

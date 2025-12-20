@@ -188,41 +188,122 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                     }
                                     
                                     console.log('[msnodesqlv8] Executing query:', sqlText.substring(0, 100));
+                                    console.log(`[msnodesqlv8] Query input length: ${sqlText.length}`);
+                                    
+                                    // Split by GO statements (SQL Server batch separator)
+                                    // GO must be separated from other statements (preceded and followed by newline or string boundaries)
+                                    const goRegex = /(?:^|[\r\n]+)\s*GO\s*(?:--[^\r\n]*)?(?=[\r\n]+|$)/gmi;
+                                    
+                                    // Test if GO exists in the query
+                                    const hasGo = goRegex.test(sqlText);
+                                    goRegex.lastIndex = 0; // Reset regex state after test
+                                    
+                                    console.log(`[msnodesqlv8] GO detected: ${hasGo}`);
+                                    
+                                    const batches = sqlText.split(goRegex)
+                                        .map(batch => batch.trim())
+                                        .filter(batch => batch.length > 0);
+                                    
+                                    // If split resulted in only 1 batch, it means no GO was found
+                                    if (batches.length <= 1) {
+                                        console.log(`[msnodesqlv8] No GO statements found, executing single query`);
+                                        
+                                        // Set timeout based on configuration (0 means no timeout)
+                                        const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
+                                        const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
+                                        
+                                        const recordsets: any[][] = [];
+                                        
+                                        const queryCallback = (err: any, rows: any, more: boolean) => {
+                                            if (err) { 
+                                                console.error('[msnodesqlv8] Query error:', err);
+                                                return reject(err); 
+                                            }
+                                            
+                                            // Normalize result to match mssql result shape
+                                            const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                            recordsets.push(recs);
+                                            
+                                            if (!more) {
+                                                resolve({ 
+                                                    recordset: recordsets[0], 
+                                                    recordsets: recordsets, 
+                                                    rowsAffected: recordsets.map(r => r.length) 
+                                                });
+                                            }
+                                        };
+
+                                        try {
+                                            if (timeoutMs > 0) {
+                                                connectionHandle.query(sqlText, queryOptions, queryCallback);
+                                            } else {
+                                                connectionHandle.query(sqlText, queryCallback);
+                                            }
+                                        } catch (err) {
+                                            reject(err);
+                                        }
+                                        return;
+                                    }
+                                    
+                                    console.log(`[msnodesqlv8] Split into ${batches.length} batch(es) by GO statements`);
                                     
                                     // Set timeout based on configuration (0 means no timeout)
                                     const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
                                     const queryOptions = timeoutMs > 0 ? { timeoutMs } : {};
                                     
-                                    const recordsets: any[][] = [];
+                                    const allRecordsets: any[][] = [];
+                                    let batchIndex = 0;
                                     
-                                    const queryCallback = (err: any, rows: any, more: boolean) => {
-                                        if (err) { 
-                                            console.error('[msnodesqlv8] Query error:', err);
-                                            return reject(err); 
+                                    // Execute batches sequentially
+                                    const executeBatch = () => {
+                                        if (batchIndex >= batches.length) {
+                                            // All batches executed successfully
+                                            resolve({ 
+                                                recordset: allRecordsets[0] || [], 
+                                                recordsets: allRecordsets, 
+                                                rowsAffected: allRecordsets.map(r => r.length) 
+                                            });
+                                            return;
                                         }
                                         
-                                        // Normalize result to match mssql result shape
-                                        const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-                                        recordsets.push(recs);
+                                        const currentBatch = batches[batchIndex];
+                                        console.log(`[msnodesqlv8] Executing batch ${batchIndex + 1}/${batches.length}`);
                                         
-                                        if (!more) {
-                                            resolve({ 
-                                                recordset: recordsets[0], 
-                                                recordsets: recordsets, 
-                                                rowsAffected: recordsets.map(r => r.length) 
-                                            });
+                                        const recordsets: any[][] = [];
+                                        
+                                        const queryCallback = (err: any, rows: any, more: boolean) => {
+                                            if (err) { 
+                                                console.error('[msnodesqlv8] Query error:', err);
+                                                return reject(err); 
+                                            }
+                                            
+                                            // Normalize result to match mssql result shape
+                                            const recs = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+                                            recordsets.push(recs);
+                                            
+                                            if (!more) {
+                                                // Add this batch's recordsets to all recordsets
+                                                allRecordsets.push(...recordsets);
+                                                
+                                                // Move to next batch
+                                                batchIndex++;
+                                                executeBatch();
+                                            }
+                                        };
+
+                                        try {
+                                            if (timeoutMs > 0) {
+                                                connectionHandle.query(currentBatch, queryOptions, queryCallback);
+                                            } else {
+                                                connectionHandle.query(currentBatch, queryCallback);
+                                            }
+                                        } catch (err) {
+                                            reject(err);
                                         }
                                     };
-
-                                    try {
-                                        if (timeoutMs > 0) {
-                                            connectionHandle.query(sqlText, queryOptions, queryCallback);
-                                        } else {
-                                            connectionHandle.query(sqlText, queryCallback);
-                                        }
-                                    } catch (err) {
-                                        reject(err);
-                                    }
+                                    
+                                    // Start executing batches
+                                    executeBatch();
                                 });
                             },
                             execute(proc: string /*, params? */) {
@@ -372,8 +453,76 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                 setArrayRowMode(enabled: boolean) {
                     (request as any).arrayRowMode = enabled;
                 },
-                query(sqlText: string) {
-                    return request.query(sqlText);
+                async query(sqlText: string) {
+                    console.log(`[mssql] Query input length: ${sqlText.length}, first 200 chars:`, sqlText.substring(0, 200).replace(/\r/g, '\\r').replace(/\n/g, '\\n'));
+                    
+                    // Split by GO statements (SQL Server batch separator)
+                    // GO must be separated from other statements (preceded and followed by newline or string boundaries)
+                    // This regex looks for GO with optional whitespace, preceded by newline (or start) and followed by newline (or end)
+                    const goRegex = /(?:^|[\r\n]+)\s*GO\s*(?:--[^\r\n]*)?(?=[\r\n]+|$)/gmi;
+                    
+                    // Test if GO exists in the query
+                    const hasGo = goRegex.test(sqlText);
+                    goRegex.lastIndex = 0; // Reset regex state after test
+                    
+                    console.log(`[mssql] GO detected: ${hasGo}`);
+                    
+                    if (!hasGo) {
+                        console.log('[mssql] No GO statements found, executing single query');
+                        return request.query(sqlText);
+                    }
+                    
+                    const batches = sqlText.split(goRegex)
+                        .map(batch => batch.trim())
+                        .filter(batch => batch.length > 0);
+                    
+                    console.log(`[mssql] Split into ${batches.length} batch(es) by GO statements`);
+                    batches.forEach((batch, idx) => {
+                        console.log(`[mssql] Batch ${idx + 1} length: ${batch.length}, starts: ${batch.substring(0, 50).replace(/\r/g, '\\r').replace(/\n/g, '\\n')}`);
+                    });
+                    
+                    if (batches.length <= 1) {
+                        console.log('[mssql] Only 1 batch after split, executing as single query');
+                        return request.query(sqlText);
+                    }
+                    
+                    // Multiple batches - execute sequentially and aggregate results
+                    const allRecordsets: any[][] = [];
+                    const allRowsAffected: number[] = [];
+                    
+                    for (let i = 0; i < batches.length; i++) {
+                        const batch = batches[i];
+                        console.log(`[mssql] Executing batch ${i + 1}/${batches.length}`);
+                        const batchRequest = poolInstance.request();
+                        if ((request as any).arrayRowMode) {
+                            (batchRequest as any).arrayRowMode = true;
+                        }
+                        
+                        const result = await batchRequest.query(batch);
+                        
+                        // Aggregate recordsets
+                        if (result.recordsets && result.recordsets.length > 0) {
+                            allRecordsets.push(...result.recordsets);
+                        } else if (result.recordset) {
+                            allRecordsets.push(result.recordset);
+                        }
+                        
+                        // Aggregate rows affected
+                        if (Array.isArray(result.rowsAffected)) {
+                            allRowsAffected.push(...result.rowsAffected);
+                        } else if (typeof result.rowsAffected === 'number') {
+                            allRowsAffected.push(result.rowsAffected);
+                        }
+                    }
+                    
+                    // Return aggregated results in mssql format
+                    return {
+                        recordset: allRecordsets[0] || [],
+                        recordsets: allRecordsets,
+                        rowsAffected: allRowsAffected,
+                        output: {},
+                        returnValue: 0
+                    };
                 },
                 execute(proc: string, params?: any) {
                     // Primitive execute wrapper: attach params if provided
