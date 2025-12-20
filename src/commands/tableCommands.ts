@@ -360,10 +360,476 @@ GO`;
         }
     });
 
+    const scriptRowInsertCommand = vscode.commands.registerCommand('mssqlManager.scriptRowInsert', async (tableNode?: any) => {
+        try {
+            if (!tableNode || !tableNode.connectionId || !tableNode.label) {
+                vscode.window.showErrorMessage('Invalid table item');
+                return;
+            }
+
+            const tableName = tableNode.label as string;
+            const connection = connectionProvider.getConnection(tableNode.connectionId);
+            let queryConnection = connection;
+            
+            if (!connection) {
+                vscode.window.showErrorMessage('No active connection found');
+                return;
+            }
+
+            // If we have a database context and this is a server connection, create a database-specific pool
+            if (tableNode.database && tableNode.connectionId) {
+                try {
+                    queryConnection = await connectionProvider.createDbPool(tableNode.connectionId, tableNode.database);
+                    outputChannel.appendLine(`[TableCommands] Using database-specific pool for ${tableNode.database}`);
+                } catch (error) {
+                    outputChannel.appendLine(`[TableCommands] Failed to create DB pool, using base connection: ${error}`);
+                    queryConnection = connection;
+                }
+            }
+
+            const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
+
+            // Get all columns
+            const columnsQuery = `
+                SELECT 
+                    c.name AS COLUMN_NAME,
+                    t.name AS DATA_TYPE,
+                    c.is_identity,
+                    c.is_computed,
+                    c.generated_always_type
+                FROM sys.columns c
+                INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
+                ORDER BY c.column_id;
+            `;
+
+            if (!queryConnection) {
+                throw new Error('No connection available for scripting row');
+            }
+            const colResult = await queryConnection.request().query(columnsQuery);
+
+            // Filter out identity, computed, and generated columns
+            const insertableColumns = colResult.recordset.filter((col: any) => 
+                !col.is_identity && !col.is_computed && col.generated_always_type === 0
+            );
+
+            if (insertableColumns.length === 0) {
+                vscode.window.showWarningMessage('Table has no insertable columns');
+                return;
+            }
+
+            // Generate INSERT script
+            let insertScript = `INSERT INTO [${schema}].[${table}]\n(\n`;
+            insertScript += insertableColumns.map((col: any) => `    [${col.COLUMN_NAME}]`).join(',\n');
+            insertScript += '\n)\nVALUES\n(\n';
+            insertScript += insertableColumns.map((col: any) => {
+                // Add appropriate placeholder based on data type
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `    N''  -- ${col.COLUMN_NAME}`;
+                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `    NULL  -- ${col.COLUMN_NAME} (datetime)`;
+                } else if (['bit'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `    0  -- ${col.COLUMN_NAME} (bit)`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `    0  -- ${col.COLUMN_NAME} (numeric)`;
+                } else if (['uniqueidentifier'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `    NEWID()  -- ${col.COLUMN_NAME}`;
+                } else {
+                    return `    NULL  -- ${col.COLUMN_NAME}`;
+                }
+            }).join(',\n');
+            insertScript += '\n)';
+
+            await openSqlInCustomEditor(insertScript, `insert_${table}.sql`, context);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to generate INSERT script: ${errorMessage}`);
+            outputChannel.appendLine(`Script Row INSERT failed: ${errorMessage}`);
+        }
+    });
+
+    const scriptRowUpdateCommand = vscode.commands.registerCommand('mssqlManager.scriptRowUpdate', async (tableNode?: any) => {
+        try {
+            if (!tableNode || !tableNode.connectionId || !tableNode.label) {
+                vscode.window.showErrorMessage('Invalid table item');
+                return;
+            }
+
+            const tableName = tableNode.label as string;
+            const connection = connectionProvider.getConnection(tableNode.connectionId);
+            let queryConnection = connection;
+            
+            if (!connection) {
+                vscode.window.showErrorMessage('No active connection found');
+                return;
+            }
+
+            // If we have a database context and this is a server connection, create a database-specific pool
+            if (tableNode.database && tableNode.connectionId) {
+                try {
+                    queryConnection = await connectionProvider.createDbPool(tableNode.connectionId, tableNode.database);
+                    outputChannel.appendLine(`[TableCommands] Using database-specific pool for ${tableNode.database}`);
+                } catch (error) {
+                    outputChannel.appendLine(`[TableCommands] Failed to create DB pool, using base connection: ${error}`);
+                    queryConnection = connection;
+                }
+            }
+
+            const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
+
+            // Get primary key columns
+            const pkQuery = `
+                SELECT c.name AS COLUMN_NAME
+                FROM sys.key_constraints kc
+                INNER JOIN sys.indexes i ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
+                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE kc.parent_object_id = OBJECT_ID('[${schema}].[${table}]') AND kc.type = 'PK'
+                ORDER BY ic.key_ordinal;
+            `;
+
+            // Get all columns
+            const columnsQuery = `
+                SELECT 
+                    c.name AS COLUMN_NAME,
+                    t.name AS DATA_TYPE,
+                    c.is_identity,
+                    c.is_computed,
+                    c.generated_always_type
+                FROM sys.columns c
+                INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+                WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
+                ORDER BY c.column_id;
+            `;
+
+            if (!queryConnection) {
+                throw new Error('No connection available for scripting row');
+            }
+            const pkResult = await queryConnection.request().query(pkQuery);
+            const colResult = await queryConnection.request().query(columnsQuery);
+
+            const pkColumns = pkResult.recordset.map((pk: any) => pk.COLUMN_NAME);
+            
+            // Filter columns: exclude PKs, identity, computed, and generated columns
+            const updateableColumns = colResult.recordset.filter((col: any) => 
+                !pkColumns.includes(col.COLUMN_NAME) && 
+                !col.is_identity && 
+                !col.is_computed && 
+                col.generated_always_type === 0
+            );
+
+            if (updateableColumns.length === 0) {
+                vscode.window.showWarningMessage('Table has no updateable columns (excluding primary keys)');
+                return;
+            }
+
+            // Generate UPDATE script
+            let updateScript = `UPDATE [${schema}].[${table}]\nSET\n`;
+            updateScript += updateableColumns.map((col: any, index: number) => {
+                const prefix = index === 0 ? '    ' : '    -- ';
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `${prefix}[${col.COLUMN_NAME}] = N''`;
+                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `${prefix}[${col.COLUMN_NAME}] = NULL`;
+                } else if (['bit'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `${prefix}[${col.COLUMN_NAME}] = 0`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.DATA_TYPE.toLowerCase())) {
+                    return `${prefix}[${col.COLUMN_NAME}] = 0`;
+                } else {
+                    return `${prefix}[${col.COLUMN_NAME}] = NULL`;
+                }
+            }).join(',\n');
+
+            // Add WHERE clause with primary key columns
+            if (pkColumns.length > 0) {
+                updateScript += '\nWHERE\n';
+                updateScript += pkColumns.map((pkCol: string, index: number) => {
+                    const operator = index === 0 ? '    ' : '    AND ';
+                    return `${operator}[${pkCol}] = NULL`;
+                }).join('\n');
+            }
+
+            await openSqlInCustomEditor(updateScript, `update_${table}.sql`, context);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to generate UPDATE script: ${errorMessage}`);
+            outputChannel.appendLine(`Script Row UPDATE failed: ${errorMessage}`);
+        }
+    });
+
+    const scriptRowDeleteCommand = vscode.commands.registerCommand('mssqlManager.scriptRowDelete', async (tableNode?: any) => {
+        try {
+            if (!tableNode || !tableNode.connectionId || !tableNode.label) {
+                vscode.window.showErrorMessage('Invalid table item');
+                return;
+            }
+
+            const tableName = tableNode.label as string;
+            const connection = connectionProvider.getConnection(tableNode.connectionId);
+            let queryConnection = connection;
+            
+            if (!connection) {
+                vscode.window.showErrorMessage('No active connection found');
+                return;
+            }
+
+            // If we have a database context and this is a server connection, create a database-specific pool
+            if (tableNode.database && tableNode.connectionId) {
+                try {
+                    queryConnection = await connectionProvider.createDbPool(tableNode.connectionId, tableNode.database);
+                    outputChannel.appendLine(`[TableCommands] Using database-specific pool for ${tableNode.database}`);
+                } catch (error) {
+                    outputChannel.appendLine(`[TableCommands] Failed to create DB pool, using base connection: ${error}`);
+                    queryConnection = connection;
+                }
+            }
+
+            const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
+
+            // Get primary key columns
+            const pkQuery = `
+                SELECT c.name AS COLUMN_NAME
+                FROM sys.key_constraints kc
+                INNER JOIN sys.indexes i ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
+                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE kc.parent_object_id = OBJECT_ID('[${schema}].[${table}]') AND kc.type = 'PK'
+                ORDER BY ic.key_ordinal;
+            `;
+
+            if (!queryConnection) {
+                throw new Error('No connection available for scripting row');
+            }
+            const pkResult = await queryConnection.request().query(pkQuery);
+
+            // Get all foreign key dependencies (tables that reference this table)
+            const fkDependenciesQuery = `
+                WITH FKHierarchy AS (
+                    -- Base case: tables that reference our target table (excluding self-references)
+                    SELECT 
+                        fk.object_id AS fk_id,
+                        OBJECT_SCHEMA_NAME(fk.parent_object_id) AS ref_schema,
+                        OBJECT_NAME(fk.parent_object_id) AS ref_table,
+                        OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS target_schema,
+                        OBJECT_NAME(fk.referenced_object_id) AS target_table,
+                        fk.parent_object_id,
+                        fk.referenced_object_id,
+                        0 AS level,
+                        CAST(OBJECT_NAME(fk.referenced_object_id) AS NVARCHAR(MAX)) AS path
+                    FROM sys.foreign_keys fk
+                    WHERE fk.referenced_object_id = OBJECT_ID('[${schema}].[${table}]')
+                        AND fk.parent_object_id != fk.referenced_object_id  -- Exclude self-references
+                    
+                    UNION ALL
+                    
+                    -- Recursive case: tables that reference the referencing tables (excluding self-references)
+                    SELECT 
+                        fk.object_id AS fk_id,
+                        OBJECT_SCHEMA_NAME(fk.parent_object_id) AS ref_schema,
+                        OBJECT_NAME(fk.parent_object_id) AS ref_table,
+                        OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS target_schema,
+                        OBJECT_NAME(fk.referenced_object_id) AS target_table,
+                        fk.parent_object_id,
+                        fk.referenced_object_id,
+                        h.level + 1,
+                        h.path + ' -> ' + OBJECT_NAME(fk.referenced_object_id)
+                    FROM sys.foreign_keys fk
+                    INNER JOIN FKHierarchy h ON 
+                        fk.referenced_object_id = h.parent_object_id
+                    WHERE h.level < 10  -- Limit recursion depth
+                        AND fk.parent_object_id != fk.referenced_object_id  -- Exclude self-references
+                        AND h.path NOT LIKE '%' + OBJECT_NAME(fk.parent_object_id) + '%'  -- Prevent circular references
+                )
+                SELECT DISTINCT 
+                    h.ref_schema,
+                    h.ref_table,
+                    h.target_schema,
+                    h.target_table,
+                    h.parent_object_id,
+                    h.referenced_object_id,
+                    STRING_AGG(CAST(pc.name AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS ref_columns,
+                    STRING_AGG(CAST(rc.name AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS target_columns,
+                    h.level,
+                    h.path
+                FROM FKHierarchy h
+                INNER JOIN sys.foreign_keys fk ON 
+                    fk.parent_object_id = h.parent_object_id AND
+                    fk.referenced_object_id = h.referenced_object_id
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                INNER JOIN sys.columns pc ON fkc.parent_object_id = pc.object_id AND fkc.parent_column_id = pc.column_id
+                INNER JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
+                GROUP BY h.ref_schema, h.ref_table, h.target_schema, h.target_table, h.level, h.path, h.parent_object_id, h.referenced_object_id
+                ORDER BY level DESC, h.ref_schema, h.ref_table;
+            `;
+
+            const fkDepsResult = await queryConnection.request().query(fkDependenciesQuery);
+
+            // Build a hierarchy map to trace back to the original table
+            const hierarchyMap = new Map<string, any[]>();
+            fkDepsResult.recordset.forEach((dep: any) => {
+                const key = `${dep.ref_schema}.${dep.ref_table}`;
+                if (!hierarchyMap.has(key)) {
+                    hierarchyMap.set(key, []);
+                }
+                hierarchyMap.get(key)!.push(dep);
+            });
+
+            // Generate DELETE script with cascading deletes
+            let deleteScript = `-- Cascading DELETE script for [${schema}].[${table}]\n`;
+            deleteScript += `-- This script will delete the specified record and all related records in dependent tables\n`;
+            deleteScript += `-- (Self-referencing foreign keys are excluded to prevent loops)\n\n`;
+
+            // Add transaction wrapper
+            deleteScript += `BEGIN TRANSACTION;\n`;
+            deleteScript += `BEGIN TRY\n\n`;
+
+            if (pkResult.recordset.length === 0) {
+                deleteScript += `    -- WARNING: No primary key found on table [${schema}].[${table}]\n`;
+                deleteScript += `    -- Please define a WHERE condition manually\n\n`;
+            }
+
+            // Add WHERE condition variables at the top
+            if (pkResult.recordset.length > 0) {
+                deleteScript += `    -- Define the target record to delete\n`;
+                pkResult.recordset.forEach((pk: any) => {
+                    deleteScript += `    DECLARE @Target_${pk.COLUMN_NAME} NVARCHAR(MAX) = NULL;  -- Set the value for ${pk.COLUMN_NAME}\n`;
+                });
+                deleteScript += `\n`;
+            }
+
+            // Generate DELETE statements for dependent tables (from most dependent to least dependent)
+            if (fkDepsResult.recordset.length > 0) {
+                deleteScript += `    -- Delete dependent records (from most dependent to least dependent)\n\n`;
+
+                // Group by level and table to avoid duplicates
+                const processedTables = new Set<string>();
+                const groupedByLevel = new Map<number, any[]>();
+                
+                fkDepsResult.recordset.forEach((dep: any) => {
+                    const tableKey = `${dep.level}_${dep.ref_schema}.${dep.ref_table}`;
+                    if (!processedTables.has(tableKey)) {
+                        processedTables.add(tableKey);
+                        if (!groupedByLevel.has(dep.level)) {
+                            groupedByLevel.set(dep.level, []);
+                        }
+                        groupedByLevel.get(dep.level)!.push(dep);
+                    }
+                });
+
+                // Sort levels in descending order
+                const sortedLevels = Array.from(groupedByLevel.keys()).sort((a, b) => b - a);
+
+                sortedLevels.forEach(level => {
+                    const depsAtLevel = groupedByLevel.get(level)!;
+                    
+                    depsAtLevel.forEach((dep: any) => {
+                        deleteScript += `    -- Level ${dep.level}: Delete from [${dep.ref_schema}].[${dep.ref_table}]\n`;
+                        deleteScript += `    -- Path: ${dep.path}\n`;
+                        deleteScript += `    DELETE [${dep.ref_schema}].[${dep.ref_table}]\n`;
+                        deleteScript += `    WHERE [${dep.ref_columns}] IN (\n`;
+                        deleteScript += `        SELECT [${dep.target_columns}]\n`;
+                        deleteScript += `        FROM [${dep.target_schema}].[${dep.target_table}]\n`;
+                        
+                        // Build WHERE clause that traces back to the original table
+                        if (dep.level === 0) {
+                            // Direct dependency on the target table
+                            if (pkResult.recordset.length > 0) {
+                                deleteScript += `        WHERE `;
+                                deleteScript += pkResult.recordset.map((pk: any, pkIndex: number) => {
+                                    const operator = pkIndex === 0 ? '' : 'AND ';
+                                    return `${operator}[${pk.COLUMN_NAME}] = @Target_${pk.COLUMN_NAME}`;
+                                }).join(' ');
+                                deleteScript += `\n`;
+                            }
+                        } else {
+                            // For higher levels, check if we can use direct column reference
+                            // Look for a column in ref_table that matches the root table's PK pattern
+                            const rootTableNameSingular = table.endsWith('s') ? table.slice(0, -1) : table;
+                            const potentialColumnNames = [
+                                `${table}Id`,      // e.g., ProjectsId
+                                `${rootTableNameSingular}Id`, // e.g., ProjectId
+                                pkResult.recordset.length > 0 ? pkResult.recordset[0].COLUMN_NAME : null
+                            ].filter(Boolean);
+                            
+                            // Check if any of the ref_columns contains a direct reference to root table
+                            const refColumnsList = dep.ref_columns.split(', ');
+                            const directColumn = refColumnsList.find((col: string) => 
+                                potentialColumnNames.some(pcn => col === pcn)
+                            );
+                            
+                            if (directColumn && pkResult.recordset.length > 0) {
+                                // Use direct column comparison
+                                deleteScript += `        WHERE [${directColumn}] = @Target_${pkResult.recordset[0].COLUMN_NAME}\n`;
+                            } else {
+                                // Fall back to subquery (for cases where there's no direct column)
+                                const parentDep = fkDepsResult.recordset.find((d: any) => 
+                                    d.ref_schema === dep.target_schema && 
+                                    d.ref_table === dep.target_table &&
+                                    d.level === dep.level - 1
+                                );
+                                
+                                if (parentDep) {
+                                    const parentRefColumns = parentDep.ref_columns.split(', ');
+                                    const parentDirectColumn = parentRefColumns.find((col: string) => 
+                                        potentialColumnNames.some(pcn => col === pcn)
+                                    );
+                                    
+                                    if (parentDirectColumn && pkResult.recordset.length > 0) {
+                                        deleteScript += `        WHERE [${parentDirectColumn}] = @Target_${pkResult.recordset[0].COLUMN_NAME}\n`;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        deleteScript += `    );\n`;
+                        deleteScript += `    PRINT 'Deleted ' + CAST(@@ROWCOUNT AS VARCHAR) + ' row(s) from [${dep.ref_schema}].[${dep.ref_table}]';\n\n`;
+                    });
+                });
+            }
+
+            // Generate DELETE statement for the main table
+            deleteScript += `    -- Delete the main record from [${schema}].[${table}]\n`;
+            deleteScript += `    DELETE FROM [${schema}].[${table}]`;
+
+            if (pkResult.recordset.length > 0) {
+                deleteScript += `\n    WHERE\n`;
+                deleteScript += pkResult.recordset.map((pk: any, index: number) => {
+                    const operator = index === 0 ? '        ' : '        AND ';
+                    return `${operator}[${pk.COLUMN_NAME}] = @Target_${pk.COLUMN_NAME}`;
+                }).join('\n');
+            } else {
+                deleteScript += `\n    -- WHERE <condition>  -- Define your condition here`;
+            }
+
+            deleteScript += `;\n`;
+            deleteScript += `    PRINT 'Deleted ' + CAST(@@ROWCOUNT AS VARCHAR) + ' row(s) from [${schema}].[${table}]';\n\n`;
+
+            // Close transaction
+            deleteScript += `    COMMIT TRANSACTION;\n`;
+            deleteScript += `    PRINT 'Transaction committed successfully.';\n\n`;
+            deleteScript += `END TRY\n`;
+            deleteScript += `BEGIN CATCH\n`;
+            deleteScript += `    ROLLBACK TRANSACTION;\n`;
+            deleteScript += `    PRINT 'Transaction rolled back due to error.';\n`;
+            deleteScript += `    PRINT 'Error: ' + ERROR_MESSAGE();\n`;
+            deleteScript += `    THROW;\n`;
+            deleteScript += `END CATCH;\n`;
+
+            await openSqlInCustomEditor(deleteScript, `delete_${table}_cascading.sql`, context);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to generate DELETE script: ${errorMessage}`);
+            outputChannel.appendLine(`Script Row DELETE failed: ${errorMessage}`);
+        }
+    });
+
     return [
         selectTop1000Command,
         scriptTableCreateCommand,
         scriptTableDropCommand,
-        refreshTableCommand
+        refreshTableCommand,
+        scriptRowInsertCommand,
+        scriptRowUpdateCommand,
+        scriptRowDeleteCommand
     ];
 }
