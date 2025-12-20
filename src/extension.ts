@@ -10,12 +10,23 @@ import { initializeAzureFirewallHelper } from './utils/azureFirewallHelper';
 import { SqlChatHandler } from './sqlChatHandler';
 import { SchemaContextBuilder } from './schemaContextBuilder';
 import { DatabaseInstructionsManager } from './databaseInstructions';
+import { setCachedOdbcDriver, initializeDbClient } from './dbClient';
 
 let outputChannel: vscode.OutputChannel;
 
 export async function activate(context: vscode.ExtensionContext) {
     // Create output channel for logging
     outputChannel = vscode.window.createOutputChannel('MS SQL Manager');
+    
+    // Initialize dbClient with context for persistent storage
+    initializeDbClient(context);
+    
+    // Load cached ODBC driver from storage
+    const cachedDriver = context.globalState.get<string>('mssqlManager.cachedOdbcDriver');
+    if (cachedDriver) {
+        setCachedOdbcDriver(cachedDriver);
+        outputChannel.appendLine(`[Extension] Loaded cached ODBC driver: ${cachedDriver}`);
+    }
     
     // Check if extension should activate immediately or wait for SQL files
     const config = vscode.workspace.getConfiguration('mssqlManager');
