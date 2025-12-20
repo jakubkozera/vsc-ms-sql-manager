@@ -419,9 +419,16 @@ export class ConnectionProvider {
                 // Close existing connection with same ID if any
                 const existingConnection = this.activeConnections.get(config.id);
                 if (existingConnection) {
-                    await existingConnection.close();
-                    this.activeConnections.delete(config.id);
-                    this.activeConfigs.delete(config.id);
+                    try {
+                        if (existingConnection.connected) {
+                            await existingConnection.close();
+                        }
+                    } catch (closeError) {
+                        this.outputChannel.appendLine(`[ConnectionProvider] Warning: Error closing existing connection: ${closeError}`);
+                    } finally {
+                        this.activeConnections.delete(config.id);
+                        this.activeConfigs.delete(config.id);
+                    }
                 }
 
                 progress.report({ message: 'Configuring authentication...' });
@@ -460,16 +467,40 @@ export class ConnectionProvider {
                 // Get query timeout setting from VS Code configuration
                 const queryTimeout = vscode.workspace.getConfiguration('mssqlManager').get<number>('queryTimeout', 0);
                 
-                // Create and test connection using dbClient strategy (mssql or msnodesqlv8 depending on auth)
-                const newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate, queryTimeout });
-                await newConnection.connect();
-
-                progress.report({ message: 'Verifying connection...' });
+                this.outputChannel.appendLine(`[ConnectionProvider] Auth type: ${config.authType}`);
+                this.outputChannel.appendLine(`[ConnectionProvider] Server: ${config.server}`);
+                this.outputChannel.appendLine(`[ConnectionProvider] Database: ${config.database}`);
+                this.outputChannel.appendLine(`[ConnectionProvider] Use connection string: ${config.useConnectionString}`);
                 
-                // Test with a simple query
-                const request = newConnection.request();
-                // normalize both clients to return result.recordsets when applicable
-                await request.query('SELECT 1 as test');
+                // Create and test connection using dbClient strategy (mssql or msnodesqlv8 depending on auth)
+                let newConnection: DBPool | null = null;
+                try {
+                    this.outputChannel.appendLine(`[ConnectionProvider] Creating pool for config...`);
+                    newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate, queryTimeout });
+                    
+                    this.outputChannel.appendLine(`[ConnectionProvider] Pool created, attempting to connect...`);
+                    await newConnection.connect();
+                    this.outputChannel.appendLine(`[ConnectionProvider] Connection established successfully`);
+
+                    progress.report({ message: 'Verifying connection...' });
+                    
+                    // Test with a simple query
+                    const request = newConnection.request();
+                    // normalize both clients to return result.recordsets when applicable
+                    await request.query('SELECT 1 as test');
+                } catch (connectionError) {
+                    // If connection test failed, attempt to close connection if it was created
+                    if (newConnection) {
+                        try {
+                            if (newConnection.connected) {
+                                await newConnection.close();
+                            }
+                        } catch (closeErr) {
+                            this.outputChannel.appendLine(`[ConnectionProvider] Error closing failed connection: ${closeErr}`);
+                        }
+                    }
+                    throw connectionError;
+                }
                 
                 // Store the new connection
                 this.activeConnections.set(config.id, newConnection);
@@ -486,7 +517,17 @@ export class ConnectionProvider {
                 progress.report({ message: `Successfully connected!` });
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                this.outputChannel.appendLine(`Connection failed: ${errorMessage}`);
+                const errorStack = error instanceof Error ? error.stack : '';
+                
+                this.outputChannel.appendLine(`[ConnectionProvider] ========================================`);
+                this.outputChannel.appendLine(`[ConnectionProvider] CONNECTION FAILED`);
+                this.outputChannel.appendLine(`[ConnectionProvider] Error message: ${errorMessage}`);
+                this.outputChannel.appendLine(`[ConnectionProvider] Error type: ${error?.constructor?.name || typeof error}`);
+                this.outputChannel.appendLine(`[ConnectionProvider] Full error: ${JSON.stringify(error, null, 2)}`);
+                if (errorStack) {
+                    this.outputChannel.appendLine(`[ConnectionProvider] Stack trace: ${errorStack}`);
+                }
+                this.outputChannel.appendLine(`[ConnectionProvider] ========================================`);
                 
                 // Mark connection as failed to prevent retry loops
                 this.failedConnections.add(config.id);
