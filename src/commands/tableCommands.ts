@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
+import { SchemaCache } from '../utils/schemaCache';
 
 export function registerTableCommands(
     context: vscode.ExtensionContext,
@@ -9,6 +10,8 @@ export function registerTableCommands(
     unifiedTreeProvider: UnifiedTreeProvider,
     outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
+    const schemaCache = SchemaCache.getInstance(context);
+    
     const selectTop1000Command = vscode.commands.registerCommand('mssqlManager.selectTop1000', async (tableNode?: any) => {
         try {
             if (!tableNode || !tableNode.connectionId || !tableNode.label) {
@@ -49,18 +52,18 @@ export function registerTableCommands(
             }
             
             try {
-                const columnsQuery = `
-                    SELECT c.name AS COLUMN_NAME
-                    FROM sys.columns c
-                    WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
-                    ORDER BY c.column_id
-                `;
+                // Use schema cache to get columns
+                const connectionConfig = connectionProvider.getConnectionConfig(tableNode.connectionId);
+                const connectionInfo = {
+                    server: connectionConfig?.server || '',
+                    database: tableNode.database || connectionConfig?.database || ''
+                };
                 
-                const columnsResult = await queryConnection.request().query(columnsQuery);
+                const columns = await schemaCache.getTableColumns(connectionInfo, queryConnection, schema, table);
                 
-                if (columnsResult.recordset && columnsResult.recordset.length > 0) {
-                    const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
-                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}] [${tableAlias}]`;
+                if (columns && columns.length > 0) {
+                    const columnList = columns.map((col: any) => `[${col.columnName}]`).join(',\n      ');
+                    query = `SELECT TOP (1000) ${columnList}\n  FROM [${schema}].[${table}] [${tableAlias}]`;
                 } else {
                     // Fallback to * if we can't get columns
                     query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] [${tableAlias}]`;
@@ -389,28 +392,22 @@ GO`;
 
             const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
 
-            // Get all columns
-            const columnsQuery = `
-                SELECT 
-                    c.name AS COLUMN_NAME,
-                    t.name AS DATA_TYPE,
-                    c.is_identity,
-                    c.is_computed,
-                    c.generated_always_type
-                FROM sys.columns c
-                INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
-                WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
-                ORDER BY c.column_id;
-            `;
-
+            // Get all columns from cache
+            const connectionConfig = connectionProvider.getConnectionConfig(tableNode.connectionId);
+            const connectionInfo = {
+                server: connectionConfig?.server || '',
+                database: tableNode.database || connectionConfig?.database || ''
+            };
+            
             if (!queryConnection) {
                 throw new Error('No connection available for scripting row');
             }
-            const colResult = await queryConnection.request().query(columnsQuery);
+            
+            const allColumns = await schemaCache.getTableColumns(connectionInfo, queryConnection, schema, table);
 
             // Filter out identity, computed, and generated columns
-            const insertableColumns = colResult.recordset.filter((col: any) => 
-                !col.is_identity && !col.is_computed && col.generated_always_type === 0
+            const insertableColumns = allColumns.filter((col: any) => 
+                !col.isIdentity && !col.isComputed && (col.generatedAlwaysType === 0 || col.generatedAlwaysType === null || col.generatedAlwaysType === undefined)
             );
 
             if (insertableColumns.length === 0) {
@@ -420,22 +417,22 @@ GO`;
 
             // Generate INSERT script
             let insertScript = `INSERT INTO [${schema}].[${table}]\n(\n`;
-            insertScript += insertableColumns.map((col: any) => `    [${col.COLUMN_NAME}]`).join(',\n');
+            insertScript += insertableColumns.map((col: any) => `    [${col.columnName}]`).join(',\n');
             insertScript += '\n)\nVALUES\n(\n';
             insertScript += insertableColumns.map((col: any) => {
                 // Add appropriate placeholder based on data type
-                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    N''  -- ${col.COLUMN_NAME}`;
-                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    NULL  -- ${col.COLUMN_NAME} (datetime)`;
-                } else if (['bit'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    0  -- ${col.COLUMN_NAME} (bit)`;
-                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    0  -- ${col.COLUMN_NAME} (numeric)`;
-                } else if (['uniqueidentifier'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    NEWID()  -- ${col.COLUMN_NAME}`;
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.dataType.toLowerCase())) {
+                    return `    N''  -- ${col.columnName}`;
+                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.dataType.toLowerCase())) {
+                    return `    NULL  -- ${col.columnName} (datetime)`;
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    return `    0  -- ${col.columnName} (bit)`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    return `    0  -- ${col.columnName} (numeric)`;
+                } else if (['uniqueidentifier'].includes(col.dataType.toLowerCase())) {
+                    return `    NEWID()  -- ${col.columnName}`;
                 } else {
-                    return `    NULL  -- ${col.COLUMN_NAME}`;
+                    return `    NULL  -- ${col.columnName}`;
                 }
             }).join(',\n');
             insertScript += '\n)';
@@ -477,45 +474,31 @@ GO`;
 
             const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
 
-            // Get primary key columns
-            const pkQuery = `
-                SELECT c.name AS COLUMN_NAME
-                FROM sys.key_constraints kc
-                INNER JOIN sys.indexes i ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
-                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                WHERE kc.parent_object_id = OBJECT_ID('[${schema}].[${table}]') AND kc.type = 'PK'
-                ORDER BY ic.key_ordinal;
-            `;
-
-            // Get all columns
-            const columnsQuery = `
-                SELECT 
-                    c.name AS COLUMN_NAME,
-                    t.name AS DATA_TYPE,
-                    c.is_identity,
-                    c.is_computed,
-                    c.generated_always_type
-                FROM sys.columns c
-                INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
-                WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
-                ORDER BY c.column_id;
-            `;
+            // Get connection info for cache
+            const connectionConfig = connectionProvider.getConnectionConfig(tableNode.connectionId);
+            const connectionInfo = {
+                server: connectionConfig?.server || '',
+                database: tableNode.database || connectionConfig?.database || ''
+            };
 
             if (!queryConnection) {
                 throw new Error('No connection available for scripting row');
             }
-            const pkResult = await queryConnection.request().query(pkQuery);
-            const colResult = await queryConnection.request().query(columnsQuery);
+            
+            // Get columns and constraints from cache
+            const allColumns = await schemaCache.getTableColumns(connectionInfo, queryConnection, schema, table);
+            const constraints = await schemaCache.getTableConstraints(connectionInfo, queryConnection, schema, table);
 
-            const pkColumns = pkResult.recordset.map((pk: any) => pk.COLUMN_NAME);
+            // Get primary key columns from constraints
+            const pkConstraint = constraints.find(c => c.constraintType === 'PRIMARY KEY');
+            const pkColumns = pkConstraint?.columns || [];
             
             // Filter columns: exclude PKs, identity, computed, and generated columns
-            const updateableColumns = colResult.recordset.filter((col: any) => 
-                !pkColumns.includes(col.COLUMN_NAME) && 
-                !col.is_identity && 
-                !col.is_computed && 
-                col.generated_always_type === 0
+            const updateableColumns = allColumns.filter((col: any) => 
+                !pkColumns.includes(col.columnName) && 
+                !col.isIdentity && 
+                !col.isComputed && 
+                (col.generatedAlwaysType === 0 || col.generatedAlwaysType === null || col.generatedAlwaysType === undefined)
             );
 
             if (updateableColumns.length === 0) {
@@ -527,16 +510,16 @@ GO`;
             let updateScript = `UPDATE [${schema}].[${table}]\nSET\n`;
             updateScript += updateableColumns.map((col: any, index: number) => {
                 const prefix = index === 0 ? '    ' : '    -- ';
-                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = N''`;
-                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = NULL`;
-                } else if (['bit'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = 0`;
-                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = 0`;
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = N''`;
+                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = NULL`;
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = 0`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = 0`;
                 } else {
-                    return `${prefix}[${col.COLUMN_NAME}] = NULL`;
+                    return `${prefix}[${col.columnName}] = NULL`;
                 }
             }).join(',\n');
 

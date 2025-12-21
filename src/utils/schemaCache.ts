@@ -64,6 +64,8 @@ export interface ColumnInfo {
     position: number;
     isPrimaryKey: boolean;
     isIdentity: boolean;
+    isComputed?: boolean;
+    generatedAlwaysType?: number;
 }
 
 /**
@@ -448,7 +450,9 @@ export class SchemaCache {
                 c.NUMERIC_SCALE as scale,
                 c.ORDINAL_POSITION as position,
                 CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END as isPrimaryKey,
-                CASE WHEN cc.is_identity = 1 THEN 1 ELSE 0 END as isIdentity
+                CASE WHEN cc.is_identity = 1 THEN 1 ELSE 0 END as isIdentity,
+                CASE WHEN cc.is_computed = 1 THEN 1 ELSE 0 END as isComputed,
+                cc.generated_always_type as generatedAlwaysType
             FROM INFORMATION_SCHEMA.COLUMNS c
             LEFT JOIN (
                 SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME
@@ -488,7 +492,9 @@ export class SchemaCache {
                 scale: row.scale,
                 position: row.position,
                 isPrimaryKey: row.isPrimaryKey === 1,
-                isIdentity: row.isIdentity === 1
+                isIdentity: row.isIdentity === 1,
+                isComputed: row.isComputed === 1,
+                generatedAlwaysType: row.generatedAlwaysType
             });
         }
 
@@ -948,6 +954,24 @@ export class SchemaCache {
     }
 
     /**
+     * Get all foreign key relationships across all tables
+     */
+    public async getAllForeignKeys(connection: ConnectionInfo, pool: DBPool): Promise<ConstraintInfo[]> {
+        const schema = await this.getSchema(connection, pool);
+        const allForeignKeys: ConstraintInfo[] = [];
+        
+        for (const constraints of schema.constraints.values()) {
+            for (const constraint of constraints) {
+                if (constraint.constraintType === 'FOREIGN KEY') {
+                    allForeignKeys.push(constraint);
+                }
+            }
+        }
+        
+        return allForeignKeys;
+    }
+
+    /**
      * Get all triggers
      */
     public async getTriggers(connection: ConnectionInfo, pool: DBPool): Promise<TriggerInfo[]> {
@@ -1097,7 +1121,9 @@ export class SchemaCache {
                 c.NUMERIC_SCALE as scale,
                 c.ORDINAL_POSITION as position,
                 CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END as isPrimaryKey,
-                CASE WHEN cc.is_identity = 1 THEN 1 ELSE 0 END as isIdentity
+                CASE WHEN cc.is_identity = 1 THEN 1 ELSE 0 END as isIdentity,
+                CASE WHEN cc.is_computed = 1 THEN 1 ELSE 0 END as isComputed,
+                cc.generated_always_type as generatedAlwaysType
             FROM INFORMATION_SCHEMA.COLUMNS c
             LEFT JOIN (
                 SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME
@@ -1131,7 +1157,9 @@ export class SchemaCache {
             scale: row.scale,
             position: row.position,
             isPrimaryKey: row.isPrimaryKey === 1,
-            isIdentity: row.isIdentity === 1
+            isIdentity: row.isIdentity === 1,
+            isComputed: row.isComputed === 1,
+            generatedAlwaysType: row.generatedAlwaysType
         }));
     }
 

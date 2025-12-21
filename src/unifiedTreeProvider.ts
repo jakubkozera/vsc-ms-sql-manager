@@ -380,6 +380,26 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Connection active: ${isActive}`);
             
             if (isActive) {
+                // Preload schema cache when database is expanded
+                if (this.schemaCache) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Preloading schema cache for database: ${element.database}`);
+                    try {
+                        const config = this.connectionProvider.getConnectionConfig(element.connectionId);
+                        // Create a database-specific pool for the target database
+                        const pool = await this.connectionProvider.createDbPool(element.connectionId, element.database);
+                        if (config && pool) {
+                            const connectionInfo = {
+                                server: config.server,
+                                database: element.database
+                            };
+                            await this.schemaCache.getSchema(connectionInfo, pool);
+                            this.outputChannel.appendLine(`[UnifiedTreeProvider] Schema cache preloaded successfully for ${element.database}`);
+                        }
+                    } catch (error) {
+                        this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to preload schema cache: ${error}`);
+                    }
+                }
+                
                 console.log(`[DEBUG] About to call getSchemaChildren for database: ${element.database}`);
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Connection is active, calling getSchemaChildren...`);
                 try {
@@ -548,40 +568,32 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 return [];
             }
             
-            // Get tables - now using current database context
-            const tablesQuery = `
-                SELECT TABLE_NAME, TABLE_SCHEMA 
-                FROM INFORMATION_SCHEMA.TABLES 
-                WHERE TABLE_TYPE = 'BASE TABLE'
-                ORDER BY TABLE_SCHEMA, TABLE_NAME
-            `;
-            
-            console.log(`[DEBUG] Executing tables query:`, tablesQuery);
-            
-            const tablesResult = await dbPool.request().query(tablesQuery);
-            
-            console.log(`[DEBUG] Tables query result:`, tablesResult.recordset.length);
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${tablesResult.recordset.length} tables in database ${database}`);
-            
-            // Group tables by schema
-            const tablesBySchema: { [schema: string]: any[] } = {};
-            tablesResult.recordset.forEach((table: any) => {
-                const schema = table.TABLE_SCHEMA;
-                if (!tablesBySchema[schema]) {
-                    tablesBySchema[schema] = [];
+            // Get tables from cache
+            let tablesCount = 0;
+            if (this.schemaCache) {
+                try {
+                    const config = this.connectionProvider.getConnectionConfig(connectionId);
+                    const connectionInfo = {
+                        server: config?.server || '',
+                        database: database
+                    };
+                    const tables = await this.schemaCache.getTables(connectionInfo, dbPool);
+                    tablesCount = tables.length;
+                    console.log(`[DEBUG] Tables from cache:`, tablesCount);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${tablesCount} tables in cache for database ${database}`);
+                } catch (error) {
+                    console.error(`[DEBUG] Failed to get tables from cache:`, error);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to get tables from cache: ${error}`);
                 }
-                tablesBySchema[schema].push(table);
-            });
-            
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Tables grouped by schema in ${database}: ${JSON.stringify(Object.keys(tablesBySchema).map(schema => `${schema}: ${tablesBySchema[schema].length}`))}`);
+            }
             
             // Add a single "Tables" node instead of one per schema
-            if (tablesResult.recordset.length > 0) {
+            if (tablesCount > 0) {
                 // Check if table filter is active
                 const hasTableFilter = this.connectionProvider.hasTableFilter(connectionId, database);
                 const tablesLabel = hasTableFilter 
-                    ? `Tables (${tablesResult.recordset.length}) (filtered)`
-                    : `Tables (${tablesResult.recordset.length})`;
+                    ? `Tables (${tablesCount}) (filtered)`
+                    : `Tables (${tablesCount})`;
                 
                 const tablesNode = new SchemaItemNode(
                     tablesLabel,
@@ -593,24 +605,31 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 tablesNode.database = database;
                 tablesNode.contextValue = 'tables';
                 items.push(tablesNode);
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesResult.recordset.length} tables for database ${database}${hasTableFilter ? ' (filtered)' : ''}`);
+                this.outputChannel.appendLine(`[UnifiedTreeProvider] Added single Tables node with ${tablesCount} tables for database ${database}${hasTableFilter ? ' (filtered)' : ''}`);
             }
             
-            // Get views - now using current database context
-            const viewsQuery = `
-                SELECT TABLE_NAME, TABLE_SCHEMA 
-                FROM INFORMATION_SCHEMA.VIEWS 
-                ORDER BY TABLE_SCHEMA, TABLE_NAME
-            `;
+            // Get views from cache
+            let viewsCount = 0;
+            if (this.schemaCache) {
+                try {
+                    const config = this.connectionProvider.getConnectionConfig(connectionId);
+                    const connectionInfo = {
+                        server: config?.server || '',
+                        database: database
+                    };
+                    const views = await this.schemaCache.getViews(connectionInfo, dbPool);
+                    viewsCount = views.length;
+                    console.log(`[DEBUG] Views from cache:`, viewsCount);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${viewsCount} views in cache for database ${database}`);
+                } catch (error) {
+                    console.error(`[DEBUG] Failed to get views from cache:`, error);
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to get views from cache: ${error}`);
+                }
+            }
             
-            const viewsResult = await dbPool.request().query(viewsQuery);
-            
-            console.log(`[DEBUG] Views query result:`, viewsResult.recordset.length);
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${viewsResult.recordset.length} views in database ${database}`);
-            
-            if (viewsResult.recordset.length > 0) {
+            if (viewsCount > 0) {
                 const viewsNode = new SchemaItemNode(
-                    `Views (${viewsResult.recordset.length})`,
+                    `Views (${viewsCount})`,
                     'views',
                     'all',
                     vscode.TreeItemCollapsibleState.Collapsed
