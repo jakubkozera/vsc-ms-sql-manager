@@ -823,8 +823,8 @@ export class SchemaCache {
             const lastCheck = this.lastValidationCheck.get(cacheKey);
             if (lastCheck && lastCheck.wasValid) {
                 const timeSinceValidation = Date.now() - lastCheck.timestamp.getTime();
-                // If validated within last 30 seconds, trust it and return immediately
-                if (timeSinceValidation < 30000) {
+                // If validated within last 60 seconds, trust it and return immediately
+                if (timeSinceValidation < 60000) {
                     console.log(`[SchemaCache] getSchema() - Using recently validated cache (${timeSinceValidation}ms ago)`);
                     return schema;
                 }
