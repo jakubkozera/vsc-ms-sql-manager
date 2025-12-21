@@ -11,6 +11,7 @@ import { registerStoredProcedureCommands } from './storedProcedureCommands';
 import { registerQueryHistoryCommands } from './queryHistoryCommands';
 import { registerDatabaseCommands } from './databaseCommands';
 import { registerScriptGenerationCommands } from './scriptGenerationCommands';
+import { registerSchemaCacheCommands } from './schemaCacheCommands';
 import { SqlEditorProvider } from '../sqlEditorProvider';
 import { SchemaContextBuilder } from '../schemaContextBuilder';
 import { DatabaseInstructionsManager } from '../databaseInstructions';
@@ -81,6 +82,9 @@ export function registerAllCommands(
         connectionProvider,
         outputChannel
     );
+
+    // Register schema cache management commands
+    registerSchemaCacheCommands(context, connectionProvider, outputChannel);
 
     const allCommands = [
         refreshCommand,

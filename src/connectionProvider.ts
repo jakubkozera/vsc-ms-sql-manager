@@ -22,6 +22,7 @@ export interface CustomIcon {
 }
 
 export interface TableFilter {
+    [key: string]: boolean | { operator: string; value: string } | undefined;
     name?: { operator: string; value: string };
     schema?: { operator: string; value: string };
     owner?: { operator: string; value: string };

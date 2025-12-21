@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ConnectionProvider } from './connectionProvider';
+import { SchemaCache, TableInfo, ColumnInfo as CacheColumnInfo, ViewInfo, ProcedureInfo, FunctionInfo, ConstraintInfo as CacheConstraintInfo, IndexInfo as CacheIndexInfo } from './utils/schemaCache';
 
 export interface TableSchema {
     schema: string;
@@ -54,6 +55,7 @@ export class SchemaContextBuilder {
     private schemaCache = new Map<string, DatabaseSchema>();
     private readonly CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
     private schemaDirectory: string;
+    private centralSchemaCache: SchemaCache;
 
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -63,6 +65,9 @@ export class SchemaContextBuilder {
         // Initialize schema directory
         this.schemaDirectory = path.join(context.globalStorageUri.fsPath, 'schemas');
         this.ensureSchemaDirectory();
+        
+        // Initialize central schema cache
+        this.centralSchemaCache = SchemaCache.getInstance(context);
     }
 
     /**
@@ -181,31 +186,95 @@ export class SchemaContextBuilder {
             throw new Error(`Unable to create database connection for ${connectionId}::${database || 'default'}`);
         }
 
+        // Get connection info to use with SchemaCache
+        const connectionInfo = this.connectionProvider.getConnectionConfig(connectionId);
+        if (!connectionInfo) {
+            throw new Error(`Unable to get connection config for ${connectionId}`);
+        }
+
+        // Create a connection info object for the cache
+        const cacheConnection = {
+            ...connectionInfo,
+            database: database || connectionInfo.database || ''
+        };
+
+        // Use SchemaCache to get data
+        const cachedSchema = await this.centralSchemaCache.getSchema(cacheConnection, dbPool);
+
+        // Convert cache format to our format
         const schema: DatabaseSchema = {
             database: database || 'default',
             connectionId,
-            tables: [],
-            views: [],
-            procedures: [],
-            functions: [],
-            lastUpdated: Date.now()
+            tables: await this.convertCachedTables(cacheConnection, dbPool, cachedSchema.tables),
+            views: Array.from(cachedSchema.views.values()).map(v => ({
+                schema: v.schema,
+                name: v.name,
+                columns: [] // Views don't have detailed columns in this simplified version
+            })),
+            procedures: Array.from(cachedSchema.procedures.values()).map(p => ({
+                schema: p.schema,
+                name: p.name
+            })),
+            functions: Array.from(cachedSchema.functions.values()).map(f => ({
+                schema: f.schema,
+                name: f.name
+            })),
+            lastUpdated: cachedSchema.lastUpdated.getTime()
         };
 
-        // Load all schema components in parallel
-        await Promise.all([
-            this.loadTables(dbPool, schema),
-            this.loadViews(dbPool, schema),
-            this.loadProcedures(dbPool, schema),
-            this.loadFunctions(dbPool, schema)
-        ]);
-
         this.outputChannel.appendLine(
-            `[SchemaContextBuilder] Loaded schema: ${schema.tables.length} tables, ` +
+            `[SchemaContextBuilder] Loaded schema via SchemaCache: ${schema.tables.length} tables, ` +
             `${schema.views.length} views, ${schema.procedures.length} procedures, ` +
             `${schema.functions.length} functions`
         );
 
         return schema;
+    }
+
+    /**
+     * Convert cached tables to our format with all details
+     */
+    private async convertCachedTables(connection: any, pool: any, tables: Map<string, TableInfo>): Promise<TableSchema[]> {
+        const result: TableSchema[] = [];
+
+        for (const table of tables.values()) {
+            const columns = await this.centralSchemaCache.getTableColumns(connection, pool, table.schema, table.name);
+            const indexes = await this.centralSchemaCache.getTableIndexes(connection, pool, table.schema, table.name);
+            const constraints = await this.centralSchemaCache.getTableConstraints(connection, pool, table.schema, table.name);
+
+            result.push({
+                schema: table.schema,
+                name: table.name,
+                rowCount: table.rowCount,
+                columns: columns.map(c => ({
+                    name: c.columnName,
+                    dataType: c.dataType,
+                    isNullable: c.isNullable,
+                    defaultValue: c.defaultValue,
+                    maxLength: c.maxLength,
+                    precision: c.precision,
+                    scale: c.scale,
+                    isIdentity: c.isIdentity,
+                    isPrimaryKey: c.isPrimaryKey
+                })),
+                indexes: indexes.map(i => ({
+                    name: i.indexName,
+                    type: i.indexType,
+                    isUnique: i.isUnique,
+                    columns: i.columns
+                })),
+                constraints: constraints.map(c => ({
+                    name: c.constraintName,
+                    type: c.constraintType,
+                    columns: c.columns || [],
+                    referencedTable: c.referencedTableName ? `${c.referencedTableSchema}.${c.referencedTableName}` : undefined,
+                    referencedColumns: c.referencedColumns,
+                    definition: c.checkClause
+                }))
+            });
+        }
+
+        return result;
     }
 
     /**

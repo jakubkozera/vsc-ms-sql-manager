@@ -276,6 +276,21 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "mssqlManager.refreshDatabaseSchema",
+        "title": "Refresh Database Schema",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.clearSchemaCache",
+        "title": "Clear Schema Cache",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mssqlManager.showSchemaCacheInfo",
+        "title": "Show Schema Cache Info",
+        "icon": "$(info)"
+      },
+      {
         "command": "mssqlManager.toggleQueryHistoryGrouping",
         "title": "Toggle Query History Grouping",
         "icon": "$(group-by-ref-type)"
@@ -1021,6 +1036,11 @@
           "group": "9_refresh@1"
         },
         {
+          "command": "mssqlManager.refreshDatabaseSchema",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "9_refresh@2"
+        },
+        {
           "command": "mssqlManager.selectTop1000",
           "when": "view == mssqlManager.explorer && viewItem == table",
           "group": "1_query@1"
@@ -1324,6 +1344,13 @@
           "type": "boolean",
           "default": true,
           "description": "Color primary key columns (gold) and foreign key columns (blue) in query results."
+        },
+        "mssqlManager.schemaCacheValiditySeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 5,
+          "maximum": 3600,
+          "description": "Duration in seconds to cache database schema hash validation results. Longer values reduce database queries but may delay detection of schema changes. (Default: 120 seconds)"
         }
       }
     }

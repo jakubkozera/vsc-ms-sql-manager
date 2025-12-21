@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as sql from 'mssql';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
 import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon, createFunctionIcon, createTriggerIcon, createTypeIcon, createSequenceIcon, createSynonymIcon, createAssemblyIcon } from './serverGroupIcon';
+import { SchemaCache } from './utils/schemaCache';
 
 export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.FileDecorationProvider, vscode.TreeDragAndDropController<TreeNode> {
     private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | null | void> = new vscode.EventEmitter<TreeNode | undefined | null | void>();
@@ -14,11 +15,17 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
     readonly dropMimeTypes = ['application/vnd.code.tree.mssqlmanagerexplorer'];
     readonly dragMimeTypes = ['application/vnd.code.tree.mssqlmanagerexplorer'];
     private databaseInstructionsManager?: any; // DatabaseInstructionsManager
+    private schemaCache?: SchemaCache;
 
     constructor(
         private connectionProvider: ConnectionProvider,
-        private outputChannel: vscode.OutputChannel
-    ) {}
+        private outputChannel: vscode.OutputChannel,
+        private context?: vscode.ExtensionContext
+    ) {
+        if (context) {
+            this.schemaCache = SchemaCache.getInstance(context);
+        }
+    }
 
     setDatabaseInstructionsManager(manager: any): void {
         this.databaseInstructionsManager = manager;
@@ -667,182 +674,188 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 // Check if table statistics should be displayed
                 const showStats = vscode.workspace.getConfiguration('mssqlManager').get<boolean>('showTableStatistics', true);
                 
-                // Use DB pool for this database
+                // Use SchemaCache instead of direct queries
+                if (!this.schemaCache) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] SchemaCache not available, falling back to direct query`);
+                    return [];
+                }
+
                 try {
                     dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
                 } catch (err) {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
                     return [];
                 }
-                
-                let query: string;
-                if (showStats) {
-                    // Load all tables with row count and size information
-                    query = `
-                        SELECT 
-                            t.TABLE_SCHEMA,
-                            t.TABLE_NAME,
-                            USER_NAME(st.principal_id) AS TABLE_OWNER,
-                            p.rows AS row_count,
-                            SUM(a.total_pages) * 8 / 1024.0 AS size_mb
-                        FROM INFORMATION_SCHEMA.TABLES t
-                        INNER JOIN sys.tables st ON t.TABLE_NAME = st.name AND t.TABLE_SCHEMA = SCHEMA_NAME(st.schema_id)
-                        INNER JOIN sys.indexes i ON st.object_id = i.object_id
-                        INNER JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
-                        INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
-                        WHERE t.TABLE_TYPE = 'BASE TABLE'
-                            AND i.index_id <= 1
-                        GROUP BY t.TABLE_SCHEMA, t.TABLE_NAME, st.principal_id, p.rows
-                        ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
-                    `;
-                } else {
-                    // Load only table names without statistics
-                    query = `
-                        SELECT 
-                            TABLE_NAME, 
-                            TABLE_SCHEMA,
-                            USER_NAME(st.principal_id) AS TABLE_OWNER
-                        FROM INFORMATION_SCHEMA.TABLES t
-                        INNER JOIN sys.tables st ON t.TABLE_NAME = st.name AND t.TABLE_SCHEMA = SCHEMA_NAME(st.schema_id)
-                        WHERE TABLE_TYPE = 'BASE TABLE'
-                        ORDER BY TABLE_SCHEMA, TABLE_NAME
-                    `;
-                }
-                
-                const result = await dbPoolForElement.request().query(query);
-                
-                // Apply table filter if exists
-                const tableFilter = this.connectionProvider.getTableFilter(element.connectionId!, element.database || 'master');
-                let filteredTables = result.recordset;
-                if (tableFilter && Object.keys(tableFilter).length > 0) {
-                    filteredTables = this.applyTableFilter(result.recordset, tableFilter);
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Applied table filter - ${filteredTables.length}/${result.recordset.length} tables match`);
-                } else {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} tables to display in database ${element.database || 'current'}`);
-                }
-                
-                return filteredTables.map((table: any) => {
-                    const tableNode = new SchemaItemNode(
-                        `${table.TABLE_SCHEMA}.${table.TABLE_NAME}`, // Simple format: schema.tableName
-                        'table',
-                        table.TABLE_SCHEMA,
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    tableNode.connectionId = element.connectionId;
-                    tableNode.database = element.database;
+
+                // Get connection info for cache
+                const connectionInfo = { 
+                    server: this.connectionProvider.getActiveConnectionInfo()?.server || '', 
+                    database: element.database || 'master' 
+                };
+
+                try {
+                    // Use cache to get tables (0 SQL queries after initial cache load)
+                    const cachedTables = await this.schemaCache.getTables(connectionInfo, dbPoolForElement);
                     
-                    if (showStats) {
-                        // Format row count (e.g., 1.6k, 23k, 1.2M)
-                        const rowCount = table.row_count || 0;
-                        let formattedRows: string;
-                        if (rowCount >= 1000000) {
-                            formattedRows = (rowCount / 1000000).toFixed(1) + 'M';
-                        } else if (rowCount >= 1000) {
-                            formattedRows = (rowCount / 1000).toFixed(1) + 'k';
-                        } else {
-                            formattedRows = rowCount.toString();
-                        }
-                        
-                        // Format size (e.g., 34 MB, 1.2 GB)
-                        const sizeMb = table.size_mb || 0;
-                        let formattedSize: string;
-                        if (sizeMb >= 1024) {
-                            formattedSize = (sizeMb / 1024).toFixed(1) + ' GB';
-                        } else if (sizeMb >= 1) {
-                            formattedSize = Math.round(sizeMb) + ' MB';
-                        } else {
-                            formattedSize = '< 1 MB';
-                        }
-                        
-                        // Set description: "1.6k Rows 34 MB"
-                        tableNode.description = `${formattedRows} Rows ${formattedSize}`;
+                    // Apply table filter if exists
+                    const tableFilter = this.connectionProvider.getTableFilter(element.connectionId!, element.database || 'master');
+                    let filteredTables = cachedTables;
+                    if (tableFilter && Object.keys(tableFilter).length > 0) {
+                        filteredTables = cachedTables.filter(table => {
+                            const key = `${table.schema}.${table.name}`.toLowerCase();
+                            return tableFilter[key] !== false;
+                        });
+                        this.outputChannel.appendLine(`[UnifiedTreeProvider] Applied table filter - ${filteredTables.length}/${cachedTables.length} tables match`);
+                    } else {
+                        this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${cachedTables.length} tables to display in database ${element.database || 'current'}`);
                     }
                     
-                    return tableNode;
-                });
+                    return filteredTables.map((table) => {
+                        const tableNode = new SchemaItemNode(
+                            `${table.schema}.${table.name}`,
+                            'table',
+                            table.schema,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        tableNode.connectionId = element.connectionId;
+                        tableNode.database = element.database;
+                        
+                        if (showStats && table.rowCount !== undefined && table.sizeMB !== undefined) {
+                            // Format row count (e.g., 1.6k, 23k, 1.2M)
+                            const rowCount = table.rowCount || 0;
+                            let formattedRows: string;
+                            if (rowCount >= 1000000) {
+                                formattedRows = (rowCount / 1000000).toFixed(1) + 'M';
+                            } else if (rowCount >= 1000) {
+                                formattedRows = (rowCount / 1000).toFixed(1) + 'k';
+                            } else {
+                                formattedRows = rowCount.toString();
+                            }
+                            
+                            // Format size (e.g., 34 MB, 1.2 GB)
+                            const sizeMb = table.sizeMB || 0;
+                            let formattedSize: string;
+                            if (sizeMb >= 1024) {
+                                formattedSize = (sizeMb / 1024).toFixed(1) + ' GB';
+                            } else if (sizeMb >= 1) {
+                                formattedSize = Math.round(sizeMb) + ' MB';
+                            } else {
+                                formattedSize = '< 1 MB';
+                            }
+                            
+                            // Set description: "1.6k Rows 34 MB"
+                            tableNode.description = `${formattedRows} Rows ${formattedSize}`;
+                        }
+                        
+                        return tableNode;
+                    });
+                } catch (error) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Error getting tables from cache: ${error}`);
+                    return [];
+                }
             } else if (element.itemType === 'views') {
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading all views for database: ${element.database || 'current'}`);
                 
-                // Use DB pool for this database
+                // Use SchemaCache instead of direct queries
+                if (!this.schemaCache) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] SchemaCache not available`);
+                    return [];
+                }
+
                 try {
                     dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
                 } catch (err) {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
                     return [];
                 }
-                
-                const query = `
-                    SELECT TABLE_NAME, TABLE_SCHEMA 
-                    FROM INFORMATION_SCHEMA.VIEWS 
-                    ORDER BY TABLE_SCHEMA, TABLE_NAME
-                `;
-                
-                const result = await dbPoolForElement.request().query(query);
-                
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${result.recordset.length} views to display in database ${element.database || 'current'}`);
-                
-                return result.recordset.map((view: any) => {
-                    const viewNode = new SchemaItemNode(
-                        `${view.TABLE_SCHEMA}.${view.TABLE_NAME}`, // Simple format: schema.tableName
-                        'view',
-                        view.TABLE_SCHEMA,
-                        vscode.TreeItemCollapsibleState.None
-                    );
-                    viewNode.connectionId = element.connectionId;
-                    viewNode.database = element.database;
-                    return viewNode;
-                });
+
+                const connectionInfo = { 
+                    server: this.connectionProvider.getActiveConnectionInfo()?.server || '', 
+                    database: element.database || 'master' 
+                };
+
+                try {
+                    // Use cache to get views (0 SQL queries after initial cache load)
+                    const cachedViews = await this.schemaCache.getViews(connectionInfo, dbPoolForElement);
+                    
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${cachedViews.length} views to display in database ${element.database || 'current'}`);
+                    
+                    return cachedViews.map((view) => {
+                        const viewNode = new SchemaItemNode(
+                            `${view.schema}.${view.name}`,
+                            'view',
+                            view.schema,
+                            vscode.TreeItemCollapsibleState.None
+                        );
+                        viewNode.connectionId = element.connectionId;
+                        viewNode.database = element.database;
+                        return viewNode;
+                    });
+                } catch (error) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Error getting views from cache: ${error}`);
+                    return [];
+                }
             } else if (element.itemType === 'programmability') {
                 this.outputChannel.appendLine(`[UnifiedTreeProvider] Loading programmability items for database: ${element.database || 'current'}`);
                 
                 const items: SchemaItemNode[] = [];
                 
-                // Use DB pool for this database
+                // Use SchemaCache instead of direct queries
+                if (!this.schemaCache) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] SchemaCache not available`);
+                    return [];
+                }
+
                 try {
                     dbPoolForElement = await this.connectionProvider.createDbPool(element.connectionId!, element.database || 'master');
                 } catch (err) {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for ${element.database || 'master'}: ${err}`);
                     return [];
                 }
-                
-                // Get stored procedures count
-                const procsQuery = `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE'`;
-                const procsResult = await dbPoolForElement.request().query(procsQuery);
-                const procsCount = procsResult.recordset[0]?.count || 0;
-                
-                if (procsCount > 0) {
-                    const storedProcsNode = new SchemaItemNode(
-                        `Stored Procedures (${procsCount})`,
-                        'stored-procedures',
-                        'all',
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    storedProcsNode.connectionId = element.connectionId;
-                    storedProcsNode.database = element.database;
-                    items.push(storedProcsNode);
-                }
-                
-                // Get functions count  
-                const functionsQuery = `SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'FUNCTION'`;
-                const functionsResult = await dbPoolForElement.request().query(functionsQuery);
-                const functionsCount = functionsResult.recordset[0]?.count || 0;
-                
-                if (functionsCount > 0) {
-                    const functionsNode = new SchemaItemNode(
-                        `Functions (${functionsCount})`,
-                        'functions',
-                        'all',
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    functionsNode.connectionId = element.connectionId;
-                    functionsNode.database = element.database;
-                    items.push(functionsNode);
-                }
-                
-                // Get database triggers count (use sys.triggers from specific database context)
-                const triggersQuery = `SELECT COUNT(*) as count FROM sys.triggers WHERE parent_class = 0`;
-                const triggersResult = await dbPoolForElement.request().query(triggersQuery);
-                const triggersCount = triggersResult.recordset[0]?.count || 0;
+
+                const connectionInfo = { 
+                    server: this.connectionProvider.getActiveConnectionInfo()?.server || '', 
+                    database: element.database || 'master' 
+                };
+
+                try {
+                    // Use cache to get procedures (0 SQL queries after initial cache load)
+                    const cachedProcedures = await this.schemaCache.getProcedures(connectionInfo, dbPoolForElement);
+                    const procsCount = cachedProcedures.length;
+                    
+                    if (procsCount > 0) {
+                        const storedProcsNode = new SchemaItemNode(
+                            `Stored Procedures (${procsCount})`,
+                            'stored-procedures',
+                            'all',
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        storedProcsNode.connectionId = element.connectionId;
+                        storedProcsNode.database = element.database;
+                        items.push(storedProcsNode);
+                    }
+                    
+                    // Use cache to get functions (0 SQL queries after initial cache load)
+                    const cachedFunctions = await this.schemaCache.getFunctions(connectionInfo, dbPoolForElement);
+                    const functionsCount = cachedFunctions.length;
+                    
+                    if (functionsCount > 0) {
+                        const functionsNode = new SchemaItemNode(
+                            `Functions (${functionsCount})`,
+                            'functions',
+                            'all',
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        functionsNode.connectionId = element.connectionId;
+                        functionsNode.database = element.database;
+                        items.push(functionsNode);
+                    }
+                    
+                    // Use cache to get triggers (0 SQL queries after initial cache load)
+                    const cachedTriggers = await this.schemaCache.getTriggers(connectionInfo, dbPoolForElement);
+                    // Filter only database-level triggers (tableName is undefined)
+                    const dbTriggers = cachedTriggers.filter(t => !t.tableName);
+                    const triggersCount = dbTriggers.length;
                 
                 if (triggersCount > 0) {
                     const triggersNode = new SchemaItemNode(
@@ -855,101 +868,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     triggersNode.database = element.database;
                     items.push(triggersNode);
                 }
-                
-                // Get assemblies count
-                const assembliesQuery = `SELECT COUNT(*) as count FROM sys.assemblies WHERE is_user_defined = 1`;
-                const assembliesResult = await dbPoolForElement.request().query(assembliesQuery);
-                const assembliesCount = assembliesResult.recordset[0]?.count || 0;
-                
-                if (assembliesCount > 0) {
-                    const assembliesNode = new SchemaItemNode(
-                        `Assemblies (${assembliesCount})`,
-                        'assemblies',
-                        'all',
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    assembliesNode.connectionId = element.connectionId;
-                    assembliesNode.database = element.database;
-                    items.push(assembliesNode);
-                }
-                
-                // Add Types node
-                const typesNode = new SchemaItemNode(
-                    'Types',
-                    'types',
-                    'all',
-                    vscode.TreeItemCollapsibleState.Collapsed
-                );
-                typesNode.connectionId = element.connectionId;
-                typesNode.database = element.database;
-                items.push(typesNode);
-                
-                // Get sequences count
-                const sequencesQuery = `SELECT COUNT(*) as count FROM sys.sequences`;
-                const sequencesResult = await dbPoolForElement.request().query(sequencesQuery);
-                const sequencesCount = sequencesResult.recordset[0]?.count || 0;
-                
-                if (sequencesCount > 0) {
-                    const sequencesNode = new SchemaItemNode(
-                        `Sequences (${sequencesCount})`,
-                        'sequences',
-                        'all',
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    sequencesNode.connectionId = element.connectionId;
-                    sequencesNode.database = element.database;
-                    items.push(sequencesNode);
-                }
-                
-                // Get synonyms count
-                const synonymsQuery = `SELECT COUNT(*) as count FROM sys.synonyms`;
-                const synonymsResult = await dbPoolForElement.request().query(synonymsQuery);
-                const synonymsCount = synonymsResult.recordset[0]?.count || 0;
-                
-                if (synonymsCount > 0) {
-                    const synonymsNode = new SchemaItemNode(
-                        `Synonyms (${synonymsCount})`,
-                        'synonyms',
-                        'all',
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    synonymsNode.connectionId = element.connectionId;
-                    synonymsNode.database = element.database;
-                    items.push(synonymsNode);
-                }
-                
-                // Get rules count (deprecated but still queryable)
-                const rulesQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'R'`;
-                const rulesResult = await dbPoolForElement.request().query(rulesQuery);
-                const rulesCount = rulesResult.recordset[0]?.count || 0;
-                
-                if (rulesCount > 0) {
-                    const rulesNode = new SchemaItemNode(
-                        `Rules (${rulesCount})`,
-                        'rules',
-                        'all',
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    rulesNode.connectionId = element.connectionId;
-                    rulesNode.database = element.database;
-                    items.push(rulesNode);
-                }
-                
-                // Get defaults count (deprecated but still queryable)
-                const defaultsQuery = `SELECT COUNT(*) as count FROM sys.objects WHERE type = 'D' AND parent_object_id = 0`;
-                const defaultsResult = await dbPoolForElement.request().query(defaultsQuery);
-                const defaultsCount = defaultsResult.recordset[0]?.count || 0;
-                
-                if (defaultsCount > 0) {
-                    const defaultsNode = new SchemaItemNode(
-                        `Defaults (${defaultsCount})`,
-                        'defaults',
-                        'all',
-                        vscode.TreeItemCollapsibleState.Collapsed
-                    );
-                    defaultsNode.connectionId = element.connectionId;
-                    defaultsNode.database = element.database;
-                    items.push(defaultsNode);
+                } catch (error) {
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Error getting programmability items from cache: ${error}`);
+                    return [];
                 }
                 
                 return items;
@@ -1537,36 +1458,136 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         try {
             const items: SchemaItemNode[] = [];
             
-            // Prefer a DB-scoped pool for database-specific queries
+            // Try to use SchemaCache if available
+            if (this.schemaCache && database) {
+                const connectionConfig = this.connectionProvider.getConnectionConfig(connectionId);
+                if (connectionConfig) {
+                    const cacheConnection = { ...connectionConfig, database };
+                    
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using SchemaCache for table ${tableName}`);
+                    
+                    // Get columns from cache
+                    const columns = await this.schemaCache.getTableColumns(cacheConnection, connection, schema, tableName);
+                    if (columns.length > 0) {
+                        const columnsNode = new SchemaItemNode(
+                            `Columns (${columns.length})`,
+                            'columns',
+                            schema,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        (columnsNode as any).tableName = tableName;
+                        columnsNode.connectionId = connectionId;
+                        columnsNode.database = database;
+                        items.push(columnsNode);
+                    }
+                    
+                    // Get constraints from cache
+                    const constraints = await this.schemaCache.getTableConstraints(cacheConnection, connection, schema, tableName);
+                    const keys = constraints.filter(c => ['PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE'].includes(c.constraintType));
+                    const checks = constraints.filter(c => c.constraintType === 'CHECK');
+                    
+                    if (keys.length > 0) {
+                        const keysNode = new SchemaItemNode(
+                            `Keys (${keys.length})`,
+                            'keys',
+                            schema,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        (keysNode as any).tableName = tableName;
+                        keysNode.connectionId = connectionId;
+                        keysNode.database = database;
+                        items.push(keysNode);
+                    }
+                    
+                    if (checks.length > 0) {
+                        const constraintsNode = new SchemaItemNode(
+                            `Constraints (${checks.length})`,
+                            'constraints',
+                            schema,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        (constraintsNode as any).tableName = tableName;
+                        constraintsNode.connectionId = connectionId;
+                        constraintsNode.database = database;
+                        items.push(constraintsNode);
+                    }
+                    
+                    // Get indexes from cache
+                    const indexes = await this.schemaCache.getTableIndexes(cacheConnection, connection, schema, tableName);
+                    if (indexes.length > 0) {
+                        const indexesNode = new SchemaItemNode(
+                            `Indexes (${indexes.length})`,
+                            'indexes',
+                            schema,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        (indexesNode as any).tableName = tableName;
+                        indexesNode.connectionId = connectionId;
+                        indexesNode.database = database;
+                        items.push(indexesNode);
+                    }
+                    
+                    // Get Triggers from cache (all triggers are cached)
+                    if (this.schemaCache) {
+                        const allTriggers = await this.schemaCache.getTriggers(cacheConnection, connection);
+                        // Filter triggers for this specific table
+                        const tableTriggers = allTriggers.filter(t => 
+                            t.tableName?.toLowerCase() === tableName.toLowerCase() &&
+                            t.schema?.toLowerCase() === schema.toLowerCase()
+                        );
+                        
+                        if (tableTriggers.length > 0) {
+                            const triggersNode = new SchemaItemNode(
+                                `Triggers (${tableTriggers.length})`,
+                                'triggers',
+                                schema,
+                                vscode.TreeItemCollapsibleState.Collapsed
+                            );
+                            (triggersNode as any).tableName = tableName;
+                            triggersNode.connectionId = connectionId;
+                            triggersNode.database = database;
+                            items.push(triggersNode);
+                        }
+                    }
+                    
+                    // Statistics - lazy load only when expanded (not loaded by default to avoid queries)
+                    // The statistics node will load data when user expands it
+                    const statisticsNode = new SchemaItemNode(
+                        `Statistics`,
+                        'statistics',
+                        schema,
+                        vscode.TreeItemCollapsibleState.Collapsed
+                    );
+                    (statisticsNode as any).tableName = tableName;
+                    statisticsNode.connectionId = connectionId;
+                    statisticsNode.database = database;
+                    items.push(statisticsNode);
+                    
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${items.length} items from cache for table ${tableName}`);
+                    return items;
+                }
+            }
+            
+            // Fallback to direct SQL queries if cache not available
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] SchemaCache not available, using direct SQL queries`);
+            
             let dbPool: any = null;
             if (database) {
                 try {
                     dbPool = await this.connectionProvider.createDbPool(connectionId, database);
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getTableDetails: ${database}`);
                 } catch (err) {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getTableDetails ${database}: ${err}`);
-                    dbPool = null;
+                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool: ${err}`);
                 }
             }
 
             // Get columns
             const columnsQuery = `
-                SELECT 
-                    COLUMN_NAME,
-                    DATA_TYPE,
-                    IS_NULLABLE,
-                    COLUMN_DEFAULT,
-                    CHARACTER_MAXIMUM_LENGTH
+                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, CHARACTER_MAXIMUM_LENGTH
                 FROM INFORMATION_SCHEMA.COLUMNS 
                 WHERE TABLE_NAME = '${tableName}' AND TABLE_SCHEMA = '${schema}'
                 ORDER BY ORDINAL_POSITION
             `;
-            
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Executing columns query: ${columnsQuery}`);
-            
             const columnsResult = await (dbPool ? dbPool.request().query(columnsQuery) : connection.request().query(columnsQuery));
-            
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${columnsResult.recordset.length} columns for table ${tableName} in database ${database || 'current'}`);
             
             if (columnsResult.recordset.length > 0) {
                 const columnsNode = new SchemaItemNode(
@@ -1575,25 +1596,18 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     schema,
                     vscode.TreeItemCollapsibleState.Collapsed
                 );
-                // Store table name and connection ID for later use
                 (columnsNode as any).tableName = tableName;
                 columnsNode.connectionId = connectionId;
                 columnsNode.database = database;
                 items.push(columnsNode);
-                
-                this.outputChannel.appendLine(`[UnifiedTreeProvider] Created columns node for table ${tableName} in database ${database || 'current'}`);
             }
             
-            // Get Keys (Primary Keys, Foreign Keys, Unique Keys)
+            // Get Keys
             const keysQuery = `
-                SELECT 
-                    tc.CONSTRAINT_NAME,
-                    tc.CONSTRAINT_TYPE,
-                    STRING_AGG(kcu.COLUMN_NAME, ', ') AS COLUMNS
+                SELECT tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE, STRING_AGG(kcu.COLUMN_NAME, ', ') AS COLUMNS
                 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
                 LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
-                    ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME 
-                    AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+                    ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
                 WHERE tc.TABLE_NAME = '${tableName}' AND tc.TABLE_SCHEMA = '${schema}'
                     AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
                 GROUP BY tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE
@@ -1613,17 +1627,14 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 items.push(keysNode);
             }
             
-            // Get Constraints (Check Constraints)
+            // Get Constraints
             const constraintsQuery = `
-                SELECT 
-                    CONSTRAINT_NAME,
-                    CHECK_CLAUSE
+                SELECT CONSTRAINT_NAME, CHECK_CLAUSE
                 FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
                 WHERE EXISTS (
                     SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
                     WHERE tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
-                        AND tc.TABLE_NAME = '${tableName}'
-                        AND tc.TABLE_SCHEMA = '${schema}'
+                        AND tc.TABLE_NAME = '${tableName}' AND tc.TABLE_SCHEMA = '${schema}'
                 )
             `;
             const constraintsResult = await (dbPool ? dbPool.request().query(constraintsQuery) : connection.request().query(constraintsQuery));
@@ -1643,10 +1654,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             
             // Get Triggers
             const triggersQuery = `
-                SELECT 
-                    name,
-                    is_disabled,
-                    is_instead_of_trigger
+                SELECT name, is_disabled, is_instead_of_trigger
                 FROM sys.triggers
                 WHERE parent_id = OBJECT_ID('${schema}.${tableName}')
             `;
@@ -1667,17 +1675,12 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             
             // Get Indexes
             const indexesQuery = `
-                SELECT 
-                    i.name,
-                    i.type_desc,
-                    i.is_unique,
-                    i.is_primary_key,
-                    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+                SELECT i.name, i.type_desc, i.is_unique, i.is_primary_key,
+                       STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
                 FROM sys.indexes i
                 INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
                 INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                WHERE i.object_id = OBJECT_ID('${schema}.${tableName}')
-                    AND i.type > 0
+                WHERE i.object_id = OBJECT_ID('${schema}.${tableName}') AND i.type > 0
                 GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
             `;
             const indexesResult = await (dbPool ? dbPool.request().query(indexesQuery) : connection.request().query(indexesQuery));
@@ -1697,11 +1700,8 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             
             // Get Statistics
             const statisticsQuery = `
-                SELECT 
-                    s.name,
-                    s.auto_created,
-                    s.user_created,
-                    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY sc.stats_column_id) AS columns
+                SELECT s.name, s.auto_created, s.user_created,
+                       STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY sc.stats_column_id) AS columns
                 FROM sys.stats s
                 INNER JOIN sys.stats_columns sc ON s.object_id = sc.object_id AND s.stats_id = sc.stats_id
                 INNER JOIN sys.columns c ON sc.object_id = c.object_id AND sc.column_id = c.column_id
@@ -1723,7 +1723,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 items.push(statisticsNode);
             }
             
-            this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${items.length} items for table ${tableName} in database ${database || 'current'}`);
+            this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${items.length} items for table ${tableName}`);
             return items;
             
         } catch (error) {
@@ -1739,60 +1739,43 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            // Prefer a DB-scoped pool for database-specific queries
-            let dbPool: any = null;
-            if (database) {
-                try {
-                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getColumnDetails: ${database}`);
-                } catch (err) {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getColumnDetails ${database}: ${err}`);
-                    dbPool = null;
-                }
+            // Use SchemaCache instead of direct SQL query
+            if (this.schemaCache && database) {
+                const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                const cacheConnection = { 
+                    server: this.connectionProvider.getActiveConnectionInfo()?.server || '', 
+                    database: database 
+                };
+                
+                const columns = await this.schemaCache.getTableColumns(cacheConnection, dbPool, schema, tableName);
+                
+                return columns.map((column) => {
+                    const dataType = column.maxLength 
+                        ? `${column.dataType}(${column.maxLength})`
+                        : column.precision 
+                            ? `${column.dataType}(${column.precision},${column.scale || 0})`
+                            : column.dataType;
+                            
+                    const nullable = column.isNullable ? ' (nullable)' : ' (not null)';
+                    const defaultValue = column.defaultValue ? ` default: ${column.defaultValue}` : '';
+                    
+                    const columnNode = new SchemaItemNode(
+                        column.columnName,
+                        'column',
+                        schema,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    
+                    // Add detailed tooltip and description
+                    columnNode.description = dataType + nullable;
+                    columnNode.tooltip = `${column.columnName}: ${dataType}${nullable}${defaultValue}`;
+                    columnNode.connectionId = connectionId;
+                    columnNode.database = database;
+                    
+                    return columnNode;
+                });
             }
-
-            const columnsQuery = `
-                SELECT 
-                    COLUMN_NAME,
-                    DATA_TYPE,
-                    IS_NULLABLE,
-                    COLUMN_DEFAULT,
-                    CHARACTER_MAXIMUM_LENGTH,
-                    NUMERIC_PRECISION,
-                    NUMERIC_SCALE
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_NAME = '${tableName}' AND TABLE_SCHEMA = '${schema}'
-                ORDER BY ORDINAL_POSITION
-            `;
-            
-            const columnsResult = await (dbPool ? dbPool.request().query(columnsQuery) : connection.request().query(columnsQuery));
-            
-            return columnsResult.recordset.map((column: any) => {
-                const dataType = column.CHARACTER_MAXIMUM_LENGTH 
-                    ? `${column.DATA_TYPE}(${column.CHARACTER_MAXIMUM_LENGTH})`
-                    : column.NUMERIC_PRECISION 
-                        ? `${column.DATA_TYPE}(${column.NUMERIC_PRECISION},${column.NUMERIC_SCALE || 0})`
-                        : column.DATA_TYPE;
-                        
-                const nullable = column.IS_NULLABLE === 'YES' ? ' (nullable)' : ' (not null)';
-                const defaultValue = column.COLUMN_DEFAULT ? ` default: ${column.COLUMN_DEFAULT}` : '';
-                
-                const columnNode = new SchemaItemNode(
-                    column.COLUMN_NAME,
-                    'column',
-                    schema,
-                    vscode.TreeItemCollapsibleState.None
-                );
-                
-                // Add detailed tooltip and description
-                columnNode.description = dataType + nullable;
-                columnNode.tooltip = `${column.COLUMN_NAME}: ${dataType}${nullable}${defaultValue}`;
-                columnNode.connectionId = connectionId;
-                columnNode.database = database;
-                
-                return columnNode;
-            });
-            
+            return [];
         } catch (error) {
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading column details: ${error}`);
             return [];
@@ -1806,49 +1789,34 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            // Prefer a DB-scoped pool for database-specific queries
-            let dbPool: any = null;
-            if (database) {
-                try {
-                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getKeyDetails: ${database}`);
-                } catch (err) {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getKeyDetails ${database}: ${err}`);
-                    dbPool = null;
-                }
+            // Use SchemaCache instead of direct SQL query
+            if (this.schemaCache && database) {
+                const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                const cacheConnection = { 
+                    server: this.connectionProvider.getActiveConnectionInfo()?.server || '', 
+                    database: database 
+                };
+                
+                const constraints = await this.schemaCache.getTableConstraints(cacheConnection, dbPool, schema, tableName);
+                const keys = constraints.filter(c => ['PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE'].includes(c.constraintType));
+                
+                return keys.map((key) => {
+                    const keyNode = new SchemaItemNode(
+                        key.constraintName,
+                        'key',
+                        schema,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    
+                    keyNode.description = key.constraintType;
+                    keyNode.tooltip = `${key.constraintName}\nType: ${key.constraintType}\nColumns: ${key.columns?.join(', ') || ''}`;
+                    keyNode.connectionId = connectionId;
+                    keyNode.database = database;
+                    
+                    return keyNode;
+                });
             }
-
-            const keysQuery = `
-                SELECT 
-                    tc.CONSTRAINT_NAME,
-                    tc.CONSTRAINT_TYPE,
-                    STRING_AGG(kcu.COLUMN_NAME, ', ') AS COLUMNS
-                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
-                    ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME 
-                    AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
-                WHERE tc.TABLE_NAME = '${tableName}' AND tc.TABLE_SCHEMA = '${schema}'
-                    AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
-                GROUP BY tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE
-            `;
-            const keysResult = await (dbPool ? dbPool.request().query(keysQuery) : connection.request().query(keysQuery));
-            
-            return keysResult.recordset.map((key: any) => {
-                const keyNode = new SchemaItemNode(
-                    key.CONSTRAINT_NAME,
-                    'key',
-                    schema,
-                    vscode.TreeItemCollapsibleState.None
-                );
-                
-                keyNode.description = key.CONSTRAINT_TYPE;
-                keyNode.tooltip = `${key.CONSTRAINT_NAME}\nType: ${key.CONSTRAINT_TYPE}\nColumns: ${key.COLUMNS}`;
-                keyNode.connectionId = connectionId;
-                keyNode.database = database;
-                
-                return keyNode;
-            });
-            
+            return [];
         } catch (error) {
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading key details: ${error}`);
             return [];
@@ -1917,47 +1885,40 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            // Prefer a DB-scoped pool for database-specific queries
-            let dbPool: any = null;
-            if (database) {
-                try {
-                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getTriggerDetails: ${database}`);
-                } catch (err) {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getTriggerDetails ${database}: ${err}`);
-                    dbPool = null;
-                }
-            }
-
-            const triggersQuery = `
-                SELECT 
-                    name,
-                    is_disabled,
-                    is_instead_of_trigger
-                FROM sys.triggers
-                WHERE parent_id = OBJECT_ID('${schema}.${tableName}')
-            `;
-            const triggersResult = await (dbPool ? dbPool.request().query(triggersQuery) : connection.request().query(triggersQuery));
-            
-            return triggersResult.recordset.map((trigger: any) => {
-                const triggerNode = new SchemaItemNode(
-                    trigger.name,
-                    'trigger',
-                    schema,
-                    vscode.TreeItemCollapsibleState.None
+            // Use SchemaCache instead of direct SQL query
+            if (this.schemaCache && database) {
+                const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                const cacheConnection = { 
+                    server: this.connectionProvider.getActiveConnectionInfo()?.server || '', 
+                    database: database 
+                };
+                
+                const allTriggers = await this.schemaCache.getTriggers(cacheConnection, dbPool);
+                const tableTriggers = allTriggers.filter(t => 
+                    t.tableName?.toLowerCase() === tableName.toLowerCase() &&
+                    t.schema?.toLowerCase() === schema.toLowerCase()
                 );
                 
-                const status = trigger.is_disabled ? 'Disabled' : 'Enabled';
-                const type = trigger.is_instead_of_trigger ? 'INSTEAD OF' : 'AFTER';
-                
-                triggerNode.description = `${type} - ${status}`;
-                triggerNode.tooltip = `${trigger.name}\nType: ${type}\nStatus: ${status}`;
-                triggerNode.connectionId = connectionId;
-                triggerNode.database = database;
-                
-                return triggerNode;
-            });
-            
+                return tableTriggers.map((trigger) => {
+                    const triggerNode = new SchemaItemNode(
+                        trigger.name,
+                        'trigger',
+                        schema,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    
+                    const status = trigger.isDisabled ? 'Disabled' : 'Enabled';
+                    const type = trigger.isInsteadOf ? 'INSTEAD OF' : 'AFTER';
+                    
+                    triggerNode.description = `${type} - ${status}`;
+                    triggerNode.tooltip = `${trigger.name}\nType: ${type}\nStatus: ${status}`;
+                    triggerNode.connectionId = connectionId;
+                    triggerNode.database = database;
+                    
+                    return triggerNode;
+                });
+            }
+            return [];
         } catch (error) {
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading trigger details: ${error}`);
             return [];
@@ -1971,53 +1932,36 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
         }
 
         try {
-            // Prefer a DB-scoped pool for database-specific queries
-            let dbPool: any = null;
-            if (database) {
-                try {
-                    dbPool = await this.connectionProvider.createDbPool(connectionId, database);
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Using DB pool for getIndexDetails: ${database}`);
-                } catch (err) {
-                    this.outputChannel.appendLine(`[UnifiedTreeProvider] Failed to create DB pool for getIndexDetails ${database}: ${err}`);
-                    dbPool = null;
-                }
+            // Use SchemaCache instead of direct SQL query
+            if (this.schemaCache && database) {
+                const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+                const cacheConnection = { 
+                    server: this.connectionProvider.getActiveConnectionInfo()?.server || '', 
+                    database: database 
+                };
+                
+                const indexes = await this.schemaCache.getTableIndexes(cacheConnection, dbPool, schema, tableName);
+                
+                return indexes.map((index) => {
+                    const indexNode = new SchemaItemNode(
+                        index.indexName,
+                        'index',
+                        schema,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    
+                    const unique = index.isUnique ? 'Unique' : 'Non-unique';
+                    const pk = index.isPrimaryKey ? ' (Primary Key)' : '';
+                    
+                    indexNode.description = `${index.indexType}${pk}`;
+                    indexNode.tooltip = `${index.indexName}\nType: ${index.indexType}\n${unique}${pk}\nColumns: ${index.columns.join(', ')}`;
+                    indexNode.connectionId = connectionId;
+                    indexNode.database = database;
+                    
+                    return indexNode;
+                });
             }
-
-            const indexesQuery = `
-                SELECT 
-                    i.name,
-                    i.type_desc,
-                    i.is_unique,
-                    i.is_primary_key,
-                    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
-                FROM sys.indexes i
-                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                WHERE i.object_id = OBJECT_ID('${schema}.${tableName}')
-                    AND i.type > 0
-                GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
-            `;
-            const indexesResult = await (dbPool ? dbPool.request().query(indexesQuery) : connection.request().query(indexesQuery));
-            
-            return indexesResult.recordset.map((index: any) => {
-                const indexNode = new SchemaItemNode(
-                    index.name,
-                    'index',
-                    schema,
-                    vscode.TreeItemCollapsibleState.None
-                );
-                
-                const unique = index.is_unique ? 'Unique' : 'Non-unique';
-                const pk = index.is_primary_key ? ' (Primary Key)' : '';
-                
-                indexNode.description = `${index.type_desc}${pk}`;
-                indexNode.tooltip = `${index.name}\nType: ${index.type_desc}\n${unique}${pk}\nColumns: ${index.columns}`;
-                indexNode.connectionId = connectionId;
-                indexNode.database = database;
-                
-                return indexNode;
-            });
-            
+            return [];
         } catch (error) {
             this.outputChannel.appendLine(`[UnifiedTreeProvider] Error loading index details: ${error}`);
             return [];

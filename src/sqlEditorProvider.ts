@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { QueryExecutor } from './queryExecutor';
 import { ConnectionProvider } from './connectionProvider';
+import { SchemaCache } from './utils/schemaCache';
 
 export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'mssqlManager.sqlEditor';
@@ -15,6 +16,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private webviewCancellationSources = new Map<vscode.Webview, vscode.CancellationTokenSource>();
     // SQL snippets cache
     private sqlSnippets: any[] = [];
+    // Schema cache instance
+    private schemaCache: SchemaCache;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -24,6 +27,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     ) {
         this.loadSqlSnippets();
         this.setupSnippetsWatcher();
+        this.schemaCache = SchemaCache.getInstance(context);
     }
 
     public async resolveCustomTextEditor(
@@ -971,26 +975,28 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 return;
             }
 
-            console.log('[SCHEMA] Fetching schema from database...');
+            console.log('[SCHEMA] Using SchemaCache to fetch schema...');
             
-            // Query to get all tables with their columns
-            const tablesQuery = `
-                SELECT 
-                    t.TABLE_SCHEMA as [schema],
-                    t.TABLE_NAME as [name],
-                    c.COLUMN_NAME as columnName,
-                    c.DATA_TYPE as dataType,
-                    c.IS_NULLABLE as isNullable,
-                    c.CHARACTER_MAXIMUM_LENGTH as maxLength
-                FROM INFORMATION_SCHEMA.TABLES t
-                INNER JOIN INFORMATION_SCHEMA.COLUMNS c 
-                    ON t.TABLE_SCHEMA = c.TABLE_SCHEMA 
-                    AND t.TABLE_NAME = c.TABLE_NAME
-                WHERE t.TABLE_TYPE = 'BASE TABLE'
-                ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION
-            `;
+            // Use SchemaCache for optimized schema retrieval
+            const connInfo = {
+                server: config.server || config.host || 'unknown',
+                database: dbName || config.database || connection.config?.database || 'master'
+            };
+            
+            console.log('[SCHEMA] Connection info:', connInfo);
 
-            // Query to get foreign key relationships
+            // Get all schema objects from cache
+            const [tablesFromCache, columnsFromCache] = await Promise.all([
+                this.schemaCache.getTables(connInfo, connection),
+                this.fetchTablesWithColumns(connInfo, connection)
+            ]);
+
+            console.log('[SCHEMA] Retrieved from cache:', tablesFromCache.length, 'tables');
+            
+            // Transform cache data to webview format (includes columns)
+            const tables = columnsFromCache;
+            
+            // Get foreign keys (SchemaCache doesn't have this method yet, fallback to direct query)
             const foreignKeysQuery = `
                 SELECT 
                     fk.name as constraintName,
@@ -1006,39 +1012,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 ORDER BY fromSchema, fromTable, toSchema, toTable
             `;
 
-            const [tablesResult, fkResult] = await Promise.all([
-                connection.request().query(tablesQuery),
-                connection.request().query(foreignKeysQuery)
-            ]);
-            
-            console.log('[SCHEMA] Tables query returned:', tablesResult.recordset?.length || 0, 'rows');
+            const fkResult = await connection.request().query(foreignKeysQuery);
             console.log('[SCHEMA] FK query returned:', fkResult.recordset?.length || 0, 'foreign keys');
-            
-            // Group columns by table
-            const tablesMap = new Map<string, any>();
-            
-            for (const row of tablesResult.recordset) {
-                const tableKey = `${row.schema}.${row.name}`;
-                
-                if (!tablesMap.has(tableKey)) {
-                    tablesMap.set(tableKey, {
-                        schema: row.schema,
-                        name: row.name,
-                        columns: []
-                    });
-                }
-                
-                const table = tablesMap.get(tableKey);
-                table.columns.push({
-                    name: row.columnName,
-                    type: row.dataType,
-                    nullable: row.isNullable === 'YES',
-                    maxLength: row.maxLength
-                });
-            }
-            
-            const tables = Array.from(tablesMap.values());
-            console.log('[SCHEMA] Parsed', tables.length, 'tables');
             
             // Parse foreign keys
             const foreignKeys = fkResult.recordset.map((row: any) => ({
@@ -1058,7 +1033,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             
             const schema = {
                 tables: tables,
-                views: [], // TODO: Implement views
+                views: [], // TODO: Implement views from cache
                 foreignKeys: foreignKeys
             };
             
@@ -1075,6 +1050,30 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 schema: { tables: [], views: [], foreignKeys: [] }
             });
         }
+    }
+
+    /**
+     * Helper to fetch tables with columns from cache
+     */
+    private async fetchTablesWithColumns(connInfo: any, pool: any): Promise<any[]> {
+        const tablesFromCache = await this.schemaCache.getTables(connInfo, pool);
+        
+        const result: any[] = [];
+        for (const table of tablesFromCache) {
+            const columns = await this.schemaCache.getTableColumns(connInfo, pool, table.schema, table.name);
+            result.push({
+                schema: table.schema,
+                name: table.name,
+                columns: columns.map(col => ({
+                    name: col.columnName,
+                    type: col.dataType,
+                    nullable: col.isNullable,
+                    maxLength: col.maxLength
+                }))
+            });
+        }
+        
+        return result;
     }
 
     private async executeQuery(query: string, connectionId: string | null, webview: vscode.Webview, includeActualPlan: boolean = false) {

@@ -40,7 +40,7 @@ export class SqlChatHandler {
     ) {
         this.databaseInstructionsManager = databaseInstructionsManager;
         this.schemaContextBuilder = new SchemaContextBuilder(connectionProvider, outputChannel, context);
-        this.sqlExecutionService = new SqlExecutionService(connectionProvider, outputChannel, historyManager);
+        this.sqlExecutionService = new SqlExecutionService(connectionProvider, outputChannel, historyManager, context);
         this.databaseInstructionsManager = databaseInstructionsManager;
         
         // Load persisted conversation states
