@@ -511,9 +511,8 @@ export class SchemaCache {
                 v.TABLE_NAME as name,
                 o.modify_date as lastModified
             FROM INFORMATION_SCHEMA.VIEWS v
-            INNER JOIN sys.views o ON v.TABLE_NAME = o.name 
+            LEFT JOIN sys.views o ON v.TABLE_NAME = o.name 
                 AND v.TABLE_SCHEMA = SCHEMA_NAME(o.schema_id)
-            WHERE v.TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
             ORDER BY v.TABLE_SCHEMA, v.TABLE_NAME
         `;
 

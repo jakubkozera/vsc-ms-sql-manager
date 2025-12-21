@@ -718,18 +718,29 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     
                     // Apply table filter if exists
                     const tableFilter = this.connectionProvider.getTableFilter(element.connectionId!, element.database || 'master');
-                    let filteredTables = cachedTables;
-                    if (tableFilter && Object.keys(tableFilter).length > 0) {
-                        filteredTables = cachedTables.filter(table => {
-                            const key = `${table.schema}.${table.name}`.toLowerCase();
-                            return tableFilter[key] !== false;
-                        });
-                        this.outputChannel.appendLine(`[UnifiedTreeProvider] Applied table filter - ${filteredTables.length}/${cachedTables.length} tables match`);
+                    let tablesToDisplay = cachedTables;
+                    
+                    if (tableFilter && (tableFilter.name || tableFilter.schema || tableFilter.owner)) {
+                        // Use applyTableFilter which supports operators like Contains, Equals, etc.
+                        // Convert cache format to filter format
+                        const tablesForFilter = cachedTables.map(t => ({
+                            TABLE_NAME: t.name,
+                            TABLE_SCHEMA: t.schema,
+                            OWNER: t.owner
+                        }));
+                        
+                        const filteredTablesData = this.applyTableFilter(tablesForFilter, tableFilter);
+                        
+                        // Map back to cache format
+                        const filteredKeys = new Set(filteredTablesData.map(t => `${t.TABLE_SCHEMA}.${t.TABLE_NAME}`.toLowerCase()));
+                        tablesToDisplay = cachedTables.filter(t => filteredKeys.has(`${t.schema}.${t.name}`.toLowerCase()));
+                        
+                        this.outputChannel.appendLine(`[UnifiedTreeProvider] Applied table filter - ${tablesToDisplay.length}/${cachedTables.length} tables match`);
                     } else {
                         this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${cachedTables.length} tables to display in database ${element.database || 'current'}`);
                     }
                     
-                    return filteredTables.map((table) => {
+                    return tablesToDisplay.map((table) => {
                         const tableNode = new SchemaItemNode(
                             `${table.schema}.${table.name}`,
                             'table',
