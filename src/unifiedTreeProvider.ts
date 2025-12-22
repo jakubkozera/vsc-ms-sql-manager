@@ -111,8 +111,6 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId, element.database);
                 element.contextValue = hasInstructions ? 'databaseWithInstructions' : 'database';
             } else if (element instanceof ConnectionNode) {
-                const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
-                
                 // Determine base context while preserving failed state
                 let baseContext: string;
                 if (element.contextValue === 'connectionFailed') {
@@ -121,10 +119,15 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     baseContext = element.isActive ? 'connectionActive' : 'connectionInactive';
                 }
                 
-                element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
+                // Add WithInstructions suffix only for active connections
+                // Instructions are only relevant when connection is active
+                if (element.isActive) {
+                    const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
+                    element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
+                } else {
+                    element.contextValue = baseContext;
+                }
             } else if (element instanceof ServerConnectionNode) {
-                const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
-                
                 // Determine base context while preserving failed state
                 let baseContext: string;
                 if (element.contextValue === 'serverConnectionFailed') {
@@ -133,9 +136,17 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     baseContext = element.isActive ? 'serverConnectionActive' : 'serverConnectionInactive';
                 }
                 
-                element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
+                // Add WithInstructions suffix only for active connections
+                // Instructions are only relevant when connection is active
+                if (element.isActive) {
+                    const hasInstructions = this.databaseInstructionsManager.hasInstructions(element.connectionId);
+                    element.contextValue = hasInstructions ? `${baseContext}WithInstructions` : baseContext;
+                } else {
+                    element.contextValue = baseContext;
+                }
             }
         }
+        
         return element;
     }
 
