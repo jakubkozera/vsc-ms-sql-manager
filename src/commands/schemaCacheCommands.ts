@@ -14,7 +14,7 @@ export function registerSchemaCacheCommands(
 
     // Command: Refresh entire database schema
     context.subscriptions.push(
-        vscode.commands.registerCommand('mssqlmanager.refreshDatabaseSchema', async (node?: any) => {
+        vscode.commands.registerCommand('mssqlManager.refreshDatabaseSchema', async (node?: any) => {
             try {
                 let connectionId: string | undefined;
                 let database: string | undefined;
@@ -34,15 +34,21 @@ export function registerSchemaCacheCommands(
                     database = activeConnection.database;
                 }
 
-                const connection = connectionProvider.getConnection(connectionId);
-                if (!connection || !connectionId) {
-                    vscode.window.showErrorMessage('Unable to get database connection');
+                if (!connectionId) {
+                    vscode.window.showErrorMessage('Connection ID is required');
                     return;
                 }
 
                 const connectionInfo = connectionProvider.getConnectionConfig(connectionId);
                 if (!connectionInfo || !database || !connectionInfo.server) {
                     vscode.window.showErrorMessage('Unable to get connection configuration or database name');
+                    return;
+                }
+
+                // Create database-specific pool for the cache refresh
+                const dbPool = await connectionProvider.createDbPool(connectionId, database);
+                if (!dbPool) {
+                    vscode.window.showErrorMessage('Unable to create database connection pool');
                     return;
                 }
 
@@ -56,14 +62,14 @@ export function registerSchemaCacheCommands(
                     title: `Refreshing schema for ${database || 'database'}...`,
                     cancellable: false
                 }, async () => {
-                    await schemaCache.refreshAll(cacheConnection, connection);
+                    await schemaCache.refreshAll(cacheConnection, dbPool);
                     outputChannel.appendLine(`[SchemaCache] Refreshed complete schema for ${database}`);
                 });
 
                 vscode.window.showInformationMessage(`Schema refreshed for ${database || 'database'}`);
                 
                 // Refresh tree view
-                vscode.commands.executeCommand('mssqlmanager.refreshExplorer');
+                vscode.commands.executeCommand('mssqlManager.refreshNode', node);
             } catch (error) {
                 const message = error instanceof Error ? error.message : 'Unknown error';
                 vscode.window.showErrorMessage(`Failed to refresh schema: ${message}`);
@@ -74,7 +80,7 @@ export function registerSchemaCacheCommands(
 
     // Command: Refresh specific table
     context.subscriptions.push(
-        vscode.commands.registerCommand('mssqlmanager.refreshTable', async (node?: any) => {
+        vscode.commands.registerCommand('mssqlManager.refreshTable', async (node?: any) => {
             try {
                 if (!node || !node.connectionId || !node.database) {
                     vscode.window.showErrorMessage('Invalid table node');
@@ -114,7 +120,7 @@ export function registerSchemaCacheCommands(
                 vscode.window.showInformationMessage(`Table ${tableSchema}.${tableName} refreshed`);
                 
                 // Refresh tree view
-                vscode.commands.executeCommand('mssqlmanager.refreshExplorer');
+                vscode.commands.executeCommand('mssqlManager.refreshNode', node);
             } catch (error) {
                 const message = error instanceof Error ? error.message : 'Unknown error';
                 vscode.window.showErrorMessage(`Failed to refresh table: ${message}`);
@@ -125,7 +131,7 @@ export function registerSchemaCacheCommands(
 
     // Command: Clear all schema cache
     context.subscriptions.push(
-        vscode.commands.registerCommand('mssqlmanager.clearSchemaCache', async () => {
+        vscode.commands.registerCommand('mssqlManager.clearSchemaCache', async () => {
             try {
                 const confirm = await vscode.window.showWarningMessage(
                     'Are you sure you want to clear all cached database schemas?',
@@ -139,7 +145,7 @@ export function registerSchemaCacheCommands(
                     vscode.window.showInformationMessage('Schema cache cleared');
                     
                     // Refresh tree view
-                    vscode.commands.executeCommand('mssqlmanager.refreshExplorer');
+                    vscode.commands.executeCommand('mssqlManager.refresh');
                 }
             } catch (error) {
                 const message = error instanceof Error ? error.message : 'Unknown error';
@@ -151,7 +157,7 @@ export function registerSchemaCacheCommands(
 
     // Command: Show schema cache info
     context.subscriptions.push(
-        vscode.commands.registerCommand('mssqlmanager.showSchemaCacheInfo', async () => {
+        vscode.commands.registerCommand('mssqlManager.showSchemaCacheInfo', async () => {
             try {
                 const activeConnection = connectionProvider.getActiveConnectionInfo();
                 if (!activeConnection) {

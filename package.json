@@ -277,7 +277,7 @@
       },
       {
         "command": "mssqlManager.refreshDatabaseSchema",
-        "title": "Refresh Database Schema",
+        "title": "Refresh",
         "icon": "$(refresh)"
       },
       {
@@ -801,11 +801,6 @@
           "group": "2_script@4"
         },
         {
-          "command": "mssqlManager.refreshNode",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
-          "group": "3_refresh@1"
-        },
-        {
           "command": "mssqlManager.addConnectionToServerGroup",
           "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@1"
@@ -1038,7 +1033,17 @@
         {
           "command": "mssqlManager.refreshDatabaseSchema",
           "when": "view == mssqlManager.explorer && viewItem == database",
-          "group": "9_refresh@2"
+          "group": "9_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshDatabaseSchema",
+          "when": "view == mssqlManager.explorer && viewItem == databaseWithInstructions",
+          "group": "9_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshDatabaseSchema",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
+          "group": "9_refresh@1"
         },
         {
           "command": "mssqlManager.selectTop1000",

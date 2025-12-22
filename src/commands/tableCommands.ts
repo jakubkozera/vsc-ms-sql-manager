@@ -347,22 +347,6 @@ GO`;
         }
     });
 
-    const refreshTableCommand = vscode.commands.registerCommand('mssqlManager.refreshTable', async (tableNode?: any) => {
-        try {
-            if (!tableNode) {
-                vscode.window.showErrorMessage('Invalid table item');
-                return;
-            }
-
-            unifiedTreeProvider.refresh();
-            vscode.window.showInformationMessage('Table refreshed');
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            vscode.window.showErrorMessage(`Failed to refresh table: ${errorMessage}`);
-            outputChannel.appendLine(`Refresh table failed: ${errorMessage}`);
-        }
-    });
-
     const scriptRowInsertCommand = vscode.commands.registerCommand('mssqlManager.scriptRowInsert', async (tableNode?: any) => {
         try {
             if (!tableNode || !tableNode.connectionId || !tableNode.label) {
@@ -846,7 +830,6 @@ GO`;
         selectTop1000Command,
         scriptTableCreateCommand,
         scriptTableDropCommand,
-        refreshTableCommand,
         scriptRowInsertCommand,
         scriptRowUpdateCommand,
         scriptRowDeleteCommand
