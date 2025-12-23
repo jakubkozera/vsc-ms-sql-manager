@@ -329,8 +329,6 @@ export class QueryExecutor {
         const hasGo = goRegex.test(queryText);
         goRegex.lastIndex = 0; // Reset regex state
         
-        this.outputChannel.appendLine(`[QueryExecutor] GO detected: ${hasGo}`);
-        
         const batches = queryText.split(goRegex);
         
         this.outputChannel.appendLine(`[QueryExecutor] splitByGO found ${batches.length} batch(es) after split`);
