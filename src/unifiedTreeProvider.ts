@@ -356,7 +356,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Start connection in background (don't await)
                 // Error notifications are now handled in ConnectionProvider
-                this.connectionProvider.connectToSavedById(element.connectionId).catch(error => {
+                this.connectionProvider.connectToSavedById(element.connectionId, true).catch(error => {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Server auto-connect failed: ${error}`);
                 });
                 
@@ -374,7 +374,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 
                 // Start connection in background (don't await)
                 // Error notifications are now handled in ConnectionProvider
-                this.connectionProvider.connectToSavedById(element.connectionId).catch(error => {
+                this.connectionProvider.connectToSavedById(element.connectionId, true).catch(error => {
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Auto-connect failed: ${error}`);
                 });
                 
