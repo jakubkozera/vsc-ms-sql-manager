@@ -1898,15 +1898,9 @@ function registerGoToDefinitionAction() {
         precondition: 'tableAtCursor',
         run: function(ed) {
             try {
-                console.log('[Script Action] Script as INSERT clicked');
-                debugger
                 const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
-                console.log('[Script Action] Using position:', position);
                 const tableInfo = findTableAtPosition(ed, position);
-                debugger
-                console.log('[Script Action] Table info:', tableInfo);
                 if (tableInfo) {
-                    console.log('[Script Action] Sending message to backend');
                     vscode.postMessage({ 
                         type: 'scriptRowAsInsert', 
                         schema: tableInfo.schema, 
@@ -1914,9 +1908,6 @@ function registerGoToDefinitionAction() {
                         connectionId: currentConnectionId, 
                         database: currentDatabaseName 
                     });
-                } else {
-                    // Show brief message if no table found
-                    console.log('[Script Action] No table found at cursor position');
                 }
             } catch (error) {
                 console.error('[Script Action] Error in Script as INSERT:', error);
@@ -1934,12 +1925,9 @@ function registerGoToDefinitionAction() {
         precondition: 'tableAtCursor',
         run: function(ed) {
             try {
-                console.log('[Script Action] Script as UPDATE clicked');
                 const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
                 const tableInfo = findTableAtPosition(ed, position);
-                console.log('[Script Action] Table info:', tableInfo);
                 if (tableInfo) {
-                    console.log('[Script Action] Sending message to backend');
                     vscode.postMessage({ 
                         type: 'scriptRowAsUpdate', 
                         schema: tableInfo.schema, 
@@ -1947,8 +1935,6 @@ function registerGoToDefinitionAction() {
                         connectionId: currentConnectionId, 
                         database: currentDatabaseName 
                     });
-                } else {
-                    console.log('[Script Action] No table found at cursor position');
                 }
             } catch (error) {
                 console.error('[Script Action] Error in Script as UPDATE:', error);
@@ -1966,12 +1952,9 @@ function registerGoToDefinitionAction() {
         precondition: 'tableAtCursor',
         run: function(ed) {
             try {
-                console.log('[Script Action] Script as DELETE clicked');
                 const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
                 const tableInfo = findTableAtPosition(ed, position);
-                console.log('[Script Action] Table info:', tableInfo);
                 if (tableInfo) {
-                    console.log('[Script Action] Sending message to backend');
                     vscode.postMessage({ 
                         type: 'scriptRowAsDelete', 
                         schema: tableInfo.schema, 
@@ -1979,8 +1962,6 @@ function registerGoToDefinitionAction() {
                         connectionId: currentConnectionId, 
                         database: currentDatabaseName 
                     });
-                } else {
-                    console.log('[Script Action] No table found at cursor position');
                 }
             } catch (error) {
                 console.error('[Script Action] Error in Script as DELETE:', error);
