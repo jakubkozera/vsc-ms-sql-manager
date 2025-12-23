@@ -1824,6 +1824,134 @@ function registerGoToDefinitionAction() {
             }
         }
     });
-}
 
-// Register the action once the editor is ready
+    // Helper function to find table at position
+    function findTableAtPosition(ed, position) {
+        const model = ed.getModel();
+        if (!model || !position) return null;
+
+        const wordInfo = model.getWordAtPosition(position);
+        if (!wordInfo || !wordInfo.word) return null;
+
+        const rawWord = wordInfo.word;
+        const fullText = model.getValue();
+
+        // Parse qualified identifier
+        function stripIdentifierPart(part) {
+            if (!part) return part;
+            part = part.trim();
+            if ((part.startsWith('[') && part.endsWith(']')) || (part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+                return part.substring(1, part.length - 1);
+            }
+            return part;
+        }
+
+        function parseQualifiedIdentifier(name) {
+            if (!name) return { schema: null, table: null };
+            const parts = name.split('.');
+            if (parts.length === 2) {
+                return { schema: stripIdentifierPart(parts[0]), table: stripIdentifierPart(parts[1]) };
+            }
+            return { schema: null, table: stripIdentifierPart(name) };
+        }
+
+        const parsed = parseQualifiedIdentifier(rawWord);
+        const normalizedTableName = parsed.table;
+
+        // Find table in schema
+        const table = findTable(normalizedTableName);
+        if (table) {
+            return { schema: table.schema, table: table.table };
+        }
+
+        return null;
+    }
+
+    // Add Script ROW as INSERT action
+    editor.addAction({
+        id: 'mssqlmanager.scriptRowAsInsert',
+        label: 'Script as INSERT',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.1,
+        run: function(ed) {
+            const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+            const tableInfo = findTableAtPosition(ed, position);
+            if (tableInfo) {
+                vscode.postMessage({ 
+                    type: 'scriptRowAsInsert', 
+                    schema: tableInfo.schema, 
+                    table: tableInfo.table, 
+                    connectionId: currentConnectionId, 
+                    database: currentDatabaseName 
+                });
+            }
+        }
+    });
+
+    // Add Script ROW as UPDATE action
+    editor.addAction({
+        id: 'mssqlmanager.scriptRowAsUpdate',
+        label: 'Script as UPDATE',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.2,
+        run: function(ed) {
+            const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+            const tableInfo = findTableAtPosition(ed, position);
+            if (tableInfo) {
+                vscode.postMessage({ 
+                    type: 'scriptRowAsUpdate', 
+                    schema: tableInfo.schema, 
+                    table: tableInfo.table, 
+                    connectionId: currentConnectionId, 
+                    database: currentDatabaseName 
+                });
+            }
+        }
+    });
+
+    // Add Script ROW as DELETE action
+    editor.addAction({
+        id: 'mssqlmanager.scriptRowAsDelete',
+        label: 'Script as DELETE',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.3,
+        run: function(ed) {
+            const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+            const tableInfo = findTableAtPosition(ed, position);
+            if (tableInfo) {
+                vscode.postMessage({ 
+                    type: 'scriptRowAsDelete', 
+                    schema: tableInfo.schema, 
+                    table: tableInfo.table, 
+                    connectionId: currentConnectionId, 
+                    database: currentDatabaseName 
+                });
+            }
+        }
+    });
+
+    // Add Delete Row with References action
+    editor.addAction({
+        id: 'mssqlmanager.deleteRowWithReferences',
+        label: 'Delete Row with References',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.4,
+        run: function(ed) {
+            const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+            const tableInfo = findTableAtPosition(ed, position);
+            if (tableInfo) {
+                vscode.postMessage({ 
+                    type: 'deleteRowWithReferences', 
+                    schema: tableInfo.schema, 
+                    table: tableInfo.table, 
+                    connectionId: currentConnectionId, 
+                    database: currentDatabaseName 
+                });
+            }
+        }
+    });
+}

@@ -278,6 +278,118 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     }
                     break;
 
+                case 'scriptRowAsInsert':
+                    // Forward to scriptRowInsert command
+                    try {
+                        let conn = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null;
+                        let db = message.database || undefined;
+
+                        if (conn && typeof conn === 'string' && conn.includes('::')) {
+                            const parts = conn.split('::');
+                            conn = parts[0];
+                            if (!db && parts.length > 1) {
+                                db = parts[1];
+                            }
+                        }
+
+                        const label = message.schema ? `${message.schema}.${message.table}` : message.table;
+
+                        const tableNode: any = {
+                            connectionId: conn,
+                            label: label,
+                            database: db
+                        };
+
+                        await vscode.commands.executeCommand('mssqlManager.scriptRowInsert', tableNode);
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] scriptRowAsInsert forward failed: ${err}`);
+                    }
+                    break;
+
+                case 'scriptRowAsUpdate':
+                    // Forward to scriptRowUpdate command
+                    try {
+                        let conn = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null;
+                        let db = message.database || undefined;
+
+                        if (conn && typeof conn === 'string' && conn.includes('::')) {
+                            const parts = conn.split('::');
+                            conn = parts[0];
+                            if (!db && parts.length > 1) {
+                                db = parts[1];
+                            }
+                        }
+
+                        const label = message.schema ? `${message.schema}.${message.table}` : message.table;
+
+                        const tableNode: any = {
+                            connectionId: conn,
+                            label: label,
+                            database: db
+                        };
+
+                        await vscode.commands.executeCommand('mssqlManager.scriptRowUpdate', tableNode);
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] scriptRowAsUpdate forward failed: ${err}`);
+                    }
+                    break;
+
+                case 'scriptRowAsDelete':
+                    // Forward to scriptRowDelete command
+                    try {
+                        let conn = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null;
+                        let db = message.database || undefined;
+
+                        if (conn && typeof conn === 'string' && conn.includes('::')) {
+                            const parts = conn.split('::');
+                            conn = parts[0];
+                            if (!db && parts.length > 1) {
+                                db = parts[1];
+                            }
+                        }
+
+                        const label = message.schema ? `${message.schema}.${message.table}` : message.table;
+
+                        const tableNode: any = {
+                            connectionId: conn,
+                            label: label,
+                            database: db
+                        };
+
+                        await vscode.commands.executeCommand('mssqlManager.scriptRowDelete', tableNode);
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] scriptRowAsDelete forward failed: ${err}`);
+                    }
+                    break;
+
+                case 'deleteRowWithReferences':
+                    // Forward to scriptRowDelete command (same as above, since deleteRowWithReferences generates cascading delete)
+                    try {
+                        let conn = message.connectionId || this.webviewSelectedConnection.get(webviewPanel.webview) || null;
+                        let db = message.database || undefined;
+
+                        if (conn && typeof conn === 'string' && conn.includes('::')) {
+                            const parts = conn.split('::');
+                            conn = parts[0];
+                            if (!db && parts.length > 1) {
+                                db = parts[1];
+                            }
+                        }
+
+                        const label = message.schema ? `${message.schema}.${message.table}` : message.table;
+
+                        const tableNode: any = {
+                            connectionId: conn,
+                            label: label,
+                            database: db
+                        };
+
+                        await vscode.commands.executeCommand('mssqlManager.scriptRowDelete', tableNode);
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] deleteRowWithReferences forward failed: ${err}`);
+                    }
+                    break;
+
                 case 'openInNewEditor':
                     await this.openContentInNewEditor(message.content, message.language);
                     break;
