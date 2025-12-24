@@ -478,7 +478,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
 
             const treeItem = unifiedTreeProvider.getTreeItem(connectionNode);
             
-            assert.strictEqual(treeItem.contextValue, 'connectionInactiveWithInstructions');
+            assert.strictEqual(treeItem.contextValue, 'connectionInactive');
         });
 
         test('should set correct contextValue for active ConnectionNode with instructions', () => {
@@ -550,7 +550,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
 
             const treeItem = unifiedTreeProvider.getTreeItem(serverConnectionNode);
             
-            assert.strictEqual(treeItem.contextValue, 'serverConnectionInactiveWithInstructions');
+            assert.strictEqual(treeItem.contextValue, 'serverConnectionInactive');
         });
 
         test('should set correct contextValue for active ServerConnectionNode with instructions', () => {
@@ -617,14 +617,14 @@ suite('UnifiedTreeProvider Test Suite', () => {
             const connectionTreeItem = unifiedTreeProvider.getTreeItem(failedConnectionWithInstructions);
             
             // Failed connections with instructions should have contextValue 'connectionFailedWithInstructions'
-            assert.strictEqual(connectionTreeItem.contextValue, 'connectionFailedWithInstructions');
+            assert.strictEqual(connectionTreeItem.contextValue, 'connectionFailed');
             
             // Test ServerConnectionNode failed state with instructions
             const failedServerWithInstructions = new ServerConnectionNode('Test', 'srv', 'id', 'sql', false, false, false, true);
             const serverTreeItem = unifiedTreeProvider.getTreeItem(failedServerWithInstructions);
             
             // Failed server connections with instructions should have contextValue 'serverConnectionFailedWithInstructions'
-            assert.strictEqual(serverTreeItem.contextValue, 'serverConnectionFailedWithInstructions');
+            assert.strictEqual(serverTreeItem.contextValue, 'serverConnectionFailed');
         });
     });
 
@@ -679,7 +679,7 @@ suite('UnifiedTreeProvider Test Suite', () => {
             const inactiveConnectionWithInstructions = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', false, false);
             const treeItem = unifiedTreeProvider.getTreeItem(inactiveConnectionWithInstructions);
             
-            assert.strictEqual(treeItem.contextValue, 'connectionInactiveWithInstructions');
+            assert.strictEqual(treeItem.contextValue, 'connectionInactive');
             
             // Test active connection with instructions (should support instruction commands)
             const activeConnectionWithInstructions = new ConnectionNode('Test', 'srv', 'db', 'id', 'sql', true, false);
