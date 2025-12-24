@@ -403,22 +403,35 @@ GO`;
             let insertScript = `INSERT INTO [${schema}].[${table}]\n(\n`;
             insertScript += insertableColumns.map((col: any) => `    [${col.columnName}]`).join(',\n');
             insertScript += '\n)\nVALUES\n(\n';
-            insertScript += insertableColumns.map((col: any) => {
+            insertScript += insertableColumns.map((col: any, index: number) => {
                 // Add appropriate placeholder based on data type
+                let value: string;
                 if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.dataType.toLowerCase())) {
-                    return `    N''  -- ${col.columnName}`;
+                    value = `    N''`;
                 } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.dataType.toLowerCase())) {
-                    return `    NULL  -- ${col.columnName} (datetime)`;
+                    value = `    NULL`;
                 } else if (['bit'].includes(col.dataType.toLowerCase())) {
-                    return `    0  -- ${col.columnName} (bit)`;
+                    value = `    0`;
                 } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
-                    return `    0  -- ${col.columnName} (numeric)`;
+                    value = `    0`;
                 } else if (['uniqueidentifier'].includes(col.dataType.toLowerCase())) {
-                    return `    NEWID()  -- ${col.columnName}`;
+                    value = `    NEWID()`;
                 } else {
-                    return `    NULL  -- ${col.columnName}`;
+                    value = `    NULL`;
                 }
-            }).join(',\n');
+                
+                // Add comma after value (except for last item), then comment
+                const comma = index < insertableColumns.length - 1 ? ',' : '';
+                let comment = col.columnName;
+                if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (datetime)';
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (bit)';
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (numeric)';
+                }
+                return `${value}${comma}  -- ${comment}`;
+            }).join('\n');
             insertScript += '\n)';
 
             await openSqlInCustomEditor(insertScript, `insert_${table}.sql`, context);

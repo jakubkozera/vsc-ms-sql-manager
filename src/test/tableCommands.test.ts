@@ -394,6 +394,57 @@ suite('Table Commands Test Suite', () => {
             assert.ok(insertableColumns.some(col => col.name === 'Name'));
         });
 
+        test('should generate INSERT script with correct comma placement', () => {
+            const columns = [
+                { columnName: 'Id', dataType: 'uniqueidentifier', isIdentity: false, isComputed: false, generatedAlwaysType: 0 },
+                { columnName: 'Name', dataType: 'nvarchar', isIdentity: false, isComputed: false, generatedAlwaysType: 0 },
+                { columnName: 'Age', dataType: 'int', isIdentity: false, isComputed: false, generatedAlwaysType: 0 },
+                { columnName: 'IsActive', dataType: 'bit', isIdentity: false, isComputed: false, generatedAlwaysType: 0 }
+            ];
+
+            // Simulate the INSERT script generation logic
+            const schema = 'dbo';
+            const table = 'Users';
+            let insertScript = `INSERT INTO [${schema}].[${table}]\n(\n`;
+            insertScript += columns.map((col: any) => `    [${col.columnName}]`).join(',\n');
+            insertScript += '\n)\nVALUES\n(\n';
+            insertScript += columns.map((col: any, index: number) => {
+                let value: string;
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.dataType.toLowerCase())) {
+                    value = `    N''`;
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    value = `    0`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    value = `    0`;
+                } else if (['uniqueidentifier'].includes(col.dataType.toLowerCase())) {
+                    value = `    NEWID()`;
+                } else {
+                    value = `    NULL`;
+                }
+                
+                const comma = index < columns.length - 1 ? ',' : '';
+                let comment = col.columnName;
+                if (['bit'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (bit)';
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (numeric)';
+                }
+                return `${value}${comma}  -- ${comment}`;
+            }).join('\n');
+            insertScript += '\n)';
+
+            // Verify comma placement: commas should be after values, not in comments
+            assert.ok(insertScript.includes('NEWID(),  -- Id'));
+            assert.ok(insertScript.includes("N'',  -- Name"));
+            assert.ok(insertScript.includes('0,  -- Age (numeric)'));
+            assert.ok(insertScript.includes('0  -- IsActive (bit)'));  // Last value has no comma
+            
+            // Verify commas are NOT in comments
+            assert.ok(!insertScript.includes('NEWID()  -- Id,'));
+            assert.ok(!insertScript.includes("N''  -- Name,"));
+            assert.ok(!insertScript.includes('0  -- Age (numeric),'));
+        });
+
         test('should exclude computed columns from INSERT script', () => {
             const columns = [
                 { name: 'Id', is_identity: false, is_computed: false, generated_always_type: 0 },
