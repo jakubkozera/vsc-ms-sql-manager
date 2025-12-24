@@ -1417,6 +1417,10 @@ export class SchemaCache {
     public async refreshAll(connection: ConnectionInfo, pool: DBPool): Promise<void> {
         const cacheKey = this.getCacheKey(connection);
         
+        // Clear hash cache to force recomputation
+        this.hashComputations.delete(cacheKey);
+        this.lastValidationCheck.delete(cacheKey);
+        
         const newSchema = await this.fetchCompleteSchema(cacheKey, pool);
         this.caches.set(cacheKey, newSchema);
         await this.saveToDisk(cacheKey, newSchema);
@@ -1427,6 +1431,9 @@ export class SchemaCache {
      */
     public clearAll(): void {
         this.caches.clear();
+        this.hashComputations.clear();
+        this.lastValidationCheck.clear();
+        this.loadingPromises.clear();
     }
 
     /**
@@ -1435,6 +1442,9 @@ export class SchemaCache {
     public clear(connection: ConnectionInfo): void {
         const cacheKey = this.getCacheKey(connection);
         this.caches.delete(cacheKey);
+        this.hashComputations.delete(cacheKey);
+        this.lastValidationCheck.delete(cacheKey);
+        this.loadingPromises.delete(cacheKey);
     }
 }
 

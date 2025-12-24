@@ -67,11 +67,25 @@ suite('QueryExecutor DDL Detection Tests', () => {
 
         // Mock context
         mockContext = {
-            globalStorageUri: { fsPath: '/test/path' },
-            subscriptions: []
-        } as any;
+            globalStorageUri: vscode.Uri.file('/test/path'),
+            subscriptions: [],
+            workspaceState: {} as any,
+            globalState: {} as any,
+            extensionUri: vscode.Uri.file(__dirname),
+            extensionPath: '',
+            asAbsolutePath: (relativePath: string) => relativePath,
+            storageUri: undefined,
+            storagePath: undefined,
+            logUri: vscode.Uri.file(__dirname),
+            logPath: '',
+            extensionMode: vscode.ExtensionMode.Test,
+            extension: {} as any,
+            environmentVariableCollection: {} as any,
+            secrets: {} as any,
+            languageModelAccessInformation: {} as any
+        } as unknown as vscode.ExtensionContext;
 
-        // Mock SchemaCache
+        // Mock SchemaCache - create instance and stub
         schemaCache = SchemaCache.getInstance(mockContext);
         invalidateObjectStub = sandbox.stub(schemaCache, 'invalidateObject').resolves();
 

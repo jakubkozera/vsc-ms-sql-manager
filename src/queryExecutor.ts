@@ -197,7 +197,7 @@ export class QueryExecutor {
 
                 // Detect and invalidate cache for DDL operations
                 if (this.context) {
-                    this.detectAndInvalidateCache(queryText, connection);
+                    await this.detectAndInvalidateCache(queryText, connection);
                 }
 
                 // Extract metadata for SELECT queries to enable editing
@@ -973,13 +973,13 @@ export class QueryExecutor {
                 .replace(/--.*$/gm, '') // Remove single-line comments
                 .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
                 .replace(/\s+/g, ' ') // Normalize whitespace
-                .toUpperCase();
+                .trim();
 
             // DDL patterns for different object types
             const ddlPatterns = [
                 // Tables
                 {
-                    pattern: /\b(?:CREATE|ALTER|DROP)\s+TABLE\s+(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
                     type: SchemaObjectType.Table
                 },
                 // Views
@@ -989,12 +989,12 @@ export class QueryExecutor {
                 },
                 // Stored Procedures
                 {
-                    pattern: /\b(?:CREATE|ALTER|DROP)\s+(?:PROCEDURE|PROC)\s+(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+(?:PROCEDURE|PROC)\s+(?:\[?([^\].\s(]+)\]?\.)?\[?([^\].\s(]+)\]?/gi,
                     type: SchemaObjectType.Procedure
                 },
                 // Functions
                 {
-                    pattern: /\b(?:CREATE|ALTER|DROP)\s+FUNCTION\s+(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+FUNCTION\s+(?:\[?([^\].\s(]+)\]?\.)?\[?([^\].\s(]+)\]?/gi,
                     type: SchemaObjectType.Function
                 },
                 // Triggers
@@ -1004,7 +1004,7 @@ export class QueryExecutor {
                 },
                 // Indexes
                 {
-                    pattern: /\b(?:CREATE|DROP)\s+(?:UNIQUE\s+)?(?:CLUSTERED\s+)?(?:NONCLUSTERED\s+)?INDEX\s+\[?([^\].\s]+)\]?\s+ON\s+(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
+                    pattern: /\b(?:CREATE|DROP)\s+(?:UNIQUE\s+)?(?:CLUSTERED\s+)?(?:NONCLUSTERED\s+)?INDEX\s+\[?([^\].\s(]+)\]?\s+ON\s+(?:\[?([^\].\s(]+)\]?\.)?\[?([^\].\s(]+)\]?/gi,
                     type: SchemaObjectType.Index
                 }
             ];
