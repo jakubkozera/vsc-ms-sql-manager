@@ -86,8 +86,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             }
         }
         
-        console.log(`[COLUMN-WIDTH] Column "${columnName}": header=${headerWidth.toFixed(1)}px, content=${maxContentWidth.toFixed(1)}px ("${longestContent.substring(0, 20)}...")`);
-        
         // Calculate optimal width (max of header and content, plus padding)
         const padding = 32; // 16px padding on each side + some extra space for icons and borders
         const iconSpace = 80; // Space for sort, filter, and pin icons
@@ -99,7 +97,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const paddingWidth = 36; 
         
         const finalWidth = Math.min(Math.max(optimalWidth, minWidth), maxWidth) + paddingWidth;
-        console.log(`[COLUMN-WIDTH] Column "${columnName}" final width: ${finalWidth.toFixed(0)}px`);
         
         return Math.round(finalWidth);
     }

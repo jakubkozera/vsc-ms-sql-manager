@@ -203,11 +203,10 @@ export class QueryExecutor {
                 // Extract metadata for SELECT queries to enable editing
                 // Use originalQuery if provided (when queryText has SET statements)
                 const queryForMetadata = originalQuery || queryText;
+                
                 if (allRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
-                        this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
                         queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection, allColumnNames, token);
-                        this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
                     } catch (error) {
                         if (token && token.isCancellationRequested) {
                             throw new Error('Query cancelled');
@@ -482,6 +481,22 @@ export class QueryExecutor {
             // Try to detect source tables from the query
             const tableInfo = this.parseQueryForTables(query);
             
+            // Get cached schema once for all columns (if available)
+            let cachedSchema: any = null;
+            try {
+                const activeConnection = this.connectionProvider.getActiveConnectionInfo();
+                
+                if (activeConnection?.server && activeConnection?.database && tableInfo.tables.length > 0) {
+                    const schemaCache = SchemaCache.getInstance(this.context);
+                    cachedSchema = await schemaCache.getSchema({ 
+                        server: activeConnection.server, 
+                        database: activeConnection.database 
+                    }, connection);
+                }
+            } catch (error) {
+                // Silently continue without cache
+            }
+            
             // For each column, try to determine its source
             for (const colName of columnNames) {
                 if (token && token.isCancellationRequested) {
@@ -495,15 +510,26 @@ export class QueryExecutor {
                     isIdentity: false
                 };
 
-                // Try to detect column metadata by querying sys.columns if we have table information
+                // Try to detect column metadata from cache if we have table information
                 if (tableInfo.tables.length > 0) {
                     try {
-                        const colInfo = await this.getColumnInfo(connection, tableInfo.tables, colName);
+                        let colInfo: Partial<ColumnMetadata> | null = null;
+                        
+                        // Try cache first
+                        if (cachedSchema) {
+                            colInfo = this.getColumnInfoFromCache(cachedSchema, tableInfo.tables, colName);
+                        }
+                        
+                        // Fallback to direct query if cache didn't provide info
+                        if (!colInfo) {
+                            colInfo = await this.getColumnInfoDirect(connection, tableInfo.tables, colName);
+                        }
+                        
                         if (colInfo) {
                             Object.assign(colMetadata, colInfo);
                         }
                     } catch (error) {
-                        this.outputChannel.appendLine(`[QueryExecutor] Failed to get column metadata for ${colName}: ${error}`);
+                        // Silently continue without metadata for this column
                     }
                 }
 
@@ -585,43 +611,27 @@ export class QueryExecutor {
     }
 
     /**
-     * Get column information from SchemaCache instead of querying database
+     * Get column information from SchemaCache (in-memory only, no DB queries)
      */
-    private async getColumnInfo(
-        connection: DBPool, 
+    private getColumnInfoFromCache(
+        cachedSchema: any,
         tables: Array<{schema?: string, table: string, alias?: string}>,
         columnName: string
-    ): Promise<Partial<ColumnMetadata> | null> {
+    ): Partial<ColumnMetadata> | null {
+        this.outputChannel.appendLine(`[QueryExecutor] getColumnInfoFromCache called for column: ${columnName}, tables: ${tables.map(t => `${t.schema || 'dbo'}.${t.table}`).join(', ')}`);
         try {
-            // Get connection info to build cache key
-            const activeConnection = this.connectionProvider.getActiveConnectionInfo();
-            if (!activeConnection || !activeConnection.server || !activeConnection.database) {
-                // Fallback to direct query if no active connection
-                return await this.getColumnInfoDirect(connection, tables, columnName);
-            }
-
-            // Try to get schema from cache
-            const schemaCache = SchemaCache.getInstance(this.context);
-            let cachedSchema;
-            try {
-                cachedSchema = await schemaCache.getSchema({ 
-                    server: activeConnection.server, 
-                    database: activeConnection.database 
-                }, connection);
-            } catch (error) {
-                this.outputChannel.appendLine(`[QueryExecutor] Cache unavailable, using direct query: ${error}`);
-                return await this.getColumnInfoDirect(connection, tables, columnName);
-            }
-
             // Search for column in specified tables
             for (const t of tables) {
                 const schema = t.schema || 'dbo';
                 const tableKey = `${schema}.${t.table}`.toLowerCase();
+                this.outputChannel.appendLine(`[QueryExecutor] Checking table ${tableKey} in cache...`);
                 const columns = cachedSchema.columns.get(tableKey);
                 
                 if (columns) {
-                    const column = columns.find(c => c.columnName.toLowerCase() === columnName.toLowerCase());
+                    this.outputChannel.appendLine(`[QueryExecutor] Found ${columns.length} columns for table ${tableKey}`);
+                    const column = columns.find((c: any) => c.columnName.toLowerCase() === columnName.toLowerCase());
                     if (column) {
+                        this.outputChannel.appendLine(`[QueryExecutor] ✓ Found column ${columnName} in cache (table: ${tableKey}, isPK: ${column.isPrimaryKey})`);
                         // Build metadata from cache
                         const metadata: Partial<ColumnMetadata> = {
                             type: column.dataType,
@@ -633,7 +643,7 @@ export class QueryExecutor {
                             isIdentity: column.isIdentity
                         };
 
-                        // Get FK relationships from cache
+                        // Get FK relationships from cache (no DB queries)
                         metadata.foreignKeyReferences = this.getForeignKeyReferencesFromCache(
                             cachedSchema,
                             schema,
@@ -642,11 +652,14 @@ export class QueryExecutor {
                         );
 
                         return metadata;
+                    } else {
+                        this.outputChannel.appendLine(`[QueryExecutor] Column ${columnName} not found in table ${tableKey}`);
                     }
+                } else {
+                    this.outputChannel.appendLine(`[QueryExecutor] Table ${tableKey} not found in cached columns`);
                 }
             }
-
-            this.outputChannel.appendLine(`[QueryExecutor] Column ${columnName} not found in cache for tables: ${tables.map(t => t.table).join(', ')}`);
+            this.outputChannel.appendLine(`[QueryExecutor] Column ${columnName} not found in any cached tables`);
         } catch (error) {
             this.outputChannel.appendLine(`[QueryExecutor] Error getting column info from cache: ${error}`);
         }
@@ -656,12 +669,14 @@ export class QueryExecutor {
 
     /**
      * Fallback: Get column info directly from database (original implementation)
+     * Note: Does not include FK relationships to avoid extra queries. Use cache for FK info.
      */
     private async getColumnInfoDirect(
         connection: DBPool, 
         tables: Array<{schema?: string, table: string, alias?: string}>,
         columnName: string
     ): Promise<Partial<ColumnMetadata> | null> {
+        this.outputChannel.appendLine(`[QueryExecutor] ⚠ getColumnInfoDirect called (DB QUERY) for column: ${columnName}`);
         try {
             const tableConditions = tables.map(t => {
                 const schema = t.schema || 'dbo';
@@ -704,9 +719,9 @@ export class QueryExecutor {
                     isIdentity: row.IsIdentity
                 };
 
-                // Query FK relationships
+                // Get FK relationships as fallback (only when cache not available)
                 try {
-                    metadata.foreignKeyReferences = await this.getForeignKeyReferences(
+                    metadata.foreignKeyReferences = await this.getForeignKeyReferencesDirect(
                         connection,
                         row.SchemaName,
                         row.TableName,
@@ -724,6 +739,85 @@ export class QueryExecutor {
         }
         
         return null;
+    }
+
+    /**
+     * Get FK relationships directly from database (fallback when cache not available)
+     */
+    private async getForeignKeyReferencesDirect(
+        connection: DBPool,
+        schema: string,
+        table: string,
+        column: string
+    ): Promise<ForeignKeyReference[]> {
+        const references: ForeignKeyReference[] = [];
+
+        try {
+            // Query for outgoing FKs (this column references another table)
+            const outgoingQuery = `
+                SELECT 
+                    fk.name AS ConstraintName,
+                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ReferencedSchema,
+                    OBJECT_NAME(fk.referenced_object_id) AS ReferencedTable,
+                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ReferencedColumn,
+                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                WHERE fk.parent_object_id = OBJECT_ID('${schema}.${table}')
+                AND fkc.parent_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
+            `;
+
+            const outgoingResult = await connection.request().query(outgoingQuery);
+            
+            if (outgoingResult.recordset && outgoingResult.recordset.length > 0) {
+                for (const row of outgoingResult.recordset) {
+                    const isComposite = row.ColumnCount > 1;
+                    references.push({
+                        schema: row.ReferencedSchema,
+                        table: row.ReferencedTable,
+                        column: row.ReferencedColumn,
+                        isComposite,
+                        compositeColumns: [],
+                        constraintName: row.ConstraintName
+                    });
+                }
+            }
+
+            // Query for incoming FKs (other tables reference this column as PK)
+            const incomingQuery = `
+                SELECT 
+                    fk.name AS ConstraintName,
+                    OBJECT_SCHEMA_NAME(fk.parent_object_id) AS ReferencingSchema,
+                    OBJECT_NAME(fk.parent_object_id) AS ReferencingTable,
+                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ReferencingColumn,
+                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
+                FROM sys.foreign_keys fk
+                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                WHERE fk.referenced_object_id = OBJECT_ID('${schema}.${table}')
+                AND fkc.referenced_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
+            `;
+
+            const incomingResult = await connection.request().query(incomingQuery);
+            
+            if (incomingResult.recordset && incomingResult.recordset.length > 0) {
+                for (const row of incomingResult.recordset) {
+                    const isComposite = row.ColumnCount > 1;
+                    references.push({
+                        schema: row.ReferencingSchema,
+                        table: row.ReferencingTable,
+                        column: row.ReferencingColumn,
+                        isComposite,
+                        compositeColumns: [],
+                        constraintName: row.ConstraintName
+                    });
+                }
+            }
+
+        } catch (error) {
+            this.outputChannel.appendLine(`[QueryExecutor] Error in getForeignKeyReferencesDirect: ${error}`);
+        }
+
+        return references;
     }
 
     /**
@@ -780,132 +874,6 @@ export class QueryExecutor {
                     });
                 }
             }
-        }
-
-        return references;
-    }
-
-    /**
-     * Get foreign key relationships for a specific column
-     * Returns both outgoing FKs (this column references another) and incoming FKs (other columns reference this)
-     */
-    private async getForeignKeyReferences(
-        connection: DBPool,
-        schema: string,
-        table: string,
-        column: string
-    ): Promise<ForeignKeyReference[]> {
-        const references: ForeignKeyReference[] = [];
-
-        try {
-            // Query for outgoing FKs (this column references another table)
-            const outgoingQuery = `
-                SELECT 
-                    fk.name AS ConstraintName,
-                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ReferencedSchema,
-                    OBJECT_NAME(fk.referenced_object_id) AS ReferencedTable,
-                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ReferencedColumn,
-                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
-                FROM sys.foreign_keys fk
-                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-                WHERE fk.parent_object_id = OBJECT_ID('${schema}.${table}')
-                AND fkc.parent_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
-            `;
-
-            const outgoingResult = await connection.request().query(outgoingQuery);
-            
-            if (outgoingResult.recordset && outgoingResult.recordset.length > 0) {
-                // Group by constraint to get composite columns
-                const constraintMap = new Map<string, any[]>();
-                for (const row of outgoingResult.recordset) {
-                    if (!constraintMap.has(row.ConstraintName)) {
-                        constraintMap.set(row.ConstraintName, []);
-                    }
-                    constraintMap.get(row.ConstraintName)!.push(row);
-                }
-
-                for (const [constraintName, rows] of constraintMap) {
-                    const isComposite = rows[0].ColumnCount > 1;
-                    
-                    // Get all columns in this constraint if composite
-                    let compositeColumns: string[] = [];
-                    if (isComposite) {
-                        const compositeQuery = `
-                            SELECT COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ColumnName
-                            FROM sys.foreign_key_columns fkc
-                            WHERE fkc.constraint_object_id = OBJECT_ID('${schema}.${constraintName}')
-                            ORDER BY fkc.constraint_column_id
-                        `;
-                        const compositeResult = await connection.request().query(compositeQuery);
-                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
-                    }
-
-                    references.push({
-                        schema: rows[0].ReferencedSchema,
-                        table: rows[0].ReferencedTable,
-                        column: rows[0].ReferencedColumn,
-                        isComposite,
-                        compositeColumns,
-                        constraintName
-                    });
-                }
-            }
-
-            // Query for incoming FKs (other tables reference this column as PK)
-            const incomingQuery = `
-                SELECT 
-                    fk.name AS ConstraintName,
-                    OBJECT_SCHEMA_NAME(fk.parent_object_id) AS ReferencingSchema,
-                    OBJECT_NAME(fk.parent_object_id) AS ReferencingTable,
-                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ReferencingColumn,
-                    COUNT(*) OVER (PARTITION BY fk.object_id) AS ColumnCount
-                FROM sys.foreign_keys fk
-                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-                WHERE fk.referenced_object_id = OBJECT_ID('${schema}.${table}')
-                AND fkc.referenced_column_id = COLUMNPROPERTY(OBJECT_ID('${schema}.${table}'), '${column}', 'ColumnId')
-            `;
-
-            const incomingResult = await connection.request().query(incomingQuery);
-            
-            if (incomingResult.recordset && incomingResult.recordset.length > 0) {
-                // Group by constraint
-                const constraintMap = new Map<string, any[]>();
-                for (const row of incomingResult.recordset) {
-                    if (!constraintMap.has(row.ConstraintName)) {
-                        constraintMap.set(row.ConstraintName, []);
-                    }
-                    constraintMap.get(row.ConstraintName)!.push(row);
-                }
-
-                for (const [constraintName, rows] of constraintMap) {
-                    const isComposite = rows[0].ColumnCount > 1;
-                    
-                    // Get all columns in this constraint if composite
-                    let compositeColumns: string[] = [];
-                    if (isComposite) {
-                        const compositeQuery = `
-                            SELECT COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ColumnName
-                            FROM sys.foreign_key_columns fkc
-                            WHERE fkc.constraint_object_id = OBJECT_ID('${rows[0].ReferencingSchema}.${constraintName}')
-                            ORDER BY fkc.constraint_column_id
-                        `;
-                        const compositeResult = await connection.request().query(compositeQuery);
-                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
-                    }
-
-                    references.push({
-                        schema: rows[0].ReferencingSchema,
-                        table: rows[0].ReferencingTable,
-                        column: rows[0].ReferencingColumn,
-                        isComposite,
-                        compositeColumns,
-                        constraintName
-                    });
-                }
-            }
-
-        } catch (error) {
-            this.outputChannel.appendLine(`[QueryExecutor] Error in getForeignKeyReferences: ${error}`);
         }
 
         return references;
