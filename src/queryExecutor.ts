@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from './connectionProvider';
 import { DBPool } from './dbClient';
 import { QueryHistoryManager } from './queryHistory';
+import { SchemaCache, SchemaObjectType } from './utils/schemaCache';
 
 export interface ForeignKeyReference {
     schema: string;
@@ -48,7 +49,8 @@ export class QueryExecutor {
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel,
-        private historyManager: QueryHistoryManager
+        private historyManager: QueryHistoryManager,
+        private context?: vscode.ExtensionContext
     ) {}
 
     public cancel() {
@@ -80,31 +82,23 @@ export class QueryExecutor {
         this.outputChannel.appendLine(`Executing query: ${queryText.substring(0, 100)}${queryText.length > 100 ? '...' : ''}`);
 
         try {
-            return await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Executing SQL Query',
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ message: 'Running query...' });
+            // Split query by GO statements (SQL Server batch separator)
+            const batches = this.splitByGO(queryText);
+            this.outputChannel.appendLine(`[QueryExecutor] Split query into ${batches.length} batch(es)`);
 
-                // Split query by GO statements (SQL Server batch separator)
-                const batches = this.splitByGO(queryText);
-                this.outputChannel.appendLine(`[QueryExecutor] Split query into ${batches.length} batch(es)`);
+            const allRecordsets: any[][] = [];
+            const allRowsAffected: number[] = [];
+            const allColumnNames: string[][] = [];
 
-                const allRecordsets: any[][] = [];
-                const allRowsAffected: number[] = [];
-                const allColumnNames: string[][] = [];
+            // Execute each batch separately
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i];
+                
+                if (token && token.isCancellationRequested) {
+                    throw new Error('Query cancelled');
+                }
 
-                // Execute each batch separately
-                for (let i = 0; i < batches.length; i++) {
-                    const batch = batches[i];
-                    
-                    if (token && token.isCancellationRequested) {
-                        throw new Error('Query cancelled');
-                    }
-
-                    progress.report({ message: `Running batch ${i + 1}/${batches.length}...` });
-                    this.outputChannel.appendLine(`[QueryExecutor] Executing batch ${i + 1}/${batches.length}: ${batch.substring(0, 100)}${batch.length > 100 ? '...' : ''}`);
+                this.outputChannel.appendLine(`[QueryExecutor] Executing batch ${i + 1}/${batches.length}: ${batch.substring(0, 100)}${batch.length > 100 ? '...' : ''}`);
 
                     const request = connection.request();
                     this.currentRequest = request;
@@ -193,14 +187,18 @@ export class QueryExecutor {
                     columnNames: allColumnNames
                 };
 
+                // Detect and invalidate cache for DDL operations
+                if (this.context) {
+                    await this.detectAndInvalidateCache(queryText, connection);
+                }
+
                 // Extract metadata for SELECT queries to enable editing
                 // Use originalQuery if provided (when queryText has SET statements)
                 const queryForMetadata = originalQuery || queryText;
+                
                 if (allRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
-                        this.outputChannel.appendLine(`[QueryExecutor] Extracting metadata for result sets...`);
                         queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection, allColumnNames, token);
-                        this.outputChannel.appendLine(`[QueryExecutor] Metadata extracted: ${queryResult.metadata.map(m => `editable=${m.isEditable}, pks=${m.primaryKeyColumns.length}`).join(', ')}`);
                     } catch (error) {
                         if (token && token.isCancellationRequested) {
                             throw new Error('Query cancelled');
@@ -269,7 +267,6 @@ export class QueryExecutor {
                 }
 
                 return queryResult;
-            });
 
         } catch (error) {
             this.currentRequest = null;
@@ -321,8 +318,6 @@ export class QueryExecutor {
         // Test if GO exists
         const hasGo = goRegex.test(queryText);
         goRegex.lastIndex = 0; // Reset regex state
-        
-        this.outputChannel.appendLine(`[QueryExecutor] GO detected: ${hasGo}`);
         
         const batches = queryText.split(goRegex);
         
@@ -477,6 +472,22 @@ export class QueryExecutor {
             // Try to detect source tables from the query
             const tableInfo = this.parseQueryForTables(query);
             
+            // Get cached schema once for all columns (if available)
+            let cachedSchema: any = null;
+            try {
+                const activeConnection = this.connectionProvider.getActiveConnectionInfo();
+                
+                if (activeConnection?.server && activeConnection?.database && tableInfo.tables.length > 0) {
+                    const schemaCache = SchemaCache.getInstance(this.context);
+                    cachedSchema = await schemaCache.getSchema({ 
+                        server: activeConnection.server, 
+                        database: activeConnection.database 
+                    }, connection);
+                }
+            } catch (error) {
+                // Silently continue without cache
+            }
+            
             // For each column, try to determine its source
             for (const colName of columnNames) {
                 if (token && token.isCancellationRequested) {
@@ -490,15 +501,26 @@ export class QueryExecutor {
                     isIdentity: false
                 };
 
-                // Try to detect column metadata by querying sys.columns if we have table information
+                // Try to detect column metadata from cache if we have table information
                 if (tableInfo.tables.length > 0) {
                     try {
-                        const colInfo = await this.getColumnInfo(connection, tableInfo.tables, colName);
+                        let colInfo: Partial<ColumnMetadata> | null = null;
+                        
+                        // Try cache first
+                        if (cachedSchema) {
+                            colInfo = this.getColumnInfoFromCache(cachedSchema, tableInfo.tables, colName);
+                        }
+                        
+                        // Fallback to direct query if cache didn't provide info
+                        if (!colInfo) {
+                            colInfo = await this.getColumnInfoDirect(connection, tableInfo.tables, colName);
+                        }
+                        
                         if (colInfo) {
                             Object.assign(colMetadata, colInfo);
                         }
                     } catch (error) {
-                        this.outputChannel.appendLine(`[QueryExecutor] Failed to get column metadata for ${colName}: ${error}`);
+                        // Silently continue without metadata for this column
                     }
                 }
 
@@ -580,15 +602,73 @@ export class QueryExecutor {
     }
 
     /**
-     * Get column information from sys.columns and sys.indexes
+     * Get column information from SchemaCache (in-memory only, no DB queries)
      */
-    private async getColumnInfo(
+    private getColumnInfoFromCache(
+        cachedSchema: any,
+        tables: Array<{schema?: string, table: string, alias?: string}>,
+        columnName: string
+    ): Partial<ColumnMetadata> | null {
+        this.outputChannel.appendLine(`[QueryExecutor] getColumnInfoFromCache called for column: ${columnName}, tables: ${tables.map(t => `${t.schema || 'dbo'}.${t.table}`).join(', ')}`);
+        try {
+            // Search for column in specified tables
+            for (const t of tables) {
+                const schema = t.schema || 'dbo';
+                const tableKey = `${schema}.${t.table}`.toLowerCase();
+                this.outputChannel.appendLine(`[QueryExecutor] Checking table ${tableKey} in cache...`);
+                const columns = cachedSchema.columns.get(tableKey);
+                
+                if (columns) {
+                    this.outputChannel.appendLine(`[QueryExecutor] Found ${columns.length} columns for table ${tableKey}`);
+                    const column = columns.find((c: any) => c.columnName.toLowerCase() === columnName.toLowerCase());
+                    if (column) {
+                        this.outputChannel.appendLine(`[QueryExecutor] ✓ Found column ${columnName} in cache (table: ${tableKey}, isPK: ${column.isPrimaryKey})`);
+                        // Build metadata from cache
+                        const metadata: Partial<ColumnMetadata> = {
+                            type: column.dataType,
+                            isNullable: column.isNullable,
+                            sourceTable: column.tableName,
+                            sourceSchema: column.tableSchema,
+                            sourceColumn: column.columnName,
+                            isPrimaryKey: column.isPrimaryKey,
+                            isIdentity: column.isIdentity
+                        };
+
+                        // Get FK relationships from cache (no DB queries)
+                        metadata.foreignKeyReferences = this.getForeignKeyReferencesFromCache(
+                            cachedSchema,
+                            schema,
+                            t.table,
+                            columnName
+                        );
+
+                        return metadata;
+                    } else {
+                        this.outputChannel.appendLine(`[QueryExecutor] Column ${columnName} not found in table ${tableKey}`);
+                    }
+                } else {
+                    this.outputChannel.appendLine(`[QueryExecutor] Table ${tableKey} not found in cached columns`);
+                }
+            }
+            this.outputChannel.appendLine(`[QueryExecutor] Column ${columnName} not found in any cached tables`);
+        } catch (error) {
+            this.outputChannel.appendLine(`[QueryExecutor] Error getting column info from cache: ${error}`);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Fallback: Get column info directly from database (original implementation)
+     * Note: Does not include FK relationships to avoid extra queries. Use cache for FK info.
+     */
+    private async getColumnInfoDirect(
         connection: DBPool, 
         tables: Array<{schema?: string, table: string, alias?: string}>,
         columnName: string
     ): Promise<Partial<ColumnMetadata> | null> {
+        this.outputChannel.appendLine(`[QueryExecutor] ⚠ getColumnInfoDirect called (DB QUERY) for column: ${columnName}`);
         try {
-            // Build a query to find this column across the specified tables
             const tableConditions = tables.map(t => {
                 const schema = t.schema || 'dbo';
                 return `(s.name = '${schema}' AND t.name = '${t.table}')`;
@@ -630,9 +710,9 @@ export class QueryExecutor {
                     isIdentity: row.IsIdentity
                 };
 
-                // Query FK relationships for this column
+                // Get FK relationships as fallback (only when cache not available)
                 try {
-                    metadata.foreignKeyReferences = await this.getForeignKeyReferences(
+                    metadata.foreignKeyReferences = await this.getForeignKeyReferencesDirect(
                         connection,
                         row.SchemaName,
                         row.TableName,
@@ -646,17 +726,16 @@ export class QueryExecutor {
                 return metadata;
             }
         } catch (error) {
-            this.outputChannel.appendLine(`[QueryExecutor] Error getting column info: ${error}`);
+            this.outputChannel.appendLine(`[QueryExecutor] Error in direct column query: ${error}`);
         }
         
         return null;
     }
 
     /**
-     * Get foreign key relationships for a specific column
-     * Returns both outgoing FKs (this column references another) and incoming FKs (other columns reference this)
+     * Get FK relationships directly from database (fallback when cache not available)
      */
-    private async getForeignKeyReferences(
+    private async getForeignKeyReferencesDirect(
         connection: DBPool,
         schema: string,
         table: string,
@@ -682,38 +761,15 @@ export class QueryExecutor {
             const outgoingResult = await connection.request().query(outgoingQuery);
             
             if (outgoingResult.recordset && outgoingResult.recordset.length > 0) {
-                // Group by constraint to get composite columns
-                const constraintMap = new Map<string, any[]>();
                 for (const row of outgoingResult.recordset) {
-                    if (!constraintMap.has(row.ConstraintName)) {
-                        constraintMap.set(row.ConstraintName, []);
-                    }
-                    constraintMap.get(row.ConstraintName)!.push(row);
-                }
-
-                for (const [constraintName, rows] of constraintMap) {
-                    const isComposite = rows[0].ColumnCount > 1;
-                    
-                    // Get all columns in this constraint if composite
-                    let compositeColumns: string[] = [];
-                    if (isComposite) {
-                        const compositeQuery = `
-                            SELECT COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ColumnName
-                            FROM sys.foreign_key_columns fkc
-                            WHERE fkc.constraint_object_id = OBJECT_ID('${schema}.${constraintName}')
-                            ORDER BY fkc.constraint_column_id
-                        `;
-                        const compositeResult = await connection.request().query(compositeQuery);
-                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
-                    }
-
+                    const isComposite = row.ColumnCount > 1;
                     references.push({
-                        schema: rows[0].ReferencedSchema,
-                        table: rows[0].ReferencedTable,
-                        column: rows[0].ReferencedColumn,
+                        schema: row.ReferencedSchema,
+                        table: row.ReferencedTable,
+                        column: row.ReferencedColumn,
                         isComposite,
-                        compositeColumns,
-                        constraintName
+                        compositeColumns: [],
+                        constraintName: row.ConstraintName
                     });
                 }
             }
@@ -735,44 +791,80 @@ export class QueryExecutor {
             const incomingResult = await connection.request().query(incomingQuery);
             
             if (incomingResult.recordset && incomingResult.recordset.length > 0) {
-                // Group by constraint
-                const constraintMap = new Map<string, any[]>();
                 for (const row of incomingResult.recordset) {
-                    if (!constraintMap.has(row.ConstraintName)) {
-                        constraintMap.set(row.ConstraintName, []);
-                    }
-                    constraintMap.get(row.ConstraintName)!.push(row);
-                }
-
-                for (const [constraintName, rows] of constraintMap) {
-                    const isComposite = rows[0].ColumnCount > 1;
-                    
-                    // Get all columns in this constraint if composite
-                    let compositeColumns: string[] = [];
-                    if (isComposite) {
-                        const compositeQuery = `
-                            SELECT COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ColumnName
-                            FROM sys.foreign_key_columns fkc
-                            WHERE fkc.constraint_object_id = OBJECT_ID('${rows[0].ReferencingSchema}.${constraintName}')
-                            ORDER BY fkc.constraint_column_id
-                        `;
-                        const compositeResult = await connection.request().query(compositeQuery);
-                        compositeColumns = compositeResult.recordset.map((r: any) => r.ColumnName);
-                    }
-
+                    const isComposite = row.ColumnCount > 1;
                     references.push({
-                        schema: rows[0].ReferencingSchema,
-                        table: rows[0].ReferencingTable,
-                        column: rows[0].ReferencingColumn,
+                        schema: row.ReferencingSchema,
+                        table: row.ReferencingTable,
+                        column: row.ReferencingColumn,
                         isComposite,
-                        compositeColumns,
-                        constraintName
+                        compositeColumns: [],
+                        constraintName: row.ConstraintName
                     });
                 }
             }
 
         } catch (error) {
-            this.outputChannel.appendLine(`[QueryExecutor] Error in getForeignKeyReferences: ${error}`);
+            this.outputChannel.appendLine(`[QueryExecutor] Error in getForeignKeyReferencesDirect: ${error}`);
+        }
+
+        return references;
+    }
+
+    /**
+     * Get FK relationships from cache instead of querying database
+     */
+    private getForeignKeyReferencesFromCache(
+        cachedSchema: any,
+        schema: string,
+        table: string,
+        columnName: string
+    ): ForeignKeyReference[] {
+        const references: ForeignKeyReference[] = [];
+        const tableKey = `${schema}.${table}`.toLowerCase();
+        const constraints = cachedSchema.constraints.get(tableKey);
+
+        if (!constraints) {
+            return references;
+        }
+
+        // Find FK constraints that include this column
+        for (const constraint of constraints) {
+            if (constraint.constraintType === 'FOREIGN KEY' && constraint.columns?.includes(columnName)) {
+                const isComposite = (constraint.columns?.length || 0) > 1;
+                
+                references.push({
+                    schema: constraint.referencedTableSchema || schema,
+                    table: constraint.referencedTableName || '',
+                    column: constraint.referencedColumns?.[constraint.columns.indexOf(columnName)] || '',
+                    isComposite,
+                    compositeColumns: constraint.columns || [],
+                    constraintName: constraint.constraintName
+                });
+            }
+        }
+
+        // Also check if other tables reference this column
+        for (const [otherTableKey, otherConstraints] of cachedSchema.constraints.entries()) {
+            for (const constraint of otherConstraints) {
+                if (constraint.constraintType === 'FOREIGN KEY' && 
+                    constraint.referencedTableSchema?.toLowerCase() === schema.toLowerCase() &&
+                    constraint.referencedTableName?.toLowerCase() === table.toLowerCase() &&
+                    constraint.referencedColumns?.some((col: string) => col.toLowerCase() === columnName.toLowerCase())) {
+                    
+                    const refColIndex = constraint.referencedColumns.findIndex((col: string) => col.toLowerCase() === columnName.toLowerCase());
+                    const isComposite = (constraint.columns?.length || 0) > 1;
+                    
+                    references.push({
+                        schema: constraint.tableSchema,
+                        table: constraint.tableName,
+                        column: constraint.columns?.[refColIndex] || '',
+                        isComposite,
+                        compositeColumns: constraint.columns || [],
+                        constraintName: constraint.constraintName
+                    });
+                }
+            }
         }
 
         return references;
@@ -821,5 +913,104 @@ export class QueryExecutor {
         
         // Join the lines back together and trim any trailing whitespace
         return resultLines.join('\n').trim();
+    }
+
+    /**
+     * Detect DDL operations and invalidate affected cache entries
+     */
+    private async detectAndInvalidateCache(queryText: string, pool: DBPool): Promise<void> {
+        try {
+            const schemaCache = SchemaCache.getInstance(this.context);
+            const activeConnection = this.connectionProvider.getActiveConnectionInfo();
+            
+            if (!activeConnection || !schemaCache) {
+                return;
+            }
+
+            // Remove comments and normalize whitespace
+            const cleanedQuery = queryText
+                .replace(/--.*$/gm, '') // Remove single-line comments
+                .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
+                .replace(/\s+/g, ' ') // Normalize whitespace
+                .trim();
+
+            // DDL patterns for different object types
+            const ddlPatterns = [
+                // Tables
+                {
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
+                    type: SchemaObjectType.Table
+                },
+                // Views
+                {
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+VIEW\s+(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
+                    type: SchemaObjectType.View
+                },
+                // Stored Procedures
+                {
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+(?:PROCEDURE|PROC)\s+(?:\[?([^\].\s(]+)\]?\.)?\[?([^\].\s(]+)\]?/gi,
+                    type: SchemaObjectType.Procedure
+                },
+                // Functions
+                {
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+FUNCTION\s+(?:\[?([^\].\s(]+)\]?\.)?\[?([^\].\s(]+)\]?/gi,
+                    type: SchemaObjectType.Function
+                },
+                // Triggers
+                {
+                    pattern: /\b(?:CREATE|ALTER|DROP)\s+TRIGGER\s+(?:\[?([^\].\s]+)\]?\.)?\[?([^\].\s]+)\]?/gi,
+                    type: SchemaObjectType.Trigger
+                },
+                // Indexes
+                {
+                    pattern: /\b(?:CREATE|DROP)\s+(?:UNIQUE\s+)?(?:CLUSTERED\s+)?(?:NONCLUSTERED\s+)?INDEX\s+\[?([^\].\s(]+)\]?\s+ON\s+(?:\[?([^\].\s(]+)\]?\.)?\[?([^\].\s(]+)\]?/gi,
+                    type: SchemaObjectType.Index
+                }
+            ];
+
+            const invalidations: Array<{ type: SchemaObjectType; schema: string; name: string }> = [];
+
+            for (const { pattern, type } of ddlPatterns) {
+                let match;
+                // Reset lastIndex for global regex
+                pattern.lastIndex = 0;
+                
+                while ((match = pattern.exec(cleanedQuery)) !== null) {
+                    let schema: string;
+                    let objectName: string;
+
+                    if (type === SchemaObjectType.Index) {
+                        // Index pattern: CREATE INDEX indexName ON [schema.]table
+                        schema = match[2] || 'dbo';
+                        objectName = match[3]; // Table name (indexes are invalidated per table)
+                    } else {
+                        // Standard pattern: CREATE/ALTER/DROP objectType [schema.]name
+                        schema = match[1] || 'dbo';
+                        objectName = match[2];
+                    }
+
+                    if (objectName) {
+                        invalidations.push({
+                            type,
+                            schema: schema.replace(/[\[\]]/g, ''),
+                            name: objectName.replace(/[\[\]]/g, '')
+                        });
+                    }
+                }
+            }
+
+            // Execute invalidations
+            if (invalidations.length > 0) {
+                this.outputChannel.appendLine(`[SchemaCache] Detected ${invalidations.length} DDL operation(s), invalidating cache...`);
+                
+                for (const { type, schema, name } of invalidations) {
+                    this.outputChannel.appendLine(`[SchemaCache] Invalidating ${type}: ${schema}.${name}`);
+                    await schemaCache.invalidateObject(activeConnection, pool, type, schema, name);
+                }
+            }
+        } catch (error) {
+            this.outputChannel.appendLine(`[SchemaCache] Error detecting/invalidating cache: ${error}`);
+            // Don't throw - cache invalidation failure shouldn't break query execution
+        }
     }
 }

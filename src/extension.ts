@@ -89,7 +89,7 @@ async function initializeExtension(context: vscode.ExtensionContext) {
 
     // Initialize providers
     const connectionProvider = new ConnectionProvider(context, outputChannel);
-    const unifiedTreeProvider = new UnifiedTreeProvider(connectionProvider, outputChannel);
+    const unifiedTreeProvider = new UnifiedTreeProvider(connectionProvider, outputChannel, context);
 
     // Run one-time local server discovery for Windows users
     try {
@@ -119,7 +119,7 @@ async function initializeExtension(context: vscode.ExtensionContext) {
     outputChannel.appendLine('[Extension] Query history initialized');
     
     // Initialize query executor with history manager
-    const queryExecutor = new QueryExecutor(connectionProvider, outputChannel, historyManager);
+    const queryExecutor = new QueryExecutor(connectionProvider, outputChannel, historyManager, context);
     outputChannel.appendLine('[Extension] Query executor initialized with history manager');
     
     // Initialize schema context builder for chat and background schema generation

@@ -2,17 +2,20 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ConnectionProvider } from './connectionProvider';
+import { SchemaCache } from './utils/schemaCache';
 
 export class DatabaseDiagramWebview {
     private panel: vscode.WebviewPanel | undefined;
     private connectionProvider: ConnectionProvider;
     private outputChannel: vscode.OutputChannel;
     private context: vscode.ExtensionContext;
+    private schemaCache: SchemaCache;
 
     constructor(connectionProvider: ConnectionProvider, outputChannel: vscode.OutputChannel, context: vscode.ExtensionContext) {
         this.connectionProvider = connectionProvider;
         this.outputChannel = outputChannel;
         this.context = context;
+        this.schemaCache = SchemaCache.getInstance(context);
     }
 
     async show(connectionId: string, database: string) {
@@ -145,100 +148,67 @@ export class DatabaseDiagramWebview {
 
             this.outputChannel.appendLine(`[DatabaseDiagram] Database pool created successfully for ${database}`);
 
-            // Get tables with columns
-            const tablesQuery = `
-                SELECT 
-                    t.TABLE_SCHEMA,
-                    t.TABLE_NAME,
-                    c.COLUMN_NAME,
-                    c.DATA_TYPE,
-                    c.CHARACTER_MAXIMUM_LENGTH,
-                    c.IS_NULLABLE,
-                    c.ORDINAL_POSITION,
-                    CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IS_PRIMARY_KEY
-                FROM INFORMATION_SCHEMA.TABLES t
-                INNER JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_SCHEMA = c.TABLE_SCHEMA
-                LEFT JOIN (
-                    SELECT ku.TABLE_SCHEMA, ku.TABLE_NAME, ku.COLUMN_NAME
-                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                    INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME
-                    WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-                ) pk ON t.TABLE_SCHEMA = pk.TABLE_SCHEMA AND t.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME
-                WHERE t.TABLE_TYPE = 'BASE TABLE'
-                ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME, c.ORDINAL_POSITION
-            `;
-            
-            this.outputChannel.appendLine(`[DatabaseDiagram] Executing tables query...`);
-
-            // Get foreign key relationships
-            const fkQuery = `
-                SELECT 
-                    fk.name AS FK_NAME,
-                    OBJECT_SCHEMA_NAME(fk.parent_object_id) AS FK_SCHEMA,
-                    OBJECT_NAME(fk.parent_object_id) AS FK_TABLE,
-                    COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS FK_COLUMN,
-                    OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS PK_SCHEMA,
-                    OBJECT_NAME(fk.referenced_object_id) AS PK_TABLE,
-                    COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS PK_COLUMN
-                FROM sys.foreign_keys fk
-                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-                ORDER BY FK_TABLE, FK_NAME
-            `;
-
-            const request1 = pool.request();
-            const request2 = pool.request();
-
-            this.outputChannel.appendLine(`[DatabaseDiagram] About to execute tables query...`);
-            const tablesResult = await request1.query(tablesQuery);
-            this.outputChannel.appendLine(`[DatabaseDiagram] Tables query returned ${tablesResult.recordset?.length || 0} rows`);
-            
-            if (tablesResult.recordset && tablesResult.recordset.length > 0) {
-                this.outputChannel.appendLine(`[DatabaseDiagram] Sample row: ${JSON.stringify(tablesResult.recordset[0])}`);
+            // Get connection info for SchemaCache
+            const connectionConfig = this.connectionProvider.getConnectionConfig(connectionId);
+            if (!connectionConfig) {
+                throw new Error('Connection config not found');
             }
-            
-            this.outputChannel.appendLine(`[DatabaseDiagram] About to execute FK query...`);
-            const fkResult = await request2.query(fkQuery);
-            this.outputChannel.appendLine(`[DatabaseDiagram] FK query returned ${fkResult.recordset?.length || 0} rows`);
+
+            const connectionInfo = {
+                server: connectionConfig.server || '',
+                database: database
+            };
+
+            this.outputChannel.appendLine(`[DatabaseDiagram] Fetching schema from cache...`);
+
+            // Get all tables from cache
+            const tables = await this.schemaCache.getTables(connectionInfo, pool);
+            this.outputChannel.appendLine(`[DatabaseDiagram] Got ${tables.length} tables from cache`);
+
+            // Get all foreign keys from cache
+            const foreignKeys = await this.schemaCache.getAllForeignKeys(connectionInfo, pool);
+            this.outputChannel.appendLine(`[DatabaseDiagram] Got ${foreignKeys.length} foreign keys from cache`);
 
             // Transform data into structure for diagram
-            const tables: any[] = [];
+            const diagramTables: any[] = [];
             const tableMap = new Map();
 
-            for (const row of tablesResult.recordset) {
-                const tableKey = `${row.TABLE_SCHEMA}.${row.TABLE_NAME}`;
-                if (!tableMap.has(tableKey)) {
-                    const table = {
-                        schema: row.TABLE_SCHEMA,
-                        name: row.TABLE_NAME,
-                        columns: []
-                    };
-                    tables.push(table);
-                    tableMap.set(tableKey, table);
-                }
-
-                const table = tableMap.get(tableKey);
-                table.columns.push({
-                    name: row.COLUMN_NAME,
-                    type: row.DATA_TYPE + (row.CHARACTER_MAXIMUM_LENGTH ? `(${row.CHARACTER_MAXIMUM_LENGTH})` : ''),
-                    nullable: row.IS_NULLABLE === 'YES',
-                    isPrimaryKey: row.IS_PRIMARY_KEY === 1
-                });
+            for (const table of tables) {
+                const tableKey = `${table.schema}.${table.name}`;
+                
+                // Get columns for this table from cache
+                const columns = await this.schemaCache.getTableColumns(connectionInfo, pool, table.schema, table.name);
+                
+                const diagramTable = {
+                    schema: table.schema,
+                    name: table.name,
+                    columns: columns.map(col => ({
+                        name: col.columnName,
+                        type: col.dataType + (col.maxLength && col.maxLength !== -1 ? `(${col.maxLength})` : ''),
+                        nullable: col.isNullable,
+                        isPrimaryKey: col.isPrimaryKey
+                    }))
+                };
+                
+                diagramTables.push(diagramTable);
+                tableMap.set(tableKey, diagramTable);
             }
 
-            const relationships = fkResult.recordset.map((row: any) => ({
-                from: `${row.FK_SCHEMA}.${row.FK_TABLE}`,
-                to: `${row.PK_SCHEMA}.${row.PK_TABLE}`,
-                fromColumn: row.FK_COLUMN,
-                toColumn: row.PK_COLUMN,
-                name: row.FK_NAME
+            // Transform foreign keys into relationships
+            const relationships = foreignKeys.map((fk: any) => ({
+                from: `${fk.tableSchema}.${fk.tableName}`,
+                to: `${fk.referencedTableSchema}.${fk.referencedTableName}`,
+                fromColumn: fk.columns?.[0] || '',
+                toColumn: fk.referencedColumns?.[0] || '',
+                name: fk.constraintName
             }));
 
-            this.outputChannel.appendLine(`[DatabaseDiagram] Processed ${tables.length} tables and ${relationships.length} relationships`);
+            this.outputChannel.appendLine(`[DatabaseDiagram] Processed ${diagramTables.length} tables and ${relationships.length} relationships`);
             
-            if (tables.length === 0) {
+            if (diagramTables.length === 0) {
                 this.outputChannel.appendLine(`[DatabaseDiagram] WARNING: No tables found!`);
             } else {
-                this.outputChannel.appendLine(`[DatabaseDiagram] First table: ${tables[0]?.schema}.${tables[0]?.name} with ${tables[0]?.columns?.length} columns`);
+                this.outputChannel.appendLine(`[DatabaseDiagram] First table: ${diagramTables[0]?.schema}.${diagramTables[0]?.name} with ${diagramTables[0]?.columns?.length} columns`);
             }
 
             // Close the database-specific pool
@@ -249,7 +219,7 @@ export class DatabaseDiagramWebview {
                 this.outputChannel.appendLine(`[DatabaseDiagram] Warning: Failed to close pool: ${closeError}`);
             }
 
-            return { tables, relationships };
+            return { tables: diagramTables, relationships };
 
         } catch (error: any) {
             this.outputChannel.appendLine(`[DatabaseDiagram] Error loading schema: ${error.message}`);

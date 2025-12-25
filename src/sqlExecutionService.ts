@@ -19,12 +19,17 @@ export interface ExecutionResult {
 }
 
 export class SqlExecutionService {
+    private context: vscode.ExtensionContext;
+
     constructor(
         private connectionProvider: ConnectionProvider,
         private outputChannel: vscode.OutputChannel,
         private historyManager: QueryHistoryManager,
+        context: vscode.ExtensionContext,
         private sqlEditorProvider?: SqlEditorProvider
-    ) {}
+    ) {
+        this.context = context;
+    }
 
     /**
      * Execute SQL query with appropriate user confirmation based on query type
@@ -196,7 +201,7 @@ export class SqlExecutionService {
         }
 
         // Create QueryExecutor instance for this execution
-        const queryExecutor = new QueryExecutor(this.connectionProvider, this.outputChannel, this.historyManager);
+        const queryExecutor = new QueryExecutor(this.connectionProvider, this.outputChannel, this.historyManager, this.context);
         
         return await queryExecutor.executeQuery(query, connection);
     }

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
+import { SchemaCache } from '../utils/schemaCache';
 
 export function registerTableCommands(
     context: vscode.ExtensionContext,
@@ -9,6 +10,8 @@ export function registerTableCommands(
     unifiedTreeProvider: UnifiedTreeProvider,
     outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
+    const schemaCache = SchemaCache.getInstance(context);
+    
     const selectTop1000Command = vscode.commands.registerCommand('mssqlManager.selectTop1000', async (tableNode?: any) => {
         try {
             if (!tableNode || !tableNode.connectionId || !tableNode.label) {
@@ -49,18 +52,18 @@ export function registerTableCommands(
             }
             
             try {
-                const columnsQuery = `
-                    SELECT c.name AS COLUMN_NAME
-                    FROM sys.columns c
-                    WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
-                    ORDER BY c.column_id
-                `;
+                // Use schema cache to get columns
+                const connectionConfig = connectionProvider.getConnectionConfig(tableNode.connectionId);
+                const connectionInfo = {
+                    server: connectionConfig?.server || '',
+                    database: tableNode.database || connectionConfig?.database || ''
+                };
                 
-                const columnsResult = await queryConnection.request().query(columnsQuery);
+                const columns = await schemaCache.getTableColumns(connectionInfo, queryConnection, schema, table);
                 
-                if (columnsResult.recordset && columnsResult.recordset.length > 0) {
-                    const columns = columnsResult.recordset.map((col: any) => `[${col.COLUMN_NAME}]`).join(',\n      ');
-                    query = `SELECT TOP (1000) ${columns}\n  FROM [${schema}].[${table}] [${tableAlias}]`;
+                if (columns && columns.length > 0) {
+                    const columnList = columns.map((col: any) => `[${col.columnName}]`).join(',\n      ');
+                    query = `SELECT TOP (1000) ${columnList}\n  FROM [${schema}].[${table}] [${tableAlias}]`;
                 } else {
                     // Fallback to * if we can't get columns
                     query = `SELECT TOP (1000) *\n  FROM [${schema}].[${table}] [${tableAlias}]`;
@@ -344,22 +347,6 @@ GO`;
         }
     });
 
-    const refreshTableCommand = vscode.commands.registerCommand('mssqlManager.refreshTable', async (tableNode?: any) => {
-        try {
-            if (!tableNode) {
-                vscode.window.showErrorMessage('Invalid table item');
-                return;
-            }
-
-            unifiedTreeProvider.refresh();
-            vscode.window.showInformationMessage('Table refreshed');
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            vscode.window.showErrorMessage(`Failed to refresh table: ${errorMessage}`);
-            outputChannel.appendLine(`Refresh table failed: ${errorMessage}`);
-        }
-    });
-
     const scriptRowInsertCommand = vscode.commands.registerCommand('mssqlManager.scriptRowInsert', async (tableNode?: any) => {
         try {
             if (!tableNode || !tableNode.connectionId || !tableNode.label) {
@@ -389,28 +376,22 @@ GO`;
 
             const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
 
-            // Get all columns
-            const columnsQuery = `
-                SELECT 
-                    c.name AS COLUMN_NAME,
-                    t.name AS DATA_TYPE,
-                    c.is_identity,
-                    c.is_computed,
-                    c.generated_always_type
-                FROM sys.columns c
-                INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
-                WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
-                ORDER BY c.column_id;
-            `;
-
+            // Get all columns from cache
+            const connectionConfig = connectionProvider.getConnectionConfig(tableNode.connectionId);
+            const connectionInfo = {
+                server: connectionConfig?.server || '',
+                database: tableNode.database || connectionConfig?.database || ''
+            };
+            
             if (!queryConnection) {
                 throw new Error('No connection available for scripting row');
             }
-            const colResult = await queryConnection.request().query(columnsQuery);
+            
+            const allColumns = await schemaCache.getTableColumns(connectionInfo, queryConnection, schema, table);
 
             // Filter out identity, computed, and generated columns
-            const insertableColumns = colResult.recordset.filter((col: any) => 
-                !col.is_identity && !col.is_computed && col.generated_always_type === 0
+            const insertableColumns = allColumns.filter((col: any) => 
+                !col.isIdentity && !col.isComputed && (col.generatedAlwaysType === 0 || col.generatedAlwaysType === null || col.generatedAlwaysType === undefined)
             );
 
             if (insertableColumns.length === 0) {
@@ -420,24 +401,37 @@ GO`;
 
             // Generate INSERT script
             let insertScript = `INSERT INTO [${schema}].[${table}]\n(\n`;
-            insertScript += insertableColumns.map((col: any) => `    [${col.COLUMN_NAME}]`).join(',\n');
+            insertScript += insertableColumns.map((col: any) => `    [${col.columnName}]`).join(',\n');
             insertScript += '\n)\nVALUES\n(\n';
-            insertScript += insertableColumns.map((col: any) => {
+            insertScript += insertableColumns.map((col: any, index: number) => {
                 // Add appropriate placeholder based on data type
-                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    N''  -- ${col.COLUMN_NAME}`;
-                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    NULL  -- ${col.COLUMN_NAME} (datetime)`;
-                } else if (['bit'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    0  -- ${col.COLUMN_NAME} (bit)`;
-                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    0  -- ${col.COLUMN_NAME} (numeric)`;
-                } else if (['uniqueidentifier'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `    NEWID()  -- ${col.COLUMN_NAME}`;
+                let value: string;
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.dataType.toLowerCase())) {
+                    value = `    N''`;
+                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.dataType.toLowerCase())) {
+                    value = `    NULL`;
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    value = `    0`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    value = `    0`;
+                } else if (['uniqueidentifier'].includes(col.dataType.toLowerCase())) {
+                    value = `    NEWID()`;
                 } else {
-                    return `    NULL  -- ${col.COLUMN_NAME}`;
+                    value = `    NULL`;
                 }
-            }).join(',\n');
+                
+                // Add comma after value (except for last item), then comment
+                const comma = index < insertableColumns.length - 1 ? ',' : '';
+                let comment = col.columnName;
+                if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (datetime)';
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (bit)';
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (numeric)';
+                }
+                return `${value}${comma}  -- ${comment}`;
+            }).join('\n');
             insertScript += '\n)';
 
             await openSqlInCustomEditor(insertScript, `insert_${table}.sql`, context);
@@ -477,45 +471,31 @@ GO`;
 
             const [schema, table] = tableName.includes('.') ? tableName.split('.') : ['dbo', tableName];
 
-            // Get primary key columns
-            const pkQuery = `
-                SELECT c.name AS COLUMN_NAME
-                FROM sys.key_constraints kc
-                INNER JOIN sys.indexes i ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
-                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-                WHERE kc.parent_object_id = OBJECT_ID('[${schema}].[${table}]') AND kc.type = 'PK'
-                ORDER BY ic.key_ordinal;
-            `;
-
-            // Get all columns
-            const columnsQuery = `
-                SELECT 
-                    c.name AS COLUMN_NAME,
-                    t.name AS DATA_TYPE,
-                    c.is_identity,
-                    c.is_computed,
-                    c.generated_always_type
-                FROM sys.columns c
-                INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
-                WHERE c.object_id = OBJECT_ID('[${schema}].[${table}]')
-                ORDER BY c.column_id;
-            `;
+            // Get connection info for cache
+            const connectionConfig = connectionProvider.getConnectionConfig(tableNode.connectionId);
+            const connectionInfo = {
+                server: connectionConfig?.server || '',
+                database: tableNode.database || connectionConfig?.database || ''
+            };
 
             if (!queryConnection) {
                 throw new Error('No connection available for scripting row');
             }
-            const pkResult = await queryConnection.request().query(pkQuery);
-            const colResult = await queryConnection.request().query(columnsQuery);
+            
+            // Get columns and constraints from cache
+            const allColumns = await schemaCache.getTableColumns(connectionInfo, queryConnection, schema, table);
+            const constraints = await schemaCache.getTableConstraints(connectionInfo, queryConnection, schema, table);
 
-            const pkColumns = pkResult.recordset.map((pk: any) => pk.COLUMN_NAME);
+            // Get primary key columns from constraints
+            const pkConstraint = constraints.find(c => c.constraintType === 'PRIMARY KEY');
+            const pkColumns = pkConstraint?.columns || [];
             
             // Filter columns: exclude PKs, identity, computed, and generated columns
-            const updateableColumns = colResult.recordset.filter((col: any) => 
-                !pkColumns.includes(col.COLUMN_NAME) && 
-                !col.is_identity && 
-                !col.is_computed && 
-                col.generated_always_type === 0
+            const updateableColumns = allColumns.filter((col: any) => 
+                !pkColumns.includes(col.columnName) && 
+                !col.isIdentity && 
+                !col.isComputed && 
+                (col.generatedAlwaysType === 0 || col.generatedAlwaysType === null || col.generatedAlwaysType === undefined)
             );
 
             if (updateableColumns.length === 0) {
@@ -527,16 +507,16 @@ GO`;
             let updateScript = `UPDATE [${schema}].[${table}]\nSET\n`;
             updateScript += updateableColumns.map((col: any, index: number) => {
                 const prefix = index === 0 ? '    ' : '    -- ';
-                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = N''`;
-                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = NULL`;
-                } else if (['bit'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = 0`;
-                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.DATA_TYPE.toLowerCase())) {
-                    return `${prefix}[${col.COLUMN_NAME}] = 0`;
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = N''`;
+                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = NULL`;
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = 0`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    return `${prefix}[${col.columnName}] = 0`;
                 } else {
-                    return `${prefix}[${col.COLUMN_NAME}] = NULL`;
+                    return `${prefix}[${col.columnName}] = NULL`;
                 }
             }).join(',\n');
 
@@ -557,7 +537,7 @@ GO`;
         }
     });
 
-    const scriptRowDeleteCommand = vscode.commands.registerCommand('mssqlManager.scriptRowDelete', async (tableNode?: any) => {
+    const scriptRowDeleteCommand = vscode.commands.registerCommand('mssqlManager.scriptRowDelete', async (tableNode?: any, rowData?: any) => {
         try {
             if (!tableNode || !tableNode.connectionId || !tableNode.label) {
                 vscode.window.showErrorMessage('Invalid table item');
@@ -692,7 +672,43 @@ GO`;
             if (pkResult.recordset.length > 0) {
                 deleteScript += `    -- Define the target record to delete\n`;
                 pkResult.recordset.forEach((pk: any) => {
-                    deleteScript += `    DECLARE @Target_${pk.COLUMN_NAME} NVARCHAR(MAX) = NULL;  -- Set the value for ${pk.COLUMN_NAME}\n`;
+                    let pkValue = 'NULL';
+                    
+                    // If rowData is provided, use actual values
+                    // Try case-insensitive lookup since column names might have different casing
+                    if (rowData) {
+                        const pkColumnName = pk.COLUMN_NAME;
+                        let actualValue: any = undefined;
+                        
+                        // Try exact match first
+                        if (rowData[pkColumnName] !== undefined) {
+                            actualValue = rowData[pkColumnName];
+                        } else {
+                            // Try case-insensitive match
+                            const keys = Object.keys(rowData);
+                            const matchingKey = keys.find(key => key.toLowerCase() === pkColumnName.toLowerCase());
+                            if (matchingKey) {
+                                actualValue = rowData[matchingKey];
+                            }
+                        }
+                        
+                        if (actualValue !== undefined && actualValue !== null) {
+                            // Format based on data type
+                            if (typeof actualValue === 'string') {
+                                pkValue = `N'${actualValue.replace(/'/g, "''")}'`;
+                            } else if (typeof actualValue === 'number') {
+                                pkValue = String(actualValue);
+                            } else if (actualValue instanceof Date) {
+                                pkValue = `'${actualValue.toISOString()}'`;
+                            } else if (typeof actualValue === 'boolean') {
+                                pkValue = actualValue ? '1' : '0';
+                            } else {
+                                pkValue = `'${String(actualValue).replace(/'/g, "''")}'`;
+                            }
+                        }
+                    }
+                    
+                    deleteScript += `    DECLARE @Target_${pk.COLUMN_NAME} NVARCHAR(MAX) = ${pkValue};  -- ${rowData && pkValue !== 'NULL' ? 'Actual value from row' : 'Set the value for ' + pk.COLUMN_NAME}\n`;
                 });
                 deleteScript += `\n`;
             }
@@ -827,7 +843,6 @@ GO`;
         selectTop1000Command,
         scriptTableCreateCommand,
         scriptTableDropCommand,
-        refreshTableCommand,
         scriptRowInsertCommand,
         scriptRowUpdateCommand,
         scriptRowDeleteCommand

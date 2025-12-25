@@ -245,6 +245,31 @@
     }
     
     let allConnections = [];
+    
+    // Cache loading state tracking
+    let cacheLoadingStates = {
+        source: false,
+        target: false
+    };
+    
+    function handleCacheLoadingStatus(stage, status) {
+        cacheLoadingStates[stage] = (status === 'loading');
+        
+        // Update compare button state
+        const isLoading = cacheLoadingStates.source || cacheLoadingStates.target;
+        const isReady = isReadyToCompare();
+        
+        if (isLoading) {
+            compareButton.disabled = true;
+            compareButton.innerHTML = '<span class="codicon codicon-loading codicon-modifier-spin"></span> Loading Cache...';
+        } else if (isReady) {
+            compareButton.disabled = false;
+            compareButton.textContent = 'Compare';
+        } else {
+            compareButton.disabled = true;
+            compareButton.textContent = 'Compare';
+        }
+    }
 
     // Handle messages from extension
     window.addEventListener('message', event => {
@@ -274,6 +299,10 @@
                 }
                 
                 checkIfReadyToCompare();
+                break;
+            
+            case 'cacheLoadingStatus':
+                handleCacheLoadingStatus(message.stage, message.status);
                 break;
                 
             case 'databasesForConnection':

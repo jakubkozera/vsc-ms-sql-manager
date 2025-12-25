@@ -1403,7 +1403,61 @@ async function createSnippetFromSelection(selectedText) {
     }
 }
 
+// Helper function to find table at position
+function findTableAtPosition(ed, position) {
+    console.log('[findTableAtPosition] Called with position:', position);
+    const model = ed.getModel();
+    if (!model || !position) {
+        console.log('[findTableAtPosition] No model or position');
+        return null;
+    }
 
+    const wordInfo = model.getWordAtPosition(position);
+    console.log('[findTableAtPosition] wordInfo:', wordInfo);
+    if (!wordInfo || !wordInfo.word) {
+        console.log('[findTableAtPosition] No word found at position');
+        return null;
+    }
+
+    const rawWord = wordInfo.word;
+    console.log('[findTableAtPosition] rawWord:', rawWord);
+    const fullText = model.getValue();
+
+    // Parse qualified identifier
+    function stripIdentifierPart(part) {
+        if (!part) return part;
+        part = part.trim();
+        if ((part.startsWith('[') && part.endsWith(']')) || (part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+            return part.substring(1, part.length - 1);
+        }
+        return part;
+    }
+
+    function parseQualifiedIdentifier(name) {
+        if (!name) return { schema: null, table: null };
+        const parts = name.split('.');
+        if (parts.length === 2) {
+            return { schema: stripIdentifierPart(parts[0]), table: stripIdentifierPart(parts[1]) };
+        }
+        return { schema: null, table: stripIdentifierPart(name) };
+    }
+
+    const parsed = parseQualifiedIdentifier(rawWord);
+    console.log('[findTableAtPosition] parsed:', parsed);
+    const normalizedTableName = parsed.table;
+    console.log('[findTableAtPosition] normalizedTableName:', normalizedTableName);
+
+    // Find table in schema
+    const table = findTable(normalizedTableName);
+    console.log('[findTableAtPosition] findTable result:', table);
+    if (table) {
+        console.log('[findTableAtPosition] Returning table info');
+        return { schema: table.schema, table: table.table };
+    }
+
+    console.log('[findTableAtPosition] Table not found');
+    return null;
+}
 
 require.config({ 
     paths: { 
@@ -1412,6 +1466,7 @@ require.config({
 });
 
 require(['vs/editor/editor.main'], function () {
+
     // Detect VS Code theme
     function detectTheme() {
         const body = document.body;
@@ -1445,6 +1500,9 @@ require(['vs/editor/editor.main'], function () {
             insertSpaces: true
         });
 
+        // Create context key for table at cursor
+        var tableAtCursorContextKey = editor.createContextKey('tableAtCursor', false);
+
         // Watch for theme changes
         const observer = new MutationObserver(() => {
             const newTheme = detectTheme();
@@ -1474,34 +1532,39 @@ require(['vs/editor/editor.main'], function () {
         }
     });
 
-    // Remember right-click position so context-menu 'Go to definition' can use it
-    let lastContextPosition = null;
-    editor.onMouseDown(function(e) {
-        try {
-            // e.event.rightButton is true for right-clicks
-            // Robust detection: check common event properties for right click
-            var isRight = false;
+        // Remember right-click position so context-menu 'Go to definition' can use it
+        let lastContextPosition = null;
+        editor.onMouseDown(function(e) {
             try {
-                if (e.event) {
-                    // PointerEvent / MouseEvent properties
-                    isRight = !!(e.event.rightButton || e.event.button === 2 || e.event.which === 3);
+                // e.event.rightButton is true for right-clicks
+                // Robust detection: check common event properties for right click
+                var isRight = false;
+                try {
+                    if (e.event) {
+                        // PointerEvent / MouseEvent properties
+                        isRight = !!(e.event.rightButton || e.event.button === 2 || e.event.which === 3);
+                    }
+                } catch (inner) {
+                    isRight = false;
                 }
-            } catch (inner) {
-                isRight = false;
-            }
 
-            if (isRight) {
-                if (e.target && e.target.position) {
-                    lastContextPosition = e.target.position;
-                } else {
-                    lastContextPosition = editor.getPosition();
+                if (isRight) {
+                    if (e.target && e.target.position) {
+                        lastContextPosition = e.target.position;
+                    } else {
+                        lastContextPosition = editor.getPosition();
+                    }
+                    console.log('[editor.onMouseDown] right-click at position', lastContextPosition);
+                    
+                    // Check if there's a table at the cursor position
+                    const tableInfo = findTableAtPosition(editor, lastContextPosition);
+                    tableAtCursorContextKey.set(!!tableInfo);
+                    console.log('[editor.onMouseDown] table at cursor:', !!tableInfo, tableInfo);
                 }
-                console.log('[editor.onMouseDown] right-click at position', lastContextPosition);
+            } catch (err) {
+                console.error('[editor.onMouseDown] error', err);
             }
-        } catch (err) {
-            console.error('[editor.onMouseDown] error', err);
-        }
-    });
+        });
 
     // Add keyboard shortcuts
     editor.addCommand(monaco.KeyCode.F5, () => {
@@ -1824,6 +1887,85 @@ function registerGoToDefinitionAction() {
             }
         }
     });
-}
 
-// Register the action once the editor is ready
+    // Add Script ROW as INSERT action
+    editor.addAction({
+        id: 'mssqlmanager.scriptRowAsInsert',
+        label: 'Script as INSERT',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.1,
+        precondition: 'tableAtCursor',
+        run: function(ed) {
+            try {
+                const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+                const tableInfo = findTableAtPosition(ed, position);
+                if (tableInfo) {
+                    vscode.postMessage({ 
+                        type: 'scriptRowAsInsert', 
+                        schema: tableInfo.schema, 
+                        table: tableInfo.table, 
+                        connectionId: currentConnectionId, 
+                        database: currentDatabaseName 
+                    });
+                }
+            } catch (error) {
+                console.error('[Script Action] Error in Script as INSERT:', error);
+            }
+        }
+    });
+
+    // Add Script ROW as UPDATE action
+    editor.addAction({
+        id: 'mssqlmanager.scriptRowAsUpdate',
+        label: 'Script as UPDATE',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.2,
+        precondition: 'tableAtCursor',
+        run: function(ed) {
+            try {
+                const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+                const tableInfo = findTableAtPosition(ed, position);
+                if (tableInfo) {
+                    vscode.postMessage({ 
+                        type: 'scriptRowAsUpdate', 
+                        schema: tableInfo.schema, 
+                        table: tableInfo.table, 
+                        connectionId: currentConnectionId, 
+                        database: currentDatabaseName 
+                    });
+                }
+            } catch (error) {
+                console.error('[Script Action] Error in Script as UPDATE:', error);
+            }
+        }
+    });
+
+    // Add Script ROW as DELETE action
+    editor.addAction({
+        id: 'mssqlmanager.scriptRowAsDelete',
+        label: 'Script as DELETE',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.3,
+        precondition: 'tableAtCursor',
+        run: function(ed) {
+            try {
+                const position = (typeof lastContextPosition !== 'undefined' && lastContextPosition) ? lastContextPosition : ed.getPosition();
+                const tableInfo = findTableAtPosition(ed, position);
+                if (tableInfo) {
+                    vscode.postMessage({ 
+                        type: 'scriptRowAsDelete', 
+                        schema: tableInfo.schema, 
+                        table: tableInfo.table, 
+                        connectionId: currentConnectionId, 
+                        database: currentDatabaseName 
+                    });
+                }
+            } catch (error) {
+                console.error('[Script Action] Error in Script as DELETE:', error);
+            }
+        }
+    });
+}

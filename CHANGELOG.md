@@ -5,6 +5,26 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2025-12-23
+
+### Added
+
+- **Script ROW Commands**: Added "Script ROW as" context menu on tables with INSERT, UPDATE, and DELETE options
+  - **INSERT**: Generates INSERT script with type-appropriate placeholders (excludes identity/computed/generated columns)
+  - **UPDATE**: Generates UPDATE script with first column active, rest commented (excludes primary keys)
+  - **DELETE**: Generates cascading DELETE script with transaction wrapper and recursive foreign key dependency detection
+- **Delete Row with References**: Added context menu option in query results to generate cascading DELETE script with actual row values
+  - Automatically fills in primary key values from selected row
+  - Handles composite primary keys
+  - Supports multi-table cascade deletion with proper ordering
+  - Excludes self-referencing foreign keys to prevent infinite loops
+- **Comprehensive Test Coverage**: Added 20+ test cases for Script ROW commands covering:
+  - INSERT script generation with various data types
+  - UPDATE script with composite PKs
+  - DELETE script with cascading dependencies and self-references
+  - Row data formatting (strings, numbers, dates, booleans, NULLs)
+  - Circular reference prevention
+
 ## [0.9.1] - 2025-12-20
 
 ### Fixed

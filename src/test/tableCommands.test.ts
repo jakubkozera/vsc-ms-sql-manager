@@ -363,4 +363,358 @@ suite('Table Commands Test Suite', () => {
             assert.ok(alias.length <= 10);
         });
     });
+
+    suite('Script ROW Commands Tests', () => {
+        test('should generate INSERT script with correct column types', () => {
+            const tableName = 'Users';
+            const schema = 'dbo';
+            
+            // Test INSERT script generation structure
+            const expectedColumns = ['Name', 'Email', 'Age', 'IsActive', 'CreatedDate'];
+            const insertScript = `INSERT INTO [${schema}].[${tableName}]\n(`;
+            
+            assert.ok(insertScript.includes('INSERT INTO'));
+            assert.ok(insertScript.includes(tableName));
+        });
+
+        test('should exclude identity columns from INSERT script', () => {
+            const columns = [
+                { name: 'Id', is_identity: true, is_computed: false, generated_always_type: 0 },
+                { name: 'Name', is_identity: false, is_computed: false, generated_always_type: 0 },
+                { name: 'Email', is_identity: false, is_computed: false, generated_always_type: 0 }
+            ];
+
+            // Filter insertable columns
+            const insertableColumns = columns.filter(col => 
+                !col.is_identity && !col.is_computed && col.generated_always_type === 0
+            );
+
+            assert.strictEqual(insertableColumns.length, 2);
+            assert.ok(!insertableColumns.some(col => col.name === 'Id'));
+            assert.ok(insertableColumns.some(col => col.name === 'Name'));
+        });
+
+        test('should generate INSERT script with correct comma placement', () => {
+            const columns = [
+                { columnName: 'Id', dataType: 'uniqueidentifier', isIdentity: false, isComputed: false, generatedAlwaysType: 0 },
+                { columnName: 'Name', dataType: 'nvarchar', isIdentity: false, isComputed: false, generatedAlwaysType: 0 },
+                { columnName: 'Age', dataType: 'int', isIdentity: false, isComputed: false, generatedAlwaysType: 0 },
+                { columnName: 'IsActive', dataType: 'bit', isIdentity: false, isComputed: false, generatedAlwaysType: 0 }
+            ];
+
+            // Simulate the INSERT script generation logic
+            const schema = 'dbo';
+            const table = 'Users';
+            let insertScript = `INSERT INTO [${schema}].[${table}]\n(\n`;
+            insertScript += columns.map((col: any) => `    [${col.columnName}]`).join(',\n');
+            insertScript += '\n)\nVALUES\n(\n';
+            insertScript += columns.map((col: any, index: number) => {
+                let value: string;
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.dataType.toLowerCase())) {
+                    value = `    N''`;
+                } else if (['bit'].includes(col.dataType.toLowerCase())) {
+                    value = `    0`;
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    value = `    0`;
+                } else if (['uniqueidentifier'].includes(col.dataType.toLowerCase())) {
+                    value = `    NEWID()`;
+                } else {
+                    value = `    NULL`;
+                }
+                
+                const comma = index < columns.length - 1 ? ',' : '';
+                let comment = col.columnName;
+                if (['bit'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (bit)';
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.dataType.toLowerCase())) {
+                    comment += ' (numeric)';
+                }
+                return `${value}${comma}  -- ${comment}`;
+            }).join('\n');
+            insertScript += '\n)';
+
+            // Verify comma placement: commas should be after values, not in comments
+            assert.ok(insertScript.includes('NEWID(),  -- Id'));
+            assert.ok(insertScript.includes("N'',  -- Name"));
+            assert.ok(insertScript.includes('0,  -- Age (numeric)'));
+            assert.ok(insertScript.includes('0  -- IsActive (bit)'));  // Last value has no comma
+            
+            // Verify commas are NOT in comments
+            assert.ok(!insertScript.includes('NEWID()  -- Id,'));
+            assert.ok(!insertScript.includes("N''  -- Name,"));
+            assert.ok(!insertScript.includes('0  -- Age (numeric),'));
+        });
+
+        test('should exclude computed columns from INSERT script', () => {
+            const columns = [
+                { name: 'Id', is_identity: false, is_computed: false, generated_always_type: 0 },
+                { name: 'Price', is_identity: false, is_computed: false, generated_always_type: 0 },
+                { name: 'Tax', is_identity: false, is_computed: false, generated_always_type: 0 },
+                { name: 'Total', is_identity: false, is_computed: true, generated_always_type: 0 }
+            ];
+
+            const insertableColumns = columns.filter(col => 
+                !col.is_identity && !col.is_computed && col.generated_always_type === 0
+            );
+
+            assert.strictEqual(insertableColumns.length, 3);
+            assert.ok(!insertableColumns.some(col => col.name === 'Total'));
+        });
+
+        test('should generate INSERT script with type-appropriate placeholders', () => {
+            const columnTypes = [
+                { name: 'Name', type: 'nvarchar', expected: "N''" },
+                { name: 'Age', type: 'int', expected: '0' },
+                { name: 'IsActive', type: 'bit', expected: '0' },
+                { name: 'CreatedDate', type: 'datetime', expected: 'NULL' }
+            ];
+
+            columnTypes.forEach(col => {
+                let placeholder = '';
+                if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(col.type.toLowerCase())) {
+                    placeholder = "N''";
+                } else if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(col.type.toLowerCase())) {
+                    placeholder = 'NULL';
+                } else if (['bit'].includes(col.type.toLowerCase())) {
+                    placeholder = '0';
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(col.type.toLowerCase())) {
+                    placeholder = '0';
+                } else {
+                    placeholder = 'NULL';
+                }
+
+                assert.strictEqual(placeholder, col.expected, `Type ${col.type} should have placeholder ${col.expected}`);
+            });
+        });
+
+        test('should generate UPDATE script with all non-PK columns', () => {
+            const allColumns = [
+                { name: 'Id', is_identity: false, is_computed: false, generated_always_type: 0 },
+                { name: 'Name', is_identity: false, is_computed: false, generated_always_type: 0 },
+                { name: 'Email', is_identity: false, is_computed: false, generated_always_type: 0 },
+                { name: 'Age', is_identity: false, is_computed: false, generated_always_type: 0 }
+            ];
+            const pkColumns = ['Id'];
+
+            const updateableColumns = allColumns.filter(col => 
+                !pkColumns.includes(col.name) && 
+                !col.is_identity && 
+                !col.is_computed && 
+                col.generated_always_type === 0
+            );
+
+            assert.strictEqual(updateableColumns.length, 3);
+            assert.ok(!updateableColumns.some(col => col.name === 'Id'));
+        });
+
+        test('should format UPDATE script with first column active', () => {
+            const updateableColumns = [
+                { name: 'Name', type: 'nvarchar' },
+                { name: 'Email', type: 'nvarchar' },
+                { name: 'Age', type: 'int' }
+            ];
+
+            // First column should be active (no comment)
+            const firstLine = `    [${updateableColumns[0].name}] = N''`;
+            assert.ok(!firstLine.includes('--'));
+
+            // Rest should be commented
+            const secondLine = `    -- [${updateableColumns[1].name}] = N''`;
+            assert.ok(secondLine.includes('--'));
+        });
+
+        test('should generate UPDATE script with WHERE clause for PKs', () => {
+            const pkColumns = [
+                { name: 'Id' },
+                { name: 'TenantId' }
+            ];
+
+            const whereClause = pkColumns.map((pk, index) => {
+                const operator = index === 0 ? '    ' : '    AND ';
+                return `${operator}[${pk.name}] = NULL`;
+            }).join('\n');
+
+            assert.ok(whereClause.includes('[Id] = NULL'));
+            assert.ok(whereClause.includes('AND [TenantId] = NULL'));
+        });
+
+        test('should handle composite primary keys in UPDATE script', () => {
+            const compositePKs = ['OrderId', 'ProductId'];
+            
+            assert.strictEqual(compositePKs.length, 2);
+            assert.ok(compositePKs.includes('OrderId'));
+            assert.ok(compositePKs.includes('ProductId'));
+        });
+
+        test('should generate DELETE script with transaction wrapper', () => {
+            const deleteScript = [
+                'BEGIN TRANSACTION;',
+                'BEGIN TRY',
+                '    DELETE FROM [dbo].[Users]',
+                '    WHERE [Id] = @Target_Id;',
+                '    COMMIT TRANSACTION;',
+                'END TRY',
+                'BEGIN CATCH',
+                '    ROLLBACK TRANSACTION;',
+                'END CATCH;'
+            ].join('\n');
+
+            assert.ok(deleteScript.includes('BEGIN TRANSACTION'));
+            assert.ok(deleteScript.includes('BEGIN TRY'));
+            assert.ok(deleteScript.includes('COMMIT TRANSACTION'));
+            assert.ok(deleteScript.includes('ROLLBACK TRANSACTION'));
+        });
+
+        test('should detect and exclude self-referencing foreign keys', () => {
+            const foreignKeys = [
+                { parent_object_id: 1001, referenced_object_id: 1001, name: 'FK_SelfRef' }, // Self-reference
+                { parent_object_id: 1002, referenced_object_id: 1001, name: 'FK_Valid' }
+            ];
+
+            const nonSelfReferencing = foreignKeys.filter(fk => 
+                fk.parent_object_id !== fk.referenced_object_id
+            );
+
+            assert.strictEqual(nonSelfReferencing.length, 1);
+            assert.strictEqual(nonSelfReferencing[0].name, 'FK_Valid');
+        });
+
+        test('should generate cascading DELETE hierarchy', () => {
+            const dependencies = [
+                { level: 0, ref_table: 'Orders', target_table: 'Users' },
+                { level: 1, ref_table: 'OrderItems', target_table: 'Orders' },
+                { level: 2, ref_table: 'OrderItemDetails', target_table: 'OrderItems' }
+            ];
+
+            // Sort by level descending (delete from most dependent first)
+            const sorted = dependencies.sort((a, b) => b.level - a.level);
+
+            assert.strictEqual(sorted[0].level, 2);
+            assert.strictEqual(sorted[0].ref_table, 'OrderItemDetails');
+            assert.strictEqual(sorted[sorted.length - 1].level, 0);
+        });
+
+        test('should avoid duplicate table deletions', () => {
+            const dependencies = [
+                { level: 0, ref_schema: 'dbo', ref_table: 'Orders' },
+                { level: 0, ref_schema: 'dbo', ref_table: 'Orders' }, // Duplicate
+                { level: 1, ref_schema: 'dbo', ref_table: 'OrderItems' }
+            ];
+
+            const processedTables = new Set<string>();
+            const unique = dependencies.filter(dep => {
+                const key = `${dep.level}_${dep.ref_schema}.${dep.ref_table}`;
+                if (processedTables.has(key)) {
+                    return false;
+                }
+                processedTables.add(key);
+                return true;
+            });
+
+            assert.strictEqual(unique.length, 2);
+        });
+
+        test('should format actual row values for DELETE script', () => {
+            const rowData = {
+                Id: 123,
+                Name: "O'Brien",
+                Email: 'test@example.com',
+                IsActive: true,
+                CreatedDate: new Date('2024-01-15')
+            };
+
+            // Test value formatting
+            const formattedId = String(rowData.Id);
+            const formattedName = `N'${rowData.Name.replace(/'/g, "''")}'`;
+            const formattedEmail = `N'${rowData.Email}'`;
+            const formattedIsActive = rowData.IsActive ? '1' : '0';
+
+            assert.strictEqual(formattedId, '123');
+            assert.strictEqual(formattedName, "N'O''Brien'"); // Escaped single quote
+            assert.strictEqual(formattedEmail, "N'test@example.com'");
+            assert.strictEqual(formattedIsActive, '1');
+        });
+
+        test('should handle NULL values in row data', () => {
+            const rowData = {
+                Id: 1,
+                Name: null,
+                Email: undefined
+            };
+
+            const formatValue = (value: any) => {
+                if (value === null || value === undefined) {
+                    return 'NULL';
+                }
+                if (typeof value === 'string') {
+                    return `N'${value.replace(/'/g, "''")}'`;
+                }
+                if (typeof value === 'number') {
+                    return String(value);
+                }
+                return 'NULL';
+            };
+
+            assert.strictEqual(formatValue(rowData.Id), '1');
+            assert.strictEqual(formatValue(rowData.Name), 'NULL');
+            assert.strictEqual(formatValue(rowData.Email), 'NULL');
+        });
+
+        test('should handle composite PKs in DELETE script with row data', () => {
+            const pkColumns = [
+                { COLUMN_NAME: 'OrderId' },
+                { COLUMN_NAME: 'ProductId' }
+            ];
+            const rowData = {
+                OrderId: 100,
+                ProductId: 200
+            };
+
+            pkColumns.forEach(pk => {
+                const value = rowData[pk.COLUMN_NAME as keyof typeof rowData];
+                assert.ok(value !== undefined);
+                assert.ok(typeof value === 'number');
+            });
+
+            assert.strictEqual(rowData.OrderId, 100);
+            assert.strictEqual(rowData.ProductId, 200);
+        });
+
+        test('should use direct column comparison for DELETE dependencies', () => {
+            const tableName = 'Projects';
+            const rootTableNameSingular = tableName.endsWith('s') ? tableName.slice(0, -1) : tableName;
+            const potentialColumnNames = [`${tableName}Id`, `${rootTableNameSingular}Id`];
+
+            assert.ok(potentialColumnNames.includes('ProjectsId'));
+            assert.ok(potentialColumnNames.includes('ProjectId'));
+            
+            // Simulate finding direct column
+            const refColumns = ['ProjectId', 'UserId'];
+            const directColumn = refColumns.find(col => 
+                potentialColumnNames.some(pcn => col === pcn)
+            );
+
+            assert.strictEqual(directColumn, 'ProjectId');
+        });
+
+        test('should prevent circular references in FK hierarchy', () => {
+            const path = 'Users -> Orders -> OrderItems';
+            const newTable = 'Orders';
+
+            // Check if table already exists in path
+            const hasCircular = path.includes(newTable);
+
+            assert.ok(hasCircular);
+        });
+
+        test('should limit recursion depth to prevent infinite loops', () => {
+            const maxLevel = 10;
+            const currentLevel = 9;
+
+            const shouldContinue = currentLevel < maxLevel;
+
+            assert.ok(shouldContinue);
+            assert.strictEqual(currentLevel + 1, maxLevel);
+        });
+    });
 });

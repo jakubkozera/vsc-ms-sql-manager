@@ -198,15 +198,12 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                     const hasGo = goRegex.test(sqlText);
                                     goRegex.lastIndex = 0; // Reset regex state after test
                                     
-                                    console.log(`[msnodesqlv8] GO detected: ${hasGo}`);
-                                    
                                     const batches = sqlText.split(goRegex)
                                         .map(batch => batch.trim())
                                         .filter(batch => batch.length > 0);
                                     
                                     // If split resulted in only 1 batch, it means no GO was found
                                     if (batches.length <= 1) {
-                                        console.log(`[msnodesqlv8] No GO statements found, executing single query`);
                                         
                                         // Set timeout based on configuration (0 means no timeout)
                                         const timeoutMs = cfg.queryTimeout > 0 ? cfg.queryTimeout * 1000 : 0;
@@ -465,10 +462,7 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                     const hasGo = goRegex.test(sqlText);
                     goRegex.lastIndex = 0; // Reset regex state after test
                     
-                    console.log(`[mssql] GO detected: ${hasGo}`);
-                    
                     if (!hasGo) {
-                        console.log('[mssql] No GO statements found, executing single query');
                         return request.query(sqlText);
                     }
                     

@@ -291,7 +291,8 @@ These instructions will be included in the context of every @sql chat query for 
 
         const selected = await vscode.window.showQuickPick(items, {
             placeHolder: 'Select or create instructions for this database',
-            title: 'Add Database Instructions'
+            title: 'Add Database Instructions',
+            ignoreFocusOut: true
         });
 
         if (!selected) {
@@ -305,6 +306,8 @@ These instructions will be included in the context of every @sql chat query for 
             const name = await vscode.window.showInputBox({
                 prompt: 'Enter a name for the new instruction',
                 placeHolder: 'e.g., production-db-rules',
+                title: 'New Database Instructions',
+                ignoreFocusOut: true,
                 validateInput: (value) => {
                     if (!value || value.trim().length === 0) {
                         return 'Name cannot be empty';

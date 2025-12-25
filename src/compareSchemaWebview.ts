@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ConnectionProvider } from './connectionProvider';
+import { SchemaCache } from './utils/schemaCache';
 
 export interface SchemaChange {
     objectType: 'table' | 'column' | 'view' | 'procedure' | 'function' | 'trigger' | 'index' | 'constraint' | 'user';
@@ -18,6 +19,7 @@ export class CompareSchemaWebview {
     private targetDatabase: string;
     private definitionsCache: Map<string, string> = new Map();
     private lastKnownConnections: Set<string> = new Set();
+    private schemaCache: SchemaCache;
 
     constructor(
         private connectionProvider: ConnectionProvider,
@@ -28,6 +30,7 @@ export class CompareSchemaWebview {
         this.sourceDatabase = '';
         this.targetConnectionId = '';
         this.targetDatabase = '';
+        this.schemaCache = SchemaCache.getInstance();
     }
 
     async show(connectionId?: string, database?: string) {
@@ -239,38 +242,70 @@ export class CompareSchemaWebview {
     }
 
     private async compareSchemas(sourceConnectionId: string, sourceDatabase: string | null, targetConnectionId: string, targetDatabase: string | null) {
-        // Store connection info for later use
-        this.sourceConnectionId = sourceConnectionId;
-        this.targetConnectionId = targetConnectionId;
-        
-        // For direct database connections, get database name from connection config
-        const sourceConfig = this.connectionProvider.getConnectionConfig(sourceConnectionId);
-        const targetConfig = this.connectionProvider.getConnectionConfig(targetConnectionId);
-        
-        if (sourceConfig?.connectionType === 'database') {
-            this.sourceDatabase = sourceConfig.database;
-        } else {
-            this.sourceDatabase = sourceDatabase || '';
-        }
-        
-        if (targetConfig?.connectionType === 'database') {
-            this.targetDatabase = targetConfig.database;
-        } else {
-            this.targetDatabase = targetDatabase || '';
-        }
-        
-        // Clear cache for new comparison
-        this.definitionsCache.clear();
-        
-        this.outputChannel.appendLine(`[CompareSchema] Comparing ${this.sourceDatabase || 'database'} (${sourceConnectionId}) with ${this.targetDatabase || 'database'} (${targetConnectionId})`);
-        
-        this.panel?.webview.postMessage({
-            command: 'comparisonStarted',
-            sourceDatabase: this.sourceDatabase,
-            targetDatabase: this.targetDatabase
-        });
-
         try {
+            // Store connection info for later use
+            this.sourceConnectionId = sourceConnectionId;
+            this.targetConnectionId = targetConnectionId;
+            
+            // For direct database connections, get database name from connection config
+            const sourceConfig = this.connectionProvider.getConnectionConfig(sourceConnectionId);
+            const targetConfig = this.connectionProvider.getConnectionConfig(targetConnectionId);
+            
+            if (sourceConfig?.connectionType === 'database') {
+                this.sourceDatabase = sourceConfig.database;
+            } else {
+                this.sourceDatabase = sourceDatabase || '';
+            }
+            
+            if (targetConfig?.connectionType === 'database') {
+                this.targetDatabase = targetConfig.database;
+            } else {
+                this.targetDatabase = targetDatabase || '';
+            }
+            
+            // Clear cache for new comparison
+            this.definitionsCache.clear();
+            
+            this.outputChannel.appendLine(`[CompareSchema] Comparing ${this.sourceDatabase || 'database'} (${sourceConnectionId}) with ${this.targetDatabase || 'database'} (${targetConnectionId})`);
+            
+            this.panel?.webview.postMessage({
+                command: 'comparisonStarted',
+                sourceDatabase: this.sourceDatabase,
+                targetDatabase: this.targetDatabase
+            });
+
+            // Preload schema cache for source database
+            this.outputChannel.appendLine(`[CompareSchema] Preloading schema cache for source...`);
+            this.panel?.webview.postMessage({
+                command: 'cacheLoadingStatus',
+                stage: 'source',
+                status: 'loading'
+            });
+            
+            await this.preloadSchemaCache(sourceConnectionId, this.sourceDatabase);
+            
+            this.panel?.webview.postMessage({
+                command: 'cacheLoadingStatus',
+                stage: 'source',
+                status: 'complete'
+            });
+
+            // Preload schema cache for target database
+            this.outputChannel.appendLine(`[CompareSchema] Preloading schema cache for target...`);
+            this.panel?.webview.postMessage({
+                command: 'cacheLoadingStatus',
+                stage: 'target',
+                status: 'loading'
+            });
+            
+            await this.preloadSchemaCache(targetConnectionId, this.targetDatabase);
+            
+            this.panel?.webview.postMessage({
+                command: 'cacheLoadingStatus',
+                stage: 'target',
+                status: 'complete'
+            });
+
             const changes = await this.detectSchemaChanges();
             
             this.outputChannel.appendLine(`[CompareSchema] Comparison complete: ${changes.length} changes found`);
@@ -340,111 +375,115 @@ export class CompareSchemaWebview {
         return changes;
     }
 
+    private async preloadSchemaCache(connectionId: string, database: string) {
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        if (!config) {
+            throw new Error(`Connection ${connectionId} not found`);
+        }
+
+        const dbPool = await this.connectionProvider.createDbPool(connectionId, database);
+        const connectionInfo = {
+            server: config.server,
+            database: database
+        };
+
+        // Trigger cache load - this will fetch and cache all schema data
+        await this.schemaCache.getSchema(connectionInfo, dbPool);
+        this.outputChannel.appendLine(`[CompareSchema] Schema cache preloaded for ${database}`)
+
+;
+    }
+
     private async getSchemaInfo(connectionId: string, database: string) {
-        // Use ensureConnectionAndGetDbPool to reuse existing connections
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        if (!config) {
+            throw new Error(`Connection ${connectionId} not found`);
+        }
+
         const dbPool = await this.connectionProvider.ensureConnectionAndGetDbPool(connectionId, database);
+        const connectionInfo = {
+            server: config.server,
+            database: database
+        };
 
         try {
-            this.outputChannel.appendLine(`[CompareSchema] Getting schema info for ${database}`);
+            this.outputChannel.appendLine(`[CompareSchema] Getting schema info from cache for ${database}`);
             
-            // Get tables
-            this.outputChannel.appendLine(`[CompareSchema] Fetching tables...`);
-            const tablesQuery = `
-                SELECT 
-                    TABLE_SCHEMA as [schema],
-                    TABLE_NAME as name
-                FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_TYPE = 'BASE TABLE'
-                ORDER BY TABLE_SCHEMA, TABLE_NAME
-            `;
-            const tablesResult = await dbPool.request().query(tablesQuery);
-            this.outputChannel.appendLine(`[CompareSchema] Found ${tablesResult.recordset.length} tables`);
+            // Get tables from cache
+            this.outputChannel.appendLine(`[CompareSchema] Fetching tables from cache...`);
+            const cachedTables = await this.schemaCache.getTables(connectionInfo, dbPool);
+            const tablesResult = { recordset: cachedTables.map(t => ({ schema: t.schema, name: t.name })) };
+            this.outputChannel.appendLine(`[CompareSchema] Found ${tablesResult.recordset.length} tables in cache`);
 
-            // Get columns
-            this.outputChannel.appendLine(`[CompareSchema] Fetching columns...`);
-            const columnsQuery = `
-                SELECT 
-                    TABLE_SCHEMA as [schema],
-                    TABLE_NAME as tableName,
-                    COLUMN_NAME as columnName,
-                    DATA_TYPE as dataType,
-                    IS_NULLABLE as isNullable,
-                    CHARACTER_MAXIMUM_LENGTH as maxLength,
-                    COLUMN_DEFAULT as defaultValue
-                FROM INFORMATION_SCHEMA.COLUMNS
-                ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
-            `;
-            const columnsResult = await dbPool.request().query(columnsQuery);
-            this.outputChannel.appendLine(`[CompareSchema] Found ${columnsResult.recordset.length} columns`);
+            // Get columns from cache
+            this.outputChannel.appendLine(`[CompareSchema] Fetching columns from cache...`);
+            const allColumns: any[] = [];
+            for (const table of cachedTables) {
+                const columns = await this.schemaCache.getTableColumns(connectionInfo, dbPool, table.schema, table.name);
+                allColumns.push(...columns.map(col => ({
+                    schema: table.schema,
+                    tableName: table.name,
+                    columnName: col.columnName,
+                    dataType: col.dataType,
+                    isNullable: col.isNullable ? 'YES' : 'NO',
+                    maxLength: col.maxLength,
+                    defaultValue: col.defaultValue
+                })));
+            }
+            const columnsResult = { recordset: allColumns };
+            this.outputChannel.appendLine(`[CompareSchema] Found ${columnsResult.recordset.length} columns in cache`);
 
-            // Get views
-            this.outputChannel.appendLine(`[CompareSchema] Fetching views...`);
-            const viewsQuery = `
-                SELECT 
-                    TABLE_SCHEMA as [schema],
-                    TABLE_NAME as name
-                FROM INFORMATION_SCHEMA.VIEWS
-                ORDER BY TABLE_SCHEMA, TABLE_NAME
-            `;
-            const viewsResult = await dbPool.request().query(viewsQuery);
-            this.outputChannel.appendLine(`[CompareSchema] Found ${viewsResult.recordset.length} views`);
+            // Get views from cache
+            this.outputChannel.appendLine(`[CompareSchema] Fetching views from cache...`);
+            const cachedViews = await this.schemaCache.getViews(connectionInfo, dbPool);
+            const viewsResult = { recordset: cachedViews.map(v => ({ schema: v.schema, name: v.name })) };
+            this.outputChannel.appendLine(`[CompareSchema] Found ${viewsResult.recordset.length} views in cache`);
 
-            // Get stored procedures
-            this.outputChannel.appendLine(`[CompareSchema] Fetching procedures...`);
-            const proceduresQuery = `
-                SELECT 
-                    ROUTINE_SCHEMA as [schema],
-                    ROUTINE_NAME as name
-                FROM INFORMATION_SCHEMA.ROUTINES
-                WHERE ROUTINE_TYPE = 'PROCEDURE'
-                ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
-            `;
-            const proceduresResult = await dbPool.request().query(proceduresQuery);
-            this.outputChannel.appendLine(`[CompareSchema] Found ${proceduresResult.recordset.length} procedures`);
+            // Get stored procedures from cache
+            this.outputChannel.appendLine(`[CompareSchema] Fetching procedures from cache...`);
+            const cachedProcs = await this.schemaCache.getProcedures(connectionInfo, dbPool);
+            const proceduresResult = { recordset: cachedProcs.map(p => ({ schema: p.schema, name: p.name })) };
+            this.outputChannel.appendLine(`[CompareSchema] Found ${proceduresResult.recordset.length} procedures in cache`);
 
-            // Get functions
-            this.outputChannel.appendLine(`[CompareSchema] Fetching functions...`);
-            const functionsQuery = `
-                SELECT 
-                    ROUTINE_SCHEMA as [schema],
-                    ROUTINE_NAME as name
-                FROM INFORMATION_SCHEMA.ROUTINES
-                WHERE ROUTINE_TYPE = 'FUNCTION'
-                ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME
-            `;
-            const functionsResult = await dbPool.request().query(functionsQuery);
-            this.outputChannel.appendLine(`[CompareSchema] Found ${functionsResult.recordset.length} functions`);
+            // Get functions from cache
+            this.outputChannel.appendLine(`[CompareSchema] Fetching functions from cache...`);
+            const cachedFuncs = await this.schemaCache.getFunctions(connectionInfo, dbPool);
+            const functionsResult = { recordset: cachedFuncs.map(f => ({ schema: f.schema, name: f.name })) };
+            this.outputChannel.appendLine(`[CompareSchema] Found ${functionsResult.recordset.length} functions in cache`);
 
-            // Get indexes
-            this.outputChannel.appendLine(`[CompareSchema] Fetching indexes...`);
-            const indexesQuery = `
-                SELECT 
-                    SCHEMA_NAME(t.schema_id) as [schema],
-                    t.name as tableName,
-                    i.name as indexName,
-                    i.type_desc as indexType,
-                    i.is_unique as isUnique
-                FROM sys.indexes i
-                INNER JOIN sys.tables t ON i.object_id = t.object_id
-                WHERE i.type > 0
-                ORDER BY t.name, i.name
-            `;
-            const indexesResult = await dbPool.request().query(indexesQuery);
-            this.outputChannel.appendLine(`[CompareSchema] Found ${indexesResult.recordset.length} indexes`);
+            // Get indexes from cache (SchemaCache has indexes stored per table)
+            this.outputChannel.appendLine(`[CompareSchema] Fetching indexes from cache...`);
+            const allIndexes: any[] = [];
+            for (const table of cachedTables) {
+                // SchemaCache stores indexes with tables
+                const schema = await this.schemaCache.getSchema(connectionInfo, dbPool);
+                const tableKey = `${table.schema}.${table.name}`.toLowerCase();
+                const indexes = schema.indexes.get(tableKey) || [];
+                allIndexes.push(...indexes.map((idx: any) => ({
+                    schema: table.schema,
+                    tableName: table.name,
+                    indexName: idx.indexName,
+                    indexType: idx.indexType,
+                    isUnique: idx.isUnique
+                })));
+            }
+            const indexesResult = { recordset: allIndexes };
+            this.outputChannel.appendLine(`[CompareSchema] Found ${indexesResult.recordset.length} indexes in cache`);
 
-            // Get constraints
-            this.outputChannel.appendLine(`[CompareSchema] Fetching constraints...`);
-            const constraintsQuery = `
-                SELECT 
-                    tc.TABLE_SCHEMA as [schema],
-                    tc.TABLE_NAME as tableName,
-                    tc.CONSTRAINT_NAME as constraintName,
-                    tc.CONSTRAINT_TYPE as constraintType
-                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                ORDER BY tc.TABLE_SCHEMA, tc.TABLE_NAME, tc.CONSTRAINT_NAME
-            `;
-            const constraintsResult = await dbPool.request().query(constraintsQuery);
-            this.outputChannel.appendLine(`[CompareSchema] Found ${constraintsResult.recordset.length} constraints`);
+            // Get constraints from cache
+            this.outputChannel.appendLine(`[CompareSchema] Fetching constraints from cache...`);
+            const allConstraints: any[] = [];
+            for (const table of cachedTables) {
+                const constraints = await this.schemaCache.getTableConstraints(connectionInfo, dbPool, table.schema, table.name);
+                allConstraints.push(...constraints.map((con: any) => ({
+                    schema: table.schema,
+                    tableName: table.name,
+                    constraintName: con.constraintName,
+                    constraintType: con.constraintType
+                })));
+            }
+            const constraintsResult = { recordset: allConstraints };
+            this.outputChannel.appendLine(`[CompareSchema] Found ${constraintsResult.recordset.length} constraints in cache`);
 
             // Get triggers
             this.outputChannel.appendLine(`[CompareSchema] Fetching triggers...`);

@@ -23,9 +23,7 @@ export class QueryHistoryManager {
     readonly onDidChangeHistory: vscode.Event<void> = this._onDidChangeHistory.event;
 
     constructor(private context: vscode.ExtensionContext) {
-        console.log('[QueryHistory] Initializing QueryHistoryManager');
         this.loadHistory();
-        console.log(`[QueryHistory] Loaded ${this.history.length} entries from storage`);
     }
 
     addEntry(entry: Omit<QueryHistoryEntry, 'id' | 'executedAt'>): void {
@@ -36,8 +34,6 @@ export class QueryHistoryManager {
             pinned: entry.pinned === true // preserve if provided, otherwise default false
         };
 
-        console.log(`[QueryHistory] Adding entry: ${historyEntry.id}, query: ${entry.query.substring(0, 50)}...`);
-
         // Add to beginning of array (most recent first)
         this.history.unshift(historyEntry);
 
@@ -47,9 +43,7 @@ export class QueryHistoryManager {
         }
 
         this.saveHistory();
-        console.log(`[QueryHistory] Entry saved, total entries: ${this.history.length}`);
         this._onDidChangeHistory.fire();
-        console.log('[QueryHistory] Change event fired');
     }
 
     getHistory(): QueryHistoryEntry[] {
@@ -123,7 +117,6 @@ export class QueryHistoryManager {
                 ...entry,
                 executedAt: new Date(entry.executedAt)
             }));
-            console.log('[QueryHistory] History loaded successfully');
         } catch (error) {
             console.error('[QueryHistory] Failed to load query history:', error);
             this.history = [];
@@ -132,9 +125,7 @@ export class QueryHistoryManager {
 
     private saveHistory(): void {
         try {
-            console.log(`[QueryHistory] Saving ${this.history.length} entries to storage`);
             this.context.globalState.update('mssqlManager.queryHistory', this.history);
-            console.log('[QueryHistory] History saved successfully');
         } catch (error) {
             console.error('[QueryHistory] Failed to save query history:', error);
         }

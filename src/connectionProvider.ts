@@ -22,6 +22,7 @@ export interface CustomIcon {
 }
 
 export interface TableFilter {
+    [key: string]: boolean | { operator: string; value: string } | undefined;
     name?: { operator: string; value: string };
     schema?: { operator: string; value: string };
     owner?: { operator: string; value: string };
@@ -360,7 +361,7 @@ export class ConnectionProvider {
         }
     }
 
-    private async connectToSaved(config: ConnectionConfig): Promise<void> {
+    private async connectToSaved(config: ConnectionConfig, autoConnect: boolean = false): Promise<void> {
         // Clear any previous failure status
         this.failedConnections.delete(config.id);
         
@@ -374,6 +375,18 @@ export class ConnectionProvider {
             
             // Re-prompt for password if SQL auth and not found in secure storage
             if (completeConfig.authType === 'sql' && !completeConfig.password) {
+                if (autoConnect) {
+                    // During auto-connect, don't prompt for password to avoid UI issues
+                    // Show a message instead
+                    vscode.window.showInformationMessage(
+                        `Password required for ${completeConfig.name}. Please use the "Connect" command from the context menu to enter credentials.`
+                    );
+                    this.failedConnections.add(config.id); // Mark as failed to prevent infinite retry
+                    this.pendingConnections.delete(config.id);
+                    this.notifyConnectionChanged();
+                    return;
+                }
+                
                 // Check if this is a Docker connection
                 const isDockerConnection = completeConfig.id.startsWith('docker-');
                 const promptMessage = isDockerConnection
@@ -1361,7 +1374,7 @@ export class ConnectionProvider {
         this.outputChannel.appendLine('[ConnectionProvider] Docker discovery flag reset');
     }
 
-    async connectToSavedById(connectionId: string): Promise<void> {
+    async connectToSavedById(connectionId: string, autoConnect: boolean = false): Promise<void> {
         // Check if already connected or connecting
         if (this.isConnectionActive(connectionId)) {
             this.outputChannel.appendLine(`[ConnectionProvider] Already connected to ${connectionId}, skipping`);
@@ -1385,7 +1398,7 @@ export class ConnectionProvider {
             throw new Error('Connection not found');
         }
         
-        await this.connectToSaved(connection);
+        await this.connectToSaved(connection, autoConnect);
     }
 
     async moveConnectionToGroup(connectionId: string, targetServerGroupId: string | undefined): Promise<void> {

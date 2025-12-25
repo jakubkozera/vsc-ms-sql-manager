@@ -15,9 +15,6 @@ window.originalQuery = ''; // Original SELECT query for UPDATE generation
 window.pendingChanges = new Map(); // Map<resultSetIndex, Array<ChangeRecord>>
 let currentEditingCell = null; // Currently editing cell reference
 function initAgGridTable(rowData, container, isSingleResultSet = false, resultSetIndex = 0, metadata = null, providedColumns = null) {
-    console.log('[AG-GRID] initAgGridTable called with', rowData.length, 'rows, single result set:', isSingleResultSet);
-    console.log('[AG-GRID] Container element:', container, 'offsetHeight:', container.offsetHeight, 'scrollHeight:', container.scrollHeight);
-    console.log('[AG-GRID] Metadata:', metadata);
     
     // Create PK/FK lookup maps from metadata columns
     // This works for all result sets, regardless of single or multiple tables
@@ -40,8 +37,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                 });
             }
         });
-        console.log('[AG-GRID] PK columns:', Array.from(pkColumnSet));
-        console.log('[AG-GRID] FK columns:', Array.from(fkColumnMap.keys()));
     }
     
     // Virtual scrolling configuration
@@ -91,8 +86,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             }
         }
         
-        console.log(`[COLUMN-WIDTH] Column "${columnName}": header=${headerWidth.toFixed(1)}px, content=${maxContentWidth.toFixed(1)}px ("${longestContent.substring(0, 20)}...")`);
-        
         // Calculate optimal width (max of header and content, plus padding)
         const padding = 32; // 16px padding on each side + some extra space for icons and borders
         const iconSpace = 80; // Space for sort, filter, and pin icons
@@ -104,7 +97,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const paddingWidth = 36; 
         
         const finalWidth = Math.min(Math.max(optimalWidth, minWidth), maxWidth) + paddingWidth;
-        console.log(`[COLUMN-WIDTH] Column "${columnName}" final width: ${finalWidth.toFixed(0)}px`);
         
         return Math.round(finalWidth);
     }
@@ -118,7 +110,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     } else {
         columns = [];
     }
-    console.log('[AG-GRID] Detected columns:', columns);
     
     const columnDefs = columns.map((col, colIndex) => {
         let sampleValue = null;
@@ -172,8 +163,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         };
     });
 
-    console.log('[AG-GRID] Column definitions created:', columnDefs.map(c => ({ name: c.headerName, type: c.type, width: c.width })));
-
     let filteredData = [...rowData];
     let activeFilters = {};
     let currentFilterPopup = null;
@@ -195,13 +184,11 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         </div>
     `;
     
-    console.log('[AG-GRID] Setting container innerHTML');
     container.innerHTML = tableHtml;
     
     const viewport = container.querySelector('.ag-grid-viewport');
     const table = container.querySelector('.ag-grid-table');
     const tbody = container.querySelector('.ag-grid-tbody');
-    console.log('[AG-GRID] Table element:', table, 'border-collapse:', table?.style.borderCollapse);
 
     renderAgGridHeaders(columnDefs, sortConfig, activeFilters, container, filteredData);
     
@@ -209,7 +196,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     const totalTableWidth = columnDefs.reduce((sum, col) => sum + col.width, 0) + 50; // +50 for row number column
     table.style.width = `${totalTableWidth}px`;
     table.style.minWidth = `${totalTableWidth}px`;
-    console.log('[AG-GRID] Table width set to:', totalTableWidth, 'px');
     
     renderAgGridRows(columnDefs, filteredData, container, 0, ROW_HEIGHT, RENDER_CHUNK_SIZE);
     
@@ -228,10 +214,7 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         }, 10);
     });
     
-    console.log('[AG-GRID] Virtual scrolling initialized with', filteredData.length, 'total rows, rendering', RENDER_CHUNK_SIZE, 'at a time');
-
     function renderAgGridHeaders(colDefs, sortCfg, filters, containerEl, data) {
-        console.log('[AG-GRID] renderAgGridHeaders called with', colDefs.length, 'columns');
         const thead = containerEl.querySelector('.ag-grid-thead');
         if (!thead) {
             console.error('[AG-GRID] thead element not found!');
@@ -279,14 +262,12 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             showExportMenu(e.target.closest('th'), colDefs, data, containerEl, sortCfg, filters);
         });
         
-        console.log('[AG-GRID] Row number header created with class:', rowNumTh.className);
         tr.appendChild(rowNumTh);
         
         const totalWidth = colDefs.reduce((sum, col) => sum + col.width, 0) + 50;
         const table = containerEl.querySelector('.ag-grid-table');
         table.style.width = totalWidth + 'px';
         table.style.minWidth = totalWidth + 'px';
-        console.log('[AG-GRID] Table total width set to:', totalWidth);
 
         colDefs.forEach((col, index) => {
             const th = document.createElement('th');
@@ -307,13 +288,11 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             th.style.textOverflow = 'ellipsis';
             
             // Don't set position, top, or z-index inline - let CSS classes handle it
-            console.log(`[AG-GRID] Header for column "${col.headerName}" - pinned: ${col.pinned}`);
             
             if (col.pinned) {
                 const leftOffset = calculatePinnedOffset(colDefs, index);
                 th.style.left = leftOffset + 'px';
                 th.classList.add('ag-grid-pinned-header');
-                console.log(`[AG-GRID] Pinned column "${col.headerName}" left offset:`, leftOffset);
             }
             
             th.dataset.field = col.field;
@@ -774,7 +753,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
     }
 
     function renderAgGridRows(colDefs, data, containerEl, startRow = 0, rowHeight = 30, chunkSize = 50) {
-        console.log('[AG-GRID] renderAgGridRows called - total:', data.length, 'rows, rendering from:', startRow, 'chunk:', chunkSize);
         const tbody = containerEl.querySelector('.ag-grid-tbody');
         if (!tbody) {
             console.error('[AG-GRID] tbody element not found!');
@@ -783,7 +761,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         
         // Check if this is a nested table (expanded relation table)
         const isNestedTable = containerEl.classList.contains('nested-table-container');
-        console.log('[AG-GRID] Is nested table:', isNestedTable);
         
         // PRESERVE EXPANDED ROWS: Detach expanded row elements before clearing (don't use innerHTML to preserve them)
         // Skip for nested tables as they shouldn't have expanded rows
@@ -801,7 +778,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                 expandKey: el.dataset.expandKey
             };
         });
-        console.log('[AG-GRID] Preserving', savedExpandedRows.length, 'expanded rows before clearing');
         
         // Clear existing rows
         tbody.innerHTML = '';
@@ -817,8 +793,6 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             tbody.style.height = totalHeight + 'px';
         }
         
-        console.log('[AG-GRID] Rendering rows', startRow, 'to', endRow, '- offset:', offsetY, 'total height:', totalHeight);
-
         // Only render visible rows
         for (let i = startRow; i < endRow; i++) {
             const row = data[i];
@@ -1327,12 +1301,9 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             tbody.appendChild(tr);
         }
         
-        console.log('[AG-GRID] Rendered', endRow - startRow, 'rows successfully (from', startRow, 'to', endRow, ')');
-        
         // RESTORE EXPANDED ROWS: Re-attach saved expanded row DOM elements back into tbody
         // Skip for nested tables as they shouldn't have expanded rows
         if (!isNestedTable && savedExpandedRows.length > 0) {
-            console.log('[AG-GRID] Restoring', savedExpandedRows.length, 'expanded rows');
             savedExpandedRows.forEach(saved => {
                 // Re-attach the actual DOM element (not a copy)
                 tbody.appendChild(saved.element);
@@ -1342,19 +1313,15 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
                     const existingEntry = expandedRows.get(saved.expandKey);
                     if (existingEntry) {
                         existingEntry.element = saved.element;
-                        console.log('[AG-GRID] Updated expandedRows map reference for key:', saved.expandKey);
                     } else {
                         console.warn('[AG-GRID] No existing entry in expandedRows map for key:', saved.expandKey);
                     }
                 }
                 
-                console.log('[AG-GRID] Restored expanded row for source index:', saved.sourceRowIndex, 'expandKey:', saved.expandKey);
-                
                 // IMPORTANT: Re-apply row shifting to push rows below down by the expanded row's height
                 if (typeof shiftRowsBelow !== 'undefined') {
                     const expandedHeight = parseInt(saved.element.style.height || '60');
                     shiftRowsBelow(tbody, saved.sourceRowIndex, expandedHeight);
-                    console.log('[AG-GRID] Re-applied row shifting for expanded row at index:', saved.sourceRowIndex, 'height:', expandedHeight);
                 }
             });
         }
@@ -3050,6 +3017,7 @@ function createRowContextMenu(metadata, resultSetIndex, rowIndex, tableId) {
         menuHtml += `
             <div class="context-menu-separator"></div>
             <div class="context-menu-item context-menu-item-delete" data-action="delete-row">${deleteLabel}</div>
+            <div class="context-menu-item" data-action="delete-row-with-references">Delete Row with References</div>
         `;
     }
 
@@ -3480,6 +3448,56 @@ function handleContextMenuAction(action) {
                 markRowForDeletion(table, rowIndex);
             }
             return; // Don't copy to clipboard for delete action
+            
+        case 'delete-row-with-references':
+            // Generate cascading delete script
+            const rowContextMenu = document.querySelector('.context-menu');
+            if (!rowContextMenu) return;
+            
+            const rsIndex = parseInt(rowContextMenu.dataset.resultSetIndex);
+            const meta = JSON.parse(rowContextMenu.dataset.metadata);
+            
+            // Get the row data (only handle single row for now)
+            const targetRow = data[rowIndex];
+            
+            // Convert array-based row data to object with column names as keys
+            // Use headerName (actual column name) instead of field (which might be numeric index)
+            const rowDataObject = {};
+            if (Array.isArray(targetRow)) {
+                // If targetRow is an array, map it using columnDefs
+                columnDefs.forEach((colDef, index) => {
+                    rowDataObject[colDef.headerName] = targetRow[index];
+                });
+            } else {
+                // If it's already an object, use it directly with headerName mapping
+                columnDefs.forEach(colDef => {
+                    const value = targetRow[colDef.field];
+                    rowDataObject[colDef.headerName] = value;
+                });
+            }
+            
+            // Extract schema and table name from metadata
+            // metadata.sourceTable and metadata.sourceSchema contain the table info
+            const sourceTable = meta.sourceTable;
+            const sourceSchema = meta.sourceSchema || 'dbo';
+            
+            if (!sourceTable) {
+                vscode.postMessage({
+                    type: 'showError',
+                    message: 'Cannot determine source table for this result set. Delete with references is only available for single-table queries.'
+                });
+                return;
+            }
+            
+            // Send message to extension to generate script
+            vscode.postMessage({
+                type: 'scriptRowDelete',
+                schema: sourceSchema,
+                tableName: sourceTable,
+                rowData: rowDataObject
+            });
+            
+            return; // Don't copy to clipboard
     }
     
     // Copy to clipboard (skip for delete action)

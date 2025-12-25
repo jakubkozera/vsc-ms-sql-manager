@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -274,6 +274,21 @@
         "command": "mssqlManager.refreshSnippets",
         "title": "MS SQL Manager: Refresh SQL Snippets",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.refreshDatabaseSchema",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.clearSchemaCache",
+        "title": "Clear Schema Cache",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mssqlManager.showSchemaCacheInfo",
+        "title": "Show Schema Cache Info",
+        "icon": "$(info)"
       },
       {
         "command": "mssqlManager.toggleQueryHistoryGrouping",
@@ -786,11 +801,6 @@
           "group": "2_script@4"
         },
         {
-          "command": "mssqlManager.refreshNode",
-          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
-          "group": "3_refresh@1"
-        },
-        {
           "command": "mssqlManager.addConnectionToServerGroup",
           "when": "view == mssqlManager.explorer && viewItem =~ /^serverGroup/",
           "group": "inline@1"
@@ -1018,6 +1028,21 @@
         {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem == programmability",
+          "group": "9_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshDatabaseSchema",
+          "when": "view == mssqlManager.explorer && viewItem == database",
+          "group": "9_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshDatabaseSchema",
+          "when": "view == mssqlManager.explorer && viewItem == databaseWithInstructions",
+          "group": "9_refresh@1"
+        },
+        {
+          "command": "mssqlManager.refreshDatabaseSchema",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
           "group": "9_refresh@1"
         },
         {
@@ -1324,6 +1349,13 @@
           "type": "boolean",
           "default": true,
           "description": "Color primary key columns (gold) and foreign key columns (blue) in query results."
+        },
+        "mssqlManager.schemaCacheValiditySeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 5,
+          "maximum": 3600,
+          "description": "Duration in seconds to cache database schema hash validation results. Longer values reduce database queries but may delay detection of schema changes. (Default: 120 seconds)"
         }
       }
     }
