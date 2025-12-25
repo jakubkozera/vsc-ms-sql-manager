@@ -82,31 +82,23 @@ export class QueryExecutor {
         this.outputChannel.appendLine(`Executing query: ${queryText.substring(0, 100)}${queryText.length > 100 ? '...' : ''}`);
 
         try {
-            return await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Executing SQL Query',
-                cancellable: false
-            }, async (progress) => {
-                progress.report({ message: 'Running query...' });
+            // Split query by GO statements (SQL Server batch separator)
+            const batches = this.splitByGO(queryText);
+            this.outputChannel.appendLine(`[QueryExecutor] Split query into ${batches.length} batch(es)`);
 
-                // Split query by GO statements (SQL Server batch separator)
-                const batches = this.splitByGO(queryText);
-                this.outputChannel.appendLine(`[QueryExecutor] Split query into ${batches.length} batch(es)`);
+            const allRecordsets: any[][] = [];
+            const allRowsAffected: number[] = [];
+            const allColumnNames: string[][] = [];
 
-                const allRecordsets: any[][] = [];
-                const allRowsAffected: number[] = [];
-                const allColumnNames: string[][] = [];
+            // Execute each batch separately
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i];
+                
+                if (token && token.isCancellationRequested) {
+                    throw new Error('Query cancelled');
+                }
 
-                // Execute each batch separately
-                for (let i = 0; i < batches.length; i++) {
-                    const batch = batches[i];
-                    
-                    if (token && token.isCancellationRequested) {
-                        throw new Error('Query cancelled');
-                    }
-
-                    progress.report({ message: `Running batch ${i + 1}/${batches.length}...` });
-                    this.outputChannel.appendLine(`[QueryExecutor] Executing batch ${i + 1}/${batches.length}: ${batch.substring(0, 100)}${batch.length > 100 ? '...' : ''}`);
+                this.outputChannel.appendLine(`[QueryExecutor] Executing batch ${i + 1}/${batches.length}: ${batch.substring(0, 100)}${batch.length > 100 ? '...' : ''}`);
 
                     const request = connection.request();
                     this.currentRequest = request;
@@ -275,7 +267,6 @@ export class QueryExecutor {
                 }
 
                 return queryResult;
-            });
 
         } catch (error) {
             this.currentRequest = null;
