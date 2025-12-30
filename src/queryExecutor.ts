@@ -477,14 +477,25 @@ export class QueryExecutor {
             try {
                 const activeConnection = this.connectionProvider.getActiveConnectionInfo();
                 
-                if (activeConnection?.server && activeConnection?.database && tableInfo.tables.length > 0) {
-                    const schemaCache = SchemaCache.getInstance(this.context);
-                    cachedSchema = await schemaCache.getSchema({ 
-                        server: activeConnection.server, 
-                        database: activeConnection.database 
-                    }, connection);
+                if (activeConnection?.server && tableInfo.tables.length > 0) {
+                    // Get current database - either from connection info or from provider for server connections
+                    let currentDatabase = activeConnection.database;
+                    if (!currentDatabase) {
+                        currentDatabase = this.connectionProvider.getCurrentDatabase(activeConnection.id)!;
+                        this.outputChannel.appendLine(`[QueryExecutor] Got current database from connection provider for metadata: ${currentDatabase}`);
+                    }
+                    
+                    if (currentDatabase) {
+                        const schemaCache = SchemaCache.getInstance(this.context);
+                        cachedSchema = await schemaCache.getSchema({ 
+                            server: activeConnection.server, 
+                            database: currentDatabase 
+                        }, connection);
+                        this.outputChannel.appendLine(`[QueryExecutor] Retrieved cached schema for ${activeConnection.server}.${currentDatabase}`);
+                    }
                 }
             } catch (error) {
+                this.outputChannel.appendLine(`[QueryExecutor] Error getting cached schema: ${error}`);
                 // Silently continue without cache
             }
             

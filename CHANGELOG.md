@@ -5,6 +5,15 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2025-12-30
+
+### Fixed
+
+- **Schema Cache for Server Connections**: Fixed schema cache not being used for server-level connections where `activeConnection.database` is empty
+  - Schema cache now properly retrieves current database name from connection provider for server connections
+  - Ensures PK/FK metadata is always available from cache regardless of connection type (database vs server connections)
+  - Improved logging for cache retrieval operations to aid troubleshooting
+
 ## [0.10.0] - 2025-12-23
 
 ### Added
