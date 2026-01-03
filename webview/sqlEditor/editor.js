@@ -1480,8 +1480,12 @@ require(['vs/editor/editor.main'], function () {
     let validationTimeout = null;
 
     function validateSql() {
-        // Placeholder for validation logic
-        // console.log('Validating SQL...');
+        // Use external validator if available
+        if (typeof window.validateSql === 'function') {
+            window.validateSql(editor, dbSchema);
+        } else {
+            console.warn('sqlValidator.js not loaded');
+        }
     }
     
     const editorElement = document.getElementById('editor');

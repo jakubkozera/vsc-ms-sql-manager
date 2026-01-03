@@ -768,6 +768,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         const planScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'plan.js');
         const scriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.js');
         const sqlFormatterScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlFormatter.js');
+        const sqlValidatorScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlValidator.js');
         const relationExpansionScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'relationExpansion.js');
 
         // Convert to webview URIs for proper loading
@@ -785,6 +786,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         const planScriptUri = webview.asWebviewUri(planScriptPath).toString() + `?v=${cacheBuster}`;
         const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
         const sqlFormatterScriptUri = webview.asWebviewUri(sqlFormatterScriptPath).toString() + `?v=${cacheBuster}`;
+        const sqlValidatorScriptUri = webview.asWebviewUri(sqlValidatorScriptPath).toString() + `?v=${cacheBuster}`;
         const relationExpansionScriptUri = webview.asWebviewUri(relationExpansionScriptPath).toString() + `?v=${cacheBuster}`;
 
         // Read base HTML template
@@ -793,6 +795,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         // Replace placeholders defined in template
         // We inject the new scripts before the main script
         const scriptsBlock = `
+    <script src="${sqlValidatorScriptUri}"></script>    
     <script src="${snippetsScriptUri}"></script>
     <script src="${utilsScriptUri}"></script>
     <script src="${uiScriptUri}"></script>
@@ -809,6 +812,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             .replace(/<script src="{{scriptUri}}"><\/script>/g, scriptsBlock)
             .replace(/{{scriptUri}}/g, scriptUri) // Fallback if regex above doesn't match
             .replace(/{{sqlFormatterScriptUri}}/g, sqlFormatterScriptUri)
+            .replace(/{{sqlValidatorScriptUri}}/g, sqlValidatorScriptUri)
             .replace(/{{relationExpansionScriptUri}}/g, relationExpansionScriptUri)
             .replace(/{{monacoLoaderUri}}/g, monacoLoaderUri)
             .replace(/{{cspSource}}/g, webview.cspSource);

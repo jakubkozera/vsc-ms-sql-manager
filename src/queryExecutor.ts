@@ -277,14 +277,12 @@ export class QueryExecutor {
                 // Handle common SQL errors with user-friendly messages
                 if (error.message.includes('timeout')) {
                     throw new Error('Query timeout exceeded. Consider optimizing the query or increasing the timeout setting.');
-                } else if (error.message.includes('Invalid object name')) {
-                    throw new Error('Table or view not found. Please check the object name and schema.');
                 } else if (error.message.includes('permission')) {
                     throw new Error('Insufficient permissions to execute this query.');
                 } else if (error.message.includes('syntax')) {
                     throw new Error(`SQL syntax error: ${error.message}`);
                 } else {
-                    throw new Error(`SQL execution error: ${error.message}`);
+                    throw new Error(`${error.message}`);
                 }
             }
             
