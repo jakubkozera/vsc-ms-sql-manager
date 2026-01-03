@@ -5,6 +5,19 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-01-03
+
+### Added
+
+- **SQL Object Validation**: Real-time validation of SQL object names in FROM/JOIN clauses with error highlighting
+  - **Invalid object detection**: Automatically detects and marks invalid table/view names with red error squiggles
+  - **CTE support**: Recognizes Common Table Expressions (CTEs) defined within the same statement scope
+  - **Temp table support**: Properly handles temporary tables (starting with #) as valid objects
+  - **Schema-aware validation**: Validates objects against cached database schema including both tables and views
+  - **Statement scope handling**: Correctly scopes CTEs to individual statements, preventing cross-statement validation errors
+  - **Bracket notation support**: Handles both bracketed `[schema].[table]` and unbracketed `schema.table` formats
+  - **Overlapping match resolution**: Prevents false positives by prioritizing longer, more complete object references
+
 ## [0.10.1] - 2025-12-30
 
 ### Fixed
