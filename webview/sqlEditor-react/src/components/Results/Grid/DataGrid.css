@@ -1,0 +1,26 @@
+.data-grid-container {
+  height: 100%;
+  overflow: auto;
+  position: relative;
+}
+
+.data-grid-wrapper {
+  min-width: 100%;
+  display: inline-block;
+}
+
+.data-grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+}
+
+.data-grid-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+}

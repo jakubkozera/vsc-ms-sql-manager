@@ -1,0 +1,23 @@
+.grid-row {
+  transition: background-color 0.1s ease;
+}
+
+.grid-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.grid-row:nth-child(even) {
+  background: rgba(127, 127, 127, 0.04);
+}
+
+.grid-row:nth-child(even):hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.row-number-cell {
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border-right: 1px solid var(--vscode-panel-border);
+}

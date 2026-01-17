@@ -1,0 +1,53 @@
+.grid-cell {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+}
+
+.cell-content {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Cell type styling */
+.grid-cell.null .cell-content {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.grid-cell.number .cell-content {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-cell.boolean .cell-content {
+  color: var(--vscode-debugTokenExpression-boolean, #569cd6);
+}
+
+.grid-cell.date .cell-content {
+  color: var(--vscode-debugTokenExpression-string, #ce9178);
+}
+
+.grid-cell.json .cell-content,
+.grid-cell.xml .cell-content {
+  color: var(--vscode-textPreformat-foreground);
+  cursor: pointer;
+}
+
+.grid-cell.json:hover,
+.grid-cell.xml:hover {
+  background: var(--vscode-editor-selectionBackground);
+}
+
+.grid-cell.long-text {
+  cursor: help;
+}
+
+.grid-cell.long-text .cell-content::after {
+  content: '...';
+  color: var(--vscode-descriptionForeground);
+}

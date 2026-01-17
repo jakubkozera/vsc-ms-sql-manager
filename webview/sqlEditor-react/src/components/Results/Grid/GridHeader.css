@@ -1,0 +1,85 @@
+.grid-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+
+.grid-header-cell {
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  border-bottom: 2px solid var(--vscode-panel-border);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid-header-cell:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.grid-header-cell.resizing {
+  background: var(--vscode-list-activeSelectionBackground);
+}
+
+.row-number-header {
+  cursor: default;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.column-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.key-indicator {
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.key-indicator.pk {
+  color: #ffd700;
+}
+
+.key-indicator.fk {
+  color: #4fc3f7;
+}
+
+.sort-indicator {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--vscode-focusBorder);
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.resize-handle:hover,
+.grid-header-cell.resizing .resize-handle {
+  background: var(--vscode-focusBorder);
+}

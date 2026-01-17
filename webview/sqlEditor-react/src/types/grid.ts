@@ -1,18 +1,18 @@
 // Grid Types
 
 export interface ColumnDef {
-  field: string;
-  headerName: string;
-  type: 'string' | 'number' | 'boolean' | 'date';
+  name: string;
+  index: number;
+  type: string;
   width: number;
-  pinned: boolean;
   isPrimaryKey: boolean;
   isForeignKey: boolean;
+  pinned?: boolean;
 }
 
 export interface SortConfig {
-  field: string | null;
-  direction: 'asc' | 'desc' | null;
+  column: string;
+  direction: 'asc' | 'desc';
 }
 
 export interface FilterConfig {

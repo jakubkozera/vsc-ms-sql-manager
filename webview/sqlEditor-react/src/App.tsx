@@ -3,13 +3,13 @@ import { useVSCode } from './context/VSCodeContext';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { Toolbar, useFormatOptions } from './components/Toolbar';
 import { SqlEditor, SqlEditorHandle } from './components/Editor';
+import { ResultsPanel } from './components/Results';
 import './styles/app.css';
 
 function App() {
   const {
     isExecuting,
     executeQuery,
-    dbSchema,
   } = useVSCode();
 
   const editorRef = useRef<SqlEditorHandle>(null);
@@ -112,37 +112,9 @@ function App() {
         onMouseDown={handleResizerMouseDown}
       />
 
-      {/* Results Container (placeholder for Stage 3) */}
+      {/* Results Panel */}
       <div id="resultsContainer" className="visible">
-        <div className="results-tabs">
-          <button className="results-tab active" data-tab="results">Results</button>
-          <button className="results-tab" data-tab="messages">Messages</button>
-          <button className="results-tab" data-tab="plan">Query Plan</button>
-        </div>
-        <div id="resultsContent" style={{ 
-          padding: '20px', 
-          color: 'var(--vscode-descriptionForeground)',
-          fontSize: '14px'
-        }}>
-          <div style={{ marginBottom: '16px' }}>
-            <strong>Stage 2 Complete:</strong> Toolbar + Monaco Editor
-          </div>
-          <div style={{ marginBottom: '8px' }}>
-            • Press <kbd style={{ padding: '2px 6px', background: 'var(--vscode-input-background)', borderRadius: '3px' }}>F5</kbd> or <kbd style={{ padding: '2px 6px', background: 'var(--vscode-input-background)', borderRadius: '3px' }}>Ctrl+Shift+E</kbd> to execute query
-          </div>
-          <div style={{ marginBottom: '8px' }}>
-            • Press <kbd style={{ padding: '2px 6px', background: 'var(--vscode-input-background)', borderRadius: '3px' }}>Ctrl+Shift+F</kbd> to format SQL
-          </div>
-          <div style={{ marginBottom: '8px' }}>
-            • Select text and execute to run only selected portion
-          </div>
-          <div style={{ marginBottom: '16px' }}>
-            • Drag the resizer bar to adjust editor/results split
-          </div>
-          <div style={{ opacity: 0.6 }}>
-            Schema loaded: {dbSchema.tables.length} tables, {dbSchema.views?.length || 0} views, {dbSchema.storedProcedures?.length || 0} procedures
-          </div>
-        </div>
+        <ResultsPanel />
       </div>
     </div>
   );
