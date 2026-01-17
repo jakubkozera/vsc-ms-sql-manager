@@ -1,0 +1,71 @@
+.sql-editor-container {
+  height: 100%;
+  width: 100%;
+  min-height: 150px;
+  overflow: hidden;
+}
+
+/* Override Monaco default styles to match VS Code theme */
+.sql-editor-container .monaco-editor {
+  background-color: var(--vscode-editor-background) !important;
+}
+
+.sql-editor-container .monaco-editor .margin {
+  background-color: var(--vscode-editor-background) !important;
+}
+
+.sql-editor-container .monaco-editor .lines-content {
+  background-color: var(--vscode-editor-background) !important;
+}
+
+/* Selection highlight */
+.sql-editor-container .monaco-editor .view-overlays .current-line {
+  background-color: var(--vscode-editor-lineHighlightBackground) !important;
+  border: 1px solid var(--vscode-editor-lineHighlightBorder) !important;
+}
+
+/* Cursor color */
+.sql-editor-container .monaco-editor .cursor {
+  background-color: var(--vscode-editorCursor-foreground) !important;
+}
+
+/* Selection background */
+.sql-editor-container .monaco-editor .view-overlays .selected-text {
+  background-color: var(--vscode-editor-selectionBackground) !important;
+}
+
+/* Line numbers */
+.sql-editor-container .monaco-editor .line-numbers {
+  color: var(--vscode-editorLineNumber-foreground) !important;
+}
+
+.sql-editor-container .monaco-editor .line-numbers.active-line-number {
+  color: var(--vscode-editorLineNumber-activeForeground) !important;
+}
+
+/* Scrollbar */
+.sql-editor-container .monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--vscode-scrollbarSlider-background) !important;
+}
+
+.sql-editor-container .monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground) !important;
+}
+
+.sql-editor-container .monaco-scrollable-element > .scrollbar > .slider.active {
+  background: var(--vscode-scrollbarSlider-activeBackground) !important;
+}
+
+/* Autocomplete widget */
+.monaco-editor .suggest-widget {
+  background-color: var(--vscode-editorSuggestWidget-background) !important;
+  border: 1px solid var(--vscode-editorSuggestWidget-border) !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused {
+  background-color: var(--vscode-editorSuggestWidget-selectedBackground) !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover {
+  background-color: var(--vscode-list-hoverBackground) !important;
+}

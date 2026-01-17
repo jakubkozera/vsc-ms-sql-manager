@@ -1,0 +1,76 @@
+.custom-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.dropdown-trigger {
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.dropdown-trigger:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.dropdown-trigger.open {
+  background: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  min-width: 180px;
+  max-width: 300px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.dropdown-menu .dropdown-item {
+  display: block;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.1s ease;
+}
+
+.dropdown-menu .dropdown-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.dropdown-menu .dropdown-item.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.dropdown-menu .dropdown-item.disabled {
+  opacity: 0.5;
+  cursor: default;
+  font-style: italic;
+}
+
+.dropdown-separator {
+  height: 1px;
+  background: var(--vscode-panel-border);
+  margin: 4px 0;
+}
