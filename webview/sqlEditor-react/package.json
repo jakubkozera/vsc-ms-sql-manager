@@ -1,0 +1,31 @@
+{
+  "name": "sql-editor-react",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:watch": "vite build --watch",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@tanstack/react-virtual": "^3.0.0",
+    "d3": "^7.8.5",
+    "sql-formatter": "^15.0.2",
+    "xlsx": "^0.18.5",
+    "clsx": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.4.0",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.10"
+  }
+}
