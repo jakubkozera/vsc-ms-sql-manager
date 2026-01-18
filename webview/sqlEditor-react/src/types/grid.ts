@@ -49,6 +49,7 @@ export interface ExpandedRowState {
   isLoading: boolean;
   data?: any[];
   metadata?: any;
+  columnNames?: string[];
   error?: string;
 }
 

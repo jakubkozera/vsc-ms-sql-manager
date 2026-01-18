@@ -12,10 +12,11 @@ interface GridCellProps {
   isModified?: boolean;
   isDeleted?: boolean;
   isEditable?: boolean;
+  isExpanded?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onDoubleClick?: (e: React.MouseEvent) => void;
-  onFKExpand?: (e: React.MouseEvent) => void;
+  onFKExpand?: (value: any, e: React.MouseEvent) => void;
   onCellEdit?: (newValue: unknown) => void;
 }
 
@@ -28,6 +29,7 @@ export function GridCell({
   isModified = false,
   isDeleted = false,
   isEditable = true,
+  isExpanded = false,
   onClick,
   onContextMenu,
   onDoubleClick,
@@ -111,8 +113,8 @@ export function GridCell({
 
   const handleFKClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    onFKExpand?.(e);
-  }, [onFKExpand]);
+    onFKExpand?.(value, e);
+  }, [onFKExpand, value]);
 
   // Build class names
   const classNames = [
@@ -168,7 +170,7 @@ export function GridCell({
       {isModified && <span className="cell-modified-indicator" title="Modified">●</span>}
       {(column.isForeignKey || column.isPrimaryKey) && value !== null && value !== undefined && (
         <span 
-          className="cell-expand-chevron" 
+          className={`cell-expand-chevron ${isExpanded ? 'expanded' : ''}`}
           onClick={handleFKClick}
           title={column.isForeignKey ? "Expand foreign key" : "View related rows"}
         >

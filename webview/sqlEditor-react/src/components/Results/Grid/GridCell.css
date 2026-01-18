@@ -43,22 +43,37 @@
 .grid-cell.pk-cell {
   color: #ffd700 !important; /* Default: gold for primary key */
   font-weight: 500;
+  background-color: rgba(255, 215, 0, 0.08);
 }
 
 .grid-cell.fk-cell {
   color: #6496ff !important; /* Default: blue for foreign key */
   padding-right: 28px;
   font-weight: 500;
+  background-color: rgba(100, 150, 255, 0.08);
+}
+
+/* PK takes priority over FK if both */
+.grid-cell.pk-cell.fk-cell {
+  color: #ffd700 !important;
+  background-color: rgba(255, 215, 0, 0.08);
 }
 
 /* Light theme overrides using media query */
 @media (prefers-color-scheme: light) {
   .grid-cell.pk-cell {
     color: #b8860b !important; /* Darker gold for light theme */
+    background-color: rgba(184, 134, 11, 0.06);
   }
   
   .grid-cell.fk-cell {
     color: #0066cc !important; /* Darker blue for light theme */
+    background-color: rgba(0, 102, 204, 0.06);
+  }
+
+  .grid-cell.pk-cell.fk-cell {
+    color: #b8860b !important;
+    background-color: rgba(184, 134, 11, 0.06);
   }
 }
 
@@ -92,6 +107,7 @@
 .cell-expand-chevron.expanded {
   display: inline-flex;
   opacity: 1;
+  transform: rotate(180deg);
 }
 
 /* Cell type styling */

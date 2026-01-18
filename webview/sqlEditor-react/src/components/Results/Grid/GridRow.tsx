@@ -11,12 +11,13 @@ interface GridRowProps {
   isCellSelected?: (rowIndex: number, colIndex: number) => boolean;
   isCellModified?: (rowIndex: number, colIndex: number) => boolean;
   isRowDeleted?: boolean;
+  expandedColumns?: string[]; // Column names that are currently expanded
   style?: CSSProperties;
   onClick?: (rowIndex: number, e: React.MouseEvent) => void;
   onCellClick?: (rowIndex: number, colIndex: number, value: any, e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent, rowIndex?: number, colIndex?: number) => void;
   onCellEdit?: (rowIndex: number, colIndex: number, columnName: string, newValue: unknown) => void;
-  onFKExpand?: (rowIndex: number, colIndex: number, columnName: string) => void;
+  onFKExpand?: (rowIndex: number, colIndex: number, columnName: string, value: any) => void;
 }
 
 export function GridRow({ 
@@ -27,6 +28,7 @@ export function GridRow({
   isCellSelected,
   isCellModified,
   isRowDeleted = false,
+  expandedColumns = [],
   style,
   onClick,
   onCellClick,
@@ -51,8 +53,8 @@ export function GridRow({
     onCellEdit?.(rowIndex, colIndex, columnName, newValue);
   }, [onCellEdit, rowIndex]);
 
-  const handleFKExpand = useCallback((colIndex: number, columnName: string) => {
-    onFKExpand?.(rowIndex, colIndex, columnName);
+  const handleFKExpand = useCallback((colIndex: number, columnName: string, value: any) => {
+    onFKExpand?.(rowIndex, colIndex, columnName, value);
   }, [onFKExpand, rowIndex]);
 
   const rowClassName = [
@@ -77,6 +79,7 @@ export function GridRow({
       {columns.map((column, colIndex) => {
         const cellSelected = isCellSelected?.(rowIndex, colIndex) || false;
         const cellModified = isCellModified?.(rowIndex, colIndex) || false;
+        const isExpanded = expandedColumns.includes(column.name);
         
         return (
           <GridCell
@@ -89,10 +92,11 @@ export function GridRow({
             isModified={cellModified}
             isDeleted={isRowDeleted}
             isEditable={!isRowDeleted}
+            isExpanded={isExpanded}
             onClick={(e) => handleCellClick(colIndex, row[colIndex], e)}
             onContextMenu={(e) => handleContextMenu(e, colIndex)}
             onCellEdit={onCellEdit ? (newValue) => handleCellEdit(colIndex, column.name, newValue) : undefined}
-            onFKExpand={onFKExpand ? () => handleFKExpand(colIndex, column.name) : undefined}
+            onFKExpand={onFKExpand ? (value) => handleFKExpand(colIndex, column.name, value) : undefined}
           />
         );
       })}

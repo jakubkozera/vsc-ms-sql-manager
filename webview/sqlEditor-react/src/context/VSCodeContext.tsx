@@ -250,7 +250,13 @@ interface VSCodeContextValue extends VSCodeState {
   manageConnections: () => void;
   
   // FK Expansion
-  expandRelation: (expansionId: string, query: string) => void;
+  expandRelation: (
+    expansionId: string, 
+    keyValue: any,
+    schema: string,
+    table: string,
+    column: string
+  ) => void;
   getExpansionResult: (expansionId: string) => RelationResultsMessage | undefined;
   
   // Auto-execute
@@ -441,17 +447,25 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     postMessage({ type: 'manageConnections' });
   }, [postMessage]);
   
-  const expandRelation = useCallback((expansionId: string, query: string) => {
+  const expandRelation = useCallback((
+    expansionId: string, 
+    keyValue: any,
+    schema: string,
+    table: string,
+    column: string
+  ) => {
     if (!state.currentConnectionId) return;
     
     postMessage({
       type: 'expandRelation',
       expansionId,
-      query,
+      keyValue,
+      schema,
+      table,
+      column,
       connectionId: state.currentConnectionId,
-      databaseName: state.currentDatabase ?? undefined,
     });
-  }, [state.currentConnectionId, state.currentDatabase, postMessage]);
+  }, [state.currentConnectionId, postMessage]);
   
   const getExpansionResult = useCallback((expansionId: string) => {
     return state.pendingExpansions.get(expansionId);

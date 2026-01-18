@@ -1,14 +1,17 @@
-import { useState, useMemo, useCallback } from 'react';
-import { ResultSetMetadata } from '../../../types/messages';
-import { SortConfig, ColumnDef, FilterConfig } from '../../../types/grid';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { ResultSetMetadata, ForeignKeyReference, RelationResultsMessage } from '../../../types/messages';
+import { SortConfig, ColumnDef, FilterConfig, ExpandedRowState } from '../../../types/grid';
 import { useVirtualScroll } from '../../../hooks/useVirtualScroll';
 import { useGridSelection } from '../../../hooks/useGridSelection';
 import { GridHeader } from './GridHeader';
 import { GridRow } from './GridRow';
+import { ExpandedRow } from './ExpandedRow';
 import { FilterPopup } from './FilterPopup';
 import { ContextMenu, ContextMenuItem, CELL_CONTEXT_MENU_ITEMS, ROW_CONTEXT_MENU_ITEMS } from './ContextMenu';
 import { ExportMenu } from './ExportMenu';
+import { FKQuickPick } from './FKQuickPick';
 import { exportData, copyToClipboard, downloadFile, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
+import { useVSCode } from '../../../context/VSCodeContext';
 import './DataGrid.css';
 
 const ROW_HEIGHT = 30; // Match old grid implementation
@@ -33,6 +36,23 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const [filterPopup, setFilterPopup] = useState<{ column: ColumnDef; position: { x: number; y: number } } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; position: { x: number; y: number }; rowIndex?: number; colIndex?: number } | null>(null);
   const [exportMenu, setExportMenu] = useState<{ position: { x: number; y: number } } | null>(null);
+  const [fkQuickPick, setFkQuickPick] = useState<{ 
+    relations: ForeignKeyReference[]; 
+    keyValue: any;
+    rowIndex: number;
+    colIndex: number;
+    columnName: string;
+  } | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Map<string, ExpandedRowState>>(new Map());
+
+  // VS Code context
+  const { 
+    currentConnectionId, 
+    currentDatabase, 
+    dbSchema,
+    postMessage,
+    pendingExpansions,
+  } = useVSCode();
 
   // Selection
   const {
@@ -165,12 +185,46 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     });
   }, [filteredData, columns, sortConfig]);
 
+  // Calculate total height including expanded rows
+  const calculateTotalHeight = useCallback(() => {
+    let height = sortedData.length * ROW_HEIGHT;
+    expandedRows.forEach((expanded) => {
+      if (!expanded.isLoading && !expanded.error) {
+        const dataLength = expanded.data?.length || 0;
+        const expandedHeight = dataLength > 0 
+          ? Math.min((Math.min(dataLength, 5) * 30) + 40, 400)
+          : 60;
+        height += expandedHeight;
+      } else {
+        height += 60; // Loading or error state height
+      }
+    });
+    return height;
+  }, [sortedData.length, expandedRows]);
+
+  // Calculate offset for a row based on expanded rows above it
+  const getRowOffset = useCallback((rowIndex: number) => {
+    let offset = rowIndex * ROW_HEIGHT;
+    expandedRows.forEach((expanded) => {
+      if (expanded.sourceRowIndex < rowIndex) {
+        const dataLength = expanded.data?.length || 0;
+        const expandedHeight = dataLength > 0 && !expanded.isLoading && !expanded.error
+          ? Math.min((Math.min(dataLength, 5) * 30) + 40, 400)
+          : 60;
+        offset += expandedHeight;
+      }
+    });
+    return offset;
+  }, [expandedRows]);
+
   // Virtual scrolling
-  const { containerRef: virtualContainerRef, virtualItems, totalHeight } = useVirtualScroll({
+  const { containerRef: virtualContainerRef, virtualItems } = useVirtualScroll({
     itemCount: sortedData.length,
     itemHeight: ROW_HEIGHT,
     overscan: 10,
   });
+
+  const totalHeight = calculateTotalHeight();
 
   // Handlers
   const handleSort = useCallback((column: string) => {
@@ -234,10 +288,154 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const handleCellEditInternal = useCallback((rowIndex: number, _: number, columnName: string, newValue: unknown) => {
     onCellEdit?.(rowIndex, columnName, newValue);
   }, [onCellEdit]);
-  const handleFKExpand = useCallback((rowIndex: number, colIndex: number, columnName: string) => {
-    // TODO: Implement FK expansion with FKQuickPick
-    console.log('FK expand clicked:', { rowIndex, colIndex, columnName });
-  }, []);
+
+  const handleFKExpand = useCallback((rowIndex: number, colIndex: number, columnName: string, value: any) => {
+    const expandKey = `${resultSetIndex}-${rowIndex}-${columnName}`;
+    
+    // Check if already expanded - if so, collapse it
+    if (expandedRows.has(expandKey)) {
+      setExpandedRows(prev => {
+        const next = new Map(prev);
+        next.delete(expandKey);
+        return next;
+      });
+      return;
+    }
+
+    // Get column metadata
+    const colMeta = metadata?.columns?.[colIndex];
+    console.log('[FK Expand] Column metadata:', { columnName, colIndex, colMeta, allMetadata: metadata });
+    
+    if (!colMeta || !colMeta.foreignKeyReferences || colMeta.foreignKeyReferences.length === 0) {
+      console.warn('[FK Expand] No FK references found for column:', columnName, 'colMeta:', colMeta);
+      return;
+    }
+
+    console.log('[FK Expand] Found FK references:', colMeta.foreignKeyReferences);
+
+    // If only one FK reference, expand directly
+    if (colMeta.foreignKeyReferences.length === 1) {
+      const relation = colMeta.foreignKeyReferences[0];
+      executeRelationExpansion(relation, value, rowIndex, columnName);
+    } else {
+      // Show quick pick for multiple relations
+      setFkQuickPick({
+        relations: colMeta.foreignKeyReferences,
+        keyValue: value,
+        rowIndex,
+        colIndex,
+        columnName,
+      });
+    }
+  }, [metadata, expandedRows, resultSetIndex]);
+
+  const executeRelationExpansion = useCallback((
+    relation: ForeignKeyReference,
+    keyValue: any,
+    rowIndex: number,
+    columnName: string
+  ) => {
+    const expansionId = `exp_${Date.now()}_${Math.random()}`;
+    const expandKey = `${resultSetIndex}-${rowIndex}-${columnName}`;
+    
+    // Build connection ID with database context
+    const connId = currentConnectionId || '';
+    const dbName = currentDatabase;
+    
+    let fullConnectionId = connId;
+    if (connId && dbName && !connId.includes('::')) {
+      fullConnectionId = `${connId}::${dbName}`;
+    }
+
+    // Add to expanded rows with loading state
+    setExpandedRows(prev => {
+      const next = new Map(prev);
+      next.set(expandKey, {
+        key: expandKey,
+        expansionId,
+        sourceRowIndex: rowIndex,
+        columnName,
+        isLoading: true,
+      });
+      return next;
+    });
+
+    // Send expansion request
+    postMessage({
+      type: 'expandRelation',
+      expansionId,
+      keyValue,
+      schema: relation.schema,
+      table: relation.table,
+      column: relation.column,
+      connectionId: fullConnectionId,
+    });
+
+    console.log('[FK Expansion] Requested:', { relation, keyValue, rowIndex, columnName });
+  }, [currentConnectionId, currentDatabase, postMessage, resultSetIndex]);
+
+  const handleFKQuickPickSelect = useCallback((relation: ForeignKeyReference) => {
+    if (!fkQuickPick) return;
+    
+    setFkQuickPick(null);
+    executeRelationExpansion(
+      relation,
+      fkQuickPick.keyValue,
+      fkQuickPick.rowIndex,
+      fkQuickPick.columnName
+    );
+  }, [fkQuickPick, executeRelationExpansion]);
+
+  const handleFKQuickPickOpenQuery = useCallback((query: string) => {
+    const connId = currentConnectionId || '';
+    const dbName = currentDatabase;
+
+    postMessage({
+      type: 'openNewQuery',
+      query,
+      connectionId: connId,
+      database: dbName || undefined,
+    });
+
+    setFkQuickPick(null);
+  }, [currentConnectionId, currentDatabase, postMessage]);
+
+  // Handle expansion results from extension
+  useEffect(() => {
+    if (!pendingExpansions) return;
+
+    // Check for new expansion results
+    pendingExpansions.forEach((result: RelationResultsMessage, expansionId: string) => {
+      // Find the expanded row with this expansionId
+      setExpandedRows(prev => {
+        const next = new Map(prev);
+        let foundKey: string | null = null;
+        
+        // Find which expanded row has this expansionId
+        prev.forEach((expandedRow, key) => {
+          if (expandedRow.expansionId === expansionId && expandedRow.isLoading) {
+            foundKey = key;
+          }
+        });
+
+        if (foundKey) {
+          const existingRow = next.get(foundKey);
+          if (existingRow) {
+            next.set(foundKey, {
+              ...existingRow,
+              isLoading: false,
+              data: result.resultSets?.[0] || [],
+              metadata: result.metadata?.[0],
+              columnNames: result.columnNames?.[0],
+              error: result.error,
+            });
+          }
+        }
+
+        return next;
+      });
+    });
+  }, [pendingExpansions]);
   const handleContextMenu = useCallback((e: React.MouseEvent, rowIndex?: number, colIndex?: number) => {
     e.preventDefault();
     
@@ -383,27 +581,71 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
             {virtualItems.map((virtualRow) => {
               const rowData = sortedData[virtualRow.index];
               const isSelected = isRowSelected(virtualRow.index);
+              const adjustedTop = getRowOffset(virtualRow.index);
+              
+              // Check if any column in this row is expanded
+              const expandedForRow: string[] = [];
+              expandedRows.forEach((_, key) => {
+                if (key.startsWith(`${resultSetIndex}-${virtualRow.index}-`)) {
+                  expandedForRow.push(key);
+                }
+              });
               
               return (
-                <GridRow
-                  key={virtualRow.index}
-                  row={rowData}
-                  rowIndex={virtualRow.index}
-                  columns={columnDefs}
-                  isSelected={isSelected}
-                  isCellSelected={isCellSelected}
-                  style={{
-                    position: 'absolute',
-                    top: virtualRow.start,
-                    height: virtualRow.size,
-                    width: `${totalTableWidth}px`,
-                  }}
-                  onClick={handleRowClick}
-                  onCellClick={handleCellClick}
-                  onContextMenu={handleContextMenu}
-                  onCellEdit={onCellEdit ? handleCellEditInternal : undefined}
-                  onFKExpand={handleFKExpand}
-                />
+                <>
+                  <GridRow
+                    key={virtualRow.index}
+                    row={rowData}
+                    rowIndex={virtualRow.index}
+                    columns={columnDefs}
+                    isSelected={isSelected}
+                    isCellSelected={isCellSelected}
+                    expandedColumns={expandedForRow.map(k => k.split('-')[2])}
+                    style={{
+                      position: 'absolute',
+                      top: adjustedTop,
+                      height: virtualRow.size,
+                      width: `${totalTableWidth}px`,
+                    }}
+                    onClick={handleRowClick}
+                    onCellClick={handleCellClick}
+                    onContextMenu={handleContextMenu}
+                    onCellEdit={onCellEdit ? handleCellEditInternal : undefined}
+                    onFKExpand={handleFKExpand}
+                  />
+                  {expandedForRow.map(expandKey => {
+                    const expanded = expandedRows.get(expandKey);
+                    if (!expanded) return null;
+                    
+                    return (
+                      <tr 
+                        key={expandKey}
+                        className="expanded-row-container"
+                        style={{
+                          position: 'absolute',
+                          top: adjustedTop + ROW_HEIGHT,
+                          left: 0,
+                          right: 0,
+                          width: '100%',
+                        }}
+                      >
+                        <td 
+                          colSpan={columnDefs.length + 1} 
+                          className="expanded-row-cell"
+                          style={{ width: `${totalTableWidth}px` }}
+                        >
+                          <ExpandedRow
+                            data={expanded.data || []}
+                            metadata={expanded.metadata}
+                            columnNames={expanded.columnNames}
+                            isLoading={expanded.isLoading}
+                            error={expanded.error}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </>
               );
             })}
           </tbody>
@@ -437,6 +679,17 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
           hasSelection={selectedRowCount > 0}
           onExport={handleExport}
           onClose={() => setExportMenu(null)}
+        />
+      )}
+
+      {fkQuickPick && (
+        <FKQuickPick
+          relations={fkQuickPick.relations}
+          keyValue={fkQuickPick.keyValue}
+          dbSchema={dbSchema}
+          onSelect={handleFKQuickPickSelect}
+          onCancel={() => setFkQuickPick(null)}
+          onOpenQuery={handleFKQuickPickOpenQuery}
         />
       )}
     </div>

@@ -183,9 +183,18 @@ export interface CommitChangesOutgoing {
 export interface ExpandRelationOutgoing {
   type: 'expandRelation';
   expansionId: string;
+  keyValue: any;
+  schema: string;
+  table: string;
+  column: string;
+  connectionId: string;
+}
+
+export interface OpenNewQueryOutgoing {
+  type: 'openNewQuery';
   query: string;
   connectionId: string;
-  databaseName?: string;
+  database?: string;
 }
 
 export interface OpenInNewEditorOutgoing {
@@ -223,6 +232,7 @@ export type OutgoingMessage =
   | SwitchDatabaseOutgoing
   | CommitChangesOutgoing
   | ExpandRelationOutgoing
+  | OpenNewQueryOutgoing
   | OpenInNewEditorOutgoing
   | ShowMessageOutgoing
   | CreateSnippetOutgoing
