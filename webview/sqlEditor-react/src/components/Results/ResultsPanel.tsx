@@ -79,7 +79,7 @@ export function ResultsPanel() {
         )}
 
         {activeTab === 'plan' && hasPlan && (
-          <QueryPlanView planXml={lastPlanXml} isEstimated={false} />
+          <QueryPlanView planXml={lastPlanXml} />
         )}
 
         {activeTab === 'plan' && !hasPlan && (

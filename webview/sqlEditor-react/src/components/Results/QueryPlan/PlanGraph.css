@@ -1,0 +1,191 @@
+.plan-graph-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Toolbar */
+.plan-graph-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  padding: 4px;
+}
+
+.plan-graph-toolbar button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  color: var(--vscode-foreground);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.plan-graph-toolbar button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.plan-graph-toolbar .zoom-level {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Nodes */
+.plan-node {
+  transition: opacity 0.15s;
+}
+
+.plan-node:hover rect:first-child {
+  filter: brightness(1.1);
+}
+
+.plan-node.hovered rect:first-child {
+  stroke-width: 2;
+}
+
+/* Tooltip */
+.plan-node-tooltip {
+  position: absolute;
+  z-index: 100;
+  min-width: 250px;
+  max-width: 400px;
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 8px 12px;
+  pointer-events: none;
+  font-size: 12px;
+}
+
+.plan-node-tooltip .tooltip-header {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  color: var(--vscode-foreground);
+}
+
+.plan-node-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.plan-node-tooltip .tooltip-row span:first-child {
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+.plan-node-tooltip .tooltip-row span:last-child {
+  color: var(--vscode-foreground);
+  text-align: right;
+  word-break: break-word;
+}
+
+.plan-node-tooltip .tooltip-row.full-width {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-node-tooltip .tooltip-row.full-width span:last-child {
+  text-align: left;
+}
+
+.plan-node-tooltip .predicate-text {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  background: var(--vscode-textBlockQuote-background);
+  padding: 4px 6px;
+  border-radius: 3px;
+  max-height: 60px;
+  overflow-y: auto;
+}
+
+.plan-node-tooltip .tooltip-warnings {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.plan-node-tooltip .warning-item {
+  color: #ff9800;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+/* Loading state */
+.plan-graph-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+}
+
+.plan-graph-loading::after {
+  content: '';
+  width: 24px;
+  height: 24px;
+  margin-left: 12px;
+  border: 2px solid var(--vscode-progressBar-background);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Empty state */
+.plan-graph-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+  padding: 20px;
+}
+
+.plan-graph-empty .empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.plan-graph-empty .empty-text {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.plan-graph-empty .empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}

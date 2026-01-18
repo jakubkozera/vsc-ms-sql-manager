@@ -33,7 +33,7 @@ const extensionConfig = {
     rules: [
       {
         test: /\.ts$/,
-        exclude: /node_modules/,
+        exclude: [/node_modules/, /webview[\\/]sqlEditor-react/],
         use: [
           {
             loader: 'ts-loader'
@@ -45,7 +45,17 @@ const extensionConfig = {
   plugins: [
     new CopyWebpackPlugin({
       patterns: [
-        { from: 'webview', to: 'webview' }
+        { 
+          from: 'webview', 
+          to: 'webview',
+          globOptions: {
+            ignore: ['**/sqlEditor-react/**']
+          }
+        },
+        {
+          from: 'webview/sqlEditor-react/dist',
+          to: 'webview/sqlEditor-react/dist'
+        }
       ]
     })
   ],

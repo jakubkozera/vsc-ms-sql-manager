@@ -18,6 +18,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private sqlSnippets: any[] = [];
     // Schema cache instance
     private schemaCache: SchemaCache;
+    // Use React webview (set to true to enable new React UI)
+    private useReactWebview: boolean = true;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -28,6 +30,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         this.loadSqlSnippets();
         this.setupSnippetsWatcher();
         this.schemaCache = SchemaCache.getInstance(context);
+        
+        // Check configuration for React webview preference
+        const config = vscode.workspace.getConfiguration('mssqlManager');
+        this.useReactWebview = config.get<boolean>('useReactWebview', true);
     }
 
     public async resolveCustomTextEditor(
@@ -43,8 +49,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             ]
         };
 
-        // Set initial HTML content
-        webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
+        // Set initial HTML content (React or legacy)
+        webviewPanel.webview.html = this.useReactWebview 
+            ? this.getReactHtmlForWebview(webviewPanel.webview)
+            : this.getHtmlForWebview(webviewPanel.webview);
 
         // Track webview to document mapping
         this.webviewToDocument.set(webviewPanel.webview, document.uri);
@@ -747,6 +755,52 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 success: false
             });
         }
+    }
+
+    /**
+     * Get HTML for the new React-based SQL Editor webview
+     */
+    private getReactHtmlForWebview(webview: vscode.Webview): string {
+        const cacheBuster = Date.now();
+        
+        // React build output paths
+        const reactDistPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor-react', 'dist');
+        const scriptPath = vscode.Uri.joinPath(reactDistPath, 'sqlEditor.js');
+        const stylePath = vscode.Uri.joinPath(reactDistPath, 'sqlEditor.css');
+        
+        const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
+        const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
+        
+        // Monaco loader CDN
+        const monacoLoaderUri = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
+        
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; 
+        style-src ${webview.cspSource} 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
+        font-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
+        script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; 
+        img-src ${webview.cspSource} data:; 
+        connect-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
+    <title>SQL Editor</title>
+    <link rel="stylesheet" href="${styleUri}">
+    <style>
+        html, body, #root {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="${scriptUri}"></script>
+</body>
+</html>`;
     }
 
     private getHtmlForWebview(webview: vscode.Webview): string {

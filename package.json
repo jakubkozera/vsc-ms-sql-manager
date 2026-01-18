@@ -1356,6 +1356,11 @@
           "minimum": 5,
           "maximum": 3600,
           "description": "Duration in seconds to cache database schema hash validation results. Longer values reduce database queries but may delay detection of schema changes. (Default: 120 seconds)"
+        },
+        "mssqlManager.useReactWebview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use the new React-based SQL Editor UI. Disable to use the legacy JavaScript UI."
         }
       }
     }

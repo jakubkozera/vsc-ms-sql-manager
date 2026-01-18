@@ -1,1 +1,1 @@
-export { QueryPlanView } from './QueryPlanView';
+export { QueryPlanView, PlanGraph, TopOperations } from './QueryPlanView';

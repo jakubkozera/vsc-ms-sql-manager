@@ -19,14 +19,9 @@ export function DatabaseDropdown() {
   const currentConnection = connections.find(c => c.id === currentConnectionId);
   const isServerConnection = currentConnection?.connectionType === 'server';
 
-  // Only show for server connections
-  if (!currentConnectionId || !isServerConnection) {
-    return null;
-  }
-
   const displayText = currentDatabase || 'Select database';
 
-  // Close on outside click
+  // Close on outside click - MUST be before any early returns
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -39,6 +34,11 @@ export function DatabaseDropdown() {
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
+
+  // Only show for server connections - AFTER all hooks
+  if (!currentConnectionId || !isServerConnection) {
+    return null;
+  }
 
   const handleSelect = (dbName: string) => {
     selectDatabase(dbName);
