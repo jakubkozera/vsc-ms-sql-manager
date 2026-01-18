@@ -20,7 +20,8 @@
 .data-grid-scroll-container.full-height {
   min-height: unset;
   max-height: unset;
-  height: 100%;
+  height: auto;
+  flex: 1;
 }
 
 .data-grid-table {

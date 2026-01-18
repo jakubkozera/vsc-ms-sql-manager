@@ -45,9 +45,9 @@ export function ResultsPanel() {
 
       <div className="results-content">
         {activeTab === 'results' && hasResults && (
-          <div className="results-grids-container">
+          <div className={`results-grids-container ${lastResults.length === 1 ? 'single-result' : ''}`}>
             {lastResults.map((data, index) => (
-              <div key={index} className="result-set-wrapper">
+              <div key={index} className={`result-set-wrapper ${lastResults.length === 1 ? 'single-result' : ''}`}>
                 <DataGrid
                   data={data}
                   columns={lastColumnNames?.[index] || []}

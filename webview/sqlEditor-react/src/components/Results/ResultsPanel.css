@@ -17,13 +17,19 @@
   flex-direction: column;
   gap: 0;
   padding: 0;
-  overflow: auto;
+  height: 100%;
 }
 
 .result-set-wrapper {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  min-height: 0;
+}
+
+.result-set-wrapper.single-result {
+  flex: 1;
+  min-height: 0;
 }
 
 .result-set-header {
