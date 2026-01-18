@@ -1,9 +1,55 @@
 .data-grid-container {
-  height: 100%;
   display: flex;
   flex-direction: column;
   position: relative;
   outline: none;
+  border: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+.data-grid-scroll-container {
+  overflow: auto !important;
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 300px;
+  max-height: 400px;
+  background: var(--vscode-editor-background);
+}
+
+.data-grid-scroll-container.full-height {
+  min-height: unset;
+  max-height: unset;
+  height: 100%;
+}
+
+.data-grid-table {
+  width: fit-content;
+  min-width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0;
+  table-layout: auto;
+  background: var(--vscode-editor-background);
+  position: relative;
+}
+
+.data-grid-table thead {
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 100 !important;
+  display: table-header-group;
+}
+
+.data-grid-table tbody {
+  display: block;
+  position: relative;
+}
+
+.data-grid-table tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .data-grid-toolbar {
@@ -63,9 +109,10 @@
 }
 
 .data-grid-table {
-  width: 100%;
+  width: fit-content;
+  min-width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
   font-size: 13px;
   font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
 }

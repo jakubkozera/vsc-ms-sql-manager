@@ -9,8 +9,6 @@ interface ResultsTabsProps {
   hasMessages: boolean;
   hasPlan: boolean;
   resultSetCount: number;
-  activeResultSet: number;
-  onResultSetChange: (index: number) => void;
   /** Selected values for aggregation */
   selectedValues?: unknown[];
   /** Whether aggregation bar is visible */
@@ -32,8 +30,6 @@ export function ResultsTabs({
   hasMessages,
   hasPlan,
   resultSetCount,
-  activeResultSet,
-  onResultSetChange,
   selectedValues = [],
   showAggregation = false,
   rowCount = 0,
@@ -51,7 +47,7 @@ export function ResultsTabs({
             data-testid="results-tab"
           >
             Results
-            {hasResults && resultSetCount > 0 && (
+            {hasResults && resultSetCount > 1 && (
               <span className="tab-badge">{resultSetCount}</span>
             )}
           </button>
@@ -108,22 +104,6 @@ export function ResultsTabs({
           />
         </div>
       </div>
-
-      {/* Result set selector (when multiple result sets) */}
-      {activeTab === 'results' && resultSetCount > 1 && (
-        <div className="result-set-selector">
-          {Array.from({ length: resultSetCount }, (_, i) => (
-            <button
-              key={i}
-              className={`result-set-tab ${activeResultSet === i ? 'active' : ''}`}
-              onClick={() => onResultSetChange(i)}
-              data-testid={`result-set-${i}`}
-            >
-              Result {i + 1}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

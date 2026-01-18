@@ -80,7 +80,10 @@ function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing.current) return;
       const containerRect = document.getElementById('container')?.getBoundingClientRect();
-      if (!containerRect) return;
+      if (!containerRect) {
+        console.warn('[RESIZER] Container not found');
+        return;
+      }
 
       const toolbarHeight = 52; // Approximate toolbar height
       const minEditorHeight = 100;
@@ -89,10 +92,12 @@ function App() {
 
       let newHeight = e.clientY - containerRect.top - toolbarHeight;
       newHeight = Math.max(minEditorHeight, Math.min(maxEditorHeight, newHeight));
+      console.log('[RESIZER] Moving - clientY:', e.clientY, 'newHeight:', newHeight, 'containerHeight:', containerRect.height);
       setEditorHeight(newHeight);
     };
 
     const handleMouseUp = () => {
+      console.log('[RESIZER] Mouse up - final height:', editorHeight);
       isResizing.current = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -108,6 +113,7 @@ function App() {
   }, [setEditorHeight]);
 
   const handleResizerMouseDown = () => {
+    console.log('[RESIZER] Mouse down - starting resize from height:', editorHeight);
     isResizing.current = true;
     document.body.style.cursor = 'row-resize';
     document.body.style.userSelect = 'none';
@@ -120,6 +126,16 @@ function App() {
            !!lastPlanXml || 
            !!lastError;
   }, [lastResults, lastMessages, lastPlanXml, lastError]);
+
+  // Calculate results container height
+  const resultsHeight = useMemo(() => {
+    if (!hasResults) return 0;
+    // Get container height and subtract toolbar (52px) and editor height
+    const containerHeight = window.innerHeight;
+    const toolbarHeight = 52;
+    const resizerHeight = 4;
+    return containerHeight - toolbarHeight - editorHeight - resizerHeight;
+  }, [hasResults, editorHeight]);
 
   return (
     <div id="container">
@@ -152,7 +168,11 @@ function App() {
 
       {/* Results Panel - only visible when there are results */}
       {hasResults && (
-        <div id="resultsContainer" className="visible">
+        <div 
+          id="resultsContainer" 
+          className="visible"
+          style={{ height: `${resultsHeight}px`, flex: `0 0 ${resultsHeight}px` }}
+        >
           <ResultsPanel />
         </div>
       )}

@@ -18,10 +18,11 @@ interface DataGridProps {
   columns: string[];
   metadata?: ResultSetMetadata;
   resultSetIndex: number;
+  isSingleResultSet?: boolean;
   onCellEdit?: (rowIndex: number, columnName: string, value: any) => void;
 }
 
-export function DataGrid({ data, columns, metadata, resultSetIndex, onCellEdit }: DataGridProps) {
+export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit }: DataGridProps) {
   // State
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
@@ -47,21 +48,80 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, onCellEdit }
   // Computed selection count
   const selectedRowCount = useMemo(() => getSelectedRowIndices().length, [getSelectedRowIndices]);
 
+  // Calculate optimal column width based on content
+  const calculateOptimalWidth = useCallback((columnName: string, columnData: any[], type: string): number => {
+    // Create temporary canvas for text measurement
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return 150;
+    
+    context.font = '13px var(--vscode-font-family, "Segoe UI", sans-serif)';
+    
+    // Measure header width
+    const headerWidth = context.measureText(columnName).width;
+    
+    // Find longest content (sample up to 100 rows)
+    let maxContentWidth = 0;
+    const sampleSize = Math.min(100, columnData.length);
+    const step = Math.max(1, Math.floor(columnData.length / sampleSize));
+    
+    for (let i = 0; i < columnData.length; i += step) {
+      const value = columnData[i];
+      let displayValue = '';
+      
+      if (value === null || value === undefined) {
+        displayValue = 'NULL';
+      } else if (type === 'boolean') {
+        displayValue = value ? '✓' : '✗';
+      } else if (type === 'number') {
+        displayValue = typeof value === 'number' ? value.toLocaleString() : String(value);
+      } else {
+        displayValue = String(value);
+      }
+      
+      const contentWidth = context.measureText(displayValue).width;
+      if (contentWidth > maxContentWidth) {
+        maxContentWidth = contentWidth;
+      }
+    }
+    
+    // Calculate optimal width with padding and icon space
+    const padding = 32;
+    const iconSpace = 80;
+    const optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+    
+    // Set min/max bounds
+    const minWidth = 80;
+    const maxWidth = 450;
+    const finalWidth = Math.min(Math.max(optimalWidth, minWidth), maxWidth);
+    
+    return Math.round(finalWidth);
+  }, []);
+
   // Build column definitions
   const columnDefs: ColumnDef[] = useMemo(() => {
     return columns.map((name, index) => {
       const colMeta = metadata?.columns?.[index];
+      const type = colMeta?.type || 'string';
+      
+      // Calculate width if not manually resized
+      let width = columnWidths[name];
+      if (!width && data.length > 0) {
+        const columnData = data.map(row => row[index]);
+        width = calculateOptimalWidth(name, columnData, type);
+      }
+      
       return {
         name,
         index,
-        type: colMeta?.type || 'string',
+        type,
         isPrimaryKey: colMeta?.isPrimaryKey || false,
         isForeignKey: colMeta?.isForeignKey || false,
-        width: columnWidths[name] || 150,
+        width: width || 150,
         pinned: pinnedColumns.has(name),
       };
     });
-  }, [columns, metadata, columnWidths, pinnedColumns]);
+  }, [columns, metadata, columnWidths, pinnedColumns, data, calculateOptimalWidth]);
 
   // Apply filters to data
   const filteredData = useMemo(() => {
@@ -283,6 +343,9 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, onCellEdit }
     );
   }
 
+  // Calculate total table width (all columns + row number column)
+  const totalTableWidth = columnDefs.reduce((sum, col) => sum + col.width, 0) + 50;
+
   return (
     <div 
       className="data-grid-container" 
@@ -293,54 +356,58 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, onCellEdit }
     >
       {/* Grid */}
       <div 
-        className="data-grid-scroll-container"
+        className={`data-grid-scroll-container ${isSingleResultSet ? 'full-height' : ''}`}
         ref={(el) => {
           // Merge refs
           (virtualContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
         }}
       >
-        <div style={{ height: totalHeight, position: 'relative' }}>
-          <table className="data-grid-table">
-            <GridHeader
-              columns={columnDefs}
-              sortConfig={sortConfig}
-              filters={filters}
-              onSort={handleSort}
-              onResize={handleColumnResize}
-              onFilterClick={handleFilterClick}
-              onPinColumn={handlePinColumn}
-              onExportClick={handleExportButtonClick}
-            />
-            <tbody>
-              {virtualItems.map((virtualRow) => {
-                const rowData = sortedData[virtualRow.index];
-                const isSelected = isRowSelected(virtualRow.index);
-                
-                return (
-                  <GridRow
-                    key={virtualRow.index}
-                    row={rowData}
-                    rowIndex={virtualRow.index}
-                    columns={columnDefs}
-                    isSelected={isSelected}
-                    isCellSelected={isCellSelected}
-                    style={{
-                      position: 'absolute',
-                      top: virtualRow.start,
-                      height: virtualRow.size,
-                      width: '100%',
-                    }}
-                    onClick={handleRowClick}
-                    onCellClick={handleCellClick}
-                    onContextMenu={handleContextMenu}
-                    onCellEdit={onCellEdit ? handleCellEditInternal : undefined}
-                    onFKExpand={handleFKExpand}
-                  />
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <table 
+          className="data-grid-table"
+          style={{
+            width: `${totalTableWidth}px`,
+            minWidth: `${totalTableWidth}px`
+          }}
+        >
+          <GridHeader
+            columns={columnDefs}
+            sortConfig={sortConfig}
+            filters={filters}
+            onSort={handleSort}
+            onResize={handleColumnResize}
+            onFilterClick={handleFilterClick}
+            onPinColumn={handlePinColumn}
+            onExportClick={handleExportButtonClick}
+          />
+          <tbody style={{ position: 'relative', height: totalHeight }}>
+            {virtualItems.map((virtualRow) => {
+              const rowData = sortedData[virtualRow.index];
+              const isSelected = isRowSelected(virtualRow.index);
+              
+              return (
+                <GridRow
+                  key={virtualRow.index}
+                  row={rowData}
+                  rowIndex={virtualRow.index}
+                  columns={columnDefs}
+                  isSelected={isSelected}
+                  isCellSelected={isCellSelected}
+                  style={{
+                    position: 'absolute',
+                    top: virtualRow.start,
+                    height: virtualRow.size,
+                    width: `${totalTableWidth}px`,
+                  }}
+                  onClick={handleRowClick}
+                  onCellClick={handleCellClick}
+                  onContextMenu={handleContextMenu}
+                  onCellEdit={onCellEdit ? handleCellEditInternal : undefined}
+                  onFKExpand={handleFKExpand}
+                />
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* Popups */}

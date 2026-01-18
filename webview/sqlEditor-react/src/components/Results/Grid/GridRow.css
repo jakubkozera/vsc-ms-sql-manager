@@ -1,6 +1,5 @@
 .grid-row {
   transition: background-color 0.1s ease;
-  display: flex;
 }
 
 .grid-row:hover {
@@ -26,12 +25,20 @@
 
 .row-number-cell {
   text-align: center;
+  font-weight: 600;
   color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  background: var(--vscode-editorWidget-background, transparent);
-  border-right: 1px solid var(--vscode-panel-border);
-  width: 50px;
-  flex-shrink: 0;
+  background-color: var(--vscode-editor-background, #1e1e1e) !important;
+  user-select: none;
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 50 !important;
+  border-right: 2px solid var(--vscode-panel-border, #3c3c3c) !important;
+  border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c) !important;
+  min-width: 50px !important;
+  max-width: 50px !important;
+  width: 50px !important;
+  padding: 6px 12px !important;
 }
 /* Row marked for deletion */
 .grid-row.marked-for-deletion {

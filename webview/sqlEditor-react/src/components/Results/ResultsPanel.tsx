@@ -21,7 +21,6 @@ export function ResultsPanel() {
   } = useVSCode();
 
   const [activeTab, setActiveTab] = useState<TabId>('results');
-  const [activeResultSet, setActiveResultSet] = useState(0);
 
   // Determine which tabs have content
   const hasResults = lastResults && lastResults.length > 0;
@@ -33,11 +32,6 @@ export function ResultsPanel() {
     setActiveTab(tabId);
   }, []);
 
-  // Reset active result set when results change
-  const handleResultSetChange = useCallback((index: number) => {
-    setActiveResultSet(index);
-  }, []);
-
   return (
     <div className="results-panel">
       <ResultsTabs
@@ -47,18 +41,23 @@ export function ResultsPanel() {
         hasMessages={hasMessages}
         hasPlan={hasPlan}
         resultSetCount={lastResults?.length || 0}
-        activeResultSet={activeResultSet}
-        onResultSetChange={handleResultSetChange}
       />
 
       <div className="results-content">
         {activeTab === 'results' && hasResults && (
-          <DataGrid
-            data={lastResults[activeResultSet] || []}
-            columns={lastColumnNames?.[activeResultSet] || []}
-            metadata={lastMetadata?.[activeResultSet]}
-            resultSetIndex={activeResultSet}
-          />
+          <div className="results-grids-container">
+            {lastResults.map((data, index) => (
+              <div key={index} className="result-set-wrapper">
+                <DataGrid
+                  data={data}
+                  columns={lastColumnNames?.[index] || []}
+                  metadata={lastMetadata?.[index]}
+                  resultSetIndex={index}
+                  isSingleResultSet={lastResults.length === 1}
+                />
+              </div>
+            ))}
+          </div>
         )}
 
         {activeTab === 'results' && !hasResults && (
@@ -96,18 +95,6 @@ export function ResultsPanel() {
           </div>
         )}
       </div>
-
-      {/* Status bar */}
-      {hasResults && activeTab === 'results' && (
-        <div className="results-status-bar">
-          <span>
-            {lastResults[activeResultSet]?.length || 0} rows
-          </span>
-          {executionTime !== null && (
-            <span>Execution time: {executionTime}ms</span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

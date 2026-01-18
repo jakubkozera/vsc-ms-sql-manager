@@ -35,3 +35,10 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: vi.fn(),
   })),
 });
+
+// Mock HTMLCanvasElement.getContext for text measurement in tests
+HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+  measureText: (text: string) => ({
+    width: text.length * 8, // Simple approximation for tests
+  }),
+})) as any;

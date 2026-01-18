@@ -12,6 +12,33 @@
   min-height: 0;
 }
 
+.results-grids-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: auto;
+}
+
+.result-set-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.result-set-header {
+  padding: 8px 16px;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+
 .results-empty {
   display: flex;
   flex-direction: column;

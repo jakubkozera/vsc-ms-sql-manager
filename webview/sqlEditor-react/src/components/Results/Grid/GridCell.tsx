@@ -132,7 +132,11 @@ export function GridCell({
     return (
       <td
         className={classNames}
-        style={{ width: column.width }}
+        style={{ 
+          width: `${column.width}px`,
+          minWidth: `${column.width}px`,
+          maxWidth: `${column.width}px`
+        }}
         data-testid={`cell-${rowIndex}-${colIndex}`}
       >
         <InlineCellEditor
@@ -149,7 +153,11 @@ export function GridCell({
   return (
     <td
       className={classNames}
-      style={{ width: column.width }}
+      style={{ 
+        width: `${column.width}px`,
+        minWidth: `${column.width}px`,
+        maxWidth: `${column.width}px`
+      }}
       title={isLongText ? displayValue : undefined}
       data-testid={`cell-${rowIndex}-${colIndex}`}
       onClick={handleClick}

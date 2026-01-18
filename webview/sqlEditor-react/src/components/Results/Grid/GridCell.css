@@ -1,10 +1,10 @@
 .grid-cell {
   padding: 6px 12px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+  border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex-shrink: 0;
   cursor: default;
   position: relative;
 }

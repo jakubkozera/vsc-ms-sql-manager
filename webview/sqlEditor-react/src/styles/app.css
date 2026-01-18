@@ -145,11 +145,10 @@
 #resultsContainer {
   display: none;
   flex-direction: column;
-  flex: 0 0 300px;
+  flex: 1;
   min-height: 100px;
-  max-height: 70vh;
+  overflow: hidden;
   background-color: var(--vscode-editor-background);
-  border-top: 1px solid var(--vscode-panel-border);
 }
 
 #resultsContainer.visible {
