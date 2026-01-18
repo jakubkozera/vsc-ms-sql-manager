@@ -1,5 +1,6 @@
 .grid-row {
   transition: background-color 0.1s ease;
+  display: flex;
 }
 
 .grid-row:hover {
@@ -14,10 +15,21 @@
   background: var(--vscode-list-hoverBackground);
 }
 
+.grid-row.selected {
+  background: var(--vscode-list-activeSelectionBackground) !important;
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.grid-row.selected:hover {
+  background: var(--vscode-list-activeSelectionBackground) !important;
+}
+
 .row-number-cell {
   text-align: center;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   background: var(--vscode-editorWidget-background, transparent);
   border-right: 1px solid var(--vscode-panel-border);
+  width: 50px;
+  flex-shrink: 0;
 }

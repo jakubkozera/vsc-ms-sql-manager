@@ -1,0 +1,55 @@
+.context-menu {
+  position: fixed;
+  z-index: 1001;
+  background: var(--vscode-menu-background);
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
+  padding: 4px 0;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--vscode-menu-foreground);
+  gap: 8px;
+}
+
+.context-menu-item:hover:not(.disabled) {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+.context-menu-item.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.context-menu-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.context-menu-label {
+  flex: 1;
+}
+
+.context-menu-shortcut {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 16px;
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border));
+  margin: 4px 0;
+}

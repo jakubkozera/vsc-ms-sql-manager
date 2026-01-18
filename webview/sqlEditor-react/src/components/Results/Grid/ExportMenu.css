@@ -1,0 +1,111 @@
+.export-menu {
+  position: fixed;
+  z-index: 1001;
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  min-width: 260px;
+  overflow: hidden;
+}
+
+.export-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBarSectionHeader-background);
+}
+
+.export-menu-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.export-menu-close {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  border-radius: 3px;
+}
+
+.export-menu-close:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.export-menu-options {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.export-option-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.export-option-checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.export-menu-formats {
+  padding: 6px;
+}
+
+.export-format-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--vscode-foreground);
+  transition: background-color 0.1s ease;
+}
+
+.export-format-button:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.export-format-icon {
+  font-size: 18px;
+  width: 28px;
+  text-align: center;
+}
+
+.export-format-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-format-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.export-format-description {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}

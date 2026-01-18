@@ -4,7 +4,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 0;
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.grid-cell.selected {
+  background: var(--vscode-editor-selectionBackground) !important;
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }
 
 .cell-content {

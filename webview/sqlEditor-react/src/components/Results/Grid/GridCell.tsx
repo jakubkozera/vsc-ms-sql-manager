@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { ColumnDef } from '../../../types/grid';
 import './GridCell.css';
 
@@ -7,9 +7,20 @@ interface GridCellProps {
   column: ColumnDef;
   rowIndex: number;
   colIndex: number;
+  isSelected?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
-export function GridCell({ value, column, rowIndex, colIndex }: GridCellProps) {
+export function GridCell({ 
+  value, 
+  column, 
+  rowIndex, 
+  colIndex,
+  isSelected = false,
+  onClick,
+  onContextMenu,
+}: GridCellProps) {
   // Determine cell type and format
   const { displayValue, cellType, isLongText } = useMemo(() => {
     if (value === null || value === undefined) {
@@ -55,12 +66,23 @@ export function GridCell({ value, column, rowIndex, colIndex }: GridCellProps) {
     };
   }, [value]);
 
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    onClick?.(e);
+  }, [onClick]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onContextMenu?.(e);
+  }, [onContextMenu]);
+
   return (
     <td
-      className={`grid-cell ${cellType} ${isLongText ? 'long-text' : ''}`}
+      className={`grid-cell ${cellType} ${isLongText ? 'long-text' : ''} ${isSelected ? 'selected' : ''}`}
       style={{ width: column.width }}
       title={isLongText ? displayValue : undefined}
       data-testid={`cell-${rowIndex}-${colIndex}`}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
       <span className="cell-content">{displayValue}</span>
     </td>

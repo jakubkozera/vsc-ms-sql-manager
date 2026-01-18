@@ -1,12 +1,65 @@
 .data-grid-container {
   height: 100%;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
   position: relative;
+  outline: none;
 }
 
-.data-grid-wrapper {
-  min-width: 100%;
-  display: inline-block;
+.data-grid-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--vscode-sideBarSectionHeader-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+.toolbar-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.row-count {
+  font-weight: 500;
+}
+
+.filter-indicator {
+  color: var(--vscode-textLink-foreground);
+}
+
+.selection-indicator {
+  color: var(--vscode-descriptionForeground);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.toolbar-btn {
+  padding: 4px 10px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: none;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.toolbar-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.data-grid-scroll-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
 }
 
 .data-grid-table {
