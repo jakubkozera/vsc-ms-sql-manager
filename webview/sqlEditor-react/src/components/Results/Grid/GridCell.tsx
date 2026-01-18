@@ -8,8 +8,12 @@ interface GridCellProps {
   rowIndex: number;
   colIndex: number;
   isSelected?: boolean;
+  isModified?: boolean;
+  isDeleted?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  onDoubleClick?: (e: React.MouseEvent) => void;
+  onFKExpand?: (e: React.MouseEvent) => void;
 }
 
 export function GridCell({ 
@@ -18,8 +22,12 @@ export function GridCell({
   rowIndex, 
   colIndex,
   isSelected = false,
+  isModified = false,
+  isDeleted = false,
   onClick,
   onContextMenu,
+  onDoubleClick,
+  onFKExpand,
 }: GridCellProps) {
   // Determine cell type and format
   const { displayValue, cellType, isLongText } = useMemo(() => {
@@ -75,16 +83,48 @@ export function GridCell({
     onContextMenu?.(e);
   }, [onContextMenu]);
 
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    onDoubleClick?.(e);
+  }, [onDoubleClick]);
+
+  const handleFKClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onFKExpand?.(e);
+  }, [onFKExpand]);
+
+  // Build class names
+  const classNames = [
+    'grid-cell',
+    cellType,
+    isLongText && 'long-text',
+    isSelected && 'selected',
+    isModified && 'modified',
+    isDeleted && 'deleted',
+    column.isPrimaryKey && 'pk-cell',
+    column.isForeignKey && 'fk-cell',
+  ].filter(Boolean).join(' ');
+
   return (
     <td
-      className={`grid-cell ${cellType} ${isLongText ? 'long-text' : ''} ${isSelected ? 'selected' : ''}`}
+      className={classNames}
       style={{ width: column.width }}
       title={isLongText ? displayValue : undefined}
       data-testid={`cell-${rowIndex}-${colIndex}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
+      onDoubleClick={handleDoubleClick}
     >
       <span className="cell-content">{displayValue}</span>
+      {isModified && <span className="cell-modified-indicator" title="Modified">●</span>}
+      {column.isForeignKey && value !== null && value !== undefined && (
+        <button 
+          className="fk-expand-button" 
+          onClick={handleFKClick}
+          title="Expand foreign key"
+        >
+          🔗
+        </button>
+      )}
     </td>
   );
 }

@@ -5,3 +5,7 @@ export { GridCell } from './GridCell';
 export { FilterPopup } from './FilterPopup';
 export { ContextMenu } from './ContextMenu';
 export { ExportMenu } from './ExportMenu';
+export { EditableCell } from './EditableCell';
+export { AggregationBar } from './AggregationBar';
+export { FKQuickPick, ExpandedRow } from './FKExpansion';
+export type { FKRelation } from './FKExpansion';

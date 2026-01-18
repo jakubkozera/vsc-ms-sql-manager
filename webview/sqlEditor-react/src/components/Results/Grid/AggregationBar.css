@@ -1,0 +1,38 @@
+.aggregation-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 16px;
+  background-color: var(--vscode-statusBar-background);
+  border-top: 1px solid var(--vscode-panel-border);
+  font-size: 12px;
+  min-height: 28px;
+  flex-shrink: 0;
+}
+
+.aggregation-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.aggregation-label {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 500;
+}
+
+.aggregation-value {
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+}
+
+.aggregation-value.null-value {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.aggregation-separator {
+  width: 1px;
+  height: 16px;
+  background-color: var(--vscode-panel-border);
+}

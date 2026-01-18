@@ -6,6 +6,7 @@
   text-overflow: ellipsis;
   flex-shrink: 0;
   cursor: default;
+  position: relative;
 }
 
 .grid-cell.selected {
@@ -14,10 +15,81 @@
   outline-offset: -1px;
 }
 
+.grid-cell.modified {
+  background-color: rgba(255, 193, 7, 0.15);
+}
+
+.grid-cell.deleted {
+  background-color: rgba(220, 53, 69, 0.15);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 .cell-content {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cell-modified-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: var(--vscode-inputValidation-warningBorder, #ffc107);
+  font-size: 8px;
+}
+
+/* PK/FK cell styling */
+.grid-cell.pk-cell {
+  background: linear-gradient(to right, rgba(255, 215, 0, 0.1) 0%, transparent 8px);
+}
+
+.grid-cell.pk-cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--vscode-editorWarning-foreground, #ffd700);
+}
+
+.grid-cell.fk-cell {
+  padding-right: 28px;
+}
+
+.grid-cell.fk-cell::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background-color: var(--vscode-editorInfo-foreground, #3794ff);
+}
+
+.fk-expand-button {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.fk-expand-button:hover {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground);
 }
 
 /* Cell type styling */
