@@ -34,6 +34,7 @@ interface VSCodeState {
   connections: Connection[];
   currentConnectionId: string | null;
   currentDatabase: string | null;
+  databases: string[];
   
   // Schema
   dbSchema: DatabaseSchema;
@@ -85,6 +86,7 @@ const initialState: VSCodeState = {
   connections: [],
   currentConnectionId: null,
   currentDatabase: null,
+  databases: [],
   dbSchema: emptySchema,
   editorContent: '',
   snippets: [],
@@ -136,6 +138,7 @@ function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
     case 'SET_DATABASES':
       return {
         ...state,
+        databases: action.databases,
         currentDatabase: action.currentDatabase ?? state.currentDatabase,
       };
       
@@ -288,6 +291,12 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleMessage = (event: MessageEvent<IncomingMessage>) => {
       const message = event.data;
+      
+      // Ignore internal VS Code webview messages
+      if (message && 'vscodeScheduleAsyncWork' in message) {
+        return;
+      }
+      
       console.log('[VSCode] Received message:', message?.type || 'undefined', message);
       
       if (!message || !message.type) {
@@ -417,8 +426,16 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   }, [postMessage]);
   
   const selectDatabase = useCallback((databaseName: string) => {
-    postMessage({ type: 'selectDatabase', databaseName });
-  }, [postMessage]);
+    if (!state.currentConnectionId) {
+      console.warn('[VSCode] Cannot select database without active connection');
+      return;
+    }
+    postMessage({ 
+      type: 'switchDatabase', 
+      connectionId: state.currentConnectionId,
+      databaseName 
+    });
+  }, [state.currentConnectionId, postMessage]);
   
   const manageConnections = useCallback(() => {
     postMessage({ type: 'manageConnections' });

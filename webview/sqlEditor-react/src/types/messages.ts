@@ -167,8 +167,9 @@ export interface SelectConnectionOutgoing {
   connectionId: string;
 }
 
-export interface SelectDatabaseOutgoing {
-  type: 'selectDatabase';
+export interface SwitchDatabaseOutgoing {
+  type: 'switchDatabase';
+  connectionId: string;
   databaseName: string;
 }
 
@@ -219,7 +220,7 @@ export type OutgoingMessage =
   | CancelQueryOutgoing
   | ManageConnectionsOutgoing
   | SelectConnectionOutgoing
-  | SelectDatabaseOutgoing
+  | SwitchDatabaseOutgoing
   | CommitChangesOutgoing
   | ExpandRelationOutgoing
   | OpenInNewEditorOutgoing

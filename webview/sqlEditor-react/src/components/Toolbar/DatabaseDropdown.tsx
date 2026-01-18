@@ -6,15 +6,13 @@ export function DatabaseDropdown() {
   const {
     currentConnectionId,
     currentDatabase,
+    databases,
     connections,
     selectDatabase,
   } = useVSCode();
 
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  
-  // TODO: Fetch databases from backend
-  const databases: string[] = [];
 
   const currentConnection = connections.find(c => c.id === currentConnectionId);
   const isServerConnection = currentConnection?.connectionType === 'server';
@@ -46,7 +44,25 @@ export function DatabaseDropdown() {
   };
 
   return (
-    <div className="custom-dropdown" ref={dropdownRef}>
+    <>
+          {/* Database icon */}
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ verticalAlign: 'middle', marginLeft: '8px' }}
+      >
+        <path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
+        <path d="M4 6v6a8 3 0 0 0 16 0v-6" />
+        <path d="M4 12v6a8 3 0 0 0 16 0v-6" />
+      </svg>
+          <div className="custom-dropdown" ref={dropdownRef}>
       <button
         className={`dropdown-trigger ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
@@ -75,5 +91,7 @@ export function DatabaseDropdown() {
         </div>
       )}
     </div>
+    </>
+
   );
 }

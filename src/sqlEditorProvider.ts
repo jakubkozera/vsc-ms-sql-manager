@@ -165,6 +165,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     // Update current database in connection provider for history tracking
                     this.connectionProvider.setCurrentDatabase(message.connectionId, message.databaseName);
                     
+                    // Send updated databases list to update UI
+                    await this.sendDatabasesList(webviewPanel.webview, message.connectionId, message.databaseName);
+                    
                     await this.sendSchemaUpdate(webviewPanel.webview, compositeId);
                     break;
 

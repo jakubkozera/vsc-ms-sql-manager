@@ -399,14 +399,17 @@ export function registerConnectionCommands(
 
             outputChannel.appendLine(`[New Query] Opened query file in SQL Editor`);
 
-            // Force connection update for existing files (when reusing empty files)
-            if (reusingFile && sqlEditorProvider) {
+            // Handle SQL content and auto-execution for both new and reused files
+            if (sqlEditorProvider) {
                 // Add a small delay to ensure webview is fully loaded
                 setTimeout(() => {
-                    const databaseName = connectionItem.database || (connectionItem.database ? undefined : 'master');
-                    sqlEditorProvider.forceConnectionUpdate(uri, connectionId, databaseName);
+                    // Set connection for reused files
+                    if (reusingFile) {
+                        const databaseName = connectionItem.database || (connectionItem.database ? undefined : 'master');
+                        sqlEditorProvider.forceConnectionUpdate(uri, connectionId, databaseName);
+                    }
                     
-                    // If initialQuery was provided and we're reusing a file, also insert the query
+                    // If initialQuery was provided, insert it to the editor
                     if (initialQuery) {
                         setTimeout(() => {
                             sqlEditorProvider.insertTextToEditor(uri, initialQuery);
@@ -418,13 +421,13 @@ export function registerConnectionCommands(
                                 }, 100);
                             }
                         }, 100);
+                    } else if (autoExecute) {
+                        // Auto-execute even without initialQuery (executes current editor content)
+                        setTimeout(() => {
+                            sqlEditorProvider.triggerAutoExecute(uri);
+                        }, 100);
                     }
                 }, 100);
-            } else if (autoExecute && sqlEditorProvider) {
-                // For new files with autoExecute, trigger execution after editor loads
-                setTimeout(() => {
-                    sqlEditorProvider.triggerAutoExecute(uri);
-                }, 200);
             }
 
             return uri;
