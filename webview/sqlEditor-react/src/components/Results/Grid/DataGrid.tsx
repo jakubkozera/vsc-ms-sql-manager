@@ -11,7 +11,7 @@ import { ExportMenu } from './ExportMenu';
 import { exportData, copyToClipboard, downloadFile, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
 import './DataGrid.css';
 
-const ROW_HEIGHT = 28;
+const ROW_HEIGHT = 30; // Match old grid implementation
 
 interface DataGridProps {
   data: any[];
@@ -21,7 +21,7 @@ interface DataGridProps {
   onCellEdit?: (rowIndex: number, columnName: string, value: any) => void;
 }
 
-export function DataGrid({ data, columns, metadata, resultSetIndex }: DataGridProps) {
+export function DataGrid({ data, columns, metadata, resultSetIndex, onCellEdit }: DataGridProps) {
   // State
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
@@ -43,6 +43,9 @@ export function DataGrid({ data, columns, metadata, resultSetIndex }: DataGridPr
     getSelectedRowIndices,
     selectAllRows,
   } = useGridSelection();
+
+  // Computed selection count
+  const selectedRowCount = useMemo(() => getSelectedRowIndices().length, [getSelectedRowIndices]);
 
   // Build column definitions
   const columnDefs: ColumnDef[] = useMemo(() => {
@@ -168,6 +171,13 @@ export function DataGrid({ data, columns, metadata, resultSetIndex }: DataGridPr
     selectCell(rowIndex, colIndex, value, e.ctrlKey || e.metaKey, e.shiftKey);
   }, [selectCell]);
 
+  const handleCellEditInternal = useCallback((rowIndex: number, _: number, columnName: string, newValue: unknown) => {
+    onCellEdit?.(rowIndex, columnName, newValue);
+  }, [onCellEdit]);
+  const handleFKExpand = useCallback((rowIndex: number, colIndex: number, columnName: string) => {
+    // TODO: Implement FK expansion with FKQuickPick
+    console.log('FK expand clicked:', { rowIndex, colIndex, columnName });
+  }, []);
   const handleContextMenu = useCallback((e: React.MouseEvent, rowIndex?: number, colIndex?: number) => {
     e.preventDefault();
     
@@ -273,9 +283,6 @@ export function DataGrid({ data, columns, metadata, resultSetIndex }: DataGridPr
     );
   }
 
-  const hasActiveFilters = Object.keys(filters).length > 0;
-  const selectedRowCount = getSelectedRowIndices().length;
-
   return (
     <div 
       className="data-grid-container" 
@@ -284,41 +291,6 @@ export function DataGrid({ data, columns, metadata, resultSetIndex }: DataGridPr
       onKeyDown={handleKeyDown}
       onContextMenu={(e) => handleContextMenu(e)}
     >
-      {/* Toolbar */}
-      <div className="data-grid-toolbar">
-        <div className="toolbar-info">
-          <span className="row-count">{sortedData.length} rows</span>
-          {hasActiveFilters && (
-            <span className="filter-indicator">
-              ({Object.keys(filters).length} filter{Object.keys(filters).length !== 1 ? 's' : ''} active)
-            </span>
-          )}
-          {selectedRowCount > 0 && (
-            <span className="selection-indicator">
-              • {selectedRowCount} selected
-            </span>
-          )}
-        </div>
-        <div className="toolbar-actions">
-          <button 
-            className="toolbar-btn" 
-            onClick={handleExportButtonClick}
-            title="Export data"
-          >
-            Export ▾
-          </button>
-          {hasActiveFilters && (
-            <button 
-              className="toolbar-btn" 
-              onClick={() => setFilters({})}
-              title="Clear all filters"
-            >
-              Clear Filters
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Grid */}
       <div 
         className="data-grid-scroll-container"
@@ -337,6 +309,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex }: DataGridPr
               onResize={handleColumnResize}
               onFilterClick={handleFilterClick}
               onPinColumn={handlePinColumn}
+              onExportClick={handleExportButtonClick}
             />
             <tbody>
               {virtualItems.map((virtualRow) => {
@@ -360,6 +333,8 @@ export function DataGrid({ data, columns, metadata, resultSetIndex }: DataGridPr
                     onClick={handleRowClick}
                     onCellClick={handleCellClick}
                     onContextMenu={handleContextMenu}
+                    onCellEdit={onCellEdit ? handleCellEditInternal : undefined}
+                    onFKExpand={handleFKExpand}
                   />
                 );
               })}

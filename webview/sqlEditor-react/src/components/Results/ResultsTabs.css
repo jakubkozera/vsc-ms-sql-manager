@@ -5,6 +5,12 @@
   background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background));
 }
 
+.results-tabs-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .results-tabs {
   display: flex;
   gap: 0;
@@ -103,4 +109,42 @@
   opacity: 1;
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
+}
+/* Stats row (right side of tabs) */
+.tabs-row-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 16px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.tabs-row-stats .row-count {
+  font-weight: 500;
+}
+
+.tabs-row-stats .filter-indicator {
+  color: var(--vscode-textLink-foreground);
+}
+
+.tabs-row-stats .selection-indicator {
+  color: var(--vscode-descriptionForeground);
+}
+
+.clear-filters-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.clear-filters-btn:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground);
 }

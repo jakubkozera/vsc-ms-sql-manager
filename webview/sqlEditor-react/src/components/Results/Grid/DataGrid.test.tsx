@@ -38,7 +38,8 @@ describe('DataGrid', () => {
     expect(screen.getByTestId('header-email')).toBeInTheDocument();
   });
 
-  it('shows row count in toolbar', () => {
+  // Row count is now shown in ResultsTabs, not in DataGrid toolbar
+  it('does not show a separate toolbar row count (moved to ResultsTabs)', () => {
     render(
       <DataGrid
         data={sampleData}
@@ -47,10 +48,12 @@ describe('DataGrid', () => {
       />
     );
     
-    expect(screen.getByText(/3 rows/i)).toBeInTheDocument();
+    // Row count is now in ResultsTabs, not in DataGrid
+    expect(screen.queryByText(/3 rows/i)).not.toBeInTheDocument();
   });
 
-  it('shows export button in toolbar', () => {
+  // Export is now via the # column header, not a separate button
+  it('shows export via row number header', () => {
     render(
       <DataGrid
         data={sampleData}
@@ -59,7 +62,8 @@ describe('DataGrid', () => {
       />
     );
     
-    expect(screen.getByTitle('Export data')).toBeInTheDocument();
+    // Export is triggered via the # header column
+    expect(screen.getByTitle('Click to export')).toBeInTheDocument();
   });
 
   it('shows sort indicator after header click', () => {
@@ -101,7 +105,7 @@ describe('DataGrid', () => {
     expect(hasDescIndicator).toBe(true);
   });
 
-  it('opens export menu when export button clicked', () => {
+  it('opens export menu when row number header clicked', () => {
     render(
       <DataGrid
         data={sampleData}
@@ -110,7 +114,7 @@ describe('DataGrid', () => {
       />
     );
     
-    fireEvent.click(screen.getByTitle('Export data'));
+    fireEvent.click(screen.getByTitle('Click to export'));
     
     expect(screen.getByTestId('export-menu')).toBeInTheDocument();
   });

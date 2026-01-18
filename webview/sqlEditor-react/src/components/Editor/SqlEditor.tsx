@@ -4,7 +4,19 @@ import type { editor, languages } from 'monaco-editor';
 import { format } from 'sql-formatter';
 import { useVSCode } from '../../context/VSCodeContext';
 import { useFormatOptions } from '../Toolbar/FormatButton';
-import type { TableInfo, ViewInfo, StoredProcedureInfo, FunctionInfo } from '../../types/schema';
+import type { TableInfo, ViewInfo, StoredProcedureInfo, FunctionInfo, ColumnInfo } from '../../types/schema';
+import {
+  validateSql,
+  builtInSnippets,
+  analyzeSqlContext,
+  extractTablesFromQuery,
+  findTableForAlias,
+  getColumnsForTable,
+  getRelatedTables,
+  generateSmartAlias,
+  getSqlOperators,
+  getAggregateFunctions,
+} from '../../services';
 import './SqlEditor.css';
 
 export interface SqlEditorHandle {
@@ -161,14 +173,33 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       editor.focus();
     }, [onExecute, handleFormat, initialValue]);
 
-    // Update autocomplete when schema changes
+    // Update editor value when initialValue changes (for loading from history/commands)
+    useEffect(() => {
+      if (editorRef.current && initialValue !== undefined && initialValue !== '') {
+        const currentValue = editorRef.current.getValue();
+        const defaultComment = '-- Write your SQL query here\nSELECT * FROM ';
+        
+        // Update if initial value is different AND either:
+        // 1. Current value is still the default comment, OR
+        // 2. Current value is empty
+        if (initialValue !== currentValue && (currentValue === defaultComment || currentValue.trim() === '')) {
+          console.log('[SqlEditor] Updating editor with new SQL:', initialValue.substring(0, 100));
+          editorRef.current.setValue(initialValue);
+          editorRef.current.setPosition({ lineNumber: 1, column: 1 });
+        }
+      }
+    }, [initialValue]);
+
+    // Update autocomplete and validation when schema changes
     useEffect(() => {
       if (!monacoRef.current || !dbSchema) return;
 
       const monacoInstance = monacoRef.current;
+      const disposables: { dispose: () => void }[] = [];
 
       // Register completions provider for T-SQL
-      const provider = monacoInstance.languages.registerCompletionItemProvider('sql', {
+      const completionProvider = monacoInstance.languages.registerCompletionItemProvider('sql', {
+        triggerCharacters: ['.', ' '],
         provideCompletionItems: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
           const word = model.getWordUntilPosition(position);
           const range = {
@@ -178,27 +209,199 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
             endColumn: word.endColumn,
           };
 
+          const textUntilPosition = model.getValueInRange({
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column,
+          });
+
+          const lineUntilPosition = model.getValueInRange({
+            startLineNumber: position.lineNumber,
+            startColumn: 1,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column,
+          });
+
           const suggestions: languages.CompletionItem[] = [];
 
+          // Check if we're after a dot (for column suggestions)
+          const dotMatch = lineUntilPosition.match(/(\w+)\.\w*$/);
+          if (dotMatch) {
+            const prefix = dotMatch[1];
+            const tableAlias = findTableForAlias(textUntilPosition, prefix, dbSchema);
+
+            if (tableAlias) {
+              const columns = getColumnsForTable(tableAlias.schema, tableAlias.table, dbSchema);
+              return {
+                suggestions: columns.map((col: ColumnInfo) => ({
+                  label: col.name,
+                  kind: monacoInstance.languages.CompletionItemKind.Field,
+                  detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
+                  insertText: col.name,
+                  range,
+                })),
+              };
+            }
+          }
+
+          // Analyze SQL context
+          const sqlContext = analyzeSqlContext(textUntilPosition, lineUntilPosition);
+          const fullText = model.getValue();
+
+          // Handle different SQL contexts
+          switch (sqlContext.type) {
+            case 'JOIN_TABLE': {
+              const tablesInQuery = extractTablesFromQuery(textUntilPosition, dbSchema);
+              if (tablesInQuery.length > 0) {
+                const relatedTables = getRelatedTables(tablesInQuery, dbSchema);
+                relatedTables.forEach((table) => {
+                  if (!table || !table.name) return;
+                  const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
+                  const tableAlias = generateSmartAlias(table.name);
+
+                  let insertText = `${fullName} ${tableAlias}`;
+                  let detailText = `Table (${table.columns?.length || 0} columns)`;
+
+                  if (table.foreignKeyInfo) {
+                    const fkInfo = table.foreignKeyInfo;
+                    const toAlias = tableAlias;
+                    const fromAlias = fkInfo.fromAlias;
+
+                    if (fkInfo.direction === 'to') {
+                      insertText = `${fullName} ${toAlias} ON ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
+                      detailText = `Join on ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
+                    } else {
+                      insertText = `${fullName} ${toAlias} ON ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                      detailText = `Join on ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                    }
+                  }
+
+                  suggestions.push({
+                    label: fullName,
+                    kind: monacoInstance.languages.CompletionItemKind.Class,
+                    detail: detailText,
+                    insertText: insertText,
+                    insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range,
+                    sortText: `0_${fullName}`,
+                  });
+                });
+                return { suggestions };
+              }
+              break;
+            }
+
+            case 'ORDER_BY':
+            case 'GROUP_BY':
+            case 'SELECT':
+            case 'WHERE':
+            case 'AFTER_FROM': {
+              // Suggest columns from tables in query
+              const tablesInQuery = extractTablesFromQuery(fullText, dbSchema);
+              tablesInQuery.forEach((tableInfo) => {
+                const columns = getColumnsForTable(tableInfo.schema, tableInfo.table, dbSchema);
+                const displayAlias = tableInfo.alias || tableInfo.table;
+
+                columns.forEach((col: ColumnInfo) => {
+                  if (tableInfo.hasExplicitAlias || tablesInQuery.length > 1) {
+                    suggestions.push({
+                      label: `${displayAlias}.${col.name}`,
+                      kind: monacoInstance.languages.CompletionItemKind.Field,
+                      detail: `${col.type}${col.nullable ? ' (nullable)' : ''} - from ${tableInfo.table}`,
+                      insertText: `${displayAlias}.${col.name}`,
+                      range,
+                      sortText: `1_${col.name}`,
+                    });
+                  }
+                  suggestions.push({
+                    label: col.name,
+                    kind: monacoInstance.languages.CompletionItemKind.Field,
+                    detail: `${col.type}${col.nullable ? ' (nullable)' : ''} - from ${tableInfo.table}`,
+                    insertText: col.name,
+                    range,
+                    sortText: `2_${col.name}`,
+                  });
+                });
+              });
+
+              // Add operators for WHERE/HAVING
+              if (sqlContext.suggestOperators) {
+                getSqlOperators().forEach((op) => {
+                  suggestions.push({
+                    label: op.label,
+                    kind: monacoInstance.languages.CompletionItemKind.Operator,
+                    detail: op.detail,
+                    insertText: op.insertText,
+                    insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range,
+                    sortText: `0_${op.label}`,
+                  });
+                });
+              }
+              break;
+            }
+
+            case 'HAVING': {
+              // Add aggregate functions
+              getAggregateFunctions().forEach((fn) => {
+                suggestions.push({
+                  label: fn.label,
+                  kind: monacoInstance.languages.CompletionItemKind.Function,
+                  detail: fn.detail,
+                  insertText: fn.insertText,
+                  insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                  range,
+                  sortText: `0_${fn.label}`,
+                });
+              });
+
+              if (sqlContext.suggestOperators) {
+                getSqlOperators().forEach((op) => {
+                  suggestions.push({
+                    label: op.label,
+                    kind: monacoInstance.languages.CompletionItemKind.Operator,
+                    detail: op.detail,
+                    insertText: op.insertText,
+                    insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range,
+                    sortText: `1_${op.label}`,
+                  });
+                });
+              }
+              break;
+            }
+
+            case 'INSERT_COLUMNS': {
+              if (sqlContext.tableName) {
+                const tableInfo = dbSchema.tables?.find(
+                  (t: TableInfo) => t.name.toLowerCase() === sqlContext.tableName?.toLowerCase()
+                );
+                if (tableInfo) {
+                  tableInfo.columns.forEach((col: ColumnInfo) => {
+                    suggestions.push({
+                      label: col.name,
+                      kind: monacoInstance.languages.CompletionItemKind.Field,
+                      detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
+                      insertText: col.name,
+                      range,
+                    });
+                  });
+                }
+              }
+              break;
+            }
+          }
+
           // Add tables
-          dbSchema.tables.forEach((table: TableInfo) => {
+          dbSchema.tables?.forEach((table: TableInfo) => {
             suggestions.push({
               label: table.name,
               kind: monacoInstance.languages.CompletionItemKind.Class,
               insertText: table.name,
               range,
               detail: `Table (${table.columns.length} columns)`,
-            });
-
-            // Add columns for each table
-            table.columns.forEach((col) => {
-              suggestions.push({
-                label: `${table.name}.${col.name}`,
-                kind: monacoInstance.languages.CompletionItemKind.Field,
-                insertText: `${table.name}.${col.name}`,
-                range,
-                detail: `${col.type}${col.nullable ? '' : ' NOT NULL'}`,
-              });
+              sortText: `3_${table.name}`,
             });
           });
 
@@ -210,6 +413,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
               insertText: view.name,
               range,
               detail: 'View',
+              sortText: `4_${view.name}`,
             });
           });
 
@@ -221,6 +425,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
               insertText: sp.name,
               range,
               detail: 'Stored Procedure',
+              sortText: `5_${sp.name}`,
             });
           });
 
@@ -232,14 +437,76 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
               insertText: fn.name,
               range,
               detail: 'Function',
+              sortText: `5_${fn.name}`,
             });
           });
 
-          return { suggestions };
+          // Add snippets
+          builtInSnippets.forEach((snippet) => {
+            suggestions.push({
+              label: snippet.prefix,
+              kind: monacoInstance.languages.CompletionItemKind.Snippet,
+              insertText: snippet.body,
+              insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range,
+              detail: snippet.name,
+              documentation: snippet.description,
+              sortText: `9_${snippet.prefix}`,
+            });
+          });
+
+          // Remove duplicates
+          const seen = new Set<string>();
+          const uniqueSuggestions = suggestions.filter((s) => {
+            const key = `${s.label}-${s.kind}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+          return { suggestions: uniqueSuggestions };
         },
       });
+      disposables.push(completionProvider);
 
-      return () => provider.dispose();
+      // Set up validation on content change
+      const validationDisposable = editorRef.current?.onDidChangeModelContent(() => {
+        const model = editorRef.current?.getModel();
+        if (!model) return;
+
+        // Debounce validation
+        const timeoutId = setTimeout(() => {
+          const sql = model.getValue();
+          const markers = validateSql(sql, dbSchema);
+
+          // Convert our markers to Monaco markers
+          const monacoMarkers = markers.map((m) => ({
+            severity:
+              m.severity === 'error'
+                ? monacoInstance.MarkerSeverity.Error
+                : m.severity === 'warning'
+                ? monacoInstance.MarkerSeverity.Warning
+                : monacoInstance.MarkerSeverity.Info,
+            message: m.message,
+            startLineNumber: m.startLineNumber,
+            startColumn: m.startColumn,
+            endLineNumber: m.endLineNumber,
+            endColumn: m.endColumn,
+          }));
+
+          monacoInstance.editor.setModelMarkers(model, 'sql-validator', monacoMarkers);
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+      });
+
+      if (validationDisposable) {
+        disposables.push(validationDisposable);
+      }
+
+      return () => {
+        disposables.forEach((d) => d.dispose());
+      };
     }, [dbSchema]);
 
     return (

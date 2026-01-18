@@ -33,3 +33,13 @@
   width: 50px;
   flex-shrink: 0;
 }
+/* Row marked for deletion */
+.grid-row.marked-for-deletion {
+  background-color: rgba(220, 53, 69, 0.15) !important;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.grid-row.marked-for-deletion .grid-cell {
+  text-decoration: line-through;
+}

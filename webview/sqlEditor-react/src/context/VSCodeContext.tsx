@@ -60,6 +60,9 @@ interface VSCodeState {
   
   // FK Expansion
   pendingExpansions: Map<string, RelationResultsMessage>;
+  
+  // Auto-execute flag
+  shouldAutoExecute: boolean;
 }
 
 type VSCodeAction =
@@ -75,7 +78,8 @@ type VSCodeAction =
   | { type: 'SET_QUERY_PLAN'; planXml: string; executionTime?: number; messages?: QueryMessage[]; resultSets?: any[][] }
   | { type: 'QUERY_CANCELLED' }
   | { type: 'SET_EXPANSION_RESULT'; payload: RelationResultsMessage }
-  | { type: 'CLEAR_RESULTS' };
+  | { type: 'CLEAR_RESULTS' }
+  | { type: 'SET_AUTO_EXECUTE'; shouldAutoExecute: boolean };
 
 const initialState: VSCodeState = {
   connections: [],
@@ -95,6 +99,7 @@ const initialState: VSCodeState = {
   executionTime: null,
   rowsAffected: null,
   pendingExpansions: new Map(),
+  shouldAutoExecute: false,
 };
 
 function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
@@ -103,6 +108,12 @@ function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
       return {
         ...state,
         config: { ...state.config, ...action.config },
+      };
+    
+    case 'SET_AUTO_EXECUTE':
+      return {
+        ...state,
+        shouldAutoExecute: action.shouldAutoExecute,
       };
       
     case 'SET_CONTENT':
@@ -238,6 +249,9 @@ interface VSCodeContextValue extends VSCodeState {
   // FK Expansion
   expandRelation: (expansionId: string, query: string) => void;
   getExpansionResult: (expansionId: string) => RelationResultsMessage | undefined;
+  
+  // Auto-execute
+  clearAutoExecute: () => void;
 }
 
 const VSCodeContext = createContext<VSCodeContextValue | null>(null);
@@ -274,7 +288,12 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleMessage = (event: MessageEvent<IncomingMessage>) => {
       const message = event.data;
-      console.log('[VSCode] Received message:', message.type);
+      console.log('[VSCode] Received message:', message?.type || 'undefined', message);
+      
+      if (!message || !message.type) {
+        console.warn('[VSCode] Received message without type:', message);
+        return;
+      }
       
       switch (message.type) {
         case 'config':
@@ -341,8 +360,8 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
           break;
           
         case 'autoExecuteQuery':
-          // Will be handled in the editor component
-          console.log('[VSCode] Auto-execute query requested');
+          // Signal that auto-execute should happen
+          dispatch({ type: 'SET_AUTO_EXECUTE', shouldAutoExecute: true });
           break;
           
         default:
@@ -421,6 +440,10 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     return state.pendingExpansions.get(expansionId);
   }, [state.pendingExpansions]);
   
+  const clearAutoExecute = useCallback(() => {
+    dispatch({ type: 'SET_AUTO_EXECUTE', shouldAutoExecute: false });
+  }, []);
+  
   // Derived state
   const isConnected = state.currentConnectionId !== null;
   
@@ -438,6 +461,7 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     manageConnections,
     expandRelation,
     getExpansionResult,
+    clearAutoExecute,
   }), [
     state,
     isConnected,
@@ -451,6 +475,7 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     manageConnections,
     expandRelation,
     getExpansionResult,
+    clearAutoExecute,
   ]);
   
   return (

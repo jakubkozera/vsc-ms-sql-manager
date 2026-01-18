@@ -63,7 +63,11 @@ export function ResultsPanel() {
 
         {activeTab === 'results' && !hasResults && (
           <div className="results-empty">
-            <div className="empty-icon">📊</div>
+            <svg className="empty-icon-svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
             <p>Execute a query to see results</p>
             <p className="hint">Press F5 or Ctrl+Shift+E to run</p>
           </div>
@@ -84,7 +88,9 @@ export function ResultsPanel() {
 
         {activeTab === 'plan' && !hasPlan && (
           <div className="results-empty">
-            <div className="empty-icon">📈</div>
+            <svg className="empty-icon-svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
             <p>No execution plan available</p>
             <p className="hint">Enable "With execution plan" before running</p>
           </div>

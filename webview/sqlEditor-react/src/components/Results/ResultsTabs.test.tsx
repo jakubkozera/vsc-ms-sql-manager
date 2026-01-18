@@ -18,12 +18,20 @@ describe('ResultsTabs', () => {
     vi.clearAllMocks();
   });
 
-  it('renders all three tabs', () => {
-    render(<ResultsTabs {...defaultProps} />);
+  it('renders all three tabs when plan is available', () => {
+    render(<ResultsTabs {...defaultProps} hasPlan={true} />);
     
     expect(screen.getByTestId('results-tab')).toBeInTheDocument();
     expect(screen.getByTestId('messages-tab')).toBeInTheDocument();
     expect(screen.getByTestId('plan-tab')).toBeInTheDocument();
+  });
+
+  it('hides Query Plan tab when no plan is available', () => {
+    render(<ResultsTabs {...defaultProps} hasPlan={false} />);
+    
+    expect(screen.getByTestId('results-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('messages-tab')).toBeInTheDocument();
+    expect(screen.queryByTestId('plan-tab')).not.toBeInTheDocument();
   });
 
   it('marks active tab correctly', () => {

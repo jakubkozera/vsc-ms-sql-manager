@@ -1,15 +1,24 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { useVSCode } from './context/VSCodeContext';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { Toolbar, useFormatOptions } from './components/Toolbar';
 import { SqlEditor, SqlEditorHandle } from './components/Editor';
 import { ResultsPanel } from './components/Results';
+import { removeExecutionComments } from './services';
 import './styles/app.css';
 
 function App() {
   const {
     isExecuting,
     executeQuery,
+    currentConnectionId,
+    shouldAutoExecute,
+    clearAutoExecute,
+    lastResults,
+    lastMessages,
+    lastPlanXml,
+    lastError,
+    editorContent,
   } = useVSCode();
 
   const editorRef = useRef<SqlEditorHandle>(null);
@@ -20,7 +29,6 @@ function App() {
 
   // Editor/Results split resizing
   const [editorHeight, setEditorHeight] = useLocalStorage('editorHeight', 300);
-  const resizerRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
 
   const handleExecute = useCallback(() => {
@@ -32,6 +40,9 @@ function App() {
     }
 
     if (sql.trim()) {
+      // Remove execution history comments
+      sql = removeExecutionComments(sql);
+      
       // Format before run if enabled
       if (formatOptions.formatBeforeRun) {
         editorRef.current.formatSql();
@@ -41,6 +52,24 @@ function App() {
       executeQuery(sql, { includeActualPlan });
     }
   }, [executeQuery, includeActualPlan, formatOptions.formatBeforeRun]);
+
+  // Handle auto-execute query
+  useEffect(() => {
+    if (shouldAutoExecute && currentConnectionId && editorRef.current) {
+      const content = editorRef.current.getValue().trim();
+      // Auto-execute if content starts with SELECT
+      if (content && content.toLowerCase().startsWith('select')) {
+        // Small delay to ensure the webview is fully initialized
+        const timeoutId = setTimeout(() => {
+          const cleanedSql = removeExecutionComments(content);
+          executeQuery(cleanedSql, { includeActualPlan });
+        }, 50);
+        clearAutoExecute();
+        return () => clearTimeout(timeoutId);
+      }
+      clearAutoExecute();
+    }
+  }, [shouldAutoExecute, currentConnectionId, executeQuery, includeActualPlan, clearAutoExecute]);
 
   const handleFormat = useCallback(() => {
     editorRef.current?.formatSql();
@@ -84,6 +113,14 @@ function App() {
     document.body.style.userSelect = 'none';
   };
 
+  // Determine if results container should be visible
+  const hasResults = useMemo(() => {
+    return (lastResults && lastResults.length > 0) || 
+           (lastMessages && lastMessages.length > 0) || 
+           !!lastPlanXml || 
+           !!lastError;
+  }, [lastResults, lastMessages, lastPlanXml, lastError]);
+
   return (
     <div id="container">
       {/* Toolbar */}
@@ -96,26 +133,29 @@ function App() {
       />
 
       {/* Editor Container */}
-      <div id="editorContainer" style={{ height: `${editorHeight}px` }}>
+      <div id="editorContainer" style={{ height: hasResults ? `${editorHeight}px` : undefined, flex: hasResults ? undefined : 1 }}>
         <SqlEditor
           ref={editorRef}
           onExecute={(sql) => executeQuery(sql, { includeActualPlan })}
-          initialValue="-- Write your SQL query here\nSELECT * FROM "
+          initialValue={editorContent || "-- Write your SQL query here\nSELECT * FROM "}
         />
       </div>
 
-      {/* Resizer */}
-      <div
-        className="resizer"
-        id="resizer"
-        ref={resizerRef}
-        onMouseDown={handleResizerMouseDown}
-      />
+      {/* Resizer - only visible when results are shown */}
+      {hasResults && (
+        <div
+          className="resizer visible"
+          id="resizer"
+          onMouseDown={handleResizerMouseDown}
+        />
+      )}
 
-      {/* Results Panel */}
-      <div id="resultsContainer" className="visible">
-        <ResultsPanel />
-      </div>
+      {/* Results Panel - only visible when there are results */}
+      {hasResults && (
+        <div id="resultsContainer" className="visible">
+          <ResultsPanel />
+        </div>
+      )}
     </div>
   );
 }

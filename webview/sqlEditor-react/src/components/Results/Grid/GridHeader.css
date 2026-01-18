@@ -30,9 +30,21 @@
 }
 
 .row-number-header {
-  cursor: default;
+  cursor: pointer;
   text-align: center;
   color: var(--vscode-descriptionForeground);
+}
+
+.row-number-header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.row-number-header .export-icon {
+  opacity: 0.7;
+}
+
+.row-number-header:hover .export-icon {
+  opacity: 1;
 }
 
 .header-content {

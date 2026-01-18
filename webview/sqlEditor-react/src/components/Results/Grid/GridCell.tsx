@@ -1,5 +1,6 @@
-import { useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { ColumnDef } from '../../../types/grid';
+import { InlineCellEditor } from './InlineCellEditor';
 import './GridCell.css';
 
 interface GridCellProps {
@@ -10,10 +11,12 @@ interface GridCellProps {
   isSelected?: boolean;
   isModified?: boolean;
   isDeleted?: boolean;
+  isEditable?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onDoubleClick?: (e: React.MouseEvent) => void;
   onFKExpand?: (e: React.MouseEvent) => void;
+  onCellEdit?: (newValue: unknown) => void;
 }
 
 export function GridCell({ 
@@ -24,11 +27,14 @@ export function GridCell({
   isSelected = false,
   isModified = false,
   isDeleted = false,
+  isEditable = true,
   onClick,
   onContextMenu,
   onDoubleClick,
   onFKExpand,
+  onCellEdit,
 }: GridCellProps) {
+  const [isEditing, setIsEditing] = useState(false);
   // Determine cell type and format
   const { displayValue, cellType, isLongText } = useMemo(() => {
     if (value === null || value === undefined) {
@@ -84,8 +90,24 @@ export function GridCell({
   }, [onContextMenu]);
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (isEditable) {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsEditing(true);
+    }
     onDoubleClick?.(e);
-  }, [onDoubleClick]);
+  }, [isEditable, onDoubleClick]);
+
+  const handleEditSave = useCallback((newValue: unknown) => {
+    setIsEditing(false);
+    if (newValue !== value) {
+      onCellEdit?.(newValue);
+    }
+  }, [value, onCellEdit]);
+
+  const handleEditCancel = useCallback(() => {
+    setIsEditing(false);
+  }, []);
 
   const handleFKClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -100,9 +122,29 @@ export function GridCell({
     isSelected && 'selected',
     isModified && 'modified',
     isDeleted && 'deleted',
+    isEditing && 'editing',
     column.isPrimaryKey && 'pk-cell',
     column.isForeignKey && 'fk-cell',
   ].filter(Boolean).join(' ');
+
+  // Render inline editor when editing
+  if (isEditing) {
+    return (
+      <td
+        className={classNames}
+        style={{ width: column.width }}
+        data-testid={`cell-${rowIndex}-${colIndex}`}
+      >
+        <InlineCellEditor
+          value={value}
+          columnName={column.name}
+          columnType={column.type}
+          onSave={handleEditSave}
+          onCancel={handleEditCancel}
+        />
+      </td>
+    );
+  }
 
   return (
     <td
@@ -116,14 +158,16 @@ export function GridCell({
     >
       <span className="cell-content">{displayValue}</span>
       {isModified && <span className="cell-modified-indicator" title="Modified">●</span>}
-      {column.isForeignKey && value !== null && value !== undefined && (
-        <button 
-          className="fk-expand-button" 
+      {(column.isForeignKey || column.isPrimaryKey) && value !== null && value !== undefined && (
+        <span 
+          className="cell-expand-chevron" 
           onClick={handleFKClick}
-          title="Expand foreign key"
+          title={column.isForeignKey ? "Expand foreign key" : "View related rows"}
         >
-          🔗
-        </button>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </span>
       )}
     </td>
   );

@@ -39,57 +39,59 @@
   font-size: 8px;
 }
 
-/* PK/FK cell styling */
+/* PK/FK cell styling - use CSS variables that work with VS Code themes */
 .grid-cell.pk-cell {
-  background: linear-gradient(to right, rgba(255, 215, 0, 0.1) 0%, transparent 8px);
-}
-
-.grid-cell.pk-cell::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background-color: var(--vscode-editorWarning-foreground, #ffd700);
+  color: #ffd700 !important; /* Default: gold for primary key */
+  font-weight: 500;
 }
 
 .grid-cell.fk-cell {
+  color: #6496ff !important; /* Default: blue for foreign key */
   padding-right: 28px;
+  font-weight: 500;
 }
 
-.grid-cell.fk-cell::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background-color: var(--vscode-editorInfo-foreground, #3794ff);
+/* Light theme overrides using media query */
+@media (prefers-color-scheme: light) {
+  .grid-cell.pk-cell {
+    color: #b8860b !important; /* Darker gold for light theme */
+  }
+  
+  .grid-cell.fk-cell {
+    color: #0066cc !important; /* Darker blue for light theme */
+  }
 }
 
-.fk-expand-button {
+/* Expand chevron for PK/FK cells - shows on hover */
+.cell-expand-chevron {
   position: absolute;
   right: 4px;
   top: 50%;
   transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   padding: 0;
-  border: none;
-  background: none;
+  display: none;
+  opacity: 0;
   cursor: pointer;
-  font-size: 12px;
-  opacity: 0.6;
-  display: flex;
+  color: var(--vscode-button-background);
+  transition: all 0.2s;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
 }
 
-.fk-expand-button:hover {
+.grid-cell:hover .cell-expand-chevron {
+  display: inline-flex;
   opacity: 1;
-  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.cell-expand-chevron:hover {
+  color: var(--vscode-button-hoverBackground);
+}
+
+.cell-expand-chevron.expanded {
+  display: inline-flex;
+  opacity: 1;
 }
 
 /* Cell type styling */
@@ -129,4 +131,9 @@
 .grid-cell.long-text .cell-content::after {
   content: '...';
   color: var(--vscode-descriptionForeground);
+}
+/* Editing state */
+.grid-cell.editing {
+  padding: 0;
+  overflow: visible;
 }
