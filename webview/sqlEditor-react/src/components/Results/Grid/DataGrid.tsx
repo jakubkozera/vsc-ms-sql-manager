@@ -44,6 +44,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     columnName: string;
   } | null>(null);
   const [expandedRows, setExpandedRows] = useState<Map<string, ExpandedRowState>>(new Map());
+  const [isGridActive, setIsGridActive] = useState(false);
 
   // VS Code context
   const { 
@@ -487,6 +488,48 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     const text = exportData(selectedData, selectedCols, { format: 'clipboard', includeHeaders: true });
     await copyToClipboard(text);
   }, [sortedData, columnDefs, getSelectedRowIndices]);
+  
+  // Global keyboard shortcut for Ctrl+C when grid is active
+  useEffect(() => {
+    if (!isGridActive) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Handle Ctrl+C (or Cmd+C on Mac)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        // Check if Monaco editor has focus
+        const activeElement = document.activeElement;
+        if (activeElement) {
+          let element: Element | null = activeElement;
+          while (element) {
+            if (element.classList.contains('monaco-editor') || 
+                element.classList.contains('monaco-editor-background') ||
+                element.id === 'editor-container') {
+              // Monaco has focus, let it handle the copy
+              return;
+            }
+            element = element.parentElement;
+          }
+        }
+
+        // Check if there's a text input focused
+        if (activeElement && (
+          activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          (activeElement as HTMLElement).isContentEditable
+        )) {
+          // Let the input handle the copy
+          return;
+        }
+
+        // Grid should handle the copy
+        e.preventDefault();
+        handleCopy();
+      }
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isGridActive, handleCopy]);
 
   const handleExport = useCallback((format: ExportFormat, includeHeaders: boolean) => {
     const selectedIndices = getSelectedRowIndices();
@@ -551,6 +594,14 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onContextMenu={(e) => handleContextMenu(e)}
+      onClick={() => setIsGridActive(true)}
+      onFocus={() => setIsGridActive(true)}
+      onBlur={(e) => {
+        // Only deactivate if focus is leaving the grid container entirely
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsGridActive(false);
+        }
+      }}
     >
       {/* Grid */}
       <div 
