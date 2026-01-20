@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useReducer, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useCallback, useMemo, useRef } from 'react';
 import type {
   IncomingMessage,
   OutgoingMessage,
@@ -136,8 +136,15 @@ function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
       };
       
     case 'SET_CONNECTIONS': {
-      const currentId = action.currentConnectionId ?? state.currentConnectionId;
+      let currentId = action.currentConnectionId ?? state.currentConnectionId;
       const currentDb = action.currentDatabase ?? state.currentDatabase;
+      
+      // If no current connection is specified but there are connections available,
+      // use the first connection as the current one
+      if (!currentId && action.connections.length > 0) {
+        currentId = action.connections[0].id;
+      }
+      
       return {
         ...state,
         connections: action.connections,
@@ -287,6 +294,12 @@ const VSCodeContext = createContext<VSCodeContextValue | null>(null);
 export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(vsCodeReducer, initialState);
   
+  // Use ref to always access latest state in callbacks
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  
   // Get VS Code API (memoized)
   const vscode = useMemo(() => {
     try {
@@ -428,15 +441,25 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   }, [postMessage]);
   
   const executeQuery = useCallback((query: string, options?: { includeActualPlan?: boolean }) => {
+    // Access current state from ref - this ensures we always have the latest state
+    const currentState = stateRef.current;
+    const currentConnectionId = currentState.currentConnectionId;
+    const currentDatabase = currentState.currentDatabase;
+    const connections = currentState.connections;
+    
     console.log('[VSCodeContext] executeQuery called:', {
       queryLength: query.length,
       queryPreview: query.substring(0, 100) + '...',
       includeActualPlan: options?.includeActualPlan,
-      currentConnectionId: state.currentConnectionId,
-      currentDatabase: state.currentDatabase
+      currentConnectionId,
+      currentDatabase,
+      stateConnections: connections.length,
+      stateConnectionsIds: connections.map(c => c.id).join(', ')
     });
-    if (!state.currentConnectionId) {
+    
+    if (!currentConnectionId) {
       console.log('[VSCodeContext] No connection selected');
+      console.log('[VSCodeContext] Available connections:', connections);
       postMessage({ type: 'showMessage', level: 'error', message: 'Please select a connection first' });
       return;
     }
@@ -445,14 +468,15 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     postMessage({
       type: 'executeQuery',
       query,
-      connectionId: state.currentConnectionId,
-      databaseName: state.currentDatabase ?? undefined,
+      connectionId: currentConnectionId,
+      databaseName: currentDatabase ?? undefined,
       includeActualPlan: options?.includeActualPlan,
     });
-  }, [state.currentConnectionId, state.currentDatabase, postMessage]);
+  }, [postMessage]);
   
   const executeEstimatedPlan = useCallback((query: string) => {
-    if (!state.currentConnectionId) {
+    const currentState = stateRef.current;
+    if (!currentState.currentConnectionId) {
       postMessage({ type: 'showMessage', level: 'error', message: 'Please select a connection first' });
       return;
     }
@@ -460,10 +484,10 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     postMessage({
       type: 'executeEstimatedPlan',
       query,
-      connectionId: state.currentConnectionId,
-      databaseName: state.currentDatabase ?? undefined,
+      connectionId: currentState.currentConnectionId,
+      databaseName: currentState.currentDatabase ?? undefined,
     });
-  }, [state.currentConnectionId, state.currentDatabase, postMessage]);
+  }, [postMessage]);
   
   const cancelQuery = useCallback(() => {
     postMessage({ type: 'cancelQuery' });

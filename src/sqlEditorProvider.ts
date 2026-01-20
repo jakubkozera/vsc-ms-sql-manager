@@ -93,6 +93,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         // Set the preferred connection+database for this webview
                         const compositeId = `${preferredDb.connectionId}::${preferredDb.database}`;
                         this.webviewSelectedConnection.set(webviewPanel.webview, compositeId);
+                    } else {
+                        // No preferred database, check if there's an active connection
+                        const activeConfig = this.connectionProvider.getCurrentConfig();
+                        if (activeConfig) {
+                            // Set the active connection for this webview
+                            const compositeId = `${activeConfig.id}::${activeConfig.database || 'master'}`;
+                            this.webviewSelectedConnection.set(webviewPanel.webview, compositeId);
+                            this.outputChannel.appendLine(`[SqlEditorProvider] Set active connection for webview: ${compositeId}`);
+                        }
                     }
 
                     // Send initial connections list
@@ -460,6 +469,17 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         await vscode.commands.executeCommand('mssqlManager.newQuery', connectionItem, message.query, true);
                     } catch (err) {
                         this.outputChannel.appendLine(`[SqlEditorProvider] openNewQuery failed: ${err}`);
+                    }
+                    break;
+
+                case 'showMessage':
+                    // Display message from webview
+                    if (message.level === 'error') {
+                        vscode.window.showErrorMessage(message.message);
+                    } else if (message.level === 'warning') {
+                        vscode.window.showWarningMessage(message.message);
+                    } else {
+                        vscode.window.showInformationMessage(message.message);
                     }
                     break;
             }
@@ -1032,12 +1052,12 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             authType: conn.config.authType
         }));
 
-        // Prefer the webview's last selected connection
+        // Prefer the webview's last selected connection, then active connection, then first active connection
         const preserved = this.webviewSelectedConnection.get(webview);
         let currentConnectionIdToSend = activeConnectionId;
         let currentDatabase: string | null = null;
 
-        this.outputChannel.appendLine(`[SqlEditorProvider] updateConnectionsList: preserved=${preserved}, activeConnectionId=${activeConnectionId}`);
+        this.outputChannel.appendLine(`[SqlEditorProvider] updateConnectionsList: preserved=${preserved}, activeConnectionId=${activeConnectionId}, activeConnections=${activeConnections.length}`);
 
         // Parse preserved selection if it's composite
         if (preserved && typeof preserved === 'string' && preserved.includes('::')) {
@@ -1048,6 +1068,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         } else if (preserved) {
             currentConnectionIdToSend = preserved;
             this.outputChannel.appendLine(`[SqlEditorProvider] Using simple preserved connection: ${preserved}`);
+        } else if (!currentConnectionIdToSend && activeConnections.length > 0) {
+            // No preserved or active connection, use the first active connection
+            currentConnectionIdToSend = activeConnections[0].id;
+            currentDatabase = activeConnections[0].config.database || 'master';
+            this.outputChannel.appendLine(`[SqlEditorProvider] Using first active connection: ${currentConnectionIdToSend} -> ${currentDatabase}`);
         } else {
             this.outputChannel.appendLine(`[SqlEditorProvider] No preserved connection, using active: ${activeConnectionId}`);
         }
