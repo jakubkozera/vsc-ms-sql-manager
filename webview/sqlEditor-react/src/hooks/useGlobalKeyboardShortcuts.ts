@@ -7,62 +7,84 @@ interface UseGlobalKeyboardShortcutsOptions {
 
 /**
  * Hook that sets up global keyboard shortcuts for the application.
- * Handles shortcuts like Ctrl+C for copying grid data when Monaco editor doesn't have focus.
+ * Handles Ctrl+C for copying grid data when Monaco editor doesn't have focus.
+ * Note: Ctrl+V is NOT handled here to avoid interfering with Monaco's paste functionality.
  */
 export function useGlobalKeyboardShortcuts({ onCopy, enabled = true }: UseGlobalKeyboardShortcutsOptions = {}) {
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Handle Ctrl+C (or Cmd+C on Mac) for copying grid data
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        // Check if Monaco editor has focus
-        if (isMonacoEditorFocused()) {
-          // Let Monaco handle the copy
-          return;
-        }
+      // Only handle Ctrl+C - ignore all other keyboard events completely
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'c') {
+        return;
+      }
+      
+      console.log('[useGlobalKeyboardShortcuts] Ctrl+C detected, Target:', (e.target as any)?.tagName, (e.target as any)?.className);
+      
+      // Check if event target is within Monaco editor
+      const targetIsInMonaco = isElementInMonacoEditor(e.target as Element);
+      
+      if (targetIsInMonaco) {
+        console.log('[useGlobalKeyboardShortcuts] Target in Monaco - letting Monaco handle copy');
+        return;
+      }
 
-        // Check if there's a text input focused (like filter inputs)
-        const activeElement = document.activeElement;
-        if (activeElement && (
-          activeElement.tagName === 'INPUT' ||
-          activeElement.tagName === 'TEXTAREA' ||
-          (activeElement as HTMLElement).isContentEditable
-        )) {
-          // Let the input handle the copy
-          return;
-        }
+      // Check if there's a text input focused (like filter inputs)
+      const target = e.target as HTMLElement;
+      if (target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      )) {
+        console.log('[useGlobalKeyboardShortcuts] Target is text input - letting input handle copy');
+        return;
+      }
 
-        // Check if there's a grid selection to copy
-        if (onCopy) {
-          e.preventDefault();
-          e.stopPropagation();
-          onCopy();
-        }
+      // Check if there's a grid selection to copy
+      if (onCopy) {
+        console.log('[useGlobalKeyboardShortcuts] Calling grid onCopy handler');
+        e.preventDefault();
+        e.stopPropagation();
+        onCopy();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    console.log('[useGlobalKeyboardShortcuts] Adding keydown listener for Ctrl+C only');
+    document.addEventListener('keydown', handleKeyDown, { capture: false });
+    return () => {
+      console.log('[useGlobalKeyboardShortcuts] Removing keydown listener');
+      document.removeEventListener('keydown', handleKeyDown, { capture: false });
+    };
   }, [onCopy, enabled]);
 }
 
 /**
- * Check if Monaco editor currently has focus
+ * Check if an element is within the Monaco editor
  */
-function isMonacoEditorFocused(): boolean {
-  const activeElement = document.activeElement;
-  if (!activeElement) return false;
+function isElementInMonacoEditor(element: Element | null): boolean {
+  if (!element) {
+    return false;
+  }
 
-  // Check if the active element or any of its parents is the Monaco editor
-  let element: Element | null = activeElement;
-  while (element) {
-    if (element.classList.contains('monaco-editor') || 
-        element.classList.contains('monaco-editor-background') ||
-        element.id === 'editor-container') {
+  // Check if the element or any of its parents is the Monaco editor
+  let current: Element | null = element;
+  let depth = 0;
+  while (current) {
+    if (current.classList.contains('monaco-editor') ||
+        current.classList.contains('monaco-editor-background') ||
+        (current as any).id === 'editor-container' ||
+        current.classList.contains('sql-editor-container') ||
+        current.classList.contains('native-edit-context') ||
+        current.classList.contains('overflow-guard')) {
       return true;
     }
-    element = element.parentElement;
+    
+    current = current.parentElement;
+    depth++;
+    if (depth > 20) {
+      break;
+    }
   }
 
   return false;

@@ -115,6 +115,11 @@ export interface SnippetInputReceivedMessage {
   description?: string;
 }
 
+export interface PasteContentMessage {
+  type: 'pasteContent';
+  content: string;
+}
+
 // Union of all incoming message types
 export type IncomingMessage =
   | ConfigMessage
@@ -133,7 +138,8 @@ export type IncomingMessage =
   | ShowMessageMessage
   | AutoExecuteQueryMessage
   | SnippetsUpdateMessage
-  | SnippetInputReceivedMessage;
+  | SnippetInputReceivedMessage
+  | PasteContentMessage;
 
 // ============================================
 // Outgoing Messages (from Webview to Extension)
@@ -222,6 +228,10 @@ export interface ContentChangedOutgoing {
   content: string;
 }
 
+export interface RequestPasteOutgoing {
+  type: 'requestPaste';
+}
+
 // Union of all outgoing message types
 export type OutgoingMessage =
   | ExecuteQueryOutgoing
@@ -236,7 +246,8 @@ export type OutgoingMessage =
   | OpenInNewEditorOutgoing
   | ShowMessageOutgoing
   | CreateSnippetOutgoing
-  | ContentChangedOutgoing;
+  | ContentChangedOutgoing
+  | RequestPasteOutgoing;
 
 // ============================================
 // Supporting Types

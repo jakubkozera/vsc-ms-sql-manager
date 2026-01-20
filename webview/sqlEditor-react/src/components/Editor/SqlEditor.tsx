@@ -38,7 +38,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
   ({ onExecute, initialValue = '' }, ref) => {
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<MonacoType | null>(null);
-    const { dbSchema } = useVSCode();
+    const { dbSchema, requestPaste, pasteContent, clearPasteContent } = useVSCode();
     const formatOptions = useFormatOptions();
 
     // Expose methods to parent via ref
@@ -109,6 +109,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     }, [formatOptions]);
 
     const handleEditorMount: OnMount = useCallback((editor, monacoInstance) => {
+      console.log('[SqlEditor] Monaco editor mounted successfully');
       editorRef.current = editor;
       monacoRef.current = monacoInstance;
 
@@ -164,6 +165,19 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
         run: handleFormat,
       });
 
+      // Add paste action that requests content from extension
+      editor.addAction({
+        id: 'paste',
+        label: 'Paste',
+        keybindings: [
+          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyV,
+        ],
+        run: () => {
+          console.log('[SqlEditor] Paste action triggered - requesting from extension');
+          requestPaste();
+        },
+      });
+
       // Set initial value if provided
       if (initialValue) {
         editor.setValue(initialValue);
@@ -171,7 +185,25 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
 
       // Focus editor
       editor.focus();
+      console.log('[SqlEditor] Editor focused');
     }, [onExecute, handleFormat, initialValue]);
+
+    // Handle paste content from extension
+    useEffect(() => {
+      if (pasteContent !== null && editorRef.current) {
+        console.log('[SqlEditor] Inserting paste content:', pasteContent);
+        const editor = editorRef.current;
+        const selection = editor.getSelection();
+        if (selection) {
+          editor.executeEdits('paste', [{
+            range: selection,
+            text: pasteContent,
+          }]);
+        }
+        // Clear paste content after use
+        clearPasteContent();
+      }
+    }, [pasteContent, clearPasteContent]);
 
     // Update editor value when initialValue changes (for loading from history/commands)
     useEffect(() => {

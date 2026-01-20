@@ -184,6 +184,19 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     await this.sendSchemaUpdate(webviewPanel.webview, message.connectionId);
                     break;
 
+                case 'requestPaste':
+                    // Handle paste request from webview - read from VS Code clipboard and send back
+                    try {
+                        const clipboardContent = await vscode.env.clipboard.readText();
+                        webviewPanel.webview.postMessage({
+                            type: 'pasteContent',
+                            content: clipboardContent
+                        });
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] Failed to read clipboard: ${err}`);
+                    }
+                    break;
+
                 case 'goToDefinition':
                     // Forward to a command that will reveal/expand the tree view to the requested object
                     // payload: { objectType, schema, table, column, connectionId, database }

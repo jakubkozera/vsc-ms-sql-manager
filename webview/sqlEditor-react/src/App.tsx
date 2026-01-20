@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { useVSCode } from './context/VSCodeContext';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useGlobalKeyboardShortcuts } from './hooks/useGlobalKeyboardShortcuts';
 import { Toolbar, useFormatOptions } from './components/Toolbar';
 import { SqlEditor, SqlEditorHandle } from './components/Editor';
 import { ResultsPanel } from './components/Results';
@@ -30,6 +31,14 @@ function App() {
   // Editor/Results split resizing
   const [editorHeight, setEditorHeight] = useLocalStorage('editorHeight', 300);
   const isResizing = useRef(false);
+
+  // Global keyboard shortcuts for grid operations
+  useGlobalKeyboardShortcuts({
+    onCopy: () => {
+      // TODO: Implement grid copy functionality
+      console.log('Grid copy not implemented yet');
+    },
+  });
 
   const handleExecute = useCallback(() => {
     if (!editorRef.current) return;

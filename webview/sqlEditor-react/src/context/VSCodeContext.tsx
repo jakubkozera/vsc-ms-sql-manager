@@ -64,6 +64,9 @@ interface VSCodeState {
   
   // Auto-execute flag
   shouldAutoExecute: boolean;
+  
+  // Paste content
+  pasteContent: string | null;
 }
 
 type VSCodeAction =
@@ -80,7 +83,8 @@ type VSCodeAction =
   | { type: 'QUERY_CANCELLED' }
   | { type: 'SET_EXPANSION_RESULT'; payload: RelationResultsMessage }
   | { type: 'CLEAR_RESULTS' }
-  | { type: 'SET_AUTO_EXECUTE'; shouldAutoExecute: boolean };
+  | { type: 'SET_AUTO_EXECUTE'; shouldAutoExecute: boolean }
+  | { type: 'SET_PASTE_CONTENT'; content: string | null };
 
 const initialState: VSCodeState = {
   connections: [],
@@ -102,6 +106,7 @@ const initialState: VSCodeState = {
   rowsAffected: null,
   pendingExpansions: new Map(),
   shouldAutoExecute: false,
+  pasteContent: null,
 };
 
 function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
@@ -116,6 +121,12 @@ function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
       return {
         ...state,
         shouldAutoExecute: action.shouldAutoExecute,
+      };
+      
+    case 'SET_PASTE_CONTENT':
+      return {
+        ...state,
+        pasteContent: action.content,
       };
       
     case 'SET_CONTENT':
@@ -259,6 +270,10 @@ interface VSCodeContextValue extends VSCodeState {
   ) => void;
   getExpansionResult: (expansionId: string) => RelationResultsMessage | undefined;
   
+  // Clipboard
+  requestPaste: () => void;
+  clearPasteContent: () => void;
+  
   // Auto-execute
   clearAutoExecute: () => void;
 }
@@ -379,6 +394,14 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
           dispatch({ type: 'SET_AUTO_EXECUTE', shouldAutoExecute: true });
           break;
           
+        case 'pasteContent':
+          // Handle paste content from extension
+          if (message.content !== undefined) {
+            dispatch({ type: 'SET_PASTE_CONTENT', content: message.content });
+            console.log('[VSCode] Received paste content:', message.content);
+          }
+          break;
+          
         default:
           console.log('[VSCode] Unhandled message type:', (message as any).type);
       }
@@ -475,6 +498,14 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_AUTO_EXECUTE', shouldAutoExecute: false });
   }, []);
   
+  const requestPaste = useCallback(() => {
+    postMessage({ type: 'requestPaste' });
+  }, [postMessage]);
+  
+  const clearPasteContent = useCallback(() => {
+    dispatch({ type: 'SET_PASTE_CONTENT', content: null });
+  }, []);
+  
   // Derived state
   const isConnected = state.currentConnectionId !== null;
   
@@ -493,6 +524,8 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     expandRelation,
     getExpansionResult,
     clearAutoExecute,
+    requestPaste,
+    clearPasteContent,
   }), [
     state,
     isConnected,
@@ -507,6 +540,8 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     expandRelation,
     getExpansionResult,
     clearAutoExecute,
+    requestPaste,
+    clearPasteContent,
   ]);
   
   return (
