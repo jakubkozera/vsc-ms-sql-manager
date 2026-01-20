@@ -124,7 +124,9 @@ describe('VSCodeContext - Database Operations', () => {
       result.current.selectDatabase('TestDB');
     });
 
-    expect(postMessageMock).not.toHaveBeenCalled();
+    // Should not send switchDatabase message (only ready message)
+    expect(postMessageMock).toHaveBeenCalledTimes(1); // Only the ready message
+    expect(postMessageMock).toHaveBeenCalledWith({ type: 'ready' });
     expect(consoleWarnSpy).toHaveBeenCalledWith(
       '[VSCode] Cannot select database without active connection'
     );
@@ -315,6 +317,279 @@ describe('VSCodeContext - Database Operations', () => {
       type: 'switchDatabase',
       connectionId: 'conn1',
       databaseName: 'Test DB',
+    });
+  });
+});
+
+describe('VSCodeContext - Query Execution', () => {
+  let postMessageMock: ReturnType<typeof vi.fn>;
+  let messageHandler: ((event: MessageEvent) => void) | null = null;
+
+  beforeEach(() => {
+    postMessageMock = vi.fn();
+
+    // Mock acquireVsCodeApi
+    (global as any).acquireVsCodeApi = () => ({
+      postMessage: postMessageMock,
+      getState: () => null,
+      setState: () => {},
+    });
+
+    // Capture message event listener
+    const originalAddEventListener = window.addEventListener;
+    vi.spyOn(window, 'addEventListener').mockImplementation((event, handler) => {
+      if (event === 'message') {
+        messageHandler = handler as (event: MessageEvent) => void;
+      }
+      return originalAddEventListener.call(window, event, handler);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    messageHandler = null;
+  });
+
+  const sendMessage = (message: IncomingMessage) => {
+    if (!messageHandler) {
+      throw new Error('Message handler not registered');
+    }
+    act(() => {
+      messageHandler!(new MessageEvent('message', { data: message }));
+    });
+  };
+
+  it('should execute query when connection is available', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Setup connection
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test Server', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    // Execute query
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Users');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'executeQuery',
+      query: 'SELECT * FROM Users',
+      connectionId: 'conn1',
+      databaseName: undefined,
+      includeActualPlan: undefined,
+    });
+  });
+
+  it('should execute query with actual plan option', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Setup connection
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test Server', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    // Execute query with actual plan
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Users', { includeActualPlan: true });
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'executeQuery',
+      query: 'SELECT * FROM Users',
+      connectionId: 'conn1',
+      databaseName: undefined,
+      includeActualPlan: true,
+    });
+  });
+
+  it('should execute query with current database', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Setup connection and database
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test Server', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+      currentDatabase: 'TestDB',
+    });
+
+    // Execute query
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Users');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'executeQuery',
+      query: 'SELECT * FROM Users',
+      connectionId: 'conn1',
+      databaseName: 'TestDB',
+      includeActualPlan: undefined,
+    });
+  });
+
+  it('should show error message when no connection is selected', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // No connection setup - should be empty state
+
+    // Execute query
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Users');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'showMessage',
+      level: 'error',
+      message: 'Please select a connection first',
+    });
+
+    // Should have called ready and showMessage
+    expect(postMessageMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('should access latest state even after state changes (closure capture fix)', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Initially no connections
+    act(() => {
+      result.current.executeQuery('SELECT 1');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'showMessage',
+      level: 'error',
+      message: 'Please select a connection first',
+    });
+
+    // Clear mock
+    postMessageMock.mockClear();
+
+    // Now add connection - the callback should access the new state
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test Server', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    // Execute query again - should now work with the new connection
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Users');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'executeQuery',
+      query: 'SELECT * FROM Users',
+      connectionId: 'conn1',
+      databaseName: undefined,
+      includeActualPlan: undefined,
+    });
+  });
+
+  it('should handle multiple connections and use current connection', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Setup multiple connections
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Server 1', server: 'server1', connectionType: 'server' },
+        { id: 'conn2', name: 'Server 2', server: 'server2', connectionType: 'server' },
+        { id: 'conn3', name: 'Server 3', server: 'server3', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn2', // Second connection is active
+    });
+
+    // Execute query - should use the active connection (conn2)
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Products');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'executeQuery',
+      query: 'SELECT * FROM Products',
+      connectionId: 'conn2',
+      databaseName: undefined,
+      includeActualPlan: undefined,
+    });
+  });
+
+  it('should handle connection switching and use new active connection', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Setup initial connections
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Server 1', server: 'server1', connectionType: 'server' },
+        { id: 'conn2', name: 'Server 2', server: 'server2', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    // Execute query with first connection
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Table1');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'executeQuery',
+      query: 'SELECT * FROM Table1',
+      connectionId: 'conn1',
+      databaseName: undefined,
+      includeActualPlan: undefined,
+    });
+
+    // Clear mock
+    postMessageMock.mockClear();
+
+    // Switch to second connection
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Server 1', server: 'server1', connectionType: 'server' },
+        { id: 'conn2', name: 'Server 2', server: 'server2', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn2',
+    });
+
+    // Execute query again - should use the new active connection
+    act(() => {
+      result.current.executeQuery('SELECT * FROM Table2');
+    });
+
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'executeQuery',
+      query: 'SELECT * FROM Table2',
+      connectionId: 'conn2',
+      databaseName: undefined,
+      includeActualPlan: undefined,
     });
   });
 });
