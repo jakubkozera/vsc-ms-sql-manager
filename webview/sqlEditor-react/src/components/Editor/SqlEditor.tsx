@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle, useState } from 'react';
 import MonacoEditor, { OnMount } from '@monaco-editor/react';
 import type { editor, languages } from 'monaco-editor';
 import { format } from 'sql-formatter';
@@ -38,6 +38,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
   ({ onExecute, initialValue = '' }, ref) => {
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<MonacoType | null>(null);
+    const [editorReady, setEditorReady] = useState(false);
     const { dbSchema, requestPaste, pasteContent, clearPasteContent } = useVSCode();
     const formatOptions = useFormatOptions();
 
@@ -112,6 +113,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       console.log('[SqlEditor] Monaco editor mounted successfully');
       editorRef.current = editor;
       monacoRef.current = monacoInstance;
+      setEditorReady(true);
 
       // Configure editor options
       editor.updateOptions({
@@ -142,16 +144,28 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.KeyE,
         ],
         run: () => {
+          console.log('[SqlEditor] F5 execute-query action triggered');
           const selection = editor.getSelection();
           const model = editor.getModel();
-          if (!model) return;
-          
-          const sql = (selection && !selection.isEmpty())
-            ? model.getValueInRange(selection)
-            : model.getValue();
-          
+          if (!model) {
+            console.log('[SqlEditor] No model found, cannot execute');
+            return;
+          }
+
+          let sql: string;
+          if (selection && !selection.isEmpty()) {
+            sql = model.getValueInRange(selection);
+            console.log('[SqlEditor] Executing selection:', sql.substring(0, 100) + '...');
+          } else {
+            sql = model.getValue();
+            console.log('[SqlEditor] Executing entire content:', sql.substring(0, 100) + '...');
+          }
+
           if (sql.trim()) {
+            console.log('[SqlEditor] Calling onExecute with SQL of length:', sql.length);
             onExecute(sql);
+          } else {
+            console.log('[SqlEditor] No SQL to execute (empty or whitespace only)');
           }
         },
       });
@@ -207,18 +221,36 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
 
     // Update editor value when initialValue changes (for loading from history/commands)
     useEffect(() => {
-      if (editorRef.current && initialValue !== undefined) {
+      console.log('[SqlEditor] useEffect triggered - initialValue or editorReady changed:', {
+        initialValue: initialValue?.substring(0, 100) + '...',
+        hasEditor: !!editorRef.current,
+        editorReady
+      });
+
+      if (editorRef.current && initialValue !== undefined && editorReady) {
         const currentValue = editorRef.current.getValue();
-        const defaultComment = '-- Write your SQL query here\nSELECT * FROM ';
-        
-        // Update if initial value is different AND current value is still the default comment
-        if (initialValue !== currentValue && currentValue === defaultComment) {
+        console.log('[SqlEditor] Checking if update needed:', {
+          initialValueLength: initialValue.length,
+          currentValueLength: currentValue.length,
+          initialValuePreview: initialValue.substring(0, 50) + '...',
+          currentValuePreview: currentValue.substring(0, 50) + '...',
+          areEqual: initialValue === currentValue
+        });
+
+        // Always update if initial value is different from current value
+        // This ensures query history and other programmatic content changes work
+        if (initialValue !== currentValue) {
           console.log('[SqlEditor] Updating editor with new SQL:', initialValue.substring(0, 100));
           editorRef.current.setValue(initialValue);
           editorRef.current.setPosition({ lineNumber: 1, column: 1 });
+          console.log('[SqlEditor] Editor updated successfully');
+        } else {
+          console.log('[SqlEditor] No update needed - values are identical');
         }
+      } else {
+        console.log('[SqlEditor] Skipping update - no editor, undefined initialValue, or editor not ready');
       }
-    }, [initialValue]);
+    }, [initialValue, editorReady]);
 
     // Update autocomplete and validation when schema changes
     useEffect(() => {

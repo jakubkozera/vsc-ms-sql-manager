@@ -135,6 +135,7 @@ export function registerQueryHistoryCommands(
         async (entry: QueryHistoryEntry) => {
             try {
                 outputChannel.appendLine(`[QueryHistory] Opening query from history: ${entry.id}`);
+                console.log('[QueryHistory] Opening query from history:', entry.id, entry.query.substring(0, 100) + '...');
                 
                 // Create header with metadata
                 const rowCountsStr = entry.rowCounts.length > 1 
@@ -153,8 +154,10 @@ export function registerQueryHistoryCommands(
                 // First, try to update existing history.sql editor if it exists
                 const updatedExistingEditor = sqlEditorProvider ? 
                     tryUpdateExistingHistoryEditor(entry, sqlEditorProvider, outputChannel) : false;
+                console.log('[QueryHistory] Updated existing editor:', updatedExistingEditor);
 
                 if (!updatedExistingEditor) {
+                    console.log('[QueryHistory] Creating new history.sql editor');
                     outputChannel.appendLine(`[QueryHistory] No existing editor found, creating/opening history.sql`);
                     // Set preferred database for next editor so the SQL editor will initialize
                     // with the same connection+database that the query was executed on.
@@ -170,22 +173,51 @@ export function registerQueryHistoryCommands(
                     // Open in custom SQL editor - this will now reuse the same history.sql file
                     await openSqlInCustomEditor(fullContent, 'history.sql', context);
                 } else {
-                    // Update the content in the existing editor
-                    outputChannel.appendLine(`[QueryHistory] Updating existing editor, found ${vscode.workspace.textDocuments.length} open documents`);
+                    // Update the content in the existing editor using the provider's method
+                    console.log('[QueryHistory] Updating existing editor content directly');
+                    outputChannel.appendLine(`[QueryHistory] Updating existing editor content directly`);
+                    
+                    // Find the history.sql document URI
+                    console.log('[QueryHistory] Looking for history document');
                     const historyDoc = vscode.workspace.textDocuments.find(doc => 
                         doc.uri.path.endsWith('history.sql')
                     );
+                    console.log('[QueryHistory] historyDoc found:', !!historyDoc);
+                    if (historyDoc) console.log('[QueryHistory] historyDoc URI:', historyDoc.uri.toString());
                     
-                    if (historyDoc) {
+                    if (historyDoc && sqlEditorProvider) {
+                        console.log('[QueryHistory] Found history document:', historyDoc.uri.toString());
                         outputChannel.appendLine(`[QueryHistory] Found existing history document: ${historyDoc.uri.toString()}`);
-                        const edit = new vscode.WorkspaceEdit();
-                        edit.replace(
-                            historyDoc.uri,
-                            new vscode.Range(0, 0, historyDoc.lineCount, 0),
-                            fullContent
-                        );
-                        await vscode.workspace.applyEdit(edit);
-                        outputChannel.appendLine(`[QueryHistory] Updated content in existing history.sql editor`);
+                        
+                        // Use the provider's forceContentUpdate method to update the webview directly
+                        console.log('[QueryHistory] About to call forceContentUpdate');
+                        const success = sqlEditorProvider.forceContentUpdate(historyDoc.uri, fullContent);
+                        console.log('[QueryHistory] forceContentUpdate result:', success);
+                        if (success) {
+                            outputChannel.appendLine(`[QueryHistory] Successfully updated content in existing history.sql editor via provider`);
+                            
+                            // Also update the document on disk to keep it in sync
+                            const edit = new vscode.WorkspaceEdit();
+                            edit.replace(
+                                historyDoc.uri,
+                                new vscode.Range(0, 0, historyDoc.lineCount, 0),
+                                fullContent
+                            );
+                            await vscode.workspace.applyEdit(edit);
+                            console.log('[QueryHistory] Document updated on disk');
+                            outputChannel.appendLine(`[QueryHistory] Also updated document on disk`);
+                        } else {
+                            console.log('[QueryHistory] forceContentUpdate failed, using fallback');
+                            outputChannel.appendLine(`[QueryHistory] Failed to update content via provider, falling back to document edit`);
+                            // Fallback to document edit
+                            const edit = new vscode.WorkspaceEdit();
+                            edit.replace(
+                                historyDoc.uri,
+                                new vscode.Range(0, 0, historyDoc.lineCount, 0),
+                                fullContent
+                            );
+                            await vscode.workspace.applyEdit(edit);
+                        }
                         
                         // Focus the existing history.sql tab
                         outputChannel.appendLine(`[QueryHistory] Focusing existing history.sql document`);
@@ -196,7 +228,7 @@ export function registerQueryHistoryCommands(
                         });
                         outputChannel.appendLine(`[QueryHistory] Successfully focused history.sql`);
                     } else {
-                        outputChannel.appendLine(`[QueryHistory] Warning: Could not find existing history document despite successful tab update`);
+                        outputChannel.appendLine(`[QueryHistory] Warning: Could not find existing history document or provider not available`);
                     }
                 }
 

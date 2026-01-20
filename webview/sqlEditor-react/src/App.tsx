@@ -41,24 +41,37 @@ function App() {
   });
 
   const handleExecute = useCallback(() => {
-    if (!editorRef.current) return;
+    console.log('[App] handleExecute called');
+    if (!editorRef.current) {
+      console.log('[App] No editor ref, cannot execute');
+      return;
+    }
 
     let sql = editorRef.current.getSelectedText();
+    console.log('[App] Selected text length:', sql.length);
     if (!sql) {
       sql = editorRef.current.getValue();
+      console.log('[App] Using full editor content, length:', sql.length);
     }
 
     if (sql.trim()) {
+      console.log('[App] Executing SQL:', sql.substring(0, 100) + '...');
       // Remove execution history comments
       sql = removeExecutionComments(sql);
-      
+      console.log('[App] After removing comments, length:', sql.length);
+
       // Format before run if enabled
       if (formatOptions.formatBeforeRun) {
+        console.log('[App] Formatting before run');
         editorRef.current.formatSql();
         // Get the formatted value
         sql = editorRef.current.getSelectedText() || editorRef.current.getValue();
+        console.log('[App] After formatting, length:', sql.length);
       }
+      console.log('[App] Calling executeQuery');
       executeQuery(sql, { includeActualPlan });
+    } else {
+      console.log('[App] No SQL to execute');
     }
   }, [executeQuery, includeActualPlan, formatOptions.formatBeforeRun]);
 

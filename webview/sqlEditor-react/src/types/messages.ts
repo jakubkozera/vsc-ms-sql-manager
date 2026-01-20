@@ -232,6 +232,10 @@ export interface RequestPasteOutgoing {
   type: 'requestPaste';
 }
 
+export interface ReadyOutgoing {
+  type: 'ready';
+}
+
 export interface SaveFileOutgoing {
   type: 'saveFile';
   content: string;
@@ -256,6 +260,7 @@ export type OutgoingMessage =
   | CreateSnippetOutgoing
   | ContentChangedOutgoing
   | RequestPasteOutgoing
+  | ReadyOutgoing
   | SaveFileOutgoing;
 
 // ============================================

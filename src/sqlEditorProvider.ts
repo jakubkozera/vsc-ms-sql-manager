@@ -925,6 +925,45 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     /**
+     * Force content update in SQL editor webview
+     */
+    public forceContentUpdate(fileUri: vscode.Uri, content: string): boolean {
+        console.log('[SqlEditorProvider] forceContentUpdate called:', {
+            fileUri: fileUri.toString(),
+            contentLength: content.length,
+            contentPreview: content.substring(0, 100) + '...'
+        });
+        this.outputChannel.appendLine(`[SqlEditorProvider] forceContentUpdate called for ${fileUri.fsPath}`);
+        
+        // Find the webview for this file
+        for (const [webview, uri] of this.webviewToDocument.entries()) {
+            console.log('[SqlEditorProvider] Checking webview:', {
+                webviewUri: uri.toString(),
+                targetUri: fileUri.toString(),
+                matches: uri.toString() === fileUri.toString(),
+                disposed: this.disposedWebviews.has(webview)
+            });
+            if (uri.toString() === fileUri.toString() && !this.disposedWebviews.has(webview)) {
+                console.log('[SqlEditorProvider] Found matching webview, sending update message');
+                this.outputChannel.appendLine(`[SqlEditorProvider] Found matching webview, updating content`);
+                
+                // Send update message to webview
+                webview.postMessage({
+                    type: 'update',
+                    content: content
+                });
+                console.log('[SqlEditorProvider] Update message sent to webview');
+                
+                return true;
+            }
+        }
+        
+        console.log('[SqlEditorProvider] No matching webview found');
+        this.outputChannel.appendLine(`[SqlEditorProvider] WARNING: No matching webview found for ${fileUri.toString()}`);
+        return false;
+    }
+
+    /**
      * Insert text into SQL editor webview
      */
     public insertTextToEditor(fileUri: vscode.Uri, text: string): boolean {

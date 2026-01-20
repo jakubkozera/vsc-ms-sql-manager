@@ -331,6 +331,10 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
           break;
           
         case 'update':
+          console.log('[VSCode] Received update message:', {
+            contentLength: message.content?.length || 0,
+            contentPreview: message.content?.substring(0, 100) + '...' || 'undefined'
+          });
           dispatch({ type: 'SET_CONTENT', content: message.content });
           break;
           
@@ -411,6 +415,12 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
   
+  // Send ready message when component mounts
+  useEffect(() => {
+    console.log('[VSCode] Sending ready message to extension');
+    postMessage({ type: 'ready' });
+  }, [postMessage]);
+  
   // Action helpers
   const setEditorContent = useCallback((content: string) => {
     dispatch({ type: 'SET_CONTENT', content });
@@ -418,11 +428,20 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   }, [postMessage]);
   
   const executeQuery = useCallback((query: string, options?: { includeActualPlan?: boolean }) => {
+    console.log('[VSCodeContext] executeQuery called:', {
+      queryLength: query.length,
+      queryPreview: query.substring(0, 100) + '...',
+      includeActualPlan: options?.includeActualPlan,
+      currentConnectionId: state.currentConnectionId,
+      currentDatabase: state.currentDatabase
+    });
     if (!state.currentConnectionId) {
+      console.log('[VSCodeContext] No connection selected');
       postMessage({ type: 'showMessage', level: 'error', message: 'Please select a connection first' });
       return;
     }
     
+    console.log('[VSCodeContext] Sending executeQuery message to extension');
     postMessage({
       type: 'executeQuery',
       query,
