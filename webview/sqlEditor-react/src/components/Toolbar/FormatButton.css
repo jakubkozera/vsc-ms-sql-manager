@@ -5,8 +5,35 @@
   margin-left: auto;
 }
 
+.format-button-container {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 1001;
+}
+
 .format-icon-only-button,
 .format-options-icon-button {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground);
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.format-icon-only-button svg,
+.format-options-icon-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+.format-icon-only-button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,29 +41,70 @@
   border: none;
   color: var(--vscode-foreground);
   cursor: pointer;
-  padding: 4px;
+  padding: 6px;
   border-radius: 4px;
-  transition: background-color 0.15s ease;
+  transition: all 0.2s ease;
 }
 
-.format-icon-only-button:hover,
-.format-options-icon-button:hover {
-  background: var(--vscode-toolbar-hoverBackground);
+.format-icon-only-button:hover {
+  color: var(--vscode-button-foreground);
 }
 
-.format-options-popup {
+/* Options button: hidden by default, appears on hover of container (legacy behaviour) */
+.format-options-icon-button {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground);
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  outline: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-5px);
+  max-height: 0;
+  overflow: hidden;
   position: absolute;
   top: 100%;
-  right: 0;
-  margin-top: 4px;
-  background: var(--vscode-dropdown-background);
-  border: 1px solid var(--vscode-dropdown-border);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 1000;
-  min-width: 280px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-5px);
+  margin-top: 2px;
 }
 
+.format-options-icon-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+.format-options-icon-button:hover {
+  color: var(--vscode-button-foreground);
+  transform: translateX(-50%) translateY(0);
+}
+
+.format-button-container:hover .format-options-icon-button {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+  max-height: 40px;
+}
+
+/* Centered modal for formatting options (legacy behavior) */
+.format-options-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 2000;
+  width: 400px;
+  max-width: 90vw;
+}
 .format-options-header {
   display: flex;
   align-items: center;

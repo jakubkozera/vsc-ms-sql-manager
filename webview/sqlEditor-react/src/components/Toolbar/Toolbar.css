@@ -1,24 +1,56 @@
+/* Toolbar container: match legacy webview spacing and background */
 #toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
-  background: var(--vscode-editor-background);
+  padding: 8px 12px;
+  background-color: var(--vscode-editorGroupHeader-tabsBackground);
   border-bottom: 1px solid var(--vscode-panel-border);
-  min-height: 36px;
   flex-shrink: 0;
 }
 
 .toolbar-separator {
   width: 1px;
-  height: 20px;
-  background: var(--vscode-panel-border);
+  height: 24px;
+  background-color: var(--vscode-panel-border);
   margin: 0 4px;
 }
 
+/* Generic toolbar button styling copied from legacy css */
+.toolbar-button {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  padding: 6px 16px;
+  cursor: pointer;
+  border-radius: 2px;
+  font-family: var(--vscode-font-family);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-button:hover:not(:disabled) {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.toolbar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar-button.secondary {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.toolbar-button.secondary:hover:not(:disabled) {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
 #statusLabel {
-  font-size: 12px;
   color: var(--vscode-descriptionForeground);
+  font-size: 12px;
   margin-left: auto;
-  padding-right: 8px;
 }
