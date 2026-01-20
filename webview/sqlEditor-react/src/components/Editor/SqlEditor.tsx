@@ -170,15 +170,6 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
         },
       });
 
-      editor.addAction({
-        id: 'format-sql',
-        label: 'Format SQL',
-        keybindings: [
-          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.KeyF,
-        ],
-        run: handleFormat,
-      });
-
       // Add paste action that requests content from extension
       editor.addAction({
         id: 'paste',
@@ -192,6 +183,77 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
         },
       });
 
+      // Register formatting providers immediately when editor mounts
+      // This enables Monaco's built-in formatting commands:
+      // - Alt+Shift+F (Format Document)
+      // - Ctrl+K Ctrl+F (Format Selection)
+      // - Right-click context menu "Format Document" and "Format Selection"
+      console.log('[SqlEditor] Registering formatting providers');
+      
+      const documentFormattingProvider = monacoInstance.languages.registerDocumentFormattingEditProvider('sql', {
+        provideDocumentFormattingEdits: (model: editor.ITextModel, _options: languages.FormattingOptions, _token: any) => {
+          console.log('[SqlEditor] Document formatting requested');
+
+          const documentText = model.getValue();
+
+          try {
+            const formattedText = format(documentText, {
+              language: 'transactsql',
+              tabWidth: formatOptions.tabWidth,
+              keywordCase: formatOptions.keywordCase,
+              dataTypeCase: formatOptions.dataTypeCase,
+              functionCase: formatOptions.functionCase,
+              linesBetweenQueries: formatOptions.linesBetweenQueries,
+              indentStyle: formatOptions.indentStyle,
+              logicalOperatorNewline: formatOptions.logicalOperatorNewline,
+            });
+
+            const fullRange = model.getFullModelRange();
+            return [{
+              range: fullRange,
+              text: formattedText,
+            }];
+          } catch (error) {
+            console.error('[SqlEditor] Error formatting document:', error);
+            return [];
+          }
+        },
+      });
+
+      const documentRangeFormattingProvider = monacoInstance.languages.registerDocumentRangeFormattingEditProvider('sql', {
+        provideDocumentRangeFormattingEdits: (model: editor.ITextModel, range: any, _options: languages.FormattingOptions, _token: any) => {
+          console.log('[SqlEditor] Selection formatting requested for range:', range);
+
+          const selectedText = model.getValueInRange(range);
+
+          try {
+            const formattedText = format(selectedText, {
+              language: 'transactsql',
+              tabWidth: formatOptions.tabWidth,
+              keywordCase: formatOptions.keywordCase,
+              dataTypeCase: formatOptions.dataTypeCase,
+              functionCase: formatOptions.functionCase,
+              linesBetweenQueries: formatOptions.linesBetweenQueries,
+              indentStyle: formatOptions.indentStyle,
+              logicalOperatorNewline: formatOptions.logicalOperatorNewline,
+            });
+
+            return [{
+              range: range,
+              text: formattedText,
+            }];
+          } catch (error) {
+            console.error('[SqlEditor] Error formatting selection:', error);
+            return [];
+          }
+        },
+      });
+
+      console.log('[SqlEditor] Formatting providers registered successfully');
+
+      // Store disposables for cleanup
+      const formattingDisposables = [documentFormattingProvider, documentRangeFormattingProvider];
+
       // Set initial value if provided
       if (initialValue) {
         editor.setValue(initialValue);
@@ -200,7 +262,13 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       // Focus editor
       editor.focus();
       console.log('[SqlEditor] Editor focused');
-    }, [onExecute, handleFormat, initialValue]);
+
+      // Cleanup function to dispose formatting providers when editor unmounts
+      return () => {
+        console.log('[SqlEditor] Disposing formatting providers');
+        formattingDisposables.forEach(d => d.dispose());
+      };
+    }, [onExecute, initialValue, formatOptions]);
 
     // Handle paste content from extension
     useEffect(() => {
