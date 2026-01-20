@@ -162,7 +162,7 @@ function App() {
         <SqlEditor
           ref={editorRef}
           onExecute={(sql) => executeQuery(sql, { includeActualPlan })}
-          initialValue={editorContent || "-- Write your SQL query here\nSELECT * FROM "}
+          initialValue={editorContent !== undefined ? editorContent : "-- Write your SQL query here\nSELECT * FROM "}
         />
       </div>
 

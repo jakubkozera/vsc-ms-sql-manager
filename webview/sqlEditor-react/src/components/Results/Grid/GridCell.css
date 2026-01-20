@@ -9,6 +9,14 @@
   position: relative;
 }
 
+/* Pinned cells - sticky positioning */
+.grid-cell.pinned {
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  z-index: 40 !important;
+  background-color: var(--vscode-editor-background, #1e1e1e) !important;
+}
+
 .grid-cell.selected {
   background: var(--vscode-editor-selectionBackground) !important;
   outline: 1px solid var(--vscode-focusBorder);

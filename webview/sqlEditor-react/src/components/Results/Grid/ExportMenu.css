@@ -66,7 +66,13 @@
 }
 
 .export-menu-formats {
-  padding: 6px;
+  padding: 4px;
+}
+
+.export-menu-divider {
+  height: 1px;
+  background-color: var(--vscode-menu-separatorBackground);
+  margin: 4px 0;
 }
 
 .export-format-button {

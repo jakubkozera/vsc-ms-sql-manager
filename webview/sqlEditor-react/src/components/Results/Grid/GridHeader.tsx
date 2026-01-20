@@ -11,6 +11,8 @@ interface GridHeaderProps {
   onFilterClick?: (column: ColumnDef, e: React.MouseEvent) => void;
   onPinColumn?: (column: string) => void;
   onExportClick?: (e: React.MouseEvent) => void;
+  onColumnSelect?: (column: string, e: MouseEvent) => void;
+  calculatePinnedOffset?: (colIndex: number) => number;
 }
 
 export function GridHeader({ 
@@ -20,9 +22,10 @@ export function GridHeader({
   onSort, 
   onResize,
   onFilterClick,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onPinColumn: _onPinColumn,
+  onPinColumn,
   onExportClick,
+  onColumnSelect,
+  calculatePinnedOffset,
 }: GridHeaderProps) {
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const startXRef = useRef(0);
@@ -84,9 +87,10 @@ export function GridHeader({
           </svg>
         </th>
 
-        {columns.map((column) => {
+        {columns.map((column, colIndex) => {
           const isSorted = sortConfig?.column === column.name;
           const isFiltered = hasFilter(column.name);
+          const pinnedOffset = column.pinned && calculatePinnedOffset ? calculatePinnedOffset(colIndex) : undefined;
           
           return (
             <th
@@ -95,14 +99,21 @@ export function GridHeader({
               style={{ 
                 width: `${column.width}px`,
                 minWidth: `${column.width}px`,
-                maxWidth: `${column.width}px`
+                maxWidth: `${column.width}px`,
+                ...(column.pinned && pinnedOffset !== undefined ? { left: `${pinnedOffset}px` } : {}),
               }}
               data-testid={`header-${column.name}`}
             >
               <div className="header-content">
                 <span 
                   className="column-name"
-                  onClick={() => onSort(column.name)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Column click should select the column, not sort
+                    if (onColumnSelect) {
+                      onColumnSelect(column.name, e.nativeEvent);
+                    }
+                  }}
                   title={column.name}
                 >
                   {column.name}
@@ -134,8 +145,8 @@ export function GridHeader({
                   className={`header-action-icon pin-icon ${column.pinned ? 'active' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (_onPinColumn) {
-                      _onPinColumn(column.name);
+                    if (onPinColumn) {
+                      onPinColumn(column.name);
                     }
                   }}
                   title="Pin column"

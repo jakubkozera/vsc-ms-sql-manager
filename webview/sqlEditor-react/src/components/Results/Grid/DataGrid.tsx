@@ -10,7 +10,7 @@ import { FilterPopup } from './FilterPopup';
 import { ContextMenu, ContextMenuItem, CELL_CONTEXT_MENU_ITEMS, ROW_CONTEXT_MENU_ITEMS } from './ContextMenu';
 import { ExportMenu } from './ExportMenu';
 import { FKQuickPick } from './FKQuickPick';
-import { exportData, copyToClipboard, downloadFile, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
+import { exportData, copyToClipboard, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
 import { useVSCode } from '../../../context/VSCodeContext';
 import './DataGrid.css';
 
@@ -143,6 +143,17 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       };
     });
   }, [columns, metadata, columnWidths, pinnedColumns, data, calculateOptimalWidth]);
+
+  // Calculate left offset for pinned columns
+  const calculatePinnedOffset = useCallback((colIndex: number): number => {
+    let offset = 50; // Start after row number column
+    for (let i = 0; i < colIndex; i++) {
+      if (columnDefs[i].pinned) {
+        offset += columnDefs[i].width;
+      }
+    }
+    return offset;
+  }, [columnDefs]);
 
   // Apply filters to data
   const filteredData = useMemo(() => {
@@ -546,18 +557,71 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     if (format === 'clipboard') {
       copyToClipboard(content);
     } else {
-      const { extension, mimeType } = getFormatInfo(format);
-      const filename = `export_${resultSetIndex}_${new Date().toISOString().slice(0, 10)}.${extension}`;
-      downloadFile(content, filename, mimeType);
+      // Use vscode.postMessage to save file via backend (like old version)
+      const { extension } = getFormatInfo(format);
+      const filename = `results.${extension}`;
+      
+      // Map format to fileType for backend (zgodnie z grid.js)
+      let fileType = 'Text';
+      switch (format) {
+        case 'json':
+          fileType = 'JSON';
+          break;
+        case 'csv':
+          fileType = 'CSV';
+          break;
+        case 'insert':
+          fileType = 'SQL';
+          break;
+        case 'tsv':
+          fileType = 'TSV';
+          break;
+        case 'markdown':
+          fileType = 'Markdown';
+          break;
+        case 'xml':
+          fileType = 'XML';
+          break;
+        case 'html':
+          fileType = 'HTML';
+          break;
+      }
+      
+      postMessage({
+        type: 'saveFile',
+        content,
+        defaultFileName: filename,
+        fileType,
+      });
     }
     
     setExportMenu(null);
-  }, [sortedData, columnDefs, getSelectedRowIndices, resultSetIndex]);
+  }, [sortedData, columnDefs, getSelectedRowIndices, postMessage]);
 
   const handleExportButtonClick = useCallback((e: React.MouseEvent) => {
     setExportMenu({
       position: { x: e.clientX, y: e.clientY },
     });
+  }, []);
+
+  // Auto-fit all columns
+  const handleAutoFit = useCallback(() => {
+    // Reset all column widths to auto-calculated values
+    const newWidths: Record<string, number> = {};
+    columns.forEach((name, index) => {
+      const columnData = sortedData.map(row => row[index]);
+      const colMeta = metadata?.columns?.[index];
+      const type = colMeta?.type || 'string';
+      newWidths[name] = calculateOptimalWidth(name, columnData, type);
+    });
+    setColumnWidths(newWidths);
+  }, [columns, sortedData, metadata, calculateOptimalWidth]);
+
+  // Handle column selection (clicking on column header)
+  const handleColumnSelect = useCallback((_columnName: string, _event: MouseEvent) => {
+    // TODO: Implement column selection similar to old grid
+    // For now, this is a placeholder - need to implement proper column selection
+    console.log('Column selection not yet fully implemented:', _columnName);
   }, []);
 
   // Keyboard shortcuts
@@ -627,6 +691,8 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
             onFilterClick={handleFilterClick}
             onPinColumn={handlePinColumn}
             onExportClick={handleExportButtonClick}
+            onColumnSelect={handleColumnSelect}
+            calculatePinnedOffset={calculatePinnedOffset}
           />
           <tbody style={{ position: 'relative', height: totalHeight }}>
             {virtualItems.map((virtualRow) => {
@@ -652,6 +718,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                     isSelected={isSelected}
                     isCellSelected={isCellSelected}
                     expandedColumns={expandedForRow.map(k => k.split('-')[2])}
+                    calculatePinnedOffset={calculatePinnedOffset}
                     style={{
                       position: 'absolute',
                       top: adjustedTop,
@@ -730,6 +797,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
           hasSelection={selectedRowCount > 0}
           onExport={handleExport}
           onClose={() => setExportMenu(null)}
+          onAutoFit={handleAutoFit}
         />
       )}
 

@@ -232,6 +232,14 @@ export interface RequestPasteOutgoing {
   type: 'requestPaste';
 }
 
+export interface SaveFileOutgoing {
+  type: 'saveFile';
+  content: string;
+  defaultFileName: string;
+  fileType: string;
+  encoding?: string;
+}
+
 // Union of all outgoing message types
 export type OutgoingMessage =
   | ExecuteQueryOutgoing
@@ -247,7 +255,8 @@ export type OutgoingMessage =
   | ShowMessageOutgoing
   | CreateSnippetOutgoing
   | ContentChangedOutgoing
-  | RequestPasteOutgoing;
+  | RequestPasteOutgoing
+  | SaveFileOutgoing;
 
 // ============================================
 // Supporting Types

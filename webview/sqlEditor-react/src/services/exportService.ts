@@ -1,6 +1,6 @@
 import { ColumnDef } from '../types/grid';
 
-export type ExportFormat = 'csv' | 'json' | 'tsv' | 'insert' | 'clipboard';
+export type ExportFormat = 'csv' | 'json' | 'tsv' | 'insert' | 'clipboard' | 'markdown' | 'xml' | 'html';
 
 export interface ExportOptions {
   format: ExportFormat;
@@ -30,6 +30,12 @@ export function exportData(
       return toJSON(data, columns);
     case 'insert':
       return toInsertStatements(data, columns, options.tableName || 'TableName');
+    case 'markdown':
+      return toMarkdown(data, columns);
+    case 'xml':
+      return toXML(data, columns);
+    case 'html':
+      return toHTML(data, columns);
     case 'clipboard':
       return toClipboard(data, columns, includeHeaders);
     default:
@@ -101,6 +107,166 @@ function toInsertStatements(data: any[][], columns: ColumnDef[], tableName: stri
   }
 
   return statements.join('\n');
+}
+
+/**
+ * Convert to Markdown table
+ */
+function toMarkdown(data: any[][], columns: ColumnDef[]): string {
+  const headers = columns.map(c => c.name);
+  const separator = headers.map(() => '---');
+  
+  const escapeMarkdown = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    return String(value).replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+  };
+  
+  const headerRow = '| ' + headers.join(' | ') + ' |';
+  const separatorRow = '| ' + separator.join(' | ') + ' |';
+  const dataRows = data.map(row => 
+    '| ' + columns.map((_, i) => escapeMarkdown(row[i])).join(' | ') + ' |'
+  );
+  
+  return [headerRow, separatorRow, ...dataRows].join('\n');
+}
+
+/**
+ * Convert to XML format
+ */
+function toXML(data: any[][], columns: ColumnDef[]): string {
+  const escapeXml = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+  
+  const sanitizeElementName = (name: string): string => {
+    return String(name).replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^[^a-zA-Z_]/, '_$&');
+  };
+  
+  let xmlData = '<?xml version="1.0" encoding="UTF-8"?>\n<results>\n';
+  
+  data.forEach(row => {
+    xmlData += '  <row>\n';
+    columns.forEach((col, i) => {
+      const elementName = sanitizeElementName(col.name);
+      const value = escapeXml(row[i]);
+      xmlData += `    <${elementName}>${value}</${elementName}>\n`;
+    });
+    xmlData += '  </row>\n';
+  });
+  
+  xmlData += '</results>';
+  return xmlData;
+}
+
+/**
+ * Convert to HTML table
+ */
+function toHTML(data: any[][], columns: ColumnDef[]): string {
+  const escapeHtml = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+  
+  let htmlData = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Query Results</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        tr:hover {
+            background-color: #e9ecef;
+        }
+        .stats {
+            margin-top: 15px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Query Results</h1>
+        <table>
+            <thead>
+                <tr>
+`;
+  
+  // Add table headers
+  columns.forEach(col => {
+    htmlData += `                    <th>${escapeHtml(col.name)}</th>\n`;
+  });
+  
+  htmlData += `                </tr>
+            </thead>
+            <tbody>
+`;
+  
+  // Add table rows
+  data.forEach(row => {
+    htmlData += `                <tr>\n`;
+    columns.forEach((_, i) => {
+      const value = escapeHtml(row[i]);
+      htmlData += `                    <td>${value}</td>\n`;
+    });
+    htmlData += `                </tr>\n`;
+  });
+  
+  htmlData += `            </tbody>
+        </table>
+        <div class="stats">
+            <strong>Total rows:</strong> ${data.length} | <strong>Columns:</strong> ${columns.length}
+        </div>
+    </div>
+</body>
+</html>`;
+  
+  return htmlData;
 }
 
 /**
@@ -228,6 +394,12 @@ export function getFormatInfo(format: ExportFormat): { extension: string; mimeTy
       return { extension: 'json', mimeType: 'application/json' };
     case 'insert':
       return { extension: 'sql', mimeType: 'text/plain' };
+    case 'markdown':
+      return { extension: 'md', mimeType: 'text/markdown' };
+    case 'xml':
+      return { extension: 'xml', mimeType: 'application/xml' };
+    case 'html':
+      return { extension: 'html', mimeType: 'text/html' };
     default:
       return { extension: 'txt', mimeType: 'text/plain' };
   }

@@ -12,6 +12,7 @@ interface GridRowProps {
   isCellModified?: (rowIndex: number, colIndex: number) => boolean;
   isRowDeleted?: boolean;
   expandedColumns?: string[]; // Column names that are currently expanded
+  calculatePinnedOffset?: (colIndex: number) => number;
   style?: CSSProperties;
   onClick?: (rowIndex: number, e: React.MouseEvent) => void;
   onCellClick?: (rowIndex: number, colIndex: number, value: any, e: React.MouseEvent) => void;
@@ -29,6 +30,7 @@ export function GridRow({
   isCellModified,
   isRowDeleted = false,
   expandedColumns = [],
+  calculatePinnedOffset,
   style,
   onClick,
   onCellClick,
@@ -80,6 +82,7 @@ export function GridRow({
         const cellSelected = isCellSelected?.(rowIndex, colIndex) || false;
         const cellModified = isCellModified?.(rowIndex, colIndex) || false;
         const isExpanded = expandedColumns.includes(column.name);
+        const pinnedOffset = column.pinned && calculatePinnedOffset ? calculatePinnedOffset(colIndex) : undefined;
         
         return (
           <GridCell
@@ -93,6 +96,7 @@ export function GridRow({
             isDeleted={isRowDeleted}
             isEditable={!isRowDeleted}
             isExpanded={isExpanded}
+            pinnedOffset={pinnedOffset}
             onClick={(e) => handleCellClick(colIndex, row[colIndex], e)}
             onContextMenu={(e) => handleContextMenu(e, colIndex)}
             onCellEdit={onCellEdit ? (newValue) => handleCellEdit(colIndex, column.name, newValue) : undefined}

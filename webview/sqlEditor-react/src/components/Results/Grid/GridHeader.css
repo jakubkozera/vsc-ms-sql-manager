@@ -27,8 +27,16 @@
   box-shadow: 0 1px 0 0 var(--vscode-panel-border) !important;
 }
 
-.grid-header-cell:hover {
+/* Remove hover background color change - icons will show on hover instead */
+/* .grid-header-cell:hover {
   background: var(--vscode-list-hoverBackground) !important;
+} */
+
+.grid-header-cell.pinned {
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  z-index: 90 !important;
+  background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526) !important;
 }
 
 .grid-header-cell.resizing {
@@ -53,9 +61,10 @@
   padding: 8px !important;
 }
 
-.row-number-header:hover {
+/* Remove hover background for consistency with old version */
+/* .row-number-header:hover {
   background: var(--vscode-list-hoverBackground) !important;
-}
+} */
 
 .row-number-header .export-icon {
   opacity: 0.8;

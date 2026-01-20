@@ -13,6 +13,7 @@ interface GridCellProps {
   isDeleted?: boolean;
   isEditable?: boolean;
   isExpanded?: boolean;
+  pinnedOffset?: number;
   onClick?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onDoubleClick?: (e: React.MouseEvent) => void;
@@ -30,6 +31,7 @@ export function GridCell({
   isDeleted = false,
   isEditable = true,
   isExpanded = false,
+  pinnedOffset,
   onClick,
   onContextMenu,
   onDoubleClick,
@@ -127,6 +129,7 @@ export function GridCell({
     isEditing && 'editing',
     column.isPrimaryKey && 'pk-cell',
     column.isForeignKey && 'fk-cell',
+    column.pinned && 'pinned',
   ].filter(Boolean).join(' ');
 
   // Render inline editor when editing
@@ -158,7 +161,8 @@ export function GridCell({
       style={{ 
         width: `${column.width}px`,
         minWidth: `${column.width}px`,
-        maxWidth: `${column.width}px`
+        maxWidth: `${column.width}px`,
+        ...(pinnedOffset !== undefined ? { left: `${pinnedOffset}px` } : {}),
       }}
       title={isLongText ? displayValue : undefined}
       data-testid={`cell-${rowIndex}-${colIndex}`}

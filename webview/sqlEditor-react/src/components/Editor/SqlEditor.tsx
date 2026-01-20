@@ -207,14 +207,12 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
 
     // Update editor value when initialValue changes (for loading from history/commands)
     useEffect(() => {
-      if (editorRef.current && initialValue !== undefined && initialValue !== '') {
+      if (editorRef.current && initialValue !== undefined) {
         const currentValue = editorRef.current.getValue();
         const defaultComment = '-- Write your SQL query here\nSELECT * FROM ';
         
-        // Update if initial value is different AND either:
-        // 1. Current value is still the default comment, OR
-        // 2. Current value is empty
-        if (initialValue !== currentValue && (currentValue === defaultComment || currentValue.trim() === '')) {
+        // Update if initial value is different AND current value is still the default comment
+        if (initialValue !== currentValue && currentValue === defaultComment) {
           console.log('[SqlEditor] Updating editor with new SQL:', initialValue.substring(0, 100));
           editorRef.current.setValue(initialValue);
           editorRef.current.setPosition({ lineNumber: 1, column: 1 });
