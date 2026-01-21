@@ -149,15 +149,18 @@ function App() {
            !!lastError;
   }, [lastResults, lastMessages, lastPlanXml, lastError]);
 
+  // Show results panel when executing even if there are no results yet
+  const showResultsPanel = useMemo(() => hasResults || isExecuting, [hasResults, isExecuting]);
+
   // Calculate results container height
   const resultsHeight = useMemo(() => {
-    if (!hasResults) return 0;
+    if (!showResultsPanel) return 0;
     // Get container height and subtract toolbar (52px) and editor height
     const containerHeight = window.innerHeight;
     const toolbarHeight = 52;
     const resizerHeight = 4;
     return containerHeight - toolbarHeight - editorHeight - resizerHeight;
-  }, [hasResults, editorHeight]);
+  }, [showResultsPanel, editorHeight]);
 
   return (
     <div id="container">
@@ -179,8 +182,8 @@ function App() {
         />
       </div>
 
-      {/* Resizer - only visible when results are shown */}
-      {hasResults && (
+      {/* Resizer - visible when results are shown or executing */}
+      {showResultsPanel && (
         <div
           className="resizer visible"
           id="resizer"
@@ -189,7 +192,7 @@ function App() {
       )}
 
       {/* Results Panel - only visible when there are results */}
-      {hasResults && (
+      {showResultsPanel && (
         <div 
           id="resultsContainer" 
           className="visible"

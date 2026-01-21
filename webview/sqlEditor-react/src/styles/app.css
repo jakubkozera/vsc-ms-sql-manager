@@ -222,6 +222,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
+  min-height: 200px;
   gap: 12px;
   color: var(--vscode-descriptionForeground);
 }

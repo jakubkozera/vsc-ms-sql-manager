@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useVSCode } from '../../context/VSCodeContext';
 import { ResultsTabs } from './ResultsTabs';
 import { MessagesTab } from './MessagesTab';
@@ -18,9 +18,38 @@ export function ResultsPanel() {
     lastError,
     executionTime,
     rowsAffected,
+    isExecuting,
   } = useVSCode();
 
   const [activeTab, setActiveTab] = useState<TabId>('results');
+
+  // Loading timer state
+  const [loadingTime, setLoadingTime] = useState('00:00');
+  const loadingStartRef = useState<number | null>(null);
+
+  // Manage timer when executing
+  useEffect(() => {
+    let interval: any | null = null;
+    if (isExecuting) {
+      const start = Date.now();
+      // store start in ref-like state to avoid lint warnings
+      (loadingStartRef as any)[0] = start;
+      interval = setInterval(() => {
+        const elapsed = Date.now() - start;
+        const seconds = Math.floor(elapsed / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        const milliseconds = Math.floor((elapsed % 1000) / 100);
+        setLoadingTime(`${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds}`);
+      }, 100);
+    } else {
+      setLoadingTime('00:00');
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isExecuting]);
 
   // Determine which tabs have content
   const hasResults = lastResults && lastResults.length > 0;
@@ -44,6 +73,14 @@ export function ResultsPanel() {
       />
 
       <div className="results-content">
+        {isExecuting && (
+          <div className="loading">
+            <div className="loading-spinner"></div>
+            <div>Executing query...</div>
+            <div className="loading-timer">{loadingTime}</div>
+          </div>
+        )}
+
         {activeTab === 'results' && hasResults && (
           <div className={`results-grids-container ${lastResults.length === 1 ? 'single-result' : ''}`}>
             {lastResults.map((data, index) => (
@@ -60,7 +97,7 @@ export function ResultsPanel() {
           </div>
         )}
 
-        {activeTab === 'results' && !hasResults && (
+        {activeTab === 'results' && !hasResults && !isExecuting && (
           <div className="results-empty">
             <svg className="empty-icon-svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>

@@ -463,7 +463,11 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
       postMessage({ type: 'showMessage', level: 'error', message: 'Please select a connection first' });
       return;
     }
-    
+
+    // Clear previous results immediately in the UI and set executing state
+    dispatch({ type: 'CLEAR_RESULTS' });
+    dispatch({ type: 'SET_EXECUTING', isExecuting: true });
+
     console.log('[VSCodeContext] Sending executeQuery message to extension');
     postMessage({
       type: 'executeQuery',
@@ -480,7 +484,11 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
       postMessage({ type: 'showMessage', level: 'error', message: 'Please select a connection first' });
       return;
     }
-    
+
+    // Clear previous results immediately and set executing state
+    dispatch({ type: 'CLEAR_RESULTS' });
+    dispatch({ type: 'SET_EXECUTING', isExecuting: true });
+
     postMessage({
       type: 'executeEstimatedPlan',
       query,

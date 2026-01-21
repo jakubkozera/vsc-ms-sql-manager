@@ -387,6 +387,72 @@ describe('VSCodeContext - Query Execution', () => {
     });
   });
 
+  it('should clear previous results and set isExecuting when executing new query', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Setup connection and set some existing results
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test Server', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    // Simulate previous results
+    sendMessage({
+      type: 'results',
+      resultSets: [[{ id: 1 }]],
+      messages: [],
+    });
+
+    expect(result.current.lastResults).toBeDefined();
+
+    // Execute new query
+    act(() => {
+      result.current.executeQuery('SELECT 1');
+    });
+
+    // Should have cleared lastResults and set executing flag
+    expect(result.current.lastResults).toBeNull();
+    expect(result.current.isExecuting).toBe(true);
+  });
+
+  it('should clear previous results and set isExecuting when executing estimated plan', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Setup connection and set some existing results
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test Server', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    // Simulate previous results
+    sendMessage({
+      type: 'results',
+      resultSets: [[{ id: 1 }]],
+      messages: [],
+    });
+
+    expect(result.current.lastResults).toBeDefined();
+
+    // Execute estimated plan
+    act(() => {
+      result.current.executeEstimatedPlan('SELECT 1');
+    });
+
+    // Should have cleared lastResults and set executing flag
+    expect(result.current.lastResults).toBeNull();
+    expect(result.current.isExecuting).toBe(true);
+  });
+
   it('should execute query with actual plan option', () => {
     const { result } = renderHook(() => useVSCode(), {
       wrapper: VSCodeProvider,
