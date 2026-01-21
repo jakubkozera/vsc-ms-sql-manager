@@ -1490,6 +1490,11 @@ require(['vs/editor/editor.main'], function () {
     
     const editorElement = document.getElementById('editor');
     if (editorElement) {
+        // Get computed font properties from CSS variables
+        const computedStyle = getComputedStyle(document.body);
+        const editorFontFamily = computedStyle.getPropertyValue('--vscode-editor-font-family') || 'Consolas, "Courier New", monospace';
+        const editorFontSize = parseInt(computedStyle.getPropertyValue('--vscode-editor-font-size')) || 14;
+        
         editor = monaco.editor.create(editorElement, {
             value: '',
             language: 'sql',
@@ -1497,7 +1502,8 @@ require(['vs/editor/editor.main'], function () {
             automaticLayout: true,
             minimap: { enabled: true },
             scrollBeyondLastLine: false,
-            fontSize: 14,
+            fontFamily: editorFontFamily,
+            fontSize: editorFontSize,
             lineNumbers: 'on',
             renderWhitespace: 'selection',
             tabSize: 4,
