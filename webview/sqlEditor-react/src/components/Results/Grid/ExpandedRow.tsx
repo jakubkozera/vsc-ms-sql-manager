@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, memo } from 'react';
 import { ResultSetMetadata } from '../../../types/messages';
 import { ColumnDef } from '../../../types/grid';
 import { GridHeader } from './GridHeader';
@@ -14,7 +14,7 @@ interface ExpandedRowProps {
   onColumnResize?: (columnName: string, newWidth: number) => void;
 }
 
-export function ExpandedRow({ data, metadata, columnNames, isLoading, error, onColumnResize }: ExpandedRowProps) {
+function ExpandedRowComponent({ data, metadata, columnNames, isLoading, error, onColumnResize }: ExpandedRowProps) {
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   
   // Handle column resize for nested table
@@ -131,3 +131,6 @@ export function ExpandedRow({ data, metadata, columnNames, isLoading, error, onC
     </div>
   );
 }
+
+// Memoize to prevent unnecessary re-renders
+export const ExpandedRow = memo(ExpandedRowComponent);

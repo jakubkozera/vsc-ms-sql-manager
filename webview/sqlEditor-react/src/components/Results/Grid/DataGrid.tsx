@@ -229,14 +229,29 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     return offset;
   }, [expandedRows]);
 
-  // Virtual scrolling
+  // Virtual scrolling (overscan 5 = 5 rows above + 5 below, matching old BUFFER_ROWS behavior)
   const { containerRef: virtualContainerRef, virtualItems } = useVirtualScroll({
     itemCount: sortedData.length,
     itemHeight: ROW_HEIGHT,
-    overscan: 10,
+    overscan: 5,
   });
 
   const totalHeight = calculateTotalHeight();
+
+  // DIAGNOSTIC LOG: Check render frequency and virtual items (only in development or when DEBUG_GRID is set)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' || (window as any).DEBUG_GRID) {
+      console.log('[DataGrid RENDER]', {
+        resultSetIndex,
+        totalRows: sortedData.length,
+        virtualItemsCount: virtualItems.length,
+        virtualRange: virtualItems.length > 0 ? `${virtualItems[0].index}-${virtualItems[virtualItems.length - 1].index}` : 'none',
+        expandedRowsCount: expandedRows.size,
+        filtersCount: Object.keys(filters).length,
+        timestamp: Date.now()
+      });
+    }
+  });
 
   // Handlers
   const handleSort = useCallback((column: string) => {
@@ -670,10 +685,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       {/* Grid */}
       <div 
         className={`data-grid-scroll-container ${isSingleResultSet ? 'full-height' : ''}`}
-        ref={(el) => {
-          // Merge refs
-          (virtualContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-        }}
+        ref={virtualContainerRef}
       >
         <table 
           className="data-grid-table"

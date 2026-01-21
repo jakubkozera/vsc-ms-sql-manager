@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, memo } from 'react';
 import { ColumnDef } from '../../../types/grid';
 import { InlineCellEditor } from './InlineCellEditor';
 import './GridCell.css';
@@ -21,7 +21,7 @@ interface GridCellProps {
   onCellEdit?: (newValue: unknown) => void;
 }
 
-export function GridCell({ 
+function GridCellComponent({ 
   value, 
   column, 
   rowIndex, 
@@ -39,6 +39,14 @@ export function GridCell({
   onCellEdit,
 }: GridCellProps) {
   const [isEditing, setIsEditing] = useState(false);
+  
+  // DIAGNOSTIC: Count renders for this cell (only first few cells when debugging)
+  const renderCountRef = useState(() => ({ count: 0 }))[0];
+  renderCountRef.count++;
+  if ((process.env.NODE_ENV === 'development' || (window as any).DEBUG_GRID) && renderCountRef.count > 1 && rowIndex < 3 && colIndex < 3) {
+    console.log('[GridCell RE-RENDER]', { rowIndex, colIndex, renderCount: renderCountRef.count, value, isSelected });
+  }
+  
   // Determine cell type and format
   const { displayValue, cellType, isLongText } = useMemo(() => {
     if (value === null || value === undefined) {
@@ -186,3 +194,20 @@ export function GridCell({
     </td>
   );
 }
+
+// Custom comparison to prevent unnecessary re-renders
+function arePropsEqual(prev: GridCellProps, next: GridCellProps): boolean {
+  return (
+    prev.value === next.value &&
+    prev.isSelected === next.isSelected &&
+    prev.isModified === next.isModified &&
+    prev.isDeleted === next.isDeleted &&
+    prev.isEditable === next.isEditable &&
+    prev.isExpanded === next.isExpanded &&
+    prev.pinnedOffset === next.pinnedOffset &&
+    prev.column.width === next.column.width &&
+    prev.column.pinned === next.column.pinned
+  );
+}
+
+export const GridCell = memo(GridCellComponent, arePropsEqual);

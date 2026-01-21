@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, memo } from 'react';
 import { ColumnDef, SortConfig, FilterConfig } from '../../../types/grid';
 import './GridHeader.css';
 
@@ -15,7 +15,7 @@ interface GridHeaderProps {
   calculatePinnedOffset?: (colIndex: number) => number;
 }
 
-export function GridHeader({ 
+function GridHeaderComponent({ 
   columns, 
   sortConfig, 
   filters = {},
@@ -187,3 +187,6 @@ export function GridHeader({
     </thead>
   );
 }
+
+// Memoize to prevent unnecessary re-renders
+export const GridHeader = memo(GridHeaderComponent);

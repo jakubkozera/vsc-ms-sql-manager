@@ -47,17 +47,39 @@ export function useVirtualScroll({
     return () => resizeObserver.disconnect();
   }, []);
 
-  // Handle scroll events
+  // Handle scroll events with throttling (like old grid.js debouncing)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    let rafId: number | null = null;
+    let lastScrollTop = -1;
+
     const handleScroll = () => {
-      setScrollTop(container.scrollTop);
+      // Cancel pending animation frame
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+
+      // Schedule update on next animation frame (throttling)
+      rafId = requestAnimationFrame(() => {
+        const newScrollTop = container.scrollTop;
+        // Only update if scrollTop changed significantly (reduces re-renders)
+        if (Math.abs(newScrollTop - lastScrollTop) > 5) {
+          lastScrollTop = newScrollTop;
+          setScrollTop(newScrollTop);
+        }
+        rafId = null;
+      });
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, []);
 
   // Calculate visible items
@@ -76,6 +98,20 @@ export function useVirtualScroll({
         index: i,
         start: i * itemHeight,
         size: itemHeight,
+      });
+    }
+
+    // DIAGNOSTIC LOG - only when debugging
+    if (process.env.NODE_ENV === 'development' || (window as any).DEBUG_GRID) {
+      console.log('[useVirtualScroll] Calculating items:', {
+        itemCount,
+        containerHeight,
+        scrollTop,
+        startIndex,
+        endIndex,
+        visibleCount,
+        itemsGenerated: items.length,
+        timestamp: Date.now()
       });
     }
 
