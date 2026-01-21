@@ -20,6 +20,10 @@ export interface DBPool {
     connected: boolean;
 }
 
+interface OdbcError {
+    sqlState?: string;
+}
+
 // Cache for the last working ODBC driver
 let cachedWorkingDriver: string | null = null;
 let extensionContext: any = null;
@@ -139,7 +143,8 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                         console.error('[msnodesqlv8] Connection failed:', err);
                                         console.error('[msnodesqlv8] Error details:', JSON.stringify(err, null, 2));
                                         this.connected = false;
-                                        return reject(new Error(`msnodesqlv8 connection failed: ${err.message || JSON.stringify(err)}`));
+                                        const odbcErr = err as OdbcError;
+                                        return reject(new Error(`msnodesqlv8 connection failed: ${err.message || JSON.stringify(err)}; [sqlState: ${odbcErr.sqlState}]`));
                                     }
                                     console.log('[msnodesqlv8] Connection established successfully');
                                     connectionHandle = conn;
