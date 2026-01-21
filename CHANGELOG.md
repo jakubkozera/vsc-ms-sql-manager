@@ -5,6 +5,19 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-01-21
+
+### Added
+
+- **Font Customization Support**: Comprehensive font configuration for SQL editor and result grids
+  - **CSS Variables Integration**: Added support for VS Code font variables (--vscode-font-family, --vscode-font-size, --vscode-editor-font-family, --vscode-editor-font-size)
+  - **Monaco Editor Font Configuration**: SQL editor now respects VS Code's editor font settings for consistent typography
+  - **Result Grid Font Enforcement**: Query result tables now properly apply font settings through multiple enforcement mechanisms
+  - **GUID Column Width Optimization**: Automatic minimum 300px width for GUID columns to ensure readability
+  - **Font-Aware Column Sizing**: Column width calculations now account for actual font metrics for optimal display
+  - **Inline Font Styling**: JavaScript-created table elements use inline styles to ensure font application
+  - **CSS Specificity Handling**: Added !important declarations for table font rules to override competing styles
+
 ## [0.11.0] - 2026-01-03
 
 ### Added
