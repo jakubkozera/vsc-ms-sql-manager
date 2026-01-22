@@ -1770,25 +1770,39 @@ function commitEdit(newValue) {
 
     const { td, row, col, rowIndex, colIndex, originalValue, resultSetIndex, metadata, originalPadding, containerEl } = currentEditingCell;
     
+    // Normalize NULL values: if user types "null" or "'null'", treat as actual NULL
+    let normalizedValue = newValue;
+    if (typeof newValue === 'string') {
+        const trimmedValue = newValue.trim();
+        if (trimmedValue.toLowerCase() === 'null' || trimmedValue.toLowerCase() === "'null'") {
+            normalizedValue = null;
+        }
+    }
+    
     // Check if value changed
     let valueChanged = false;
     
     if (col.type === 'boolean') {
         // Normalize original value to boolean
         const boolOriginal = originalValue === true || originalValue === 1 || String(originalValue).toLowerCase() === 'true';
-        if (newValue !== boolOriginal) {
+        if (normalizedValue !== boolOriginal) {
             valueChanged = true;
         }
     } else {
-        const stringOriginal = originalValue === null ? '' : String(originalValue);
-        if (newValue !== stringOriginal) {
-            valueChanged = true;
+        // Compare with normalized value
+        if (normalizedValue === null) {
+            valueChanged = (originalValue !== null);
+        } else {
+            const stringOriginal = originalValue === null ? '' : String(originalValue);
+            if (normalizedValue !== stringOriginal) {
+                valueChanged = true;
+            }
         }
     }
     
     if (valueChanged) {
         // Update data model
-        row[col.field] = newValue; 
+        row[col.field] = normalizedValue; 
         
         // Track change
         if (!pendingChanges.has(resultSetIndex)) {
@@ -1804,7 +1818,7 @@ function commitEdit(newValue) {
         const pkValues = getPrimaryKeyValues(row, metadata);
         
         if (existingChangeIndex >= 0) {
-            changes[existingChangeIndex].newValue = newValue;
+            changes[existingChangeIndex].newValue = normalizedValue;
         } else {
             changes.push({
                 type: 'UPDATE',
@@ -1812,7 +1826,7 @@ function commitEdit(newValue) {
                 colIndex,
                 column: col.headerName,
                 originalValue,
-                newValue,
+                newValue: normalizedValue,
                 pk: pkValues
             });
         }
@@ -1825,7 +1839,7 @@ function commitEdit(newValue) {
     td.style.padding = originalPadding || '0 8px';
     td.style.border = '';
     
-    restoreCellContent(td, newValue, col, metadata, colIndex, rowIndex, containerEl);
+    restoreCellContent(td, normalizedValue, col, metadata, colIndex, rowIndex, containerEl);
     
     currentEditingCell = null;
 }
@@ -2411,8 +2425,16 @@ function sqlEscape(value) {
         return value ? '1' : '0';
     }
     
-    // String - escape single quotes and wrap in quotes
+    // Check if string value is "null" (case-insensitive) or "'null'" to treat as SQL NULL
     const strValue = String(value);
+    const trimmedValue = strValue.trim();
+    
+    // If user types "null" (any case) or "'null'" (with quotes), treat as SQL NULL
+    if (trimmedValue.toLowerCase() === 'null' || trimmedValue.toLowerCase() === "'null'") {
+        return 'NULL';
+    }
+    
+    // String - escape single quotes and wrap in quotes
     return `'${strValue.replace(/'/g, "''")}'`;
 }
 

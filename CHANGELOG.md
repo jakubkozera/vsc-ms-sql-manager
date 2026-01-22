@@ -5,6 +5,16 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] - 2026-01-22
+
+### Fixed
+
+- **NULL Value Handling in Result Grid Updates**: Fixed issue where typing "null" in a cell would generate `SET column = 'NULL'` instead of `SET column = NULL`
+  - Typing "null" (case-insensitive) in a cell now correctly generates SQL NULL value
+  - Typing "'null'" (with quotes) also generates SQL NULL value
+  - Prevents incorrect string literal 'NULL' from being inserted into database columns
+  - Affects all UPDATE statements generated from editable result grids
+
 ## [0.11.1] - 2026-01-21
 
 ### Added
