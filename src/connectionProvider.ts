@@ -1028,10 +1028,10 @@ export class ConnectionProvider {
     async discoverLocalServersOnce(): Promise<void> {
         try {
             const alreadyRun = this.context.globalState.get<boolean>('mssqlManager.localDiscoveryDone', false);
-            // if (alreadyRun) {
-            //     this.outputChannel.appendLine('[ConnectionProvider] Local discovery already executed, skipping');
-            //     return;
-            // }
+            if (alreadyRun) {
+                this.outputChannel.appendLine('[ConnectionProvider] Local discovery already executed, skipping');
+                return;
+            }
 
             // Only run on Windows
             if (process.platform !== 'win32') {
