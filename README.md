@@ -33,7 +33,7 @@ Automated discovery and connection setup for Azure SQL servers with intelligent 
 ### ⚡ SQL Runner
 Advanced SQL query execution engine with comprehensive T-SQL support and real-time results display.
 
-![SQL Runner](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/sql-runner.png)
+![SQL Runner](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/sql-runner.gif)
 
 **Key Features:**
 - **Enhanced SQL Editor**: Custom editor with syntax highlighting for `.sql` files
@@ -43,6 +43,15 @@ Advanced SQL query execution engine with comprehensive T-SQL support and real-ti
 - **Real-time Progress**: Live execution progress and performance metrics
 - **Results Export**: Export query results to CSV format
 - **Keyboard Shortcuts**: Execute with F5 or Ctrl+Shift+E
+
+### 🎯 Editor Actions
+Advanced editor integration for schema browsing and script generation with context-aware actions.
+
+![Editor Actions](https://raw.githubusercontent.com/jakubkozera/vsc-ms-sql-manager/master/docs/editor-actions.gif)
+
+**Key Features:**
+- **Schema Preview**: View database schema directly in the SQL editor
+- **Context Menu Scripts**: Right-click on tables to generate INSERT, UPDATE, and DELETE scripts (including records from related tables)
 
 ### 🔍 Schema Compare
 Professional schema comparison tool for analyzing differences between database structures and generating synchronization scripts.
