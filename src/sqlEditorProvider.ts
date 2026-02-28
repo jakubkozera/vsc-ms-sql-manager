@@ -1433,14 +1433,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             // Escape single quotes in the value
             const escapedValue = String(keyValue).replace(/'/g, "''");
             
-            // If we have a database name from connectionId, prepend USE statement to ensure correct context
-            let query = '';
-            if (connectionId && connectionId.includes('::')) {
-                const [, dbName] = connectionId.split('::');
-                query = `USE [${dbName}];\nSELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
-            } else {
-                query = `SELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
-            }
+            // poolToUse is already scoped to the correct database (via createDbPool),
+            // so no USE statement is needed — adding one would create a spurious empty
+            // result set that breaks result handling, especially with msnodesqlv8.
+            const query = `SELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
             this.outputChannel.appendLine(`[SqlEditorProvider] Executing relation expansion: ${query}`);
             
             // Execute query using queryExecutor (skip history for relation expansions)

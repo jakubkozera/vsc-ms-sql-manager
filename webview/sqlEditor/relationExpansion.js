@@ -33,14 +33,18 @@ function handleRelationResults(message) {
     const expandedRow = document.querySelector(`[data-expansion-id="${expansionId}"]`);
     if (expandedRow) {
         const content = expandedRow.querySelector('.expanded-content');
-        if (content && resultSets && resultSets[0] && resultSets[0].length > 0) {
+        // Find the first non-empty result set — the USE [db] statement (when present)
+        // creates a spurious empty resultSets[0] with msnodesqlv8 (Windows Auth).
+        const dataResultSet = resultSets && resultSets.find(rs => rs && rs.length > 0);
+        const dataIndex = resultSets && dataResultSet ? resultSets.indexOf(dataResultSet) : -1;
+        if (content && dataResultSet) {
             content.innerHTML = '';
             
             const nestedContainer = document.createElement('div');
             nestedContainer.className = 'nested-table-container';
             
             // Calculate dynamic height based on row count (max 5 rows)
-            const rowCount = resultSets[0].length;
+            const rowCount = dataResultSet.length;
             const rowHeight = 30; // Match ROW_HEIGHT in initAgGridTable
             const headerHeight = 40; // Approx header height
             const scrollbarHeight = 17; // Approx scrollbar height
@@ -60,8 +64,8 @@ function handleRelationResults(message) {
             `;
             
             content.appendChild(nestedContainer);
-            console.log('[EXPANSION] Rendering nested table with', resultSets[0].length, 'rows');
-            initAgGridTable(resultSets[0], nestedContainer, true, -1, metadata ? metadata[0] : null, columnNames ? columnNames[0] : null);
+            console.log('[EXPANSION] Rendering nested table with', dataResultSet.length, 'rows');
+            initAgGridTable(dataResultSet, nestedContainer, true, -1, metadata ? metadata[dataIndex] : null, columnNames ? columnNames[dataIndex] : null);
             console.log('[EXPANSION] Nested table rendered, container height:', nestedContainer.offsetHeight);
 
             // Update height after content is rendered

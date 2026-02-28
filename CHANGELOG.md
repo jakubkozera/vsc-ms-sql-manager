@@ -5,6 +5,16 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.4] - 2026-02-28
+
+### Fixed
+
+- **Related Tables Expansion with Windows Authentication**: Fixed "No related data found" when expanding related tables on connections using Windows Auth (e.g. SQL Express / LocalDB)
+  - Root cause: the expansion query was prefixed with `USE [database];` even though the connection pool was already scoped to the correct database. The `msnodesqlv8` driver (used for Windows Auth) materialises `USE` as a separate empty result set, causing the UI to read `resultSets[0]` (empty) instead of `resultSets[1]` (actual data).
+  - Backend fix: removed the redundant `USE [database];` prefix from relation expansion queries — the pool created by `createDbPool` already targets the correct database.
+  - Frontend fix: `handleRelationResults` now picks the **first non-empty** result set rather than always using index 0, providing a safety net for any driver that may still emit auxiliary result sets.
+
+
 ## [0.11.3] - 2026-01-28
 
 ### Fixed
