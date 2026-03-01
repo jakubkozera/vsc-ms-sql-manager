@@ -44,12 +44,14 @@ jobs:
         if: success()
         run: |
           npm install -g ovsx
-          ovsx publish *.vsix -p ${{ secrets.OVSX_PAT }}
+          $vsix = Get-ChildItem -Filter *.vsix | Select-Object -First 1 -ExpandProperty Name
+          ovsx publish $vsix -p ${{ secrets.OVSX_PAT }}
+        shell: pwsh
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: "*.vsix"
+          files: "**/*.vsix"
           draft: false
           prerelease: false
           generate_release_notes: true

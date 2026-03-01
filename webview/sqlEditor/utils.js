@@ -18,6 +18,7 @@ window.validationTimeout = null;
 window.actualPlanEnabled = false;
 window.sqlSnippets = [];
 window.completionProvider = null;
+window.isUntitledQuery = false;
 window.colorPrimaryForeignKeys = '#007acc'; // Default value
 
 // Helper function to check if string is valid JSON

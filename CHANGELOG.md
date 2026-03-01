@@ -5,6 +5,16 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-03-01
+
+### Changed
+
+- **New Query (Untitled Mode)**: "New Query" no longer creates temporary `.sql` files on disk. Instead, it opens a lightweight untitled SQL editor webview with full query execution support. Press `Ctrl+S` to save the query to a `.sql` file via Save As dialog, which then re-opens it in the standard custom SQL editor.
+
+### Fixed
+
+- **Open VSX Publish**: Fixed `.vsix` glob not resolving on Windows runners in GitHub Actions CI/CD pipeline
+
 ## [0.12.1] - 2026-03-01
 
 ### Added
