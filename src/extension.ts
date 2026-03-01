@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ConnectionProvider } from './connectionProvider';
 import { UnifiedTreeProvider } from './unifiedTreeProvider';
 import { QueryExecutor } from './queryExecutor';
-import { SqlEditorProvider } from './sqlEditorProvider';
+import { SqlEditorProvider, UntitledQuerySerializer } from './sqlEditorProvider';
 import { QueryHistoryManager } from './queryHistory';
 import { QueryHistoryTreeProvider } from './queryHistoryTreeProvider';
 import { registerAllCommands } from './commands';
@@ -147,6 +147,14 @@ async function initializeExtension(context: vscode.ExtensionContext) {
                     retainContextWhenHidden: true
                 }
             }
+        )
+    );
+
+    // Register serializer for untitled query panels (to restore after VS Code restart)
+    context.subscriptions.push(
+        vscode.window.registerWebviewPanelSerializer(
+            'mssqlManager.sqlEditorUntitled',
+            new UntitledQuerySerializer(sqlEditorProvider)
         )
     );
 

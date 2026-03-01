@@ -1812,7 +1812,7 @@ COMMIT TRANSACTION;
         databaseName?: string,
         initialQuery?: string,
         autoExecute: boolean = false
-    ): Promise<void> {
+    ): Promise<vscode.WebviewPanel> {
         // Get connection config to determine base title
         const config = this.connectionProvider.getConnectionConfig(connectionId);
         let baseTitle = 'Query';
@@ -1863,6 +1863,77 @@ COMMIT TRANSACTION;
 
         panel.webview.html = this.getHtmlForWebview(panel.webview);
 
+        // Setup state for serialization/restoration
+        this.setupUntitledPanelHandlers(panel, connectionId, databaseName, initialQuery || '', autoExecute);
+        
+        return panel;
+    }
+
+    /**
+     * Restore an untitled query panel after VS Code restart
+     */
+    public async restoreUntitledQuery(
+        panel: vscode.WebviewPanel,
+        connectionId: string,
+        databaseName: string | undefined,
+        savedContent: string
+    ): Promise<void> {
+        // Set webview options
+        panel.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [
+                vscode.Uri.joinPath(this.context.extensionUri, 'webview'),
+                vscode.Uri.joinPath(this.context.extensionUri, 'resources')
+            ]
+        };
+
+        // Set icon with light/dark theme variants
+        panel.iconPath = {
+            light: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'icons', 'database-light.svg'),
+            dark: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'icons', 'database-dark.svg')
+        };
+
+        // Setup the restored panel
+        panel.webview.html = this.getHtmlForWebview(panel.webview);
+        
+        // Get connection config to determine base title
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        let baseTitle = 'Query';
+        if (config) {
+            if (config.connectionType === 'database') {
+                baseTitle = `Query - ${config.name}`;
+            } else {
+                baseTitle = databaseName ? `Query - ${databaseName}` : `Query - ${config.name}`;
+            }
+        }
+
+        // Track this panel
+        this.untitledPanels.set(panel, baseTitle);
+        
+        // Setup handlers with restored state
+        this.setupUntitledPanelHandlers(panel, connectionId, databaseName, savedContent, false);
+        
+        this.outputChannel.appendLine(`[SqlEditorProvider] Restored untitled query panel for ${connectionId}::${databaseName || 'master'}`);
+    }
+
+    /**
+     * Setup message handlers and state tracking for an untitled query panel
+     */
+    private setupUntitledPanelHandlers(
+        panel: vscode.WebviewPanel,
+        connectionId: string,
+        databaseName: string | undefined,
+        initialContent: string,
+        autoExecute: boolean
+    ): void {
+        let currentContent = initialContent;
+        const compositeId = databaseName ? `${connectionId}::${databaseName}` : connectionId;
+
+        // Track this webview like a regular editor
+        const syntheticUri = vscode.Uri.parse(`untitled:query-${Date.now()}`);
+        this.webviewToDocument.set(panel.webview, syntheticUri);
+        this.webviewSelectedConnection.set(panel.webview, compositeId);
+
         panel.webview.onDidReceiveMessage(async message => {
             switch (message.type) {
                 case 'ready':
@@ -1885,8 +1956,14 @@ COMMIT TRANSACTION;
                     // Send connections list
                     this.updateConnectionsList(panel.webview);
 
+                    // Save initial state for persistence
+                    panel.webview.postMessage({
+                        type: 'setState',
+                        state: { connectionId, databaseName, content: currentContent }
+                    });
+
                     // Auto-execute if requested
-                    if (autoExecute && initialQuery) {
+                    if (autoExecute && initialContent) {
                         setTimeout(() => {
                             panel.webview.postMessage({ type: 'autoExecuteQuery' });
                         }, 200);
@@ -1895,6 +1972,11 @@ COMMIT TRANSACTION;
 
                 case 'documentChanged':
                     currentContent = message.content;
+                    // Update state for persistence
+                    panel.webview.postMessage({
+                        type: 'setState',
+                        state: { connectionId, databaseName, content: currentContent }
+                    });
                     break;
 
                 case 'saveQuery': {
@@ -2114,6 +2196,40 @@ COMMIT TRANSACTION;
             }
         });
 
-        this.outputChannel.appendLine(`[SqlEditorProvider] Opened untitled query panel for ${compositeId}`);
+        this.outputChannel.appendLine(`[SqlEditorProvider] Setup handlers for untitled query panel: ${compositeId}`);
+    }
+}
+
+/**
+ * Serializer for untitled query panels to restore them after VS Code restart
+ */
+export class UntitledQuerySerializer implements vscode.WebviewPanelSerializer {
+    constructor(
+        private readonly sqlEditorProvider: SqlEditorProvider
+    ) {}
+
+    async deserializeWebviewPanel(
+        webviewPanel: vscode.WebviewPanel,
+        state: { connectionId: string; databaseName?: string; content: string } | undefined
+    ): Promise<void> {
+        // Recreate the untitled query with saved state
+        if (state?.connectionId) {
+            // The panel is already created by VS Code, we need to reuse it
+            // So we'll call a method that sets up the existing panel
+            await this.sqlEditorProvider.restoreUntitledQuery(
+                webviewPanel,
+                state.connectionId,
+                state.databaseName,
+                state.content || ''
+            );
+        } else {
+            // No state available - create empty query
+            await this.sqlEditorProvider.restoreUntitledQuery(
+                webviewPanel,
+                '',
+                undefined,
+                ''
+            );
+        }
     }
 }

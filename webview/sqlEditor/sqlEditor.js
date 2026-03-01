@@ -169,6 +169,14 @@ window.addEventListener('message', event => {
             window.isUntitledQuery = !!message.isUntitled;
             console.log('[SQL-EDITOR] Untitled mode:', window.isUntitledQuery);
             break;
+
+        case 'setState':
+            // Save state for VS Code to restore after restart
+            if (message.state && vscode) {
+                vscode.setState(message.state);
+                console.log('[SQL-EDITOR] State saved for persistence:', message.state);
+            }
+            break;
     }
 });
 
