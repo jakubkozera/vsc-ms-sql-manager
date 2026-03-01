@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -433,6 +433,16 @@
       {
         "command": "mssqlManager.removeNotebook",
         "title": "Remove from Notebooks",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mssqlManager.createDatabase",
+        "title": "Create Database...",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mssqlManager.deleteDatabase",
+        "title": "Delete Database",
         "icon": "$(trash)"
       },
       {
@@ -1002,6 +1012,11 @@
           "group": "2_manage@9"
         },
         {
+          "command": "mssqlManager.createDatabase",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
+          "group": "2_manage@10"
+        },
+        {
           "command": "mssqlManager.refreshNode",
           "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
           "group": "3_refresh@1"
@@ -1047,10 +1062,11 @@
           "group": "2_script@2"
         },
         {
-          "command": "mssqlManager.refreshNode",
+          "command": "mssqlManager.deleteDatabase",
           "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
-          "group": "3_refresh@1"
+          "group": "3_danger@1"
         },
+
         {
           "command": "mssqlManager.filterTables",
           "when": "view == mssqlManager.explorer && viewItem == tables",
@@ -1364,6 +1380,14 @@
         },
         {
           "command": "mssqlManager.refreshNotebooks",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.deleteDatabase",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.createDatabase",
           "when": "false"
         }
       ]

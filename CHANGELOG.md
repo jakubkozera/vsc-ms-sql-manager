@@ -5,6 +5,24 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-03-01
+
+### Added
+
+- **Create Database**: New "Create Database..." context menu option on active server connections in the Database Explorer
+  - Prompts for database name with input validation (length, invalid characters)
+  - Creates the database on the server and refreshes the tree view automatically
+
+- **Delete Database**: New "Delete Database" context menu option on database instances under server connections
+  - **Close Connection**: Closes the connection pool to the specific database without dropping it
+  - **Drop Database**: Permanently drops the database with double confirmation to prevent accidental data loss
+  - Automatically sets database to single-user mode before dropping to force-close active connections
+
+### Fixed
+
+- **Duplicate Refresh in Database Context Menu**: Fixed duplicate "Refresh" entries appearing in the right-click context menu for database instances under server connections
+  - Removed redundant `refreshNode` menu entry for database nodes — only the more comprehensive `refreshDatabaseSchema` entry is now shown
+
 ## [0.12.0] - 2026-03-01
 
 ### Added

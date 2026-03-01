@@ -148,5 +148,151 @@ export function registerDatabaseCommands(
         }
     );
 
-    return [showDatabaseDiagram, compareSchema, exportBackup, importBackup];
+    const deleteDatabase = vscode.commands.registerCommand(
+        'mssqlManager.deleteDatabase',
+        async (node?: any) => {
+            outputChannel.appendLine('[DatabaseCommands] Delete database command triggered');
+
+            if (!node || !node.connectionId || !node.database) {
+                vscode.window.showErrorMessage('Please select a database from the explorer');
+                return;
+            }
+
+            const database = node.database;
+            const connectionId = node.connectionId;
+
+            // Show options similar to Azure Data Studio
+            const action = await vscode.window.showWarningMessage(
+                `What would you like to do with database "${database}"?`,
+                { modal: true, detail: 'Choose an action for this database.' },
+                'Close Connection',
+                'Drop Database'
+            );
+
+            if (!action) {
+                return;
+            }
+
+            if (action === 'Close Connection') {
+                try {
+                    // Close the DB pool for this specific database
+                    await connectionProvider.closeDbPool(connectionId, database);
+                    outputChannel.appendLine(`[DatabaseCommands] Closed connection to database: ${database}`);
+                    vscode.window.showInformationMessage(`Closed connection to database "${database}"`);
+                    if (treeProvider) {
+                        treeProvider.refresh();
+                    }
+                } catch (error: any) {
+                    outputChannel.appendLine(`[DatabaseCommands] Error closing database connection: ${error.message}`);
+                    vscode.window.showErrorMessage(`Failed to close connection: ${error.message}`);
+                }
+            } else if (action === 'Drop Database') {
+                // Double confirmation for destructive action
+                const confirm = await vscode.window.showWarningMessage(
+                    `Are you sure you want to permanently drop database "${database}"? This action cannot be undone.`,
+                    { modal: true },
+                    'Drop'
+                );
+
+                if (confirm !== 'Drop') {
+                    return;
+                }
+
+                try {
+                    // Close DB pool for this database first
+                    await connectionProvider.closeDbPool(connectionId, database);
+
+                    // Use the server-level connection to drop the database
+                    const connection = connectionProvider.getConnection(connectionId);
+                    if (!connection) {
+                        vscode.window.showErrorMessage('Server connection is not active');
+                        return;
+                    }
+
+                    await vscode.window.withProgress(
+                        { location: vscode.ProgressLocation.Notification, title: `Dropping database "${database}"...` },
+                        async () => {
+                            const request = connection.request();
+                            // Set database to single-user mode to force close all connections, then drop
+                            await request.query(`
+                                ALTER DATABASE [${database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                                DROP DATABASE [${database}];
+                            `);
+                        }
+                    );
+
+                    outputChannel.appendLine(`[DatabaseCommands] Successfully dropped database: ${database}`);
+                    vscode.window.showInformationMessage(`Database "${database}" has been dropped successfully`);
+                    if (treeProvider) {
+                        treeProvider.refresh();
+                    }
+                } catch (error: any) {
+                    outputChannel.appendLine(`[DatabaseCommands] Error dropping database: ${error.message}`);
+                    vscode.window.showErrorMessage(`Failed to drop database: ${error.message}`);
+                }
+            }
+        }
+    );
+
+    const createDatabase = vscode.commands.registerCommand(
+        'mssqlManager.createDatabase',
+        async (node?: any) => {
+            outputChannel.appendLine('[DatabaseCommands] Create database command triggered');
+
+            if (!node || !node.connectionId) {
+                vscode.window.showErrorMessage('Please select a server connection from the explorer');
+                return;
+            }
+
+            const connectionId = node.connectionId;
+
+            const databaseName = await vscode.window.showInputBox({
+                prompt: 'Enter the name for the new database',
+                placeHolder: 'DatabaseName',
+                validateInput: (value) => {
+                    if (!value || value.trim().length === 0) {
+                        return 'Database name is required';
+                    }
+                    if (/[[\]'";]/.test(value)) {
+                        return 'Database name contains invalid characters';
+                    }
+                    if (value.length > 128) {
+                        return 'Database name must be 128 characters or less';
+                    }
+                    return undefined;
+                }
+            });
+
+            if (!databaseName) {
+                return;
+            }
+
+            try {
+                const connection = connectionProvider.getConnection(connectionId);
+                if (!connection) {
+                    vscode.window.showErrorMessage('Server connection is not active');
+                    return;
+                }
+
+                await vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: `Creating database "${databaseName}"...` },
+                    async () => {
+                        const request = connection.request();
+                        await request.query(`CREATE DATABASE [${databaseName}]`);
+                    }
+                );
+
+                outputChannel.appendLine(`[DatabaseCommands] Successfully created database: ${databaseName}`);
+                vscode.window.showInformationMessage(`Database "${databaseName}" has been created successfully`);
+                if (treeProvider) {
+                    treeProvider.refresh();
+                }
+            } catch (error: any) {
+                outputChannel.appendLine(`[DatabaseCommands] Error creating database: ${error.message}`);
+                vscode.window.showErrorMessage(`Failed to create database: ${error.message}`);
+            }
+        }
+    );
+
+    return [showDatabaseDiagram, compareSchema, exportBackup, importBackup, deleteDatabase, createDatabase];
 }
