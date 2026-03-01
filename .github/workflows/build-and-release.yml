@@ -33,7 +33,7 @@ jobs:
       - name: Package Extension
         run: |
           npm install -g @vscode/vsce
-          vsce package
+          vsce package --allow-star-activation
 
 
       - name: Publish to VS Code Marketplace
