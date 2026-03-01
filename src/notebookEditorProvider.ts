@@ -64,6 +64,10 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'refreshConnections':
                     await this.sendConnections(webview);
                     break;
+
+                case 'manageConnections':
+                    await vscode.commands.executeCommand('mssqlManager.manageConnections');
+                    break;
             }
         });
 
@@ -97,7 +101,7 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
         // Inject CSP meta tag
         html = html.replace(
             '<head>',
-            `<head>\n    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src ${cspSource}; font-src ${cspSource};">`
+            `<head>\n    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src ${cspSource} https://cdn.jsdelivr.net; font-src ${cspSource} https://cdn.jsdelivr.net; worker-src blob:; connect-src https://cdn.jsdelivr.net;">`
         );
 
         return html;

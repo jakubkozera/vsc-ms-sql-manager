@@ -160,6 +160,7 @@ export default function App() {
         showDatabaseSelector={showDatabaseSelector}
         onRunAll={runAll}
         onRefreshConnections={() => postMessage({ type: 'refreshConnections' })}
+        onManageConnections={() => postMessage({ type: 'manageConnections' })}
         kernelName={notebook.metadata?.kernelspec?.display_name}
       />
       <div className="notebook-container">

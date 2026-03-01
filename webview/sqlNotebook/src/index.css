@@ -19,8 +19,8 @@ body {
 .notebook-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 6px;
+  padding: 6px 12px;
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   border-bottom: 1px solid var(--vscode-panel-border, #333);
   position: sticky;
@@ -28,40 +28,66 @@ body {
   z-index: 100;
 }
 
-.toolbar-label {
-  font-size: 12px;
-  color: var(--vscode-descriptionForeground, #999);
-  white-space: nowrap;
+.toolbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.15s, background 0.15s;
 }
 
-.notebook-toolbar select {
-  padding: 4px 8px;
+.toolbar-icon-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+}
+
+.toolbar-icon-btn.primary {
+  color: var(--vscode-terminal-ansiGreen, #89d185);
+  opacity: 1;
+}
+
+.toolbar-icon-btn.primary:hover {
+  background: rgba(137, 209, 133, 0.15);
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 18px;
+  background: var(--vscode-panel-border, #444);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.toolbar-select {
+  padding: 3px 8px;
   background: var(--vscode-dropdown-background);
   color: var(--vscode-dropdown-foreground);
   border: 1px solid var(--vscode-dropdown-border, #444);
   border-radius: 3px;
   font-size: 12px;
-  min-width: 140px;
-  max-width: 300px;
+  min-width: 120px;
+  max-width: 280px;
+  height: 26px;
 }
 
-.notebook-toolbar select:focus {
+.toolbar-select:focus {
   outline: 1px solid var(--vscode-focusBorder);
 }
 
-.run-all-btn {
-  padding: 4px 12px;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 12px;
+.toolbar-kernel {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-left: auto;
   white-space: nowrap;
-}
-
-.run-all-btn:hover {
-  background: var(--vscode-button-hoverBackground);
+  opacity: 0.7;
 }
 
 /* ── Notebook Container ── */
@@ -98,6 +124,39 @@ body {
   border-bottom: 1px solid var(--vscode-panel-border, #333);
 }
 
+.run-cell-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-terminal-ansiGreen, #89d185);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.run-cell-btn:hover:not(:disabled) {
+  background: rgba(137, 209, 133, 0.15);
+}
+
+.run-cell-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--vscode-progressBar-background, #0078d4);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .cell-type-badge {
   font-size: 10px;
   font-weight: 600;
@@ -112,25 +171,6 @@ body {
   color: var(--vscode-textLink-foreground, #3794ff);
 }
 
-.run-btn {
-  padding: 2px 10px;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.run-btn:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.run-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .cell-index {
   font-size: 11px;
   color: var(--vscode-descriptionForeground, #888);
@@ -140,18 +180,12 @@ body {
 
 /* ── Cell Source ── */
 .cell-source {
-  padding: 8px 12px;
   background: var(--vscode-editor-background);
+  overflow: hidden;
 }
 
-.cell-source pre {
-  font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Fira Code', Consolas, monospace);
-  font-size: var(--vscode-editor-font-size, 13px);
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  color: var(--vscode-editor-foreground);
-  margin: 0;
-  line-height: 1.6;
+.cell-source .monaco-editor {
+  padding: 0;
 }
 
 /* ── Cell Output ── */
@@ -215,7 +249,8 @@ body {
 
 /* ── Result Table ── */
 .result-table-container {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 400px;
 }
 
 .result-table {
@@ -233,6 +268,9 @@ body {
   font-weight: 600;
   white-space: nowrap;
   color: var(--vscode-foreground);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .result-table td {
@@ -318,9 +356,12 @@ body {
 
 .markdown-content table {
   border-collapse: collapse;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   margin: 8px 0;
   font-size: 0.9em;
+  display: block;
+  overflow-x: auto;
 }
 
 .markdown-content th,
