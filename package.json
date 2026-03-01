@@ -34,6 +34,16 @@
           }
         ],
         "priority": "default"
+      },
+      {
+        "viewType": "mssqlManager.notebookEditor",
+        "displayName": "SQL Notebook",
+        "selector": [
+          {
+            "filenamePattern": "*.ipynb"
+          }
+        ],
+        "priority": "option"
       }
     ],
     "commands": [
@@ -414,6 +424,21 @@
         "command": "mssqlManager.editDatabaseInstructions",
         "title": "Edit Database Instructions",
         "icon": "$(edit)"
+      },
+      {
+        "command": "mssqlManager.openNotebookFolder",
+        "title": "Open Notebook Folder...",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "mssqlManager.removeNotebook",
+        "title": "Remove from Notebooks",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mssqlManager.refreshNotebooks",
+        "title": "Refresh Notebooks",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
@@ -439,6 +464,12 @@
           "name": "Query History",
           "when": "true",
           "icon": "$(history)"
+        },
+        {
+          "id": "mssqlManager.notebooks",
+          "name": "Notebooks",
+          "when": "true",
+          "icon": "$(notebook)"
         }
       ]
     },
@@ -677,6 +708,16 @@
           "command": "mssqlManager.clearQueryHistory",
           "when": "view == mssqlManager.queryHistory",
           "group": "navigation@3"
+        },
+        {
+          "command": "mssqlManager.openNotebookFolder",
+          "when": "view == mssqlManager.notebooks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mssqlManager.refreshNotebooks",
+          "when": "view == mssqlManager.notebooks",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -1129,6 +1170,11 @@
           "command": "mssqlManager.deleteQueryHistoryItem",
           "when": "view == mssqlManager.queryHistory && viewItem == queryHistoryItem",
           "group": "inline@2"
+        },
+        {
+          "command": "mssqlManager.removeNotebook",
+          "when": "view == mssqlManager.notebooks && viewItem == notebookFolder",
+          "group": "inline@1"
         }
       ],
       "commandPalette": [
@@ -1310,6 +1356,14 @@
         },
         {
           "command": "mssqlManager.insertChatGeneratedQuery",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.removeNotebook",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.refreshNotebooks",
           "when": "false"
         }
       ]
