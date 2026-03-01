@@ -40,6 +40,12 @@ jobs:
         if: success()
         run: vsce publish -p ${{ secrets.VSCE_PAT }}
 
+      - name: Publish to Open VSX Registry
+        if: success()
+        run: |
+          npm install -g ovsx
+          ovsx publish *.vsix -p ${{ secrets.OVSX_PAT }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
