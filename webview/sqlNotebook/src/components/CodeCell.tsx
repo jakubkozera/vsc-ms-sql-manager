@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { NotebookCell, CellResult } from '../types';
 import CellOutputArea from './CellOutputArea';
@@ -20,6 +20,26 @@ const RunCellIcon = () => (
   </svg>
 );
 
+const CodeChevron: React.FC<{ collapsed: boolean }> = ({ collapsed }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{
+      transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+      transition: 'transform 0.15s ease',
+    }}
+  >
+    <path d="M6 9l6 6l6 -6" />
+  </svg>
+);
+
 const CodeCell: React.FC<CodeCellProps> = ({
   cell,
   index,
@@ -34,11 +54,18 @@ const CodeCell: React.FC<CodeCellProps> = ({
     ? cell.source.join('')
     : cell.source;
 
-  const lineCount = source.split('\n').length;
-  const editorHeight = Math.max(40, Math.min(lineCount * 19 + 12, 400));
+  const trimmed = source.trimStart();
+  const startsWithComment = trimmed.startsWith('--');
+  const [collapsed, setCollapsed] = useState(startsWithComment);
+
+  const lines = source.split('\n');
+  const previewLines = lines.slice(0, 2).join('\n');
+  const displaySource = collapsed ? previewLines : source;
+  const displayLineCount = collapsed ? Math.min(2, lines.length) : lines.length;
+  const editorHeight = Math.max(40, Math.min(displayLineCount * 19 + 12, 400));
+  const canCollapse = lines.length > 2;
 
   const handleEditorMount: OnMount = (editor) => {
-    // Disable most interactions for read-only display
     editor.updateOptions({
       readOnly: true,
       minimap: { enabled: false },
@@ -74,15 +101,28 @@ const CodeCell: React.FC<CodeCellProps> = ({
           {running ? <div className="spinner-small" /> : <RunCellIcon />}
         </button>
         <span className="cell-type-badge sql">SQL</span>
+        {canCollapse && (
+          <button
+            className="collapse-code-btn"
+            onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? 'Expand code' : 'Collapse code'}
+          >
+            <CodeChevron collapsed={collapsed} />
+            {collapsed && (
+              <span className="collapse-hint">{lines.length - 2} more lines</span>
+            )}
+          </button>
+        )}
         <span className="cell-index">
           [{executionCount ?? cell.execution_count ?? ' '}]
         </span>
       </div>
       <div className="cell-source" style={{ height: editorHeight }}>
         <Editor
+          key={collapsed ? 'preview' : 'full'}
           height="100%"
           language="sql"
-          value={source}
+          value={displaySource}
           theme="vs-dark"
           onMount={handleEditorMount}
           options={{

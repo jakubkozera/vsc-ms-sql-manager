@@ -68,6 +68,10 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'manageConnections':
                     await vscode.commands.executeCommand('mssqlManager.manageConnections');
                     break;
+
+                case 'navigateNotebook':
+                    await this.navigateToSibling(document, msg.direction);
+                    break;
             }
         });
 
@@ -224,5 +228,66 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
             this.outputChannel.appendLine(`[NotebookEditor] Cell ${cellIndex} error: ${errorMsg}`);
             webview.postMessage({ type: 'cellResult', cellIndex, error: errorMsg });
         }
+    }
+
+    private async navigateToSibling(document: vscode.TextDocument, direction: 'previous' | 'next'): Promise<void> {
+        const currentPath = document.uri.fsPath;
+        // Start from current directory, collect all notebooks recursively from parent
+        const startDir = path.dirname(currentPath);
+        let allNotebooks = this.collectAllNotebooks(startDir);
+
+        // If only current file found, try one level up for broader scope
+        if (allNotebooks.length <= 1) {
+            const parentDir = path.dirname(startDir);
+            if (parentDir !== startDir) {
+                allNotebooks = this.collectAllNotebooks(parentDir);
+            }
+        }
+
+        allNotebooks.sort((a, b) => a.localeCompare(b));
+        const currentIndex = allNotebooks.indexOf(currentPath);
+        if (currentIndex === -1) { return; }
+
+        const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+        if (targetIndex < 0 || targetIndex >= allNotebooks.length) {
+            // Wrap: try expanding scope to parent
+            const parentDir = path.dirname(startDir);
+            if (parentDir !== startDir) {
+                const parentNotebooks = this.collectAllNotebooks(parentDir);
+                parentNotebooks.sort((a, b) => a.localeCompare(b));
+                const parentIdx = parentNotebooks.indexOf(currentPath);
+                if (parentIdx !== -1) {
+                    const parentTarget = direction === 'next' ? parentIdx + 1 : parentIdx - 1;
+                    if (parentTarget >= 0 && parentTarget < parentNotebooks.length) {
+                        await vscode.commands.executeCommand('vscode.openWith',
+                            vscode.Uri.file(parentNotebooks[parentTarget]),
+                            'mssqlManager.notebookEditor');
+                    }
+                }
+            }
+            return;
+        }
+
+        await vscode.commands.executeCommand('vscode.openWith',
+            vscode.Uri.file(allNotebooks[targetIndex]),
+            'mssqlManager.notebookEditor');
+    }
+
+    private collectAllNotebooks(dirPath: string, depth: number = 0): string[] {
+        const results: string[] = [];
+        if (depth > 5) { return results; }
+        try {
+            const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.name.startsWith('.')) { continue; }
+                const fullPath = path.join(dirPath, entry.name);
+                if (entry.isFile() && entry.name.endsWith('.ipynb')) {
+                    results.push(fullPath);
+                } else if (entry.isDirectory()) {
+                    results.push(...this.collectAllNotebooks(fullPath, depth + 1));
+                }
+            }
+        } catch { /* permission errors */ }
+        return results;
     }
 }

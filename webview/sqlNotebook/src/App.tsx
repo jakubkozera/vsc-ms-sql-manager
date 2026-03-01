@@ -5,6 +5,18 @@ import Toolbar from './components/Toolbar';
 import CodeCell from './components/CodeCell';
 import MarkdownCell from './components/MarkdownCell';
 
+const PrevIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 6l-6 6l6 6" />
+  </svg>
+);
+
+const NextIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 6l6 6l-6 6" />
+  </svg>
+);
+
 export default function App() {
   const [notebook, setNotebook] = useState<Notebook | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -189,6 +201,20 @@ export default function App() {
             );
           })
         )}
+      </div>
+      <div className="notebook-nav">
+        <button
+          className="notebook-nav-btn"
+          onClick={() => postMessage({ type: 'navigateNotebook', direction: 'previous' })}
+        >
+          <PrevIcon /> Previous
+        </button>
+        <button
+          className="notebook-nav-btn"
+          onClick={() => postMessage({ type: 'navigateNotebook', direction: 'next' })}
+        >
+          Next <NextIcon />
+        </button>
       </div>
     </>
   );
