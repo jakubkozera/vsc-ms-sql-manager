@@ -5,6 +5,29 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-03-01
+
+### Added
+
+- **SQL Notebook Editor**: New custom editor for `.ipynb` files enabling interactive SQL notebooks within VS Code
+  - **React-based webview UI**: Modern notebook interface built with React + Vite featuring code and markdown cells
+  - **SQL cell execution**: Execute individual SQL cells against any active connection with results displayed inline as a scrollable data grid
+  - **Collapsible code cells**: Cells can be collapsed/expanded to keep the notebook tidy
+  - **Markdown cells**: Full markdown cell support for annotating notebooks with formatted text
+  - **Connection selector**: Per-notebook connection picker — choose any active MS SQL connection directly from the toolbar
+  - **Database selector**: When a server-level connection is selected, a second dropdown appears for choosing the target database
+  - **Notebook navigation**: Previous / next buttons in the toolbar to jump between `.ipynb` files in the same directory tree
+  - **Auto-refresh connections**: The connection list updates automatically whenever connections change in the Database Explorer
+  - **Manage connections shortcut**: Quick-access button to open the connection management dialog from within the notebook
+
+- **Notebooks Tree View**: Dedicated "Notebooks" panel in the MS SQL Manager sidebar for browsing and managing notebook files
+  - **Add folder**: Open any folder containing `.ipynb` files and browse its structure in the tree
+  - **Folder persistence**: Added notebook folders are remembered across VS Code sessions via global state
+  - **Subfolder support**: Nested subfolders are shown when they contain `.ipynb` files
+  - **One-click open**: Clicking a notebook file opens it directly in the new SQL Notebook Editor
+  - **Remove folder**: Right-click context menu to remove a folder from the notebooks panel
+  - **Refresh**: Manual refresh command to rescan folders for new or removed files
+
 ## [0.11.4] - 2026-02-28
 
 ### Fixed

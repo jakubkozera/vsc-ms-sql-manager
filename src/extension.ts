@@ -11,6 +11,8 @@ import { SqlChatHandler } from './sqlChatHandler';
 import { SchemaContextBuilder } from './schemaContextBuilder';
 import { DatabaseInstructionsManager } from './databaseInstructions';
 import { setCachedOdbcDriver, initializeDbClient } from './dbClient';
+import { NotebookTreeProvider } from './notebookTreeProvider';
+import { NotebookEditorProvider } from './notebookEditorProvider';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -148,6 +150,20 @@ async function initializeExtension(context: vscode.ExtensionContext) {
         )
     );
 
+    // Register Notebook custom editor provider
+    const notebookEditorProvider = new NotebookEditorProvider(context, queryExecutor, connectionProvider, outputChannel);
+    context.subscriptions.push(
+        vscode.window.registerCustomEditorProvider(
+            NotebookEditorProvider.viewType,
+            notebookEditorProvider,
+            {
+                webviewOptions: {
+                    retainContextWhenHidden: true
+                }
+            }
+        )
+    );
+
     // Set up connection change callback
     connectionProvider.addConnectionChangeCallback(() => {
         outputChannel.appendLine('[Extension] Connection changed, refreshing tree view');
@@ -167,6 +183,35 @@ async function initializeExtension(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push(historyTreeView);
     outputChannel.appendLine('[Extension] Query history tree view registered');
+
+    // Register notebook tree view
+    const notebookTreeProvider = new NotebookTreeProvider(context);
+    const notebookTreeView = vscode.window.createTreeView('mssqlManager.notebooks', {
+        treeDataProvider: notebookTreeProvider
+    });
+    context.subscriptions.push(notebookTreeView);
+    outputChannel.appendLine('[Extension] Notebook tree view registered');
+
+    // Register notebook commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mssqlManager.openNotebookFolder', async () => {
+            const folderUris = await vscode.window.showOpenDialog({
+                canSelectFolders: true,
+                canSelectFiles: false,
+                canSelectMany: false,
+                openLabel: 'Select Notebooks Folder'
+            });
+            if (folderUris && folderUris.length > 0) {
+                await notebookTreeProvider.addFolder(folderUris[0]);
+            }
+        }),
+        vscode.commands.registerCommand('mssqlManager.removeNotebook', (item: any) => {
+            notebookTreeProvider.removeEntry(item);
+        }),
+        vscode.commands.registerCommand('mssqlManager.refreshNotebooks', () => {
+            notebookTreeProvider.refresh();
+        })
+    );
 
     // Register file decoration provider
     context.subscriptions.push(

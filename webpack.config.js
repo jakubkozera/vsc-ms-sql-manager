@@ -4,6 +4,7 @@
 
 const path = require('path');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
 
 //@ts-check
 /** @typedef {import('webpack').Configuration} WebpackConfig **/
@@ -45,10 +46,37 @@ const extensionConfig = {
   plugins: [
     new CopyWebpackPlugin({
       patterns: [
-        { from: 'webview', to: 'webview' }
+        {
+          from: 'webview',
+          to: 'webview',
+          // Exclude sqlNotebook source/tooling files — only its Vite-built
+          // dist/ subfolder is needed at runtime. node_modules alone is 100 MB+.
+          filter: (resourcePath) => {
+            const normalized = resourcePath.replace(/\\/g, '/');
+            // For React sub-projects that have their own node_modules and src,
+            // only the Vite/webpack-built dist/ subfolder is needed at runtime.
+            const reactProjects = ['/sqlNotebook/', '/sqlEditor-react/'];
+            for (const proj of reactProjects) {
+              if (normalized.includes(proj)) {
+                return normalized.includes(proj + 'dist/');
+              }
+            }
+            return true;
+          },
+        }
       ]
     })
   ],
+  optimization: {
+    minimizer: [
+      new TerserPlugin({
+        // Only minify extension.js — webview assets are already optimised
+        // by their own build tools (Vite, etc.) and some are too complex for
+        // Terser to re-parse without errors.
+        exclude: /webview\//,
+      }),
+    ],
+  },
   devtool: 'nosources-source-map',
   infrastructureLogging: {
     level: "log", // enables logging required for problem matchers
