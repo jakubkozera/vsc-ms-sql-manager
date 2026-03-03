@@ -718,8 +718,10 @@ export class BackupImportWebview {
             }
         }
         
-        // Use C:\Temp directory that SQL Server Express can definitely access
-        const tempPath = 'C:\\Temp\\sql-restore-files';
+        // Use a root-level Temp directory on the system drive that SQL Server Express can access.
+        // Avoid AppData/user paths which the SQL Server service account cannot read.
+        const sysDrive = (process.env.SYSTEMDRIVE || 'C:').replace(/\\+$/, '');
+        const tempPath = sysDrive + '\\Temp\\sql-restore-files';
         this.outputChannel.appendLine(`[BackupImportWebview] ========== USING SQL SERVER ACCESSIBLE PATH ==========`);
         this.outputChannel.appendLine(`[BackupImportWebview] SQL Server accessible path: ${tempPath}`);
         
@@ -752,23 +754,41 @@ export class BackupImportWebview {
     }
 
     private async validateAndPrepareBackupFile(backupPath: string): Promise<{ actualPath: string; needsCleanup: boolean }> {
-        // Check if backup file is in a location that SQL Server can access
-        const isSqlServerAccessible = backupPath.includes('Microsoft SQL Server') || 
-                                      backupPath.startsWith('C:\\Program Files\\') ||
-                                      backupPath.startsWith('C:\\Backup\\') ||
-                                      path.dirname(backupPath).toLowerCase().includes('backup');
+        // Check if backup file is already in a location the SQL Server service account can access.
+        // User-profile paths (AppData, Desktop, Documents, Downloads, etc.) are NOT accessible
+        // to NT SERVICE\MSSQL$SQLEXPRESS, so those must always be staged to a root-level temp dir.
+        const sysDrive = (process.env.SYSTEMDRIVE || 'C:').replace(/\\+$/, '').toLowerCase();
+        const normalizedPath = backupPath.replace(/\//g, '\\').toLowerCase();
+        const isSqlServerAccessible = (
+            normalizedPath.startsWith(`${sysDrive}\\program files\\microsoft sql server\\`) ||
+            normalizedPath.startsWith(`${sysDrive}\\backup\\`) ||
+            normalizedPath.startsWith(`${sysDrive}\\temp\\`) ||
+            normalizedPath.startsWith(`${sysDrive}\\sqlbackup\\`) ||
+            normalizedPath.includes('\\mssql\\backup\\')
+        ) && !normalizedPath.includes('\\users\\');
         
         if (isSqlServerAccessible) {
             this.outputChannel.appendLine(`[BackupImportWebview] Using backup file directly: ${backupPath}`);
             return { actualPath: backupPath, needsCleanup: false };
         }
         
-        // For user locations, copy to temp directory that SQL Server can access
-        const tempDir = path.join(os.tmpdir(), 'sql-backup-restore');
+        // For user locations, copy to a root-level temp directory that SQL Server service account can access.
+        // %TEMP% / AppData\Local\Temp is per-user and not readable by NT SERVICE\MSSQL$SQLEXPRESS.
+        const sysDriveRoot = (process.env.SYSTEMDRIVE || 'C:').replace(/\\+$/, '');
+        const tempDir = sysDriveRoot + '\\Temp\\sql-backup-restore';
         if (!fs.existsSync(tempDir)) {
             fs.mkdirSync(tempDir, { recursive: true });
         }
-        
+
+        // Grant SQL Server service account read access to the directory
+        try {
+            const { execSync } = require('child_process');
+            execSync(`icacls "${tempDir}" /grant Everyone:F /T`, { stdio: 'pipe' });
+            this.outputChannel.appendLine(`[BackupImportWebview] Set permissions on backup staging dir: ${tempDir}`);
+        } catch (permError: any) {
+            this.outputChannel.appendLine(`[BackupImportWebview] Warning: Could not set permissions on staging dir: ${permError.message}`);
+        }
+
         const filename = path.basename(backupPath);
         const tempPath = path.join(tempDir, `restore_${Date.now()}_${filename}`);
         
@@ -828,10 +848,11 @@ export class BackupImportWebview {
             this.outputChannel.appendLine(`[BackupImportWebview] Files found in backup - Data: ${dataFile ? 'Yes' : 'No'}, Log: ${logFile ? 'Yes' : 'No'}`);
             
             if (dataFile || logFile) {
-                // Use C:\Temp directory that SQL Server Express can definitely access
+                // Use a root-level Temp directory on the system drive that SQL Server Express can access.
                 this.outputChannel.appendLine(`[BackupImportWebview] Setting up SQL Server accessible database file locations...`);
                 
-                const tempDbDir = 'C:\\Temp\\sql-restore-files';
+                const sysDriveDb = (process.env.SYSTEMDRIVE || 'C:').replace(/\\+$/, '');
+                const tempDbDir = sysDriveDb + '\\Temp\\sql-restore-files';
                 if (!fs.existsSync(tempDbDir)) {
                     fs.mkdirSync(tempDbDir, { recursive: true });
                     this.outputChannel.appendLine(`[BackupImportWebview] Created directory: ${tempDbDir}`);

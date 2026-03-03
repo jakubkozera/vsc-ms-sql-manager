@@ -161,75 +161,48 @@ export function registerDatabaseCommands(
             const database = node.database;
             const connectionId = node.connectionId;
 
-            // Show options similar to Azure Data Studio
-            const action = await vscode.window.showWarningMessage(
-                `What would you like to do with database "${database}"?`,
-                { modal: true, detail: 'Choose an action for this database.' },
-                'Close Connection',
-                'Drop Database'
+            // Single confirmation for drop
+            const confirm = await vscode.window.showWarningMessage(
+                `Are you sure you want to permanently drop database "${database}"? This action cannot be undone.`,
+                { modal: true },
+                'Drop'
             );
 
-            if (!action) {
+            if (confirm !== 'Drop') {
                 return;
             }
 
-            if (action === 'Close Connection') {
-                try {
-                    // Close the DB pool for this specific database
-                    await connectionProvider.closeDbPool(connectionId, database);
-                    outputChannel.appendLine(`[DatabaseCommands] Closed connection to database: ${database}`);
-                    vscode.window.showInformationMessage(`Closed connection to database "${database}"`);
-                    if (treeProvider) {
-                        treeProvider.refresh();
-                    }
-                } catch (error: any) {
-                    outputChannel.appendLine(`[DatabaseCommands] Error closing database connection: ${error.message}`);
-                    vscode.window.showErrorMessage(`Failed to close connection: ${error.message}`);
-                }
-            } else if (action === 'Drop Database') {
-                // Double confirmation for destructive action
-                const confirm = await vscode.window.showWarningMessage(
-                    `Are you sure you want to permanently drop database "${database}"? This action cannot be undone.`,
-                    { modal: true },
-                    'Drop'
-                );
+            try {
+                // Close DB pool for this database first
+                await connectionProvider.closeDbPool(connectionId, database);
 
-                if (confirm !== 'Drop') {
+                // Use the server-level connection to drop the database
+                const connection = connectionProvider.getConnection(connectionId);
+                if (!connection) {
+                    vscode.window.showErrorMessage('Server connection is not active');
                     return;
                 }
 
-                try {
-                    // Close DB pool for this database first
-                    await connectionProvider.closeDbPool(connectionId, database);
-
-                    // Use the server-level connection to drop the database
-                    const connection = connectionProvider.getConnection(connectionId);
-                    if (!connection) {
-                        vscode.window.showErrorMessage('Server connection is not active');
-                        return;
+                await vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: `Dropping database "${database}"...` },
+                    async () => {
+                        const request = connection.request();
+                        // Set database to single-user mode to force close all connections, then drop
+                        await request.query(`
+                            ALTER DATABASE [${database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                            DROP DATABASE [${database}];
+                        `);
                     }
+                );
 
-                    await vscode.window.withProgress(
-                        { location: vscode.ProgressLocation.Notification, title: `Dropping database "${database}"...` },
-                        async () => {
-                            const request = connection.request();
-                            // Set database to single-user mode to force close all connections, then drop
-                            await request.query(`
-                                ALTER DATABASE [${database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-                                DROP DATABASE [${database}];
-                            `);
-                        }
-                    );
-
-                    outputChannel.appendLine(`[DatabaseCommands] Successfully dropped database: ${database}`);
-                    vscode.window.showInformationMessage(`Database "${database}" has been dropped successfully`);
-                    if (treeProvider) {
-                        treeProvider.refresh();
-                    }
-                } catch (error: any) {
-                    outputChannel.appendLine(`[DatabaseCommands] Error dropping database: ${error.message}`);
-                    vscode.window.showErrorMessage(`Failed to drop database: ${error.message}`);
+                outputChannel.appendLine(`[DatabaseCommands] Successfully dropped database: ${database}`);
+                vscode.window.showInformationMessage(`Database "${database}" has been dropped successfully`);
+                if (treeProvider) {
+                    treeProvider.refresh();
                 }
+            } catch (error: any) {
+                outputChannel.appendLine(`[DatabaseCommands] Error dropping database: ${error.message}`);
+                vscode.window.showErrorMessage(`Failed to drop database: ${error.message}`);
             }
         }
     );

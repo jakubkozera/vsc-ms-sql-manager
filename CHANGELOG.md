@@ -5,6 +5,14 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.3] - 2026-03-03
+
+### Fixed
+
+- **Backup Import — Suggest New Name**: The "Suggest New Name" button now derives the base name from the selected `.bak` filename when the backup has not yet been analyzed (or analysis returned no metadata), instead of falling back to the generic `MyDatabase` placeholder.
+- **Backup Import — Target Database auto-fill**: Selecting a `.bak` file now automatically populates the Target Database field with the filename (without extension) when the field is empty.
+- **Backup Import — SQL Server accessible staging path**: Backup files copied for SQL Server access are now staged under `<SYSTEMDRIVE>\Temp\sql-backup-restore` (e.g. `D:\Temp\...`) instead of the hardcoded `C:\Temp\...`, ensuring compatibility on systems where the OS is not installed on `C:`.
+
 ## [0.12.2] - 2026-03-01
 
 ### Changed
