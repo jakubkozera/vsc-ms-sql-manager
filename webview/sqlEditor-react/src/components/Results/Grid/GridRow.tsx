@@ -143,6 +143,9 @@ function arePropsEqual(prev: GridRowProps, next: GridRowProps): boolean {
     }
   }
   
+  // Selection function reference changes when selection state changes
+  if (prev.isCellSelected !== next.isCellSelected) return false;
+  
   // Style changes (top position is critical for virtual scrolling)
   if (prev.style?.top !== next.style?.top) return false;
   if (prev.style?.height !== next.style?.height) return false;

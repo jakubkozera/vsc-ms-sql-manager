@@ -16,6 +16,13 @@ import './DataGrid.css';
 
 const ROW_HEIGHT = 30; // Match old grid implementation
 
+export interface SelectionInfo {
+  values: unknown[];
+  rowCount: number;
+  columnType?: string;
+  sqlType?: string;
+}
+
 interface DataGridProps {
   data: any[];
   columns: string[];
@@ -23,9 +30,10 @@ interface DataGridProps {
   resultSetIndex: number;
   isSingleResultSet?: boolean;
   onCellEdit?: (rowIndex: number, columnName: string, value: any) => void;
+  onSelectionChange?: (info: SelectionInfo) => void;
 }
 
-export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit }: DataGridProps) {
+export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit, onSelectionChange }: DataGridProps) {
   // State
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
@@ -57,10 +65,13 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
 
   // Selection
   const {
+    selection,
     selectRow,
+    selectColumn,
     selectCell,
     clearSelection,
     isRowSelected,
+    isColumnSelected,
     isCellSelected,
     getSelectedRowIndices,
     selectAllRows,
@@ -251,6 +262,55 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   });
 
   const totalHeight = calculateTotalHeight();
+
+  // Notify parent about selection changes for aggregation bar
+  useEffect(() => {
+    if (!onSelectionChange) return;
+
+    if (!selection.type || selection.selections.length === 0) {
+      onSelectionChange({ values: [], rowCount: 0 });
+      return;
+    }
+
+    const values: unknown[] = [];
+    let columnType: string | undefined;
+    let sqlType: string | undefined;
+
+    if (selection.type === 'column') {
+      for (const sel of selection.selections) {
+        if (sel.columnIndex === undefined) continue;
+        if (!columnType) {
+          const colMeta = metadata?.columns?.[sel.columnIndex];
+          columnType = colMeta?.type || 'string';
+          sqlType = colMeta?.type;
+        }
+        for (const row of sortedData) {
+          values.push(Array.isArray(row) ? row[sel.columnIndex!] : row[columns[sel.columnIndex!]]);
+        }
+      }
+      onSelectionChange({ values, rowCount: sortedData.length, columnType, sqlType });
+    } else if (selection.type === 'cell') {
+      for (const sel of selection.selections) {
+        if (sel.cellValue !== undefined) {
+          values.push(sel.cellValue);
+        } else if (sel.rowIndex !== undefined && sel.columnIndex !== undefined) {
+          const row = sortedData[sel.rowIndex];
+          values.push(Array.isArray(row) ? row[sel.columnIndex] : row[columns[sel.columnIndex]]);
+        }
+      }
+      onSelectionChange({ values, rowCount: selection.selections.length });
+    } else if (selection.type === 'row') {
+      const indices = getSelectedRowIndices();
+      for (const idx of indices) {
+        const row = sortedData[idx];
+        if (row) {
+          const rowValues = Array.isArray(row) ? row : columns.map(c => row[c]);
+          values.push(...rowValues);
+        }
+      }
+      onSelectionChange({ values, rowCount: indices.length });
+    }
+  }, [selection, sortedData, columns, metadata, onSelectionChange, getSelectedRowIndices]);
 
   // DIAGNOSTIC LOG: Check render frequency and virtual items (only in development or when DEBUG_GRID is set)
   useEffect(() => {
@@ -668,11 +728,11 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   }, [columns, sortedData, metadata, calculateOptimalWidth]);
 
   // Handle column selection (clicking on column header)
-  const handleColumnSelect = useCallback((_columnName: string, _event: MouseEvent) => {
-    // TODO: Implement column selection similar to old grid
-    // For now, this is a placeholder - need to implement proper column selection
-    console.log('Column selection not yet fully implemented:', _columnName);
-  }, []);
+  const handleColumnSelect = useCallback((columnName: string, event: MouseEvent) => {
+    const colIndex = columnDefs.findIndex(c => c.name === columnName);
+    if (colIndex < 0) return;
+    selectColumn(colIndex, event.ctrlKey || event.metaKey, event.shiftKey);
+  }, [columnDefs, selectColumn]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -740,6 +800,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
             onPinColumn={handlePinColumn}
             onExportClick={handleExportButtonClick}
             onColumnSelect={handleColumnSelect}
+            isColumnSelected={isColumnSelected}
             calculatePinnedOffset={calculatePinnedOffset}
           />
           <tbody style={{ position: 'relative', height: totalHeight }}>

@@ -115,7 +115,7 @@
 .cell-expand-chevron.expanded {
   display: inline-flex;
   opacity: 1;
-  transform: rotate(180deg);
+  transform: translateY(-50%) rotate(180deg);
 }
 
 /* Cell type styling */

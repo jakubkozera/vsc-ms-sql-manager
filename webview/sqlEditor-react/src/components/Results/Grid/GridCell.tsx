@@ -54,7 +54,7 @@ function GridCellComponent({
     }
 
     if (typeof value === 'boolean') {
-      return { displayValue: value ? 'true' : 'false', cellType: 'boolean', isLongText: false };
+      return { displayValue: value ? '✓' : '✗', cellType: 'boolean', isLongText: false };
     }
 
     if (typeof value === 'number') {

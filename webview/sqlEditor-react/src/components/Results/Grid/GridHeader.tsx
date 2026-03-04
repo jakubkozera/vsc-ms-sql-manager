@@ -13,6 +13,7 @@ interface GridHeaderProps {
   onPinColumn?: (column: string) => void;
   onExportClick?: (e: React.MouseEvent) => void;
   onColumnSelect?: (column: string, e: MouseEvent) => void;
+  isColumnSelected?: (colIndex: number) => boolean;
   calculatePinnedOffset?: (colIndex: number) => number;
 }
 
@@ -27,6 +28,7 @@ function GridHeaderComponent({
   onPinColumn,
   onExportClick,
   onColumnSelect,
+  isColumnSelected,
   calculatePinnedOffset,
 }: GridHeaderProps) {
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
@@ -92,12 +94,13 @@ function GridHeaderComponent({
         {columns.map((column, colIndex) => {
           const isSorted = sortConfig?.column === column.name;
           const isFiltered = hasFilter(column.name);
+          const isSelected = isColumnSelected?.(colIndex) ?? false;
           const pinnedOffset = column.pinned && calculatePinnedOffset ? calculatePinnedOffset(colIndex) : undefined;
           
           return (
             <th
               key={column.name}
-              className={`grid-header-cell ${resizingColumn === column.name ? 'resizing' : ''} ${column.pinned ? 'pinned' : ''}`}
+              className={`grid-header-cell ${resizingColumn === column.name ? 'resizing' : ''} ${column.pinned ? 'pinned' : ''} ${isSelected ? 'selected' : ''}`}
               style={{ 
                 width: `${column.width}px`,
                 minWidth: `${column.width}px`,

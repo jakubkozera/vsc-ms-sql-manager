@@ -838,9 +838,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; 
         style-src ${webview.cspSource} 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
-        font-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
+        font-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net data:; 
         script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; 
         img-src ${webview.cspSource} data:; 
+        worker-src blob:;
         connect-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
     <title>SQL Editor</title>
     <link rel="stylesheet" href="${styleUri}">

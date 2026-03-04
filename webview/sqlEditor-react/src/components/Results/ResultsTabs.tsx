@@ -17,6 +17,8 @@ interface ResultsTabsProps {
   rowCount?: number;
   /** Number of selected rows */
   selectedRowCount?: number;
+  /** SQL column type for type-aware aggregation */
+  columnType?: string;
   /** Number of active filters */
   activeFilterCount?: number;
   /** Callback to clear filters */
@@ -34,6 +36,7 @@ export function ResultsTabs({
   showAggregation = false,
   rowCount = 0,
   selectedRowCount = 0,
+  columnType,
   activeFilterCount = 0,
   onClearFilters,
 }: ResultsTabsProps) {
@@ -100,7 +103,8 @@ export function ResultsTabs({
           )}
           <AggregationBar 
             selectedValues={selectedValues} 
-            visible={showAggregation && activeTab === 'results'} 
+            visible={showAggregation && activeTab === 'results'}
+            columnType={columnType}
           />
         </div>
       </div>

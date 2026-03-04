@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useVSCode } from '../../context/VSCodeContext';
 import { ResultsTabs } from './ResultsTabs';
 import { MessagesTab } from './MessagesTab';
-import { DataGrid } from './Grid/DataGrid';
+import { DataGrid, SelectionInfo } from './Grid/DataGrid';
 import { QueryPlanView } from './QueryPlan/QueryPlanView';
 import './ResultsPanel.css';
 
@@ -22,6 +22,12 @@ export function ResultsPanel() {
   } = useVSCode();
 
   const [activeTab, setActiveTab] = useState<TabId>('results');
+
+  // Selection aggregation state
+  const [selectionInfo, setSelectionInfo] = useState<SelectionInfo>({ values: [], rowCount: 0 });
+  const handleSelectionChange = useCallback((info: SelectionInfo) => {
+    setSelectionInfo(info);
+  }, []);
 
   // Loading timer state
   const [loadingTime, setLoadingTime] = useState('00:00');
@@ -70,6 +76,10 @@ export function ResultsPanel() {
         hasMessages={hasMessages}
         hasPlan={hasPlan}
         resultSetCount={lastResults?.length || 0}
+        selectedValues={selectionInfo.values}
+        showAggregation={selectionInfo.values.length > 0}
+        selectedRowCount={selectionInfo.rowCount}
+        columnType={selectionInfo.sqlType}
       />
 
       <div className="results-content">
@@ -91,6 +101,7 @@ export function ResultsPanel() {
                   metadata={lastMetadata?.[index]}
                   resultSetIndex={index}
                   isSingleResultSet={lastResults.length === 1}
+                  onSelectionChange={handleSelectionChange}
                 />
               </div>
             ))}

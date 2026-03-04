@@ -48,6 +48,11 @@
   background: var(--vscode-list-activeSelectionBackground);
 }
 
+.grid-header-cell.selected {
+  background-color: var(--vscode-list-activeSelectionBackground, #094771);
+  color: var(--vscode-list-activeSelectionForeground, #ffffff);
+}
+
 .row-number-header {
   cursor: pointer;
   text-align: center;

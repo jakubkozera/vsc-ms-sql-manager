@@ -132,4 +132,79 @@ describe('useGridSelection', () => {
     expect(indices).toContain(5);
     expect(indices).toHaveLength(2);
   });
+
+  it('selects a single column', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectColumn(3);
+    });
+
+    expect(result.current.selection.type).toBe('column');
+    expect(result.current.selection.selections).toHaveLength(1);
+    expect(result.current.selection.selections[0].columnIndex).toBe(3);
+    expect(result.current.isColumnSelected(3)).toBe(true);
+    expect(result.current.isColumnSelected(0)).toBe(false);
+  });
+
+  it('selects multiple columns with Ctrl key', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectColumn(1);
+    });
+    act(() => {
+      result.current.selectColumn(4, true, false); // Ctrl+click
+    });
+
+    expect(result.current.selection.type).toBe('column');
+    expect(result.current.selection.selections).toHaveLength(2);
+    expect(result.current.isColumnSelected(1)).toBe(true);
+    expect(result.current.isColumnSelected(4)).toBe(true);
+    expect(result.current.isColumnSelected(2)).toBe(false);
+  });
+
+  it('toggles column selection with Ctrl key', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectColumn(2);
+    });
+    act(() => {
+      result.current.selectColumn(2, true, false); // Ctrl+click same column
+    });
+
+    expect(result.current.isColumnSelected(2)).toBe(false);
+  });
+
+  it('isCellSelected returns true for cells in selected column', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectColumn(2);
+    });
+
+    // All rows in column 2 should be selected
+    expect(result.current.isCellSelected(0, 2)).toBe(true);
+    expect(result.current.isCellSelected(5, 2)).toBe(true);
+    expect(result.current.isCellSelected(100, 2)).toBe(true);
+    // Other columns should not be selected
+    expect(result.current.isCellSelected(0, 1)).toBe(false);
+    expect(result.current.isCellSelected(0, 3)).toBe(false);
+  });
+
+  it('switching from row to column selection clears row selection', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectRow(5);
+    });
+    expect(result.current.selection.type).toBe('row');
+
+    act(() => {
+      result.current.selectColumn(2);
+    });
+    expect(result.current.selection.type).toBe('column');
+    expect(result.current.isRowSelected(5)).toBe(false);
+  });
 });

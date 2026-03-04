@@ -564,6 +564,48 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
               detail: `Table (${table.columns.length} columns)`,
               sortText: `3_${table.name}`,
             });
+
+            // Dynamic table snippets: TableName100 and TableName*
+            const schema = (table as any).schema || 'dbo';
+            const bracketedName = `[${schema}].[${table.name}]`;
+            const aliasName = generateSmartAlias(table.name);
+            const fullName = schema === 'dbo' ? table.name : `${schema}.${table.name}`;
+
+            const table100Label = `${table.name}100`;
+            const tableAllLabel = `${table.name}*`;
+
+            // Check if labels already exist (from user snippets)
+            const existingLabels = new Set(suggestions.map(s => (typeof s.label === 'string' ? s.label : '').toLowerCase()));
+
+            if (!existingLabels.has(table100Label.toLowerCase())) {
+              suggestions.push({
+                label: table100Label,
+                kind: monacoInstance.languages.CompletionItemKind.Snippet,
+                detail: `📅 Generate SELECT TOP 100 from ${fullName}`,
+                insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
+                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range,
+                sortText: `0_${table.name}_100`,
+                documentation: {
+                  value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`,
+                },
+              });
+            }
+
+            if (!existingLabels.has(tableAllLabel.toLowerCase())) {
+              suggestions.push({
+                label: tableAllLabel,
+                kind: monacoInstance.languages.CompletionItemKind.Snippet,
+                detail: `📅 Generate SELECT * from ${fullName}`,
+                insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
+                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range,
+                sortText: `0_${table.name}_all`,
+                documentation: {
+                  value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`,
+                },
+              });
+            }
           });
 
           // Add views
