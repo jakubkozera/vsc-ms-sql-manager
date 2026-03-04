@@ -9,14 +9,14 @@ interface ResultsTabsProps {
   hasMessages: boolean;
   hasPlan: boolean;
   resultSetCount: number;
-  /** Selected values for aggregation */
-  selectedValues?: unknown[];
-  /** Whether aggregation bar is visible */
-  showAggregation?: boolean;
-  /** Row count for the current result set */
+  /** Total row count for the current result set */
   rowCount?: number;
   /** Number of selected rows */
   selectedRowCount?: number;
+  /** Selected values for inline aggregation (non-datetime) */
+  selectedValues?: unknown[];
+  /** Whether to show inline aggregation bar */
+  showInlineAggregation?: boolean;
   /** SQL column type for type-aware aggregation */
   columnType?: string;
   /** Number of active filters */
@@ -32,10 +32,10 @@ export function ResultsTabs({
   hasMessages,
   hasPlan,
   resultSetCount,
-  selectedValues = [],
-  showAggregation = false,
   rowCount = 0,
   selectedRowCount = 0,
+  selectedValues = [],
+  showInlineAggregation = false,
   columnType,
   activeFilterCount = 0,
   onClearFilters,
@@ -101,9 +101,9 @@ export function ResultsTabs({
               )}
             </>
           )}
-          <AggregationBar 
-            selectedValues={selectedValues} 
-            visible={showAggregation && activeTab === 'results'}
+          <AggregationBar
+            selectedValues={selectedValues}
+            visible={showInlineAggregation && activeTab === 'results'}
             columnType={columnType}
           />
         </div>

@@ -3,6 +3,7 @@ import { useVSCode } from '../../context/VSCodeContext';
 import { ResultsTabs } from './ResultsTabs';
 import { MessagesTab } from './MessagesTab';
 import { DataGrid, SelectionInfo } from './Grid/DataGrid';
+import { AggregationBar } from './Grid/AggregationBar';
 import { QueryPlanView } from './QueryPlan/QueryPlanView';
 import './ResultsPanel.css';
 
@@ -67,8 +68,21 @@ export function ResultsPanel() {
     setActiveTab(tabId);
   }, []);
 
+  // Compute total row count from first result set
+  const totalRowCount = hasResults ? lastResults![0].length : 0;
+
+  const DATETIME_TYPES = ['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'];
+  const isDatetimeSelection = !!selectionInfo.sqlType && DATETIME_TYPES.includes(selectionInfo.sqlType.toLowerCase());
+  const hasSelection = selectionInfo.values.length > 0;
+
   return (
     <div className="results-panel">
+      <AggregationBar
+        selectedValues={selectionInfo.values}
+        visible={isDatetimeSelection && hasSelection && activeTab === 'results'}
+        columnType={selectionInfo.sqlType}
+        rightAlign
+      />
       <ResultsTabs
         activeTab={activeTab}
         onTabChange={handleTabChange}
@@ -76,9 +90,10 @@ export function ResultsPanel() {
         hasMessages={hasMessages}
         hasPlan={hasPlan}
         resultSetCount={lastResults?.length || 0}
-        selectedValues={selectionInfo.values}
-        showAggregation={selectionInfo.values.length > 0}
+        rowCount={totalRowCount}
         selectedRowCount={selectionInfo.rowCount}
+        selectedValues={selectionInfo.values}
+        showInlineAggregation={hasSelection && !isDatetimeSelection}
         columnType={selectionInfo.sqlType}
       />
 

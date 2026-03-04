@@ -8,6 +8,8 @@ interface AggregationBarProps {
   visible: boolean;
   /** SQL column type for type-aware stats */
   columnType?: string;
+  /** Right-align the bar contents */
+  rightAlign?: boolean;
 }
 
 type DataCategory = 'numeric' | 'boolean' | 'datetime' | 'text' | 'binary' | 'unknown';
@@ -163,7 +165,7 @@ function formatNumber(value: number | null): string {
   });
 }
 
-export function AggregationBar({ selectedValues, visible, columnType }: AggregationBarProps) {
+export function AggregationBar({ selectedValues, visible, columnType, rightAlign }: AggregationBarProps) {
   const aggregations = useMemo(() => {
     if (!visible || selectedValues.length === 0) {
       return null;
@@ -176,7 +178,7 @@ export function AggregationBar({ selectedValues, visible, columnType }: Aggregat
   }
   
   return (
-    <div className="aggregation-bar" data-testid="aggregation-bar">
+    <div className={`aggregation-bar${rightAlign ? ' aggregation-bar--right' : ''}`} data-testid="aggregation-bar">
       <div className="aggregation-item">
         <span className="aggregation-label">Count:</span>
         <span className="aggregation-value">{aggregations.count}</span>
