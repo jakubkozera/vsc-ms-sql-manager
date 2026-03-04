@@ -13,6 +13,8 @@ function App() {
     isExecuting,
     executeQuery,
     currentConnectionId,
+    currentDatabase,
+    postMessage,
     shouldAutoExecute,
     clearAutoExecute,
     lastResults,
@@ -37,6 +39,17 @@ function App() {
     onCopy: () => {
       // TODO: Implement grid copy functionality
       console.log('Grid copy not implemented yet');
+    },
+    onSave: () => {
+      const content = editorRef.current?.getValue() || '';
+      postMessage({ type: 'saveQuery', content });
+    },
+    onNewQuery: () => {
+      postMessage({
+        type: 'newQueryFromWebview',
+        connectionId: currentConnectionId || null,
+        databaseName: currentDatabase || null,
+      });
     },
   });
 

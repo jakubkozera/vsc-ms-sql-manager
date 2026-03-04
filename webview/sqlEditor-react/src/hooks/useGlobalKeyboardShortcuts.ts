@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 
 interface UseGlobalKeyboardShortcutsOptions {
   onCopy?: () => void;
+  onSave?: () => void;
+  onNewQuery?: () => void;
   enabled?: boolean;
 }
 
@@ -10,13 +12,38 @@ interface UseGlobalKeyboardShortcutsOptions {
  * Handles Ctrl+C for copying grid data when Monaco editor doesn't have focus.
  * Note: Ctrl+V is NOT handled here to avoid interfering with Monaco's paste functionality.
  */
-export function useGlobalKeyboardShortcuts({ onCopy, enabled = true }: UseGlobalKeyboardShortcutsOptions = {}) {
+export function useGlobalKeyboardShortcuts({ onCopy, onSave, onNewQuery, enabled = true }: UseGlobalKeyboardShortcutsOptions = {}) {
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle Ctrl+C - ignore all other keyboard events completely
-      if (!(e.ctrlKey || e.metaKey) || e.key !== 'c') {
+      if (!(e.ctrlKey || e.metaKey)) {
+        return;
+      }
+
+      // Ctrl+S - Save query (global, works even outside Monaco)
+      if (e.key === 's' && onSave) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only handle if NOT in Monaco (Monaco has its own handler)
+        if (!isElementInMonacoEditor(e.target as Element)) {
+          onSave();
+        }
+        return;
+      }
+
+      // Ctrl+N - New query (global, works even outside Monaco)
+      if (e.key === 'n' && onNewQuery) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isElementInMonacoEditor(e.target as Element)) {
+          onNewQuery();
+        }
+        return;
+      }
+
+      // Only handle Ctrl+C below
+      if (e.key !== 'c') {
         return;
       }
       

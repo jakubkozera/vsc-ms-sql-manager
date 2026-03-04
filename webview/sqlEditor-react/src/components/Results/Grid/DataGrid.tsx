@@ -132,17 +132,31 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
         width = calculateOptimalWidth(name, columnData, type);
       }
       
+      // Derive isForeignKey from metadata's foreignKeyReferences
+      const hasForeignKeyRefs = (colMeta?.foreignKeyReferences && colMeta.foreignKeyReferences.length > 0) || false;
+      
+      // Also check dbSchema.foreignKeys (like old grid.js) for FK relationships
+      // when the column metadata has source table info
+      let hasSchemaFKRef = false;
+      if (!hasForeignKeyRefs && colMeta?.sourceTable && colMeta?.sourceSchema && dbSchema?.foreignKeys) {
+        hasSchemaFKRef = dbSchema.foreignKeys.some(
+          (fk: any) => fk.fromTable === colMeta.sourceTable && 
+                       fk.fromSchema === colMeta.sourceSchema && 
+                       fk.fromColumn === name
+        );
+      }
+      
       return {
         name,
         index,
         type,
         isPrimaryKey: colMeta?.isPrimaryKey || false,
-        isForeignKey: colMeta?.isForeignKey || false,
+        isForeignKey: colMeta?.isForeignKey || hasForeignKeyRefs || hasSchemaFKRef,
         width: width || 150,
         pinned: pinnedColumns.has(name),
       };
     });
-  }, [columns, metadata, columnWidths, pinnedColumns, data, calculateOptimalWidth]);
+  }, [columns, metadata, columnWidths, pinnedColumns, data, calculateOptimalWidth, dbSchema]);
 
   // Calculate left offset for pinned columns
   const calculatePinnedOffset = useCallback((colIndex: number): number => {
@@ -333,28 +347,49 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     const colMeta = metadata?.columns?.[colIndex];
     console.log('[FK Expand] Column metadata:', { columnName, colIndex, colMeta, allMetadata: metadata });
     
-    if (!colMeta || !colMeta.foreignKeyReferences || colMeta.foreignKeyReferences.length === 0) {
+    // Collect FK references from column metadata
+    let fkRefs = colMeta?.foreignKeyReferences;
+    
+    // Fallback: check dbSchema.foreignKeys if column metadata has no FK refs
+    if ((!fkRefs || fkRefs.length === 0) && colMeta?.sourceTable && colMeta?.sourceSchema && dbSchema?.foreignKeys) {
+      const schemaFKs = dbSchema.foreignKeys
+        .filter((fk: any) => fk.fromTable === colMeta.sourceTable && 
+                             fk.fromSchema === colMeta.sourceSchema && 
+                             fk.fromColumn === columnName)
+        .map((fk: any) => ({
+          schema: fk.toSchema,
+          table: fk.toTable,
+          column: fk.toColumn,
+          isComposite: false,
+          constraintName: fk.constraintName || '',
+        }));
+      if (schemaFKs.length > 0) {
+        fkRefs = schemaFKs;
+      }
+    }
+    
+    if (!fkRefs || fkRefs.length === 0) {
       console.warn('[FK Expand] No FK references found for column:', columnName, 'colMeta:', colMeta);
       return;
     }
 
-    console.log('[FK Expand] Found FK references:', colMeta.foreignKeyReferences);
+    console.log('[FK Expand] Found FK references:', fkRefs);
 
     // If only one FK reference, expand directly
-    if (colMeta.foreignKeyReferences.length === 1) {
-      const relation = colMeta.foreignKeyReferences[0];
+    if (fkRefs.length === 1) {
+      const relation = fkRefs[0];
       executeRelationExpansion(relation, value, rowIndex, columnName);
     } else {
       // Show quick pick for multiple relations
       setFkQuickPick({
-        relations: colMeta.foreignKeyReferences,
+        relations: fkRefs,
         keyValue: value,
         rowIndex,
         colIndex,
         columnName,
       });
     }
-  }, [metadata, expandedRows, resultSetIndex]);
+  }, [metadata, expandedRows, resultSetIndex, dbSchema]);
 
   const executeRelationExpansion = useCallback((
     relation: ForeignKeyReference,

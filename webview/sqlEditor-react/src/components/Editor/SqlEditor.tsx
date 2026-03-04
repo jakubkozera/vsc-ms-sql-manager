@@ -39,7 +39,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<MonacoType | null>(null);
     const [editorReady, setEditorReady] = useState(false);
-    const { dbSchema, requestPaste, pasteContent, clearPasteContent } = useVSCode();
+    const { dbSchema, requestPaste, pasteContent, clearPasteContent, postMessage, currentConnectionId, currentDatabase } = useVSCode();
     const formatOptions = useFormatOptions();
 
     // Expose methods to parent via ref
@@ -180,6 +180,37 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
         run: () => {
           console.log('[SqlEditor] Paste action triggered - requesting from extension');
           requestPaste();
+        },
+      });
+
+      // Add Ctrl+S - Save query
+      editor.addAction({
+        id: 'save-query',
+        label: 'Save Query',
+        keybindings: [
+          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
+        ],
+        run: (ed) => {
+          const content = ed.getValue();
+          console.log('[SqlEditor] Save query triggered');
+          postMessage({ type: 'saveQuery', content });
+        },
+      });
+
+      // Add Ctrl+N - New query
+      editor.addAction({
+        id: 'new-query',
+        label: 'New Query',
+        keybindings: [
+          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyN,
+        ],
+        run: () => {
+          console.log('[SqlEditor] New query triggered');
+          postMessage({
+            type: 'newQueryFromWebview',
+            connectionId: currentConnectionId || null,
+            databaseName: currentDatabase || null,
+          });
         },
       });
 

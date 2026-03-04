@@ -2167,6 +2167,18 @@ COMMIT TRANSACTION;
                     await this.executeRelationQuery(message.keyValue, message.schema, message.table, message.column, message.expansionId, message.connectionId, panel.webview);
                     break;
 
+                case 'requestPaste':
+                    try {
+                        const clipboardContent = await vscode.env.clipboard.readText();
+                        panel.webview.postMessage({
+                            type: 'pasteContent',
+                            content: clipboardContent
+                        });
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] Failed to read clipboard: ${err}`);
+                    }
+                    break;
+
                 case 'executeEstimatedPlan': {
                     let planConnectionId = message.connectionId;
                     if (message.databaseName && planConnectionId && !planConnectionId.includes('::')) {

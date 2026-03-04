@@ -244,6 +244,17 @@ export interface SaveFileOutgoing {
   encoding?: string;
 }
 
+export interface SaveQueryOutgoing {
+  type: 'saveQuery';
+  content: string;
+}
+
+export interface NewQueryFromWebviewOutgoing {
+  type: 'newQueryFromWebview';
+  connectionId: string | null;
+  databaseName: string | null;
+}
+
 // Union of all outgoing message types
 export type OutgoingMessage =
   | ExecuteQueryOutgoing
@@ -261,7 +272,9 @@ export type OutgoingMessage =
   | ContentChangedOutgoing
   | RequestPasteOutgoing
   | ReadyOutgoing
-  | SaveFileOutgoing;
+  | SaveFileOutgoing
+  | SaveQueryOutgoing
+  | NewQueryFromWebviewOutgoing;
 
 // ============================================
 // Supporting Types
