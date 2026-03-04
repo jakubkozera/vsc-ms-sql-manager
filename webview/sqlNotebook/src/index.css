@@ -114,6 +114,18 @@ body {
   padding: 4px 16px;
 }
 
+.markdown-code-block {
+  margin: 8px 0;
+  border: 1px solid var(--vscode-panel-border, #333);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+}
+
+.markdown-code-block .monaco-editor {
+  padding: 0;
+}
+
 /* ── Cell Toolbar ── */
 .cell-toolbar {
   display: flex;
@@ -157,18 +169,24 @@ body {
   animation: spin 0.8s linear infinite;
 }
 
-.cell-type-badge {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 3px;
-  letter-spacing: 0.5px;
+.copy-cell-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #888);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 
-.cell-type-badge.sql {
-  background: rgba(0, 120, 212, 0.2);
-  color: var(--vscode-textLink-foreground, #3794ff);
+.copy-cell-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+  color: var(--vscode-foreground);
 }
 
 .collapse-code-btn {
@@ -205,7 +223,7 @@ body {
 /* ── Cell Source ── */
 .cell-source {
   background: var(--vscode-editor-background);
-  overflow: hidden;
+  overflow: auto;
 }
 
 .cell-source .monaco-editor {
@@ -394,6 +412,7 @@ body {
   border-collapse: collapse;
   width: max-content;
   min-width: 100%;
+  max-width: 100%;
   margin: 8px 0;
   font-size: 0.9em;
   display: block;

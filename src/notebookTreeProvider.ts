@@ -120,10 +120,14 @@ export class NotebookTreeProvider implements vscode.TreeDataProvider<NotebookTre
         // Then .ipynb files
         for (const entry of entries) {
             if (entry.isFile() && entry.name.endsWith('.ipynb')) {
+                const notebookPath = path.join(dirPath, entry.name);
+                if (!this.isValidNotebookFile(notebookPath)) {
+                    continue;
+                }
                 items.push(new NotebookTreeItem(
-                    entry.name,
+                    path.basename(entry.name, '.ipynb'),
                     'notebookFile',
-                    path.join(dirPath, entry.name),
+                    notebookPath,
                     vscode.TreeItemCollapsibleState.None,
                     rootFolder
                 ));
@@ -139,7 +143,10 @@ export class NotebookTreeProvider implements vscode.TreeDataProvider<NotebookTre
             const entries = fs.readdirSync(dirPath, { withFileTypes: true });
             for (const entry of entries) {
                 if (entry.isFile() && entry.name.endsWith('.ipynb')) {
-                    return true;
+                    const notebookPath = path.join(dirPath, entry.name);
+                    if (this.isValidNotebookFile(notebookPath)) {
+                        return true;
+                    }
                 }
                 if (entry.isDirectory() && !entry.name.startsWith('.')) {
                     if (this.containsNotebooks(path.join(dirPath, entry.name), depth + 1)) {
@@ -151,5 +158,15 @@ export class NotebookTreeProvider implements vscode.TreeDataProvider<NotebookTre
             // Permission errors, etc.
         }
         return false;
+    }
+
+    private isValidNotebookFile(filePath: string): boolean {
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            JSON.parse(content);
+            return true;
+        } catch {
+            return false;
+        }
     }
 }

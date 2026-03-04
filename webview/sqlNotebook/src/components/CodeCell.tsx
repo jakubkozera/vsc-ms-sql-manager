@@ -40,6 +40,23 @@ const CodeChevron: React.FC<{ collapsed: boolean }> = ({ collapsed }) => (
   </svg>
 );
 
+const CopyCellIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" />
+    <path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" />
+  </svg>
+);
+
 const CodeCell: React.FC<CodeCellProps> = ({
   cell,
   index,
@@ -65,6 +82,28 @@ const CodeCell: React.FC<CodeCellProps> = ({
   const editorHeight = Math.max(40, Math.min(displayLineCount * 19 + 12, 400));
   const canCollapse = lines.length > 2;
 
+  const copySourceToClipboard = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(source);
+        return;
+      }
+    } catch {
+      // Fallback below for environments where Clipboard API is unavailable.
+    }
+
+    const textArea = document.createElement('textarea');
+    textArea.value = source;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    textArea.style.top = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+  };
+
   const handleEditorMount: OnMount = (editor) => {
     editor.updateOptions({
       readOnly: true,
@@ -79,12 +118,12 @@ const CodeCell: React.FC<CodeCellProps> = ({
       hideCursorInOverviewRuler: true,
       overviewRulerBorder: false,
       scrollbar: {
-        vertical: 'hidden',
+        vertical: 'auto',
         horizontal: 'auto',
-        handleMouseWheel: false,
+        handleMouseWheel: true,
       },
       contextmenu: false,
-      wordWrap: 'on',
+      wordWrap: 'off',
       padding: { top: 6, bottom: 6 },
     });
   };
@@ -100,7 +139,14 @@ const CodeCell: React.FC<CodeCellProps> = ({
         >
           {running ? <div className="spinner-small" /> : <RunCellIcon />}
         </button>
-        <span className="cell-type-badge sql">SQL</span>
+        <button
+          className="copy-cell-btn"
+          onClick={() => { void copySourceToClipboard(); }}
+          title="Copy cell code"
+          aria-label="Copy cell code"
+        >
+          <CopyCellIcon />
+        </button>
         {canCollapse && (
           <button
             className="collapse-code-btn"
@@ -131,7 +177,12 @@ const CodeCell: React.FC<CodeCellProps> = ({
             scrollBeyondLastLine: false,
             lineNumbers: 'on',
             lineNumbersMinChars: 3,
-            wordWrap: 'on',
+            wordWrap: 'off',
+            scrollbar: {
+              vertical: 'auto',
+              horizontal: 'auto',
+              handleMouseWheel: true,
+            },
           }}
         />
       </div>

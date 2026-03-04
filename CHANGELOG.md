@@ -5,6 +5,22 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.4] - 2026-03-04
+
+### Added
+
+- **SQL Notebook - Copy Cell Code Button**: Replaced the `SQL` label in code-cell toolbar with an icon-only "Copy cell code" button.
+  - Copies the full code-cell source to clipboard.
+  - Includes fallback copy path for environments where Clipboard API is unavailable.
+
+### Fixed
+
+- **SQL Notebook - Monaco Scrollbars for Long Scripts**: Restored visible scrolling behavior for long SQL scripts in notebook code cells.
+  - Enabled Monaco vertical scrollbar (`vertical: auto`) and horizontal scrollbar (`horizontal: auto`).
+  - Enabled mouse-wheel handling in Monaco scrollbar configuration.
+  - Disabled line wrapping to preserve horizontal scrolling for long lines.
+  - Updated cell source container CSS to allow scrolling (`overflow: auto`).
+
 ## [0.12.3] - 2026-03-03
 
 ### Fixed
