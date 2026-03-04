@@ -33,17 +33,25 @@ jobs:
       - name: Package Extension
         run: |
           npm install -g @vscode/vsce
-          vsce package
+          vsce package --allow-star-activation
 
 
       - name: Publish to VS Code Marketplace
         if: success()
         run: vsce publish -p ${{ secrets.VSCE_PAT }}
 
+      - name: Publish to Open VSX Registry
+        if: success()
+        run: |
+          npm install -g ovsx
+          $vsix = Get-ChildItem -Filter *.vsix | Select-Object -First 1 -ExpandProperty Name
+          ovsx publish $vsix -p ${{ secrets.OVSX_PAT }}
+        shell: pwsh
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: "*.vsix"
+          files: "**/*.vsix"
           draft: false
           prerelease: false
           generate_release_notes: true

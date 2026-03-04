@@ -1,3 +1,11 @@
+:root {
+    /* Fonts */
+    --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --vscode-font-size: 13px;
+    --vscode-editor-font-family: Consolas, "Courier New", monospace;
+    --vscode-editor-font-size: 14px;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -652,7 +660,8 @@ table {
     border-collapse: collapse;
     width: 100%;
     background-color: var(--vscode-editor-background);
-    font-size: 13px;
+    font-family: var(--vscode-editor-font-family) !important;
+    font-size: var(--vscode-editor-font-size) !important;
 }
 
 th, td {
@@ -663,6 +672,8 @@ th, td {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 300px;
+    font-family: var(--vscode-editor-font-family) !important;
+    font-size: var(--vscode-editor-font-size) !important;
 }
 
 /* Sticky table headers */
@@ -876,6 +887,8 @@ th {
 .result-set-table table {
     width: 100%;
     border-collapse: collapse;
+    font-family: var(--vscode-editor-font-family) !important;
+    font-size: var(--vscode-editor-font-size) !important;
 }
 
 .loading {
@@ -1262,6 +1275,8 @@ body.vscode-high-contrast .fk-column {
     border-collapse: separate !important;
     border-spacing: 0;
     position: relative;
+    font-family: var(--vscode-editor-font-family) !important;
+    font-size: var(--vscode-editor-font-size) !important;
 }
 
 .ag-grid-tbody {
@@ -1451,6 +1466,7 @@ body.vscode-high-contrast .fk-column {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
+    font-family: var(--vscode-font-family) !important;
 }
 
 .plan-tree-table th {
@@ -1487,6 +1503,8 @@ body.vscode-high-contrast .fk-column {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
+    font-family: var(--vscode-editor-font-family) !important;
+    font-size: var(--vscode-editor-font-size) !important;
 }
 
 .top-operations-table th {
@@ -1594,6 +1612,8 @@ body.vscode-high-contrast .fk-column {
     display: table;
     width: 100%;
     min-width: 100%;
+    font-family: var(--vscode-editor-font-family) !important;
+    font-size: var(--vscode-editor-font-size) !important;
 }
 
 .nested-table-container .ag-grid-viewport {

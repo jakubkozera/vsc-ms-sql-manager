@@ -5,6 +5,120 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.4] - 2026-03-04
+
+### Added
+
+- **SQL Notebook - Copy Cell Code Button**: Replaced the `SQL` label in code-cell toolbar with an icon-only "Copy cell code" button.
+  - Copies the full code-cell source to clipboard.
+  - Includes fallback copy path for environments where Clipboard API is unavailable.
+
+### Fixed
+
+- **SQL Notebook - Monaco Scrollbars for Long Scripts**: Restored visible scrolling behavior for long SQL scripts in notebook code cells.
+  - Enabled Monaco vertical scrollbar (`vertical: auto`) and horizontal scrollbar (`horizontal: auto`).
+  - Enabled mouse-wheel handling in Monaco scrollbar configuration.
+  - Disabled line wrapping to preserve horizontal scrolling for long lines.
+  - Updated cell source container CSS to allow scrolling (`overflow: auto`).
+
+## [0.12.3] - 2026-03-03
+
+### Fixed
+
+- **Backup Import — Suggest New Name**: The "Suggest New Name" button now derives the base name from the selected `.bak` filename when the backup has not yet been analyzed (or analysis returned no metadata), instead of falling back to the generic `MyDatabase` placeholder.
+- **Backup Import — Target Database auto-fill**: Selecting a `.bak` file now automatically populates the Target Database field with the filename (without extension) when the field is empty.
+- **Backup Import — SQL Server accessible staging path**: Backup files copied for SQL Server access are now staged under `<SYSTEMDRIVE>\Temp\sql-backup-restore` (e.g. `D:\Temp\...`) instead of the hardcoded `C:\Temp\...`, ensuring compatibility on systems where the OS is not installed on `C:`.
+
+## [0.12.2] - 2026-03-01
+
+### Changed
+
+- **New Query (Untitled Mode)**: "New Query" no longer creates temporary `.sql` files on disk. Instead, it opens a lightweight untitled SQL editor webview with full query execution support. Press `Ctrl+S` to save the query to a `.sql` file via Save As dialog, which then re-opens it in the standard custom SQL editor.
+
+### Fixed
+
+- **Open VSX Publish**: Fixed `.vsix` glob not resolving on Windows runners in GitHub Actions CI/CD pipeline
+
+## [0.12.1] - 2026-03-01
+
+### Added
+
+- **Create Database**: New "Create Database..." context menu option on active server connections in the Database Explorer
+  - Prompts for database name with input validation (length, invalid characters)
+  - Creates the database on the server and refreshes the tree view automatically
+
+- **Delete Database**: New "Delete Database" context menu option on database instances under server connections
+  - **Close Connection**: Closes the connection pool to the specific database without dropping it
+  - **Drop Database**: Permanently drops the database with double confirmation to prevent accidental data loss
+  - Automatically sets database to single-user mode before dropping to force-close active connections
+
+### Fixed
+
+- **Duplicate Refresh in Database Context Menu**: Fixed duplicate "Refresh" entries appearing in the right-click context menu for database instances under server connections
+  - Removed redundant `refreshNode` menu entry for database nodes — only the more comprehensive `refreshDatabaseSchema` entry is now shown
+
+## [0.12.0] - 2026-03-01
+
+### Added
+
+- **SQL Notebook Editor**: New custom editor for `.ipynb` files enabling interactive SQL notebooks within VS Code
+  - **React-based webview UI**: Modern notebook interface built with React + Vite featuring code and markdown cells
+  - **SQL cell execution**: Execute individual SQL cells against any active connection with results displayed inline as a scrollable data grid
+  - **Collapsible code cells**: Cells can be collapsed/expanded to keep the notebook tidy
+  - **Markdown cells**: Full markdown cell support for annotating notebooks with formatted text
+  - **Connection selector**: Per-notebook connection picker — choose any active MS SQL connection directly from the toolbar
+  - **Database selector**: When a server-level connection is selected, a second dropdown appears for choosing the target database
+  - **Notebook navigation**: Previous / next buttons in the toolbar to jump between `.ipynb` files in the same directory tree
+  - **Auto-refresh connections**: The connection list updates automatically whenever connections change in the Database Explorer
+  - **Manage connections shortcut**: Quick-access button to open the connection management dialog from within the notebook
+
+- **Notebooks Tree View**: Dedicated "Notebooks" panel in the MS SQL Manager sidebar for browsing and managing notebook files
+  - **Add folder**: Open any folder containing `.ipynb` files and browse its structure in the tree
+  - **Folder persistence**: Added notebook folders are remembered across VS Code sessions via global state
+  - **Subfolder support**: Nested subfolders are shown when they contain `.ipynb` files
+  - **One-click open**: Clicking a notebook file opens it directly in the new SQL Notebook Editor
+  - **Remove folder**: Right-click context menu to remove a folder from the notebooks panel
+  - **Refresh**: Manual refresh command to rescan folders for new or removed files
+
+## [0.11.4] - 2026-02-28
+
+### Fixed
+
+- **Related Tables Expansion with Windows Authentication**: Fixed "No related data found" when expanding related tables on connections using Windows Auth (e.g. SQL Express / LocalDB)
+  - Root cause: the expansion query was prefixed with `USE [database];` even though the connection pool was already scoped to the correct database. The `msnodesqlv8` driver (used for Windows Auth) materialises `USE` as a separate empty result set, causing the UI to read `resultSets[0]` (empty) instead of `resultSets[1]` (actual data).
+  - Backend fix: removed the redundant `USE [database];` prefix from relation expansion queries — the pool created by `createDbPool` already targets the correct database.
+  - Frontend fix: `handleRelationResults` now picks the **first non-empty** result set rather than always using index 0, providing a safety net for any driver that may still emit auxiliary result sets.
+
+
+## [0.11.3] - 2026-01-28
+
+### Fixed
+
+- **Local Server Discovery Check**: Re-enabled the check to skip local server discovery if it has already been executed, preventing unnecessary repeated discovery attempts on Windows systems.
+
+## [0.11.2] - 2026-01-22
+
+### Fixed
+
+- **NULL Value Handling in Result Grid Updates**: Fixed issue where typing "null" in a cell would generate `SET column = 'NULL'` instead of `SET column = NULL`
+  - Typing "null" (case-insensitive) in a cell now correctly generates SQL NULL value
+  - Typing "'null'" (with quotes) also generates SQL NULL value
+  - Prevents incorrect string literal 'NULL' from being inserted into database columns
+  - Affects all UPDATE statements generated from editable result grids
+
+## [0.11.1] - 2026-01-21
+
+### Added
+
+- **Font Customization Support**: Comprehensive font configuration for SQL editor and result grids
+  - **CSS Variables Integration**: Added support for VS Code font variables (--vscode-font-family, --vscode-font-size, --vscode-editor-font-family, --vscode-editor-font-size)
+  - **Monaco Editor Font Configuration**: SQL editor now respects VS Code's editor font settings for consistent typography
+  - **Result Grid Font Enforcement**: Query result tables now properly apply font settings through multiple enforcement mechanisms
+  - **GUID Column Width Optimization**: Automatic minimum 300px width for GUID columns to ensure readability
+  - **Font-Aware Column Sizing**: Column width calculations now account for actual font metrics for optimal display
+  - **Inline Font Styling**: JavaScript-created table elements use inline styles to ensure font application
+  - **CSS Specificity Handling**: Added !important declarations for table font rules to override competing styles
+
 ## [0.11.0] - 2026-01-03
 
 ### Added

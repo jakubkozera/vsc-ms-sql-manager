@@ -7,6 +7,15 @@ node_modules/msnodesqlv8/test/**
 node_modules/msnodesqlv8/samples/**
 node_modules/msnodesqlv8/*.md
 src/**
+webview/sqlNotebook/node_modules/**
+webview/sqlNotebook/src/**
+webview/sqlNotebook/package.json
+webview/sqlNotebook/package-lock.json
+webview/sqlNotebook/tsconfig.json
+webview/sqlNotebook/vite.config.ts
+webview/sqlNotebook/index.html
+webview/sqlEditor-react/node_modules/**
+webview/sqlEditor-react/src/**
 .gitignore
 .yarnrc
 webpack.config.js

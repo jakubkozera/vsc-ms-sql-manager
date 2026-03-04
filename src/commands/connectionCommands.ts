@@ -316,121 +316,18 @@ export function registerConnectionCommands(
                 unifiedTreeProvider.refresh();
             }
 
-            // Always set this connection as active (even if it was already active)
-            // This ensures that the editor dropdown will show the correct connection
+            // Always set this connection as active
             connectionProvider.setActiveConnection(connectionId);
 
-            // Set preferred connection for the next editor that opens
-            // For ServerConnectionNode, we don't have a specific database, so just set the connection
-            if (connectionItem.database) {
-                // ConnectionNode - has specific database
-                connectionProvider.setNextEditorPreferredDatabase(connectionId, connectionItem.database);
-            } else {
-                // ServerConnectionNode - set as preferred connection without specific database
-                // This will still update the connection dropdown in the editor
-                connectionProvider.setNextEditorPreferredDatabase(connectionId, 'master');
-            }
+            const databaseName = connectionItem.database || 'master';
 
-            // Get extension storage path
-            const storagePath = context.globalStorageUri.fsPath;
-            const fs = await import('fs');
-            const path = await import('path');
-
-            // Ensure storage directory exists
-            if (!fs.existsSync(storagePath)) {
-                fs.mkdirSync(storagePath, { recursive: true });
-            }
-
-            // First, check if there's already an empty SQL file we can reuse
-            let queryFilePath: string | null = null;
-            let reusingFile = false;
-
-            // Look for existing query files and check if any are empty
-            const files = fs.readdirSync(storagePath);
-            const sqlFiles = files.filter(f => f.endsWith('.sql')).sort();
-            
-            for (const sqlFile of sqlFiles) {
-                const filePath = path.join(storagePath, sqlFile);
-                try {
-                    const content = fs.readFileSync(filePath, 'utf8');
-                    if (content.trim().length === 0) {
-                        // Found an empty file, reuse it
-                        queryFilePath = filePath;
-                        reusingFile = true;
-                        outputChannel.appendLine(`[New Query] Reusing empty file: ${sqlFile}`);
-                        break;
-                    }
-                } catch (error) {
-                    // If we can't read the file, skip it
-                    continue;
-                }
-            }
-
-            // If no empty file found, create a new one
-            if (!queryFilePath) {
-                let queryNumber = 0;
-                let queryFileName = 'query.sql';
-                queryFilePath = path.join(storagePath, queryFileName);
-
-                while (fs.existsSync(queryFilePath)) {
-                    queryNumber++;
-                    queryFileName = `query (${queryNumber}).sql`;
-                    queryFilePath = path.join(storagePath, queryFileName);
-                }
-
-                // Create empty query content (or use initialQuery if provided)
-                const initialContent = initialQuery || '';
-                
-                // Write the content to the file
-                const uri = vscode.Uri.file(queryFilePath);
-                await vscode.workspace.fs.writeFile(uri, Buffer.from(initialContent, 'utf8'));
-                outputChannel.appendLine(`[New Query] Created new file: ${path.basename(queryFilePath)}`);
-            } else {
-                // If reusing file and initialQuery provided, write it
-                if (initialQuery) {
-                    const uri = vscode.Uri.file(queryFilePath);
-                    await vscode.workspace.fs.writeFile(uri, Buffer.from(initialQuery, 'utf8'));
-                }
-            }
-
-            // Open the file with the custom SQL editor
-            const uri = vscode.Uri.file(queryFilePath);
-            await vscode.commands.executeCommand('vscode.openWith', uri, 'mssqlManager.sqlEditor');
-
-            outputChannel.appendLine(`[New Query] Opened query file in SQL Editor`);
-
-            // Handle SQL content and auto-execution for both new and reused files
+            // Open an untitled query webview (no file created on disk)
             if (sqlEditorProvider) {
-                // Add a small delay to ensure webview is fully loaded
-                setTimeout(() => {
-                    // Set connection for reused files
-                    if (reusingFile) {
-                        const databaseName = connectionItem.database || (connectionItem.database ? undefined : 'master');
-                        sqlEditorProvider.forceConnectionUpdate(uri, connectionId, databaseName);
-                    }
-                    
-                    // If initialQuery was provided, insert it to the editor
-                    if (initialQuery) {
-                        setTimeout(() => {
-                            sqlEditorProvider.insertTextToEditor(uri, initialQuery);
-                            
-                            // Auto-execute if requested
-                            if (autoExecute) {
-                                setTimeout(() => {
-                                    sqlEditorProvider.triggerAutoExecute(uri);
-                                }, 100);
-                            }
-                        }, 100);
-                    } else if (autoExecute) {
-                        // Auto-execute even without initialQuery (executes current editor content)
-                        setTimeout(() => {
-                            sqlEditorProvider.triggerAutoExecute(uri);
-                        }, 100);
-                    }
-                }, 100);
+                await sqlEditorProvider.openUntitledQuery(connectionId, databaseName, initialQuery, autoExecute);
+                outputChannel.appendLine(`[New Query] Opened untitled query for ${connectionId}::${databaseName}`);
+            } else {
+                vscode.window.showErrorMessage('SQL Editor provider not available');
             }
-
-            return uri;
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

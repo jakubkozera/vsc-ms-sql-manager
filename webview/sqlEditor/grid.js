@@ -51,8 +51,13 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         
+        // Get computed font properties from CSS variables
+        const computedStyle = getComputedStyle(document.body);
+        const fontFamily = computedStyle.getPropertyValue('--vscode-font-family') || '"Segoe UI", sans-serif';
+        const fontSize = computedStyle.getPropertyValue('--vscode-font-size') || '13px';
+        
         // Set font to match table font for accurate measurement
-        context.font = '13px var(--vscode-font-family, "Segoe UI", sans-serif)';
+        context.font = `${fontSize} ${fontFamily}`;
         
         // Measure header width
         const headerWidth = context.measureText(columnName).width;
@@ -86,13 +91,24 @@ function initAgGridTable(rowData, container, isSingleResultSet = false, resultSe
             }
         }
         
+        // Check if column contains GUIDs (pattern matching)
+        const isGuidColumn = columnName.toLowerCase().includes('guid') || 
+                             columnName.toLowerCase().includes('uuid') ||
+                             /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(longestContent);
+        
         // Calculate optimal width (max of header and content, plus padding)
         const padding = 32; // 16px padding on each side + some extra space for icons and borders
         const iconSpace = 80; // Space for sort, filter, and pin icons
-        const optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+        let optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+        
+        // For GUID columns, ensure minimum width to display full GUID
+        if (isGuidColumn) {
+            const guidWidth = context.measureText('00000000-0000-0000-0000-000000000000').width + padding;
+            optimalWidth = Math.max(optimalWidth, guidWidth);
+        }
         
         // Set reasonable min/max bounds
-        const minWidth = 80;
+        const minWidth = isGuidColumn ? 300 : 80; // Larger minimum for GUID columns
         const maxWidth = 450;
         const paddingWidth = 36; 
         
@@ -1754,25 +1770,39 @@ function commitEdit(newValue) {
 
     const { td, row, col, rowIndex, colIndex, originalValue, resultSetIndex, metadata, originalPadding, containerEl } = currentEditingCell;
     
+    // Normalize NULL values: if user types "null" or "'null'", treat as actual NULL
+    let normalizedValue = newValue;
+    if (typeof newValue === 'string') {
+        const trimmedValue = newValue.trim();
+        if (trimmedValue.toLowerCase() === 'null' || trimmedValue.toLowerCase() === "'null'") {
+            normalizedValue = null;
+        }
+    }
+    
     // Check if value changed
     let valueChanged = false;
     
     if (col.type === 'boolean') {
         // Normalize original value to boolean
         const boolOriginal = originalValue === true || originalValue === 1 || String(originalValue).toLowerCase() === 'true';
-        if (newValue !== boolOriginal) {
+        if (normalizedValue !== boolOriginal) {
             valueChanged = true;
         }
     } else {
-        const stringOriginal = originalValue === null ? '' : String(originalValue);
-        if (newValue !== stringOriginal) {
-            valueChanged = true;
+        // Compare with normalized value
+        if (normalizedValue === null) {
+            valueChanged = (originalValue !== null);
+        } else {
+            const stringOriginal = originalValue === null ? '' : String(originalValue);
+            if (normalizedValue !== stringOriginal) {
+                valueChanged = true;
+            }
         }
     }
     
     if (valueChanged) {
         // Update data model
-        row[col.field] = newValue; 
+        row[col.field] = normalizedValue; 
         
         // Track change
         if (!pendingChanges.has(resultSetIndex)) {
@@ -1788,7 +1818,7 @@ function commitEdit(newValue) {
         const pkValues = getPrimaryKeyValues(row, metadata);
         
         if (existingChangeIndex >= 0) {
-            changes[existingChangeIndex].newValue = newValue;
+            changes[existingChangeIndex].newValue = normalizedValue;
         } else {
             changes.push({
                 type: 'UPDATE',
@@ -1796,7 +1826,7 @@ function commitEdit(newValue) {
                 colIndex,
                 column: col.headerName,
                 originalValue,
-                newValue,
+                newValue: normalizedValue,
                 pk: pkValues
             });
         }
@@ -1809,7 +1839,7 @@ function commitEdit(newValue) {
     td.style.padding = originalPadding || '0 8px';
     td.style.border = '';
     
-    restoreCellContent(td, newValue, col, metadata, colIndex, rowIndex, containerEl);
+    restoreCellContent(td, normalizedValue, col, metadata, colIndex, rowIndex, containerEl);
     
     currentEditingCell = null;
 }
@@ -2395,8 +2425,16 @@ function sqlEscape(value) {
         return value ? '1' : '0';
     }
     
-    // String - escape single quotes and wrap in quotes
+    // Check if string value is "null" (case-insensitive) or "'null'" to treat as SQL NULL
     const strValue = String(value);
+    const trimmedValue = strValue.trim();
+    
+    // If user types "null" (any case) or "'null'" (with quotes), treat as SQL NULL
+    if (trimmedValue.toLowerCase() === 'null' || trimmedValue.toLowerCase() === "'null'") {
+        return 'NULL';
+    }
+    
+    // String - escape single quotes and wrap in quotes
     return `'${strValue.replace(/'/g, "''")}'`;
 }
 
@@ -3936,10 +3974,14 @@ function autoFitSingleColumn(colIndex, colDefs, containerEl, data) {
     function calculateOptimalColumnWidthGlobal(columnName, columnData, type) {
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
-        context.font = '13px var(--vscode-font-family, "Segoe UI", sans-serif)';
+        const computedStyle = getComputedStyle(document.body);
+        const fontFamily = computedStyle.getPropertyValue('--vscode-font-family') || '"Segoe UI", sans-serif';
+        const fontSize = computedStyle.getPropertyValue('--vscode-font-size') || '13px';
+        context.font = `${fontSize} ${fontFamily}`;
         
         const headerWidth = context.measureText(columnName).width;
         let maxContentWidth = 0;
+        let longestContent = '';
         
         const sampleSize = Math.min(100, columnData.length);
         const step = Math.max(1, Math.floor(columnData.length / sampleSize));
@@ -3961,13 +4003,26 @@ function autoFitSingleColumn(colIndex, colDefs, containerEl, data) {
             const contentWidth = context.measureText(displayValue).width;
             if (contentWidth > maxContentWidth) {
                 maxContentWidth = contentWidth;
+                longestContent = displayValue;
             }
         }
         
+        // Check if column contains GUIDs
+        const isGuidColumn = columnName.toLowerCase().includes('guid') || 
+                             columnName.toLowerCase().includes('uuid') ||
+                             /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(longestContent);
+        
         const padding = 32;
         const iconSpace = 80;
-        const optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
-        const minWidth = 80;
+        let optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+        
+        // For GUID columns, ensure minimum width
+        if (isGuidColumn) {
+            const guidWidth = context.measureText('00000000-0000-0000-0000-000000000000').width + padding;
+            optimalWidth = Math.max(optimalWidth, guidWidth);
+        }
+        
+        const minWidth = isGuidColumn ? 300 : 80;
         const maxWidth = 400;
         
         return Math.round(Math.min(Math.max(optimalWidth, minWidth), maxWidth));
@@ -4017,10 +4072,14 @@ function autoFitAllColumns(colDefs, sortCfg, filters, containerEl, data) {
     function calculateOptimalColumnWidthGlobal(columnName, columnData, type) {
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
-        context.font = '13px var(--vscode-font-family, "Segoe UI", sans-serif)';
+        const computedStyle = getComputedStyle(document.body);
+        const fontFamily = computedStyle.getPropertyValue('--vscode-font-family') || '"Segoe UI", sans-serif';
+        const fontSize = computedStyle.getPropertyValue('--vscode-font-size') || '13px';
+        context.font = `${fontSize} ${fontFamily}`;
         
         const headerWidth = context.measureText(columnName).width;
         let maxContentWidth = 0;
+        let longestContent = '';
         
         const sampleSize = Math.min(100, columnData.length);
         const step = Math.max(1, Math.floor(columnData.length / sampleSize));
@@ -4042,13 +4101,26 @@ function autoFitAllColumns(colDefs, sortCfg, filters, containerEl, data) {
             const contentWidth = context.measureText(displayValue).width;
             if (contentWidth > maxContentWidth) {
                 maxContentWidth = contentWidth;
+                longestContent = displayValue;
             }
         }
         
+        // Check if column contains GUIDs
+        const isGuidColumn = columnName.toLowerCase().includes('guid') || 
+                             columnName.toLowerCase().includes('uuid') ||
+                             /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(longestContent);
+        
         const padding = 32;
         const iconSpace = 80;
-        const optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
-        const minWidth = 80;
+        let optimalWidth = Math.max(headerWidth + iconSpace, maxContentWidth + padding);
+        
+        // For GUID columns, ensure minimum width
+        if (isGuidColumn) {
+            const guidWidth = context.measureText('00000000-0000-0000-0000-000000000000').width + padding;
+            optimalWidth = Math.max(optimalWidth, guidWidth);
+        }
+        
+        const minWidth = isGuidColumn ? 300 : 80;
         const maxWidth = 400;
         
         return Math.round(Math.min(Math.max(optimalWidth, minWidth), maxWidth));

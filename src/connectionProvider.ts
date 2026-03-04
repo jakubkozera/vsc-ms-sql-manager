@@ -628,6 +628,20 @@ export class ConnectionProvider {
         return pool;
     }
 
+    async closeDbPool(connectionId: string, database: string): Promise<void> {
+        const key = `${connectionId}::${database}`;
+        const pool = this.dbPools.get(key);
+        if (pool) {
+            try {
+                await pool.close();
+            } catch (err) {
+                this.outputChannel.appendLine(`[ConnectionProvider] Error closing db pool ${key}: ${err}`);
+            }
+            this.dbPools.delete(key);
+            this.outputChannel.appendLine(`[ConnectionProvider] Closed DB pool for ${connectionId} -> ${database}`);
+        }
+    }
+
     async disconnect(connectionId?: string): Promise<void> {
         if (connectionId) {
             // Disconnect specific connection
@@ -1028,10 +1042,10 @@ export class ConnectionProvider {
     async discoverLocalServersOnce(): Promise<void> {
         try {
             const alreadyRun = this.context.globalState.get<boolean>('mssqlManager.localDiscoveryDone', false);
-            // if (alreadyRun) {
-            //     this.outputChannel.appendLine('[ConnectionProvider] Local discovery already executed, skipping');
-            //     return;
-            // }
+            if (alreadyRun) {
+                this.outputChannel.appendLine('[ConnectionProvider] Local discovery already executed, skipping');
+                return;
+            }
 
             // Only run on Windows
             if (process.platform !== 'win32') {

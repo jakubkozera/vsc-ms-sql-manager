@@ -164,8 +164,54 @@ window.addEventListener('message', event => {
                 console.log('[SNIPPETS] Snippet creation cancelled or invalid input');
             }
             break;
+
+        case 'setUntitled':
+            window.isUntitledQuery = !!message.isUntitled;
+            console.log('[SQL-EDITOR] Untitled mode:', window.isUntitledQuery);
+            break;
+
+        case 'setState':
+            // Save state for VS Code to restore after restart
+            if (message.state && vscode) {
+                vscode.setState(message.state);
+                console.log('[SQL-EDITOR] State saved for persistence:', message.state);
+            }
+            break;
     }
 });
+
+// Global Ctrl+S and Ctrl+N handlers (works for entire webview)
+document.addEventListener('keydown', (e) => {
+    // Ctrl+S - Save query
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Get current editor content
+        const content = window.editor ? window.editor.getValue() : '';
+        vscode.postMessage({ 
+            type: 'saveQuery', 
+            content: content 
+        });
+        
+        console.log('[SQL-EDITOR] Ctrl+S pressed, sending saveQuery message');
+    }
+    
+    // Ctrl+N - New query
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Send currently selected connection/database (if any)
+        vscode.postMessage({ 
+            type: 'newQueryFromWebview',
+            connectionId: typeof currentConnectionId !== 'undefined' ? currentConnectionId : null,
+            databaseName: typeof currentDatabaseName !== 'undefined' ? currentDatabaseName : null
+        });
+        
+        console.log('[SQL-EDITOR] Ctrl+N pressed, opening new query');
+    }
+}, true); // Use capture phase to intercept before Monaco editor
 
 const executeButton = document.getElementById('executeButton');
 if (executeButton) {

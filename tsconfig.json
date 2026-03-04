@@ -17,6 +17,7 @@
 	"exclude": [
 		"node_modules",
 		"webview/sqlEditor-react",
-		"dist"
+		"dist",
+		"webview"
 	]
 }

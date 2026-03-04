@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { QueryExecutor } from './queryExecutor';
 import { ConnectionProvider } from './connectionProvider';
 import { SchemaCache } from './utils/schemaCache';
@@ -14,6 +15,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private webviewToDocument = new Map<vscode.Webview, vscode.Uri>();
     // Track cancellation tokens for running queries
     private webviewCancellationSources = new Map<vscode.Webview, vscode.CancellationTokenSource>();
+    // Track untitled query panels with their base titles for unique naming
+    private untitledPanels = new Map<vscode.WebviewPanel, string>();
     // SQL snippets cache
     private sqlSnippets: any[] = [];
     // Schema cache instance
@@ -121,6 +124,24 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     );
                     await vscode.workspace.applyEdit(edit);
                     break;
+
+                case 'saveQuery':
+                    // File-backed editor: just save the document
+                    await document.save();
+                    break;
+
+                case 'newQueryFromWebview': {
+                    // Open new query with current connection (or no connection)
+                    const connId = message.connectionId || null;
+                    const dbName = message.databaseName || undefined;
+                    if (connId) {
+                        await this.openUntitledQuery(connId, dbName);
+                    } else {
+                        // No active connection - show connection picker
+                        vscode.window.showInformationMessage('No active connection. Please select a connection first.');
+                    }
+                    break;
+                }
 
                 case 'executeQuery':
                     let execConnectionId = message.connectionId;
@@ -1567,14 +1588,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             // Escape single quotes in the value
             const escapedValue = String(keyValue).replace(/'/g, "''");
             
-            // If we have a database name from connectionId, prepend USE statement to ensure correct context
-            let query = '';
-            if (connectionId && connectionId.includes('::')) {
-                const [, dbName] = connectionId.split('::');
-                query = `USE [${dbName}];\nSELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
-            } else {
-                query = `SELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
-            }
+            // poolToUse is already scoped to the correct database (via createDbPool),
+            // so no USE statement is needed — adding one would create a spurious empty
+            // result set that breaks result handling, especially with msnodesqlv8.
+            const query = `SELECT * FROM [${schema}].[${table}] WHERE [${column}] = '${escapedValue}'`;
             this.outputChannel.appendLine(`[SqlEditorProvider] Executing relation expansion: ${query}`);
             
             // Execute query using queryExecutor (skip history for relation expansions)
@@ -1864,6 +1881,489 @@ COMMIT TRANSACTION;
                     { type: 'info', text: 'No changes were saved to the database' }
                 ]
             });
+        }
+    }
+
+    /**
+     * Find a unique title for an untitled query panel by checking existing panels
+     * and adding a counter if needed (e.g., "Query - Dev" → "Query (2) - Dev")
+     */
+    private getUniqueUntitledTitle(baseTitle: string): string {
+        // Safely get all active panel titles with the same base
+        const existingTitles = new Set<string>();
+        const panelsToDelete: vscode.WebviewPanel[] = [];
+        
+        for (const [panel, base] of this.untitledPanels.entries()) {
+            if (base === baseTitle) {
+                try {
+                    // Try to access title - if panel is disposed this will throw
+                    const title = panel.title;
+                    existingTitles.add(title);
+                } catch (err) {
+                    // Panel is disposed, mark for deletion
+                    panelsToDelete.push(panel);
+                }
+            }
+        }
+        
+        // Clean up disposed panels
+        for (const panel of panelsToDelete) {
+            this.untitledPanels.delete(panel);
+        }
+
+        // If base title is available, use it
+        if (!existingTitles.has(baseTitle)) {
+            return baseTitle;
+        }
+
+        // Find first available counter
+        let counter = 2;
+        while (true) {
+            let candidateTitle: string;
+            if (baseTitle.startsWith('Query - ')) {
+                // Has suffix like "Query - Dev" → "Query (2) - Dev"
+                const suffix = baseTitle.substring('Query - '.length);
+                candidateTitle = `Query (${counter}) - ${suffix}`;
+            } else {
+                // Just "Query" → "Query (2)"
+                candidateTitle = `Query (${counter})`;
+            }
+            
+            if (!existingTitles.has(candidateTitle)) {
+                return candidateTitle;
+            }
+            counter++;
+        }
+    }
+
+    /**
+     * Open an untitled SQL query webview panel (not backed by a file).
+     * When the user presses Ctrl+S the content is saved to a .sql file and
+     * re-opened in the normal CustomTextEditor.
+     */
+    public async openUntitledQuery(
+        connectionId: string,
+        databaseName?: string,
+        initialQuery?: string,
+        autoExecute: boolean = false
+    ): Promise<vscode.WebviewPanel> {
+        // Get connection config to determine base title
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        let baseTitle = 'Query';
+        if (config) {
+            if (config.connectionType === 'database') {
+                // Database connection - use connection name
+                baseTitle = `Query - ${config.name}`;
+            } else {
+                // Server connection - use database name
+                baseTitle = databaseName ? `Query - ${databaseName}` : `Query - ${config.name}`;
+            }
+        }
+
+        // Find unique title (adds counter if needed)
+        const uniqueTitle = this.getUniqueUntitledTitle(baseTitle);
+        
+        const panel = vscode.window.createWebviewPanel(
+            'mssqlManager.sqlEditorUntitled',
+            uniqueTitle,
+            vscode.ViewColumn.One,
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [
+                    vscode.Uri.joinPath(this.context.extensionUri, 'webview'),
+                    vscode.Uri.joinPath(this.context.extensionUri, 'resources')
+                ]
+            }
+        );
+
+        // Set icon with light/dark theme variants
+        panel.iconPath = {
+            light: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'icons', 'database-light.svg'),
+            dark: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'icons', 'database-dark.svg')
+        };
+
+        // Track this panel for unique title management
+        this.untitledPanels.set(panel, baseTitle);
+
+        // In-memory content buffer
+        let currentContent = initialQuery || '';
+        const compositeId = databaseName ? `${connectionId}::${databaseName}` : connectionId;
+
+        // Track this webview like a regular editor
+        const syntheticUri = vscode.Uri.parse(`untitled:query-${Date.now()}`);
+        this.webviewToDocument.set(panel.webview, syntheticUri);
+        this.webviewSelectedConnection.set(panel.webview, compositeId);
+
+        panel.webview.html = this.getHtmlForWebview(panel.webview);
+
+        // Setup state for serialization/restoration
+        this.setupUntitledPanelHandlers(panel, connectionId, databaseName, initialQuery || '', autoExecute);
+        
+        return panel;
+    }
+
+    /**
+     * Restore an untitled query panel after VS Code restart
+     */
+    public async restoreUntitledQuery(
+        panel: vscode.WebviewPanel,
+        connectionId: string,
+        databaseName: string | undefined,
+        savedContent: string
+    ): Promise<void> {
+        // Set webview options
+        panel.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [
+                vscode.Uri.joinPath(this.context.extensionUri, 'webview'),
+                vscode.Uri.joinPath(this.context.extensionUri, 'resources')
+            ]
+        };
+
+        // Set icon with light/dark theme variants
+        panel.iconPath = {
+            light: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'icons', 'database-light.svg'),
+            dark: vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'icons', 'database-dark.svg')
+        };
+
+        // Setup the restored panel
+        panel.webview.html = this.getHtmlForWebview(panel.webview);
+        
+        // Get connection config to determine base title
+        const config = this.connectionProvider.getConnectionConfig(connectionId);
+        let baseTitle = 'Query';
+        if (config) {
+            if (config.connectionType === 'database') {
+                baseTitle = `Query - ${config.name}`;
+            } else {
+                baseTitle = databaseName ? `Query - ${databaseName}` : `Query - ${config.name}`;
+            }
+        }
+
+        // Track this panel
+        this.untitledPanels.set(panel, baseTitle);
+        
+        // Setup handlers with restored state
+        this.setupUntitledPanelHandlers(panel, connectionId, databaseName, savedContent, false);
+        
+        this.outputChannel.appendLine(`[SqlEditorProvider] Restored untitled query panel for ${connectionId}::${databaseName || 'master'}`);
+    }
+
+    /**
+     * Setup message handlers and state tracking for an untitled query panel
+     */
+    private setupUntitledPanelHandlers(
+        panel: vscode.WebviewPanel,
+        connectionId: string,
+        databaseName: string | undefined,
+        initialContent: string,
+        autoExecute: boolean
+    ): void {
+        let currentContent = initialContent;
+        const compositeId = databaseName ? `${connectionId}::${databaseName}` : connectionId;
+
+        // Track this webview like a regular editor
+        const syntheticUri = vscode.Uri.parse(`untitled:query-${Date.now()}`);
+        this.webviewToDocument.set(panel.webview, syntheticUri);
+        this.webviewSelectedConnection.set(panel.webview, compositeId);
+
+        panel.webview.onDidReceiveMessage(async message => {
+            switch (message.type) {
+                case 'ready':
+                    // Send initial content
+                    panel.webview.postMessage({ type: 'update', content: currentContent });
+
+                    // Send configuration settings
+                    {
+                        const config = vscode.workspace.getConfiguration('mssqlManager');
+                        const colorPrimaryForeignKeys = config.get<boolean>('colorPrimaryForeignKeys', true);
+                        panel.webview.postMessage({
+                            type: 'config',
+                            config: { colorPrimaryForeignKeys }
+                        });
+                    }
+
+                    // Mark untitled mode for the webview
+                    panel.webview.postMessage({ type: 'setUntitled', isUntitled: true });
+
+                    // Send connections list
+                    this.updateConnectionsList(panel.webview);
+
+                    // Save initial state for persistence
+                    panel.webview.postMessage({
+                        type: 'setState',
+                        state: { connectionId, databaseName, content: currentContent }
+                    });
+
+                    // Auto-execute if requested
+                    if (autoExecute && initialContent) {
+                        setTimeout(() => {
+                            panel.webview.postMessage({ type: 'autoExecuteQuery' });
+                        }, 200);
+                    }
+                    break;
+
+                case 'documentChanged':
+                    currentContent = message.content;
+                    // Update state for persistence
+                    panel.webview.postMessage({
+                        type: 'setState',
+                        state: { connectionId, databaseName, content: currentContent }
+                    });
+                    break;
+
+                case 'saveQuery': {
+                    // Save-As flow: prompt user for file location
+                    const saveUri = await vscode.window.showSaveDialog({
+                        defaultUri: vscode.Uri.file(path.join(
+                            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
+                            'query.sql'
+                        )),
+                        filters: { 'SQL Files': ['sql'] }
+                    });
+                    if (!saveUri) { break; }
+
+                    // Write content to disk
+                    const content = message.content || currentContent;
+                    await vscode.workspace.fs.writeFile(saveUri, Buffer.from(content, 'utf8'));
+
+                    // Store connection preference so the custom editor picks it up
+                    this.connectionProvider.setNextEditorPreferredDatabase(connectionId, databaseName || 'master');
+
+                    // Close untitled panel and open file in custom editor
+                    panel.dispose();
+                    await vscode.commands.executeCommand('vscode.openWith', saveUri, 'mssqlManager.sqlEditor');
+                    break;
+                }
+
+                case 'newQueryFromWebview': {
+                    // Open new query with current connection (or no connection)
+                    const connId = message.connectionId || null;
+                    const dbName = message.databaseName || undefined;
+                    if (connId) {
+                        await this.openUntitledQuery(connId, dbName);
+                    } else {
+                        // No active connection - show connection picker
+                        vscode.window.showInformationMessage('No active connection. Please select a connection first.');
+                    }
+                    break;
+                }
+
+                case 'executeQuery': {
+                    let execConnectionId = message.connectionId;
+                    if (message.databaseName && execConnectionId && !execConnectionId.includes('::')) {
+                        execConnectionId = `${execConnectionId}::${message.databaseName}`;
+                    }
+                    await this.executeQuery(message.query, execConnectionId, panel.webview, message.includeActualPlan);
+                    break;
+                }
+
+                case 'expandRelation':
+                    await this.executeRelationQuery(message.keyValue, message.schema, message.table, message.column, message.expansionId, message.connectionId, panel.webview);
+                    break;
+
+                case 'executeEstimatedPlan': {
+                    let planConnectionId = message.connectionId;
+                    if (message.databaseName && planConnectionId && !planConnectionId.includes('::')) {
+                        planConnectionId = `${planConnectionId}::${message.databaseName}`;
+                    }
+                    await this.executeEstimatedPlan(message.query, planConnectionId, panel.webview);
+                    break;
+                }
+
+                case 'cancelQuery':
+                    if (this.webviewCancellationSources.has(panel.webview)) {
+                        this.webviewCancellationSources.get(panel.webview)?.cancel();
+                    }
+                    this.queryExecutor.cancel();
+                    break;
+
+                case 'manageConnections':
+                    await vscode.commands.executeCommand('mssqlManager.manageConnections');
+                    break;
+
+                case 'switchConnection':
+                    this.connectionProvider.setActiveConnection(message.connectionId);
+                    this.webviewSelectedConnection.set(panel.webview, message.connectionId);
+                    await this.updateConnectionsList(panel.webview);
+                    break;
+
+                case 'switchDatabase': {
+                    const cid = `${message.connectionId}::${message.databaseName}`;
+                    this.webviewSelectedConnection.set(panel.webview, cid);
+                    this.connectionProvider.setCurrentDatabase(message.connectionId, message.databaseName);
+                    await this.sendSchemaUpdate(panel.webview, cid);
+                    break;
+                }
+
+                case 'getDatabases':
+                    await this.sendDatabasesList(panel.webview, message.connectionId, message.selectedDatabase);
+                    break;
+
+                case 'getSchema':
+                    if (message.connectionId) {
+                        this.webviewSelectedConnection.set(panel.webview, message.connectionId);
+                    }
+                    await this.sendSchemaUpdate(panel.webview, message.connectionId);
+                    break;
+
+                case 'goToDefinition':
+                    try {
+                        await vscode.commands.executeCommand('mssqlManager.revealInExplorer', {
+                            objectType: message.objectType,
+                            schema: message.schema,
+                            table: message.table,
+                            column: message.column,
+                            connectionId: message.connectionId || this.webviewSelectedConnection.get(panel.webview) || null,
+                            database: message.database || undefined
+                        });
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] goToDefinition forward failed: ${err}`);
+                    }
+                    break;
+
+                case 'commitChanges': {
+                    let commitConnectionId = message.connectionId || this.webviewSelectedConnection.get(panel.webview);
+                    if (message.databaseName && commitConnectionId && !commitConnectionId.includes('::')) {
+                        commitConnectionId = `${commitConnectionId}::${message.databaseName}`;
+                    }
+                    await this.commitChanges(message.statements, commitConnectionId, message.originalQuery, panel.webview);
+                    break;
+                }
+
+                case 'scriptRowDelete':
+                case 'scriptTableCreate':
+                case 'scriptRowAsInsert':
+                case 'scriptRowAsUpdate':
+                case 'scriptRowAsDelete':
+                case 'deleteRowWithReferences': {
+                    let conn = message.connectionId || this.webviewSelectedConnection.get(panel.webview) || null;
+                    let db = message.database || undefined;
+                    if (conn && typeof conn === 'string' && conn.includes('::')) {
+                        const parts = conn.split('::');
+                        conn = parts[0];
+                        if (!db && parts.length > 1) { db = parts[1]; }
+                    }
+                    const label = message.schema ? `${message.schema}.${message.tableName || message.table}` : (message.tableName || message.table);
+                    const tableNode: any = { connectionId: conn, label, database: db };
+                    const cmdMap: Record<string, string> = {
+                        scriptRowDelete: 'mssqlManager.scriptRowDelete',
+                        scriptTableCreate: 'mssqlManager.scriptTableCreate',
+                        scriptRowAsInsert: 'mssqlManager.scriptRowInsert',
+                        scriptRowAsUpdate: 'mssqlManager.scriptRowUpdate',
+                        scriptRowAsDelete: 'mssqlManager.scriptRowDelete',
+                        deleteRowWithReferences: 'mssqlManager.scriptRowDelete'
+                    };
+                    const cmd = cmdMap[message.type];
+                    if (cmd) {
+                        if (message.type === 'scriptRowDelete' && message.rowData) {
+                            await vscode.commands.executeCommand(cmd, tableNode, message.rowData);
+                        } else {
+                            await vscode.commands.executeCommand(cmd, tableNode);
+                        }
+                    }
+                    break;
+                }
+
+                case 'showError':
+                    vscode.window.showErrorMessage(message.message);
+                    break;
+
+                case 'confirmAction': {
+                    const result = await vscode.window.showWarningMessage(
+                        message.message, { modal: true }, 'Yes', 'No'
+                    );
+                    if (result === 'Yes') {
+                        panel.webview.postMessage({ type: 'confirmActionResult', action: message.action, confirmed: true });
+                    }
+                    break;
+                }
+
+                case 'openInNewEditor':
+                    await this.openContentInNewEditor(message.content, message.language);
+                    break;
+
+                case 'saveFile':
+                    await this.saveFileToDisk(message.content, message.defaultFileName, message.fileType, message.encoding);
+                    break;
+
+                case 'getSnippets':
+                    panel.webview.postMessage({ type: 'snippetsUpdate', snippets: this.sqlSnippets });
+                    break;
+
+                case 'createSnippet':
+                    await this.createSnippetFromSelection(message.name, message.prefix, message.body, message.description);
+                    break;
+
+                case 'requestSnippetInput':
+                    await this.handleSnippetInputRequest(panel.webview, message.selectedText);
+                    break;
+
+                case 'openNewQuery': {
+                    let conn = message.connectionId || this.webviewSelectedConnection.get(panel.webview) || null;
+                    let db = message.database || undefined;
+                    if (conn && typeof conn === 'string' && conn.includes('::')) {
+                        const parts = conn.split('::');
+                        conn = parts[0];
+                        if (!db && parts.length > 1) { db = parts[1]; }
+                    }
+                    const connectionItem = { connectionId: conn, database: db, label: db || 'Query' };
+                    await vscode.commands.executeCommand('mssqlManager.newQuery', connectionItem, message.query, true);
+                    break;
+                }
+            }
+        });
+
+        // Clean up on dispose
+        panel.onDidDispose(() => {
+            this.disposedWebviews.add(panel.webview);
+            this.webviewToDocument.delete(panel.webview);
+            this.webviewSelectedConnection.delete(panel.webview);
+            this.untitledPanels.delete(panel);
+        });
+
+        // Listen for connection changes
+        this.connectionProvider.addConnectionChangeCallback(() => {
+            if (!this.disposedWebviews.has(panel.webview)) {
+                this.updateConnectionsList(panel.webview);
+            }
+        });
+
+        this.outputChannel.appendLine(`[SqlEditorProvider] Setup handlers for untitled query panel: ${compositeId}`);
+    }
+}
+
+/**
+ * Serializer for untitled query panels to restore them after VS Code restart
+ */
+export class UntitledQuerySerializer implements vscode.WebviewPanelSerializer {
+    constructor(
+        private readonly sqlEditorProvider: SqlEditorProvider
+    ) {}
+
+    async deserializeWebviewPanel(
+        webviewPanel: vscode.WebviewPanel,
+        state: { connectionId: string; databaseName?: string; content: string } | undefined
+    ): Promise<void> {
+        // Recreate the untitled query with saved state
+        if (state?.connectionId) {
+            // The panel is already created by VS Code, we need to reuse it
+            // So we'll call a method that sets up the existing panel
+            await this.sqlEditorProvider.restoreUntitledQuery(
+                webviewPanel,
+                state.connectionId,
+                state.databaseName,
+                state.content || ''
+            );
+        } else {
+            // No state available - create empty query
+            await this.sqlEditorProvider.restoreUntitledQuery(
+                webviewPanel,
+                '',
+                undefined,
+                ''
+            );
         }
     }
 }

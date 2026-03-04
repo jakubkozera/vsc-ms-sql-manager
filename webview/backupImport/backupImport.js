@@ -165,7 +165,18 @@ function handleBackupPathChange() {
 }
 
 function handleSuggestNewName() {
-    const baseName = originalDatabaseName || 'MyDatabase';
+    // Prefer the original DB name from backup metadata; fall back to the .bak filename
+    let baseName = originalDatabaseName;
+    if (!baseName) {
+        const filePath = backupPathInput.value.trim();
+        if (filePath) {
+            const sep = filePath.includes('\\') ? '\\' : '/';
+            const basename = filePath.split(sep).pop() || '';
+            baseName = basename.replace(/\.bak$/i, '') || 'MyDatabase';
+        } else {
+            baseName = 'MyDatabase';
+        }
+    }
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_');
     const suggestedName = baseName + '_Restored_' + timestamp;
     targetDatabaseInput.value = suggestedName;
@@ -467,6 +478,16 @@ window.addEventListener('message', event => {
                 fileFormatSelect.value = 'bacpac';
             } else if (fileExtension.endsWith('.bak')) {
                 fileFormatSelect.value = 'bak';
+                // Auto-fill Target Database name from the .bak filename (only if field is empty)
+                if (!targetDatabaseInput.value.trim()) {
+                    const sep = message.path.includes('\\') ? '\\' : '/';
+                    const basename = message.path.split(sep).pop() || '';
+                    const dbName = basename.replace(/\.bak$/i, '');
+                    if (dbName) {
+                        targetDatabaseInput.value = dbName;
+                        handleTargetDatabaseChange();
+                    }
+                }
             }
             
             // Update format options and handle path change
