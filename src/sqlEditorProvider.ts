@@ -1995,7 +1995,9 @@ COMMIT TRANSACTION;
         this.webviewToDocument.set(panel.webview, syntheticUri);
         this.webviewSelectedConnection.set(panel.webview, compositeId);
 
-        panel.webview.html = this.getHtmlForWebview(panel.webview);
+        panel.webview.html = this.useReactWebview
+            ? this.getReactHtmlForWebview(panel.webview)
+            : this.getHtmlForWebview(panel.webview);
 
         // Setup state for serialization/restoration
         this.setupUntitledPanelHandlers(panel, connectionId, databaseName, initialQuery || '', autoExecute);
@@ -2028,7 +2030,9 @@ COMMIT TRANSACTION;
         };
 
         // Setup the restored panel
-        panel.webview.html = this.getHtmlForWebview(panel.webview);
+        panel.webview.html = this.useReactWebview
+            ? this.getReactHtmlForWebview(panel.webview)
+            : this.getHtmlForWebview(panel.webview);
         
         // Get connection config to determine base title
         const config = this.connectionProvider.getConnectionConfig(connectionId);

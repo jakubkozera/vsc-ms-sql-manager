@@ -1,10 +1,15 @@
 .grid-header {
-  position: -webkit-sticky !important;
-  position: sticky !important;
-  top: 0 !important;
-  z-index: 100 !important;
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 100;
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  display: table-header-group;
+}
+
+.grid-header tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .grid-header-cell {

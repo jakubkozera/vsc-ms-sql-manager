@@ -668,7 +668,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
 
   return (
     <div 
-      className="data-grid-container" 
+      className={`data-grid-container ${isSingleResultSet ? 'full-height' : ''}`}
       data-testid="data-grid"
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -698,6 +698,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
             columns={columnDefs}
             sortConfig={sortConfig}
             filters={filters}
+            tableWidth={totalTableWidth}
             onSort={handleSort}
             onResize={handleColumnResize}
             onFilterClick={handleFilterClick}

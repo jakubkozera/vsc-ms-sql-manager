@@ -6,6 +6,7 @@ interface GridHeaderProps {
   columns: ColumnDef[];
   sortConfig: SortConfig | null;
   filters?: Record<string, FilterConfig>;
+  tableWidth?: number;
   onSort: (column: string) => void;
   onResize: (column: string, width: number) => void;
   onFilterClick?: (column: ColumnDef, e: React.MouseEvent) => void;
@@ -19,6 +20,7 @@ function GridHeaderComponent({
   columns, 
   sortConfig, 
   filters = {},
+  tableWidth,
   onSort, 
   onResize,
   onFilterClick,
@@ -61,7 +63,7 @@ function GridHeaderComponent({
 
   return (
     <thead className="grid-header">
-      <tr>
+      <tr style={tableWidth ? { width: `${tableWidth}px` } : undefined}>
         {/* Row number column - click for export menu */}
         <th 
           className="grid-header-cell row-number-header" 

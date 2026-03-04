@@ -8,8 +8,10 @@
 
 .results-content {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .results-grids-container {
@@ -17,7 +19,9 @@
   flex-direction: column;
   gap: 0;
   padding: 0;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .result-set-wrapper {
