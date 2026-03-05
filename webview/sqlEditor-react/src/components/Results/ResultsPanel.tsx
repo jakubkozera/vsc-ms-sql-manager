@@ -30,6 +30,7 @@ export function ResultsPanel() {
     lastMessages,
     lastPlanXml,
     lastError,
+    lastErrorId,
     executionTime,
     rowsAffected,
     isExecuting,
@@ -61,12 +62,13 @@ export function ResultsPanel() {
     }
   }, [pendingChanges.hasPendingChanges, activeTab]);
 
-  // Auto-switch to messages tab when an error arrives (e.g. commit failure)
+  // Auto-switch to messages when a commit fails:
+  // If an error arrives while pending changes still exist, the commit failed → go to messages
   useEffect(() => {
-    if (lastError && activeTab === 'pendingChanges') {
+    if (lastErrorId > 0 && pendingChanges.hasPendingChanges) {
       setActiveTab('messages');
     }
-  }, [lastError]);
+  }, [lastErrorId]);
 
   // Selection aggregation state
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo>({ values: [], rowCount: 0 });

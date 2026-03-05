@@ -55,6 +55,7 @@ interface VSCodeState {
   lastMetadata: ResultSetMetadata[] | null;
   lastMessages: QueryMessage[];
   lastError: string | null;
+  lastErrorId: number;
   lastPlanXml: string | null;
   executionTime: number | null;
   rowsAffected: number | null;
@@ -102,6 +103,7 @@ const initialState: VSCodeState = {
   lastMetadata: null,
   lastMessages: [],
   lastError: null,
+  lastErrorId: 0,
   lastPlanXml: null,
   executionTime: null,
   rowsAffected: null,
@@ -201,6 +203,7 @@ function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
         ...state,
         isExecuting: false,
         lastError: action.error,
+        lastErrorId: state.lastErrorId + 1,
         lastMessages: action.messages ?? [{ type: 'error', text: action.error }],
       };
       
