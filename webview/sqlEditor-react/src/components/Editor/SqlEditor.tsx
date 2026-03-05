@@ -10,12 +10,14 @@ import {
   builtInSnippets,
   analyzeSqlContext,
   extractTablesFromQuery,
+  findTable,
   findTableForAlias,
   getColumnsForTable,
   getRelatedTables,
   generateSmartAlias,
   getSqlOperators,
   getAggregateFunctions,
+  provideHoverContent,
 } from '../../services';
 import './SqlEditor.css';
 
@@ -34,13 +36,69 @@ interface SqlEditorProps {
 
 type MonacoType = typeof import('monaco-editor');
 
+/**
+ * Helper: find the table at a given editor cursor position.
+ * Works by getting the word under cursor and checking it against the schema.
+ * Uses a provided dbSchema to avoid stale closure over the component's state.
+ */
+function findTableAtCursorPosition(
+  ed: Pick<editor.IStandaloneCodeEditor, 'getModel' | 'getPosition'>,
+  position: { lineNumber: number; column: number } | null,
+  schema?: import('../../types/schema').DatabaseSchema
+): { schema: string; table: string } | null {
+  if (!position) return null;
+  const model = ed.getModel();
+  if (!model) return null;
+
+  const wordInfo = model.getWordAtPosition(position);
+  console.log('[findTableAtCursorPosition] wordInfo:', wordInfo);
+  if (!wordInfo?.word) return null;
+
+  const rawWord = wordInfo.word;
+
+  // Strip brackets/quotes if present
+  let normalizedName = rawWord.trim();
+  if (
+    (normalizedName.startsWith('[') && normalizedName.endsWith(']')) ||
+    (normalizedName.startsWith('"') && normalizedName.endsWith('"'))
+  ) {
+    normalizedName = normalizedName.substring(1, normalizedName.length - 1);
+  }
+
+  console.log('[findTableAtCursorPosition] normalizedName:', normalizedName);
+
+  if (schema) {
+    const result = findTable(normalizedName, schema);
+    console.log('[findTableAtCursorPosition] findTable result:', result);
+    return result;
+  }
+
+  return null;
+}
+
 export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
   ({ onExecute, initialValue = '' }, ref) => {
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
     const monacoRef = useRef<MonacoType | null>(null);
     const [editorReady, setEditorReady] = useState(false);
+    const lastContextPositionRef = useRef<{ lineNumber: number; column: number } | null>(null);
+    const tableAtCursorContextKeyRef = useRef<any>(null);
     const { dbSchema, requestPaste, pasteContent, clearPasteContent, postMessage, currentConnectionId, currentDatabase } = useVSCode();
+    const dbSchemaRef = useRef(dbSchema);
+    const currentConnectionIdRef = useRef(currentConnectionId);
+    const currentDatabaseRef = useRef(currentDatabase);
     const formatOptions = useFormatOptions();
+
+    // Keep refs in sync so that Monaco callbacks always see fresh state
+    useEffect(() => {
+      dbSchemaRef.current = dbSchema;
+    }, [dbSchema]);
+    useEffect(() => {
+      currentConnectionIdRef.current = currentConnectionId;
+    }, [currentConnectionId]);
+    useEffect(() => {
+      currentDatabaseRef.current = currentDatabase;
+    }, [currentDatabase]);
 
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
@@ -211,6 +269,122 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
             connectionId: currentConnectionId || null,
             databaseName: currentDatabase || null,
           });
+        },
+      });
+
+      // Create context key for table at cursor (for conditional context menu items)
+      if (typeof editor.createContextKey === 'function') {
+        tableAtCursorContextKeyRef.current = editor.createContextKey('tableAtCursor', false);
+      }
+
+      // Track right-click position for context menu actions
+      editor.onMouseDown((e: any) => {
+        try {
+          let isRight = false;
+          try {
+            if (e.event) {
+              isRight = !!(e.event.rightButton || e.event.button === 2 || e.event.which === 3);
+            }
+          } catch (_inner) {
+            isRight = false;
+          }
+
+          if (isRight) {
+            const pos = (e.target && e.target.position) ? e.target.position : editor.getPosition();
+            lastContextPositionRef.current = pos;
+            console.log('[SqlEditor] Right-click at position', pos);
+
+            // Check if there's a table at cursor position for conditional context menu
+            const tableInfo = findTableAtCursorPosition(editor, pos, dbSchemaRef.current);
+            tableAtCursorContextKeyRef.current?.set(!!tableInfo);
+            console.log('[SqlEditor] Table at cursor:', !!tableInfo, tableInfo);
+          }
+        } catch (err) {
+          console.error('[SqlEditor] Error in onMouseDown handler', err);
+        }
+      });
+
+      // Script as INSERT action
+      editor.addAction({
+        id: 'mssqlmanager.scriptRowAsInsert',
+        label: 'Script as INSERT',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.1,
+        precondition: 'tableAtCursor',
+        run: (ed) => {
+          try {
+            const position = lastContextPositionRef.current || ed.getPosition();
+            const tableInfo = findTableAtCursorPosition(ed, position, dbSchemaRef.current);
+            if (tableInfo) {
+              console.log('[SqlEditor] Script as INSERT for:', tableInfo);
+              postMessage({
+                type: 'scriptRowAsInsert',
+                schema: tableInfo.schema,
+                table: tableInfo.table,
+                connectionId: currentConnectionIdRef.current || '',
+                database: currentDatabaseRef.current || '',
+              });
+            }
+          } catch (error) {
+            console.error('[SqlEditor] Error in Script as INSERT:', error);
+          }
+        },
+      });
+
+      // Script as UPDATE action
+      editor.addAction({
+        id: 'mssqlmanager.scriptRowAsUpdate',
+        label: 'Script as UPDATE',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.2,
+        precondition: 'tableAtCursor',
+        run: (ed) => {
+          try {
+            const position = lastContextPositionRef.current || ed.getPosition();
+            const tableInfo = findTableAtCursorPosition(ed, position, dbSchemaRef.current);
+            if (tableInfo) {
+              console.log('[SqlEditor] Script as UPDATE for:', tableInfo);
+              postMessage({
+                type: 'scriptRowAsUpdate',
+                schema: tableInfo.schema,
+                table: tableInfo.table,
+                connectionId: currentConnectionIdRef.current || '',
+                database: currentDatabaseRef.current || '',
+              });
+            }
+          } catch (error) {
+            console.error('[SqlEditor] Error in Script as UPDATE:', error);
+          }
+        },
+      });
+
+      // Script as DELETE action
+      editor.addAction({
+        id: 'mssqlmanager.scriptRowAsDelete',
+        label: 'Script as DELETE',
+        keybindings: [],
+        contextMenuGroupId: 'script',
+        contextMenuOrder: 1.3,
+        precondition: 'tableAtCursor',
+        run: (ed) => {
+          try {
+            const position = lastContextPositionRef.current || ed.getPosition();
+            const tableInfo = findTableAtCursorPosition(ed, position, dbSchemaRef.current);
+            if (tableInfo) {
+              console.log('[SqlEditor] Script as DELETE for:', tableInfo);
+              postMessage({
+                type: 'scriptRowAsDelete',
+                schema: tableInfo.schema,
+                table: tableInfo.table,
+                connectionId: currentConnectionIdRef.current || '',
+                database: currentDatabaseRef.current || '',
+              });
+            }
+          } catch (error) {
+            console.error('[SqlEditor] Error in Script as DELETE:', error);
+          }
         },
       });
 
@@ -672,6 +846,23 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       });
       disposables.push(completionProvider);
 
+      // Register SQL hover provider — shows table/column schema on hover
+      console.log('[SQL-HOVER] Registering hover provider');
+      const hoverProvider = monacoInstance.languages.registerHoverProvider('sql', {
+        provideHover: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
+          try {
+            const fullText = model.getValue();
+            const lineText = model.getLineContent(position.lineNumber);
+            const wordObj = model.getWordAtPosition(position);
+            return provideHoverContent(fullText, lineText, position, wordObj, dbSchema);
+          } catch (err) {
+            console.error('[SQL-HOVER] Error in hover provider', err);
+          }
+          return null;
+        },
+      });
+      disposables.push(hoverProvider);
+
       // Set up validation on content change
       const validationDisposable = editorRef.current?.onDidChangeModelContent(() => {
         const model = editorRef.current?.getModel();
@@ -710,7 +901,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       return () => {
         disposables.forEach((d) => d.dispose());
       };
-    }, [dbSchema]);
+    }, [dbSchema, editorReady]);
 
     return (
       <div className="sql-editor-container">

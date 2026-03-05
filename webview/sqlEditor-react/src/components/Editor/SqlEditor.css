@@ -69,3 +69,27 @@
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover {
   background-color: var(--vscode-list-hoverBackground) !important;
 }
+
+/* Hover widget markdown table styling */
+.monaco-editor .monaco-hover-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.monaco-editor .monaco-hover-content th,
+.monaco-editor .monaco-hover-content td {
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  padding: 3px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.monaco-editor .monaco-hover-content th {
+  background-color: rgba(255, 255, 255, 0.06);
+  font-weight: 600;
+}
+
+.monaco-editor .monaco-hover-content tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.03);
+}

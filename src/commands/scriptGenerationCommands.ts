@@ -477,13 +477,17 @@ async function generateTableSchemaScript(
             SELECT 
                 kc.name AS constraint_name,
                 i.type_desc,
-                STRING_AGG(CAST(c.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+                STUFF((
+                    SELECT ', ' + CAST(c2.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic2.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END
+                    FROM sys.index_columns ic2
+                    INNER JOIN sys.columns c2 ON ic2.object_id = c2.object_id AND ic2.column_id = c2.column_id
+                    WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id
+                    ORDER BY ic2.key_ordinal
+                    FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS columns
             FROM sys.key_constraints kc
             INNER JOIN sys.indexes i ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
-            INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-            INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
             WHERE kc.parent_object_id = OBJECT_ID('[${table.schema}].[${table.name}]') AND kc.type = 'PK'
-            GROUP BY kc.name, i.type_desc
+            GROUP BY kc.name, i.type_desc, i.object_id, i.index_id
         `;
         const pkResult = await connection.request().query(pkQuery);
 
@@ -499,14 +503,18 @@ async function generateTableSchemaScript(
                 i.name AS index_name,
                 i.type_desc,
                 i.is_unique,
-                STRING_AGG(CAST(c.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+                STUFF((
+                    SELECT ', ' + CAST(c2.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic2.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END
+                    FROM sys.index_columns ic2
+                    INNER JOIN sys.columns c2 ON ic2.object_id = c2.object_id AND ic2.column_id = c2.column_id
+                    WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id
+                    ORDER BY ic2.key_ordinal
+                    FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS columns
             FROM sys.indexes i
-            INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-            INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
             WHERE i.object_id = OBJECT_ID('[${table.schema}].[${table.name}]') 
                 AND i.is_primary_key = 0 
                 AND i.type > 0
-            GROUP BY i.name, i.type_desc, i.is_unique
+            GROUP BY i.name, i.type_desc, i.is_unique, i.object_id, i.index_id
         `;
         const indexResult = await connection.request().query(indexQuery);
 
@@ -522,16 +530,25 @@ async function generateTableSchemaScript(
                 fk.name AS constraint_name,
                 OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
                 OBJECT_NAME(fk.referenced_object_id) AS ref_table,
-                STRING_AGG(CAST(c.name AS NVARCHAR(MAX)), ', ') AS columns,
-                STRING_AGG(CAST(rc.name AS NVARCHAR(MAX)), ', ') AS ref_columns,
+                STUFF((
+                    SELECT ', ' + CAST(c2.name AS NVARCHAR(MAX))
+                    FROM sys.foreign_key_columns fkc2
+                    INNER JOIN sys.columns c2 ON fkc2.parent_object_id = c2.object_id AND fkc2.parent_column_id = c2.column_id
+                    WHERE fkc2.constraint_object_id = fk.object_id
+                    ORDER BY fkc2.constraint_column_id
+                    FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS columns,
+                STUFF((
+                    SELECT ', ' + CAST(rc2.name AS NVARCHAR(MAX))
+                    FROM sys.foreign_key_columns fkc2
+                    INNER JOIN sys.columns rc2 ON fkc2.referenced_object_id = rc2.object_id AND fkc2.referenced_column_id = rc2.column_id
+                    WHERE fkc2.constraint_object_id = fk.object_id
+                    ORDER BY fkc2.constraint_column_id
+                    FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS ref_columns,
                 fk.delete_referential_action_desc,
                 fk.update_referential_action_desc
             FROM sys.foreign_keys fk
-            INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-            INNER JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
-            INNER JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
             WHERE fk.parent_object_id = OBJECT_ID('[${table.schema}].[${table.name}]')
-            GROUP BY fk.name, fk.referenced_object_id, fk.delete_referential_action_desc, fk.update_referential_action_desc
+            GROUP BY fk.name, fk.object_id, fk.referenced_object_id, fk.delete_referential_action_desc, fk.update_referential_action_desc
         `;
         const fkResult = await connection.request().query(fkQuery);
 

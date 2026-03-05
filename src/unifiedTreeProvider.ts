@@ -1645,10 +1645,14 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             
             // Get Keys
             const keysQuery = `
-                SELECT tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE, STRING_AGG(kcu.COLUMN_NAME, ', ') AS COLUMNS
+                SELECT tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE,
+                    STUFF((
+                        SELECT ', ' + kcu2.COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu2
+                        WHERE kcu2.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND kcu2.TABLE_SCHEMA = tc.TABLE_SCHEMA
+                        ORDER BY kcu2.ORDINAL_POSITION
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS COLUMNS
                 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
-                    ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
                 WHERE tc.TABLE_NAME = '${tableName}' AND tc.TABLE_SCHEMA = '${schema}'
                     AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
                 GROUP BY tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE
@@ -1717,12 +1721,16 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             // Get Indexes
             const indexesQuery = `
                 SELECT i.name, i.type_desc, i.is_unique, i.is_primary_key,
-                       STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+                       STUFF((
+                           SELECT ', ' + c2.name
+                           FROM sys.index_columns ic2
+                           INNER JOIN sys.columns c2 ON ic2.object_id = c2.object_id AND ic2.column_id = c2.column_id
+                           WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id
+                           ORDER BY ic2.key_ordinal
+                           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS columns
                 FROM sys.indexes i
-                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
                 WHERE i.object_id = OBJECT_ID('${schema}.${tableName}') AND i.type > 0
-                GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
+                GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key, i.object_id, i.index_id
             `;
             const indexesResult = await (dbPool ? dbPool.request().query(indexesQuery) : connection.request().query(indexesQuery));
             
@@ -1742,12 +1750,16 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
             // Get Statistics
             const statisticsQuery = `
                 SELECT s.name, s.auto_created, s.user_created,
-                       STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY sc.stats_column_id) AS columns
+                       STUFF((
+                           SELECT ', ' + c2.name
+                           FROM sys.stats_columns sc2
+                           INNER JOIN sys.columns c2 ON sc2.object_id = c2.object_id AND sc2.column_id = c2.column_id
+                           WHERE sc2.object_id = s.object_id AND sc2.stats_id = s.stats_id
+                           ORDER BY sc2.stats_column_id
+                           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS columns
                 FROM sys.stats s
-                INNER JOIN sys.stats_columns sc ON s.object_id = sc.object_id AND s.stats_id = sc.stats_id
-                INNER JOIN sys.columns c ON sc.object_id = c.object_id AND sc.column_id = c.column_id
                 WHERE s.object_id = OBJECT_ID('${schema}.${tableName}')
-                GROUP BY s.name, s.auto_created, s.user_created
+                GROUP BY s.name, s.auto_created, s.user_created, s.object_id, s.stats_id
             `;
             const statisticsResult = await (dbPool ? dbPool.request().query(statisticsQuery) : connection.request().query(statisticsQuery));
             
@@ -2033,12 +2045,16 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     s.name,
                     s.auto_created,
                     s.user_created,
-                    STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY sc.stats_column_id) AS columns
+                    STUFF((
+                        SELECT ', ' + c2.name
+                        FROM sys.stats_columns sc2
+                        INNER JOIN sys.columns c2 ON sc2.object_id = c2.object_id AND sc2.column_id = c2.column_id
+                        WHERE sc2.object_id = s.object_id AND sc2.stats_id = s.stats_id
+                        ORDER BY sc2.stats_column_id
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS columns
                 FROM sys.stats s
-                INNER JOIN sys.stats_columns sc ON s.object_id = sc.object_id AND s.stats_id = sc.stats_id
-                INNER JOIN sys.columns c ON sc.object_id = c.object_id AND sc.column_id = c.column_id
                 WHERE s.object_id = OBJECT_ID('${schema}.${tableName}')
-                GROUP BY s.name, s.auto_created, s.user_created
+                GROUP BY s.name, s.auto_created, s.user_created, s.object_id, s.stats_id
             `;
             const statisticsResult = await (dbPool ? dbPool.request().query(statisticsQuery) : connection.request().query(statisticsQuery));
             

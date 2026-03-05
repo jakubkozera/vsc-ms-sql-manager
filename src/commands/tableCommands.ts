@@ -236,15 +236,19 @@ export function registerTableCommands(
                 SELECT 
                     kc.name AS constraint_name,
                     i.type_desc,
-                    STRING_AGG(CAST(c.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END, ',\n\t') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns,
+                    STUFF((
+                        SELECT ',\n\t' + CAST(c2.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic2.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END
+                        FROM sys.index_columns ic2
+                        INNER JOIN sys.columns c2 ON ic2.object_id = c2.object_id AND ic2.column_id = c2.column_id
+                        WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id
+                        ORDER BY ic2.key_ordinal
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 3, '') AS columns,
                     ISNULL(ds.name, 'PRIMARY') AS data_space
                 FROM sys.key_constraints kc
                 INNER JOIN sys.indexes i ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
-                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
                 LEFT JOIN sys.data_spaces ds ON i.data_space_id = ds.data_space_id
                 WHERE kc.parent_object_id = OBJECT_ID('[${schema}].[${table}]') AND kc.type = 'PK'
-                GROUP BY kc.name, i.type_desc, ds.name;
+                GROUP BY kc.name, i.type_desc, ds.name, i.object_id, i.index_id;
             `;
             const pkResult = await queryConnection.request().query(pkQuery);
             
@@ -260,16 +264,20 @@ export function registerTableCommands(
                     i.name AS index_name,
                     i.type_desc,
                     i.is_unique,
-                    STRING_AGG(CAST(c.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END, ',\n\t') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns,
+                    STUFF((
+                        SELECT ',\n\t' + CAST(c2.name AS NVARCHAR(MAX)) + ' ' + CASE WHEN ic2.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END
+                        FROM sys.index_columns ic2
+                        INNER JOIN sys.columns c2 ON ic2.object_id = c2.object_id AND ic2.column_id = c2.column_id
+                        WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id
+                        ORDER BY ic2.key_ordinal
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 3, '') AS columns,
                     ISNULL(ds.name, 'PRIMARY') AS data_space
                 FROM sys.indexes i
-                INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-                INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
                 LEFT JOIN sys.data_spaces ds ON i.data_space_id = ds.data_space_id
                 WHERE i.object_id = OBJECT_ID('[${schema}].[${table}]') 
                     AND i.is_primary_key = 0 
                     AND i.type > 0
-                GROUP BY i.name, i.type_desc, i.is_unique, ds.name;
+                GROUP BY i.name, i.type_desc, i.is_unique, ds.name, i.object_id, i.index_id;
             `;
             const indexResult = await queryConnection.request().query(indexQuery);
             
@@ -291,16 +299,25 @@ export function registerTableCommands(
                     fk.name AS constraint_name,
                     OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
                     OBJECT_NAME(fk.referenced_object_id) AS ref_table,
-                    STRING_AGG(CAST(c.name AS NVARCHAR(MAX)), ', ') AS columns,
-                    STRING_AGG(CAST(rc.name AS NVARCHAR(MAX)), ', ') AS ref_columns,
+                    STUFF((
+                        SELECT ', ' + CAST(c2.name AS NVARCHAR(MAX))
+                        FROM sys.foreign_key_columns fkc2
+                        INNER JOIN sys.columns c2 ON fkc2.parent_object_id = c2.object_id AND fkc2.parent_column_id = c2.column_id
+                        WHERE fkc2.constraint_object_id = fk.object_id
+                        ORDER BY fkc2.constraint_column_id
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS columns,
+                    STUFF((
+                        SELECT ', ' + CAST(rc2.name AS NVARCHAR(MAX))
+                        FROM sys.foreign_key_columns fkc2
+                        INNER JOIN sys.columns rc2 ON fkc2.referenced_object_id = rc2.object_id AND fkc2.referenced_column_id = rc2.column_id
+                        WHERE fkc2.constraint_object_id = fk.object_id
+                        ORDER BY fkc2.constraint_column_id
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS ref_columns,
                     fk.delete_referential_action_desc,
                     fk.update_referential_action_desc
                 FROM sys.foreign_keys fk
-                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-                INNER JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
-                INNER JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
                 WHERE fk.parent_object_id = OBJECT_ID('[${schema}].[${table}]')
-                GROUP BY fk.name, fk.referenced_object_id, fk.delete_referential_action_desc, fk.update_referential_action_desc;
+                GROUP BY fk.name, fk.object_id, fk.referenced_object_id, fk.delete_referential_action_desc, fk.update_referential_action_desc;
             `;
             const fkResult = await queryConnection.request().query(fkQuery);
             
@@ -627,17 +644,25 @@ GO`;
                     h.target_table,
                     h.parent_object_id,
                     h.referenced_object_id,
-                    STRING_AGG(CAST(pc.name AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS ref_columns,
-                    STRING_AGG(CAST(rc.name AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS target_columns,
+                    STUFF((
+                        SELECT ', ' + CAST(pc2.name AS NVARCHAR(MAX))
+                        FROM sys.foreign_keys fk2
+                        INNER JOIN sys.foreign_key_columns fkc2 ON fk2.object_id = fkc2.constraint_object_id
+                        INNER JOIN sys.columns pc2 ON fkc2.parent_object_id = pc2.object_id AND fkc2.parent_column_id = pc2.column_id
+                        WHERE fk2.parent_object_id = h.parent_object_id AND fk2.referenced_object_id = h.referenced_object_id
+                        ORDER BY fkc2.constraint_column_id
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS ref_columns,
+                    STUFF((
+                        SELECT ', ' + CAST(rc2.name AS NVARCHAR(MAX))
+                        FROM sys.foreign_keys fk2
+                        INNER JOIN sys.foreign_key_columns fkc2 ON fk2.object_id = fkc2.constraint_object_id
+                        INNER JOIN sys.columns rc2 ON fkc2.referenced_object_id = rc2.object_id AND fkc2.referenced_column_id = rc2.column_id
+                        WHERE fk2.parent_object_id = h.parent_object_id AND fk2.referenced_object_id = h.referenced_object_id
+                        ORDER BY fkc2.constraint_column_id
+                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS target_columns,
                     h.level,
                     h.path
                 FROM FKHierarchy h
-                INNER JOIN sys.foreign_keys fk ON 
-                    fk.parent_object_id = h.parent_object_id AND
-                    fk.referenced_object_id = h.referenced_object_id
-                INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-                INNER JOIN sys.columns pc ON fkc.parent_object_id = pc.object_id AND fkc.parent_column_id = pc.column_id
-                INNER JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
                 GROUP BY h.ref_schema, h.ref_table, h.target_schema, h.target_table, h.level, h.path, h.parent_object_id, h.referenced_object_id
                 ORDER BY level DESC, h.ref_schema, h.ref_table;
             `;

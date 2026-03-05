@@ -255,6 +255,30 @@ export interface NewQueryFromWebviewOutgoing {
   databaseName: string | null;
 }
 
+export interface ScriptRowAsInsertOutgoing {
+  type: 'scriptRowAsInsert';
+  schema: string;
+  table: string;
+  connectionId: string;
+  database: string;
+}
+
+export interface ScriptRowAsUpdateOutgoing {
+  type: 'scriptRowAsUpdate';
+  schema: string;
+  table: string;
+  connectionId: string;
+  database: string;
+}
+
+export interface ScriptRowAsDeleteOutgoing {
+  type: 'scriptRowAsDelete';
+  schema: string;
+  table: string;
+  connectionId: string;
+  database: string;
+}
+
 // Union of all outgoing message types
 export type OutgoingMessage =
   | ExecuteQueryOutgoing
@@ -274,7 +298,10 @@ export type OutgoingMessage =
   | ReadyOutgoing
   | SaveFileOutgoing
   | SaveQueryOutgoing
-  | NewQueryFromWebviewOutgoing;
+  | NewQueryFromWebviewOutgoing
+  | ScriptRowAsInsertOutgoing
+  | ScriptRowAsUpdateOutgoing
+  | ScriptRowAsDeleteOutgoing;
 
 // ============================================
 // Supporting Types
