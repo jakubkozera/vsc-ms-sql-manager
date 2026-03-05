@@ -13,6 +13,10 @@ interface GridRowProps {
   isRowDeleted?: boolean;
   expandedColumns?: string[]; // Column names that are currently expanded
   calculatePinnedOffset?: (colIndex: number) => number;
+  /** Column index to trigger editing from context menu */
+  editingColIndex?: number;
+  /** Called when editing triggered by context menu is complete */
+  onEditingComplete?: () => void;
   style?: CSSProperties;
   onClick?: (rowIndex: number, e: React.MouseEvent) => void;
   onCellClick?: (rowIndex: number, colIndex: number, value: any, e: React.MouseEvent) => void;
@@ -31,6 +35,8 @@ function GridRowComponent({
   isRowDeleted = false,
   expandedColumns = [],
   calculatePinnedOffset,
+  editingColIndex,
+  onEditingComplete,
   style,
   onClick,
   onCellClick,
@@ -80,8 +86,15 @@ function GridRowComponent({
       onClick={handleRowClick}
       onContextMenu={(e) => handleContextMenu(e)}
     >
-      {/* Row number cell */}
-      <td className="grid-cell row-number-cell">
+      {/* Row number cell - right-click opens row context menu */}
+      <td 
+        className="grid-cell row-number-cell"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onContextMenu?.(e, rowIndex);
+        }}
+      >
         {rowIndex + 1}
       </td>
 
@@ -104,6 +117,8 @@ function GridRowComponent({
             isEditable={!isRowDeleted}
             isExpanded={isExpanded}
             pinnedOffset={pinnedOffset}
+            forceEdit={editingColIndex === colIndex}
+            onForceEditComplete={onEditingComplete}
             onClick={(e) => handleCellClick(colIndex, row[colIndex], e)}
             onContextMenu={(e) => handleContextMenu(e, colIndex)}
             onCellEdit={onCellEdit ? (newValue) => handleCellEdit(colIndex, column.name, newValue) : undefined}
@@ -145,6 +160,12 @@ function arePropsEqual(prev: GridRowProps, next: GridRowProps): boolean {
   
   // Selection function reference changes when selection state changes
   if (prev.isCellSelected !== next.isCellSelected) return false;
+  
+  // Cell modified function reference changes when pending changes state changes
+  if (prev.isCellModified !== next.isCellModified) return false;
+  
+  // Editing from context menu
+  if (prev.editingColIndex !== next.editingColIndex) return false;
   
   // Style changes (top position is critical for virtual scrolling)
   if (prev.style?.top !== next.style?.top) return false;

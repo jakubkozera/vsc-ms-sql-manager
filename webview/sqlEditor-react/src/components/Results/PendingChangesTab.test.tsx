@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '../../test/testUtils';
+import { render, screen, fireEvent } from '../../test/testUtils';
 import { PendingChangesTab } from './PendingChangesTab';
 import { RowChange } from '../../hooks/usePendingChanges';
 
 describe('PendingChangesTab', () => {
   const sampleColumns = ['id', 'name', 'email'];
+  const samplePKColumns = ['id'];
   
   const createRowChange = (
     rowIndex: number, 
@@ -21,10 +22,15 @@ describe('PendingChangesTab', () => {
     changes: [],
     columns: sampleColumns,
     tableName: 'Users',
+    schemaName: 'dbo',
+    primaryKeyColumns: samplePKColumns,
     onRevertRow: vi.fn(),
     onRevertCell: vi.fn(),
     onRevertAll: vi.fn(),
     onCommit: vi.fn(),
+    onCommitRow: vi.fn(),
+    onPreviewSql: vi.fn(),
+    generateRowSql: vi.fn(() => 'UPDATE [dbo].[Users]\nSET     [name] = \'Jane\'\nWHERE [id] = 1;'),
   };
   
   it('shows empty state when no changes', () => {
@@ -34,7 +40,7 @@ describe('PendingChangesTab', () => {
     expect(screen.getByText('No pending changes')).toBeInTheDocument();
   });
   
-  it('shows modified rows', () => {
+  it('shows modified rows with table name and WHERE clause', () => {
     const changes: RowChange[] = [
       createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
     ];
@@ -42,45 +48,46 @@ describe('PendingChangesTab', () => {
     render(<PendingChangesTab {...defaultProps} changes={changes} />);
     
     expect(screen.getByTestId('pending-changes-tab')).toBeInTheDocument();
-    expect(screen.getByText('UPDATE')).toBeInTheDocument();
-    expect(screen.getByText('Row 1')).toBeInTheDocument();
+    expect(screen.getByText(/dbo\.Users - 1 change - Row WHERE \[id\] = 1/)).toBeInTheDocument();
   });
   
-  it('shows deleted rows', () => {
+  it('shows deleted rows with WHERE clause', () => {
     const changes: RowChange[] = [
       createRowChange(0, [], true),
     ];
     
     render(<PendingChangesTab {...defaultProps} changes={changes} />);
     
-    expect(screen.getByText('DELETE')).toBeInTheDocument();
     expect(screen.getByTestId('delete-row-0')).toBeInTheDocument();
+    expect(screen.getByText(/dbo\.Users - Row WHERE \[id\] = 1/)).toBeInTheDocument();
   });
   
-  it('shows cell change details', () => {
+  it('shows single cell change with Column/Old value/New value format', () => {
     const changes: RowChange[] = [
       createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
     ];
     
     render(<PendingChangesTab {...defaultProps} changes={changes} />);
     
-    expect(screen.getByText('name:')).toBeInTheDocument();
+    expect(screen.getByText('Column:')).toBeInTheDocument();
+    expect(screen.getByText('name')).toBeInTheDocument();
+    expect(screen.getByText('Old value:')).toBeInTheDocument();
     expect(screen.getByText('John')).toBeInTheDocument();
+    expect(screen.getByText('New value:')).toBeInTheDocument();
     expect(screen.getByText('Jane')).toBeInTheDocument();
-    expect(screen.getByText('→')).toBeInTheDocument();
   });
   
-  it('shows table name', () => {
+  it('shows table name with schema in change location', () => {
     const changes: RowChange[] = [
       createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
     ];
     
-    render(<PendingChangesTab {...defaultProps} changes={changes} tableName="Customers" />);
+    render(<PendingChangesTab {...defaultProps} changes={changes} tableName="Customers" schemaName="sales" />);
     
-    expect(screen.getByText('Customers')).toBeInTheDocument();
+    expect(screen.getByText(/sales\.Customers/)).toBeInTheDocument();
   });
   
-  it('shows change counts', () => {
+  it('shows pending changes count in header', () => {
     const changes: RowChange[] = [
       createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
       createRowChange(1, [['email', { original: 'a@a.com', new: 'b@b.com' }]]),
@@ -89,22 +96,10 @@ describe('PendingChangesTab', () => {
     
     render(<PendingChangesTab {...defaultProps} changes={changes} />);
     
-    expect(screen.getByText('2 modified')).toBeInTheDocument();
-    expect(screen.getByText('1 deleted')).toBeInTheDocument();
+    expect(screen.getByText('3 Pending Changes')).toBeInTheDocument();
   });
   
-  it('shows SQL preview', () => {
-    const changes: RowChange[] = [
-      createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
-    ];
-    
-    render(<PendingChangesTab {...defaultProps} changes={changes} />);
-    
-    expect(screen.getByText('SQL Preview')).toBeInTheDocument();
-    expect(screen.getByText(/UPDATE \[Users\]/)).toBeInTheDocument();
-  });
-  
-  it('calls onRevertRow when Revert button clicked', () => {
+  it('calls onRevertRow when row revert button clicked', () => {
     const onRevertRow = vi.fn();
     const changes: RowChange[] = [
       createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
@@ -112,12 +107,12 @@ describe('PendingChangesTab', () => {
     
     render(<PendingChangesTab {...defaultProps} changes={changes} onRevertRow={onRevertRow} />);
     
-    screen.getByText('Revert').click();
+    fireEvent.click(screen.getByTitle('Revert'));
     
     expect(onRevertRow).toHaveBeenCalledWith(0);
   });
   
-  it('calls onRevertAll when Revert All button clicked', () => {
+  it('calls onRevertAll when Revert All icon button clicked', () => {
     const onRevertAll = vi.fn();
     const changes: RowChange[] = [
       createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
@@ -125,12 +120,12 @@ describe('PendingChangesTab', () => {
     
     render(<PendingChangesTab {...defaultProps} changes={changes} onRevertAll={onRevertAll} />);
     
-    screen.getByText('Revert All').click();
+    fireEvent.click(screen.getByTitle('Revert All'));
     
     expect(onRevertAll).toHaveBeenCalled();
   });
   
-  it('calls onCommit when Commit Changes button clicked', () => {
+  it('calls onCommit when Commit All icon button clicked', () => {
     const onCommit = vi.fn();
     const changes: RowChange[] = [
       createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
@@ -138,7 +133,7 @@ describe('PendingChangesTab', () => {
     
     render(<PendingChangesTab {...defaultProps} changes={changes} onCommit={onCommit} />);
     
-    screen.getByText('Commit Changes').click();
+    fireEvent.click(screen.getByTitle('Commit All'));
     
     expect(onCommit).toHaveBeenCalled();
   });
@@ -151,8 +146,99 @@ describe('PendingChangesTab', () => {
     
     render(<PendingChangesTab {...defaultProps} changes={changes} onRevertRow={onRevertRow} />);
     
-    screen.getByText('Restore').click();
+    fireEvent.click(screen.getByTitle('Restore'));
     
     expect(onRevertRow).toHaveBeenCalledWith(0);
+  });
+
+  it('shows Delete Row button with trash icon for deleted rows', () => {
+    const changes: RowChange[] = [
+      createRowChange(0, [], true),
+    ];
+    
+    render(<PendingChangesTab {...defaultProps} changes={changes} />);
+    
+    expect(screen.getByTitle('Delete Row')).toBeInTheDocument();
+  });
+
+  it('shows Commit button with save icon for modified rows', () => {
+    const changes: RowChange[] = [
+      createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+    ];
+    
+    render(<PendingChangesTab {...defaultProps} changes={changes} />);
+    
+    expect(screen.getByTitle('Commit')).toBeInTheDocument();
+  });
+  
+  it('shows SQL Preview button in header', () => {
+    const onPreviewSql = vi.fn();
+    const changes: RowChange[] = [
+      createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+    ];
+    
+    render(<PendingChangesTab {...defaultProps} changes={changes} onPreviewSql={onPreviewSql} />);
+    
+    const previewBtn = screen.getByTitle('Preview SQL');
+    expect(previewBtn).toBeInTheDocument();
+    fireEvent.click(previewBtn);
+    expect(onPreviewSql).toHaveBeenCalled();
+  });
+  
+  it('shows inline SQL preview for each change', () => {
+    const generateRowSql = vi.fn(() => 'UPDATE [dbo].[Users]\nSET     [name] = \'Jane\'\nWHERE [id] = 1;');
+    const changes: RowChange[] = [
+      createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+    ];
+    
+    render(<PendingChangesTab {...defaultProps} changes={changes} generateRowSql={generateRowSql} />);
+    
+    expect(generateRowSql).toHaveBeenCalledWith(changes[0]);
+    expect(screen.getByText(/UPDATE \[dbo\]\.\[Users\]/)).toBeInTheDocument();
+  });
+  
+  it('shows expand button for rows with multiple changes', () => {
+    const changes: RowChange[] = [
+      createRowChange(0, [
+        ['name', { original: 'John', new: 'Jane' }],
+        ['email', { original: 'john@test.com', new: 'jane@test.com' }],
+      ]),
+    ];
+    
+    render(<PendingChangesTab {...defaultProps} changes={changes} />);
+    
+    expect(screen.getByText(/2 changes/)).toBeInTheDocument();
+    expect(screen.getByTestId('expand-0')).toBeInTheDocument();
+  });
+  
+  it('expands details when expand button clicked for multi-change rows', () => {
+    const changes: RowChange[] = [
+      createRowChange(0, [
+        ['name', { original: 'John', new: 'Jane' }],
+        ['email', { original: 'john@test.com', new: 'jane@test.com' }],
+      ]),
+    ];
+    
+    render(<PendingChangesTab {...defaultProps} changes={changes} />);
+    
+    // Details should not be visible initially
+    expect(screen.queryByText('Old:')).not.toBeInTheDocument();
+    
+    // Click expand
+    fireEvent.click(screen.getByTestId('expand-0'));
+    
+    // Now details should be visible
+    expect(screen.getAllByText('Old:').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('New:').length).toBeGreaterThan(0);
+  });
+
+  it('shows change count text for modified rows', () => {
+    const changes: RowChange[] = [
+      createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+    ];
+    
+    render(<PendingChangesTab {...defaultProps} changes={changes} />);
+
+    expect(screen.getByText(/1 change/)).toBeInTheDocument();
   });
 });

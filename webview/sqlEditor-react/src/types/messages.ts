@@ -182,8 +182,10 @@ export interface SwitchDatabaseOutgoing {
 export interface CommitChangesOutgoing {
   type: 'commitChanges';
   changes: PendingChange[];
+  statements: string[];
   connectionId: string;
   databaseName: string;
+  originalQuery?: string;
 }
 
 export interface ExpandRelationOutgoing {
@@ -320,8 +322,8 @@ export interface QueryMessage {
 }
 
 export interface ResultSetMetadata {
-  tableName?: string;
-  schemaName?: string;
+  sourceTable?: string;
+  sourceSchema?: string;
   isEditable: boolean;
   primaryKeyColumns?: string[];
   columns: ResultColumnMetadata[];

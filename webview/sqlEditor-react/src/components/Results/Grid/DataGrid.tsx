@@ -7,7 +7,7 @@ import { GridHeader } from './GridHeader';
 import { GridRow } from './GridRow';
 import { ExpandedRow } from './ExpandedRow';
 import { FilterPopup } from './FilterPopup';
-import { ContextMenu, ContextMenuItem, CELL_CONTEXT_MENU_ITEMS, ROW_CONTEXT_MENU_ITEMS } from './ContextMenu';
+import { ContextMenu, ContextMenuItem, ROW_CONTEXT_MENU_ITEMS } from './ContextMenu';
 import { ExportMenu } from './ExportMenu';
 import { FKQuickPick } from './FKQuickPick';
 import { exportData, copyToClipboard, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
@@ -30,10 +30,14 @@ interface DataGridProps {
   resultSetIndex: number;
   isSingleResultSet?: boolean;
   onCellEdit?: (rowIndex: number, columnName: string, value: any) => void;
+  onDeleteRow?: (rowIndex: number) => void;
+  onRestoreRow?: (rowIndex: number) => void;
+  isRowDeleted?: (rowIndex: number) => boolean;
+  isCellModified?: (rowIndex: number, colIndex: number) => boolean;
   onSelectionChange?: (info: SelectionInfo) => void;
 }
 
-export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit, onSelectionChange }: DataGridProps) {
+export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit, onDeleteRow, onRestoreRow, isRowDeleted, isCellModified, onSelectionChange }: DataGridProps) {
   // State
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
@@ -558,45 +562,6 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       });
     });
   }, [pendingExpansions]);
-  const handleContextMenu = useCallback((e: React.MouseEvent, rowIndex?: number, colIndex?: number) => {
-    e.preventDefault();
-    
-    const items = rowIndex !== undefined ? 
-      (colIndex !== undefined ? CELL_CONTEXT_MENU_ITEMS : ROW_CONTEXT_MENU_ITEMS) :
-      ROW_CONTEXT_MENU_ITEMS;
-    
-    setContextMenu({
-      items,
-      position: { x: e.clientX, y: e.clientY },
-      rowIndex,
-      colIndex,
-    });
-  }, []);
-
-  const handleContextMenuSelect = useCallback((itemId: string) => {
-    switch (itemId) {
-      case 'copyCell':
-      case 'copyRow':
-      case 'copySelection':
-        handleCopy();
-        break;
-      case 'copyAsCSV':
-        handleExport('csv', true);
-        break;
-      case 'copyAsJSON':
-        handleExport('json', true);
-        break;
-      case 'selectAll':
-        selectAllRows(sortedData.length);
-        break;
-      case 'deleteRow':
-        // TODO: Implement delete
-        break;
-      case 'editCell':
-        // TODO: Implement inline edit
-        break;
-    }
-  }, [sortedData.length, selectAllRows]);
 
   const handleCopy = useCallback(async () => {
     const selectedIndices = getSelectedRowIndices();
@@ -609,7 +574,180 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     const text = exportData(selectedData, selectedCols, { format: 'clipboard', includeHeaders: true });
     await copyToClipboard(text);
   }, [sortedData, columnDefs, getSelectedRowIndices]);
-  
+
+  const handleExport = useCallback((format: ExportFormat, includeHeaders: boolean) => {
+    const selectedIndices = getSelectedRowIndices();
+    const hasSelection = selectedIndices.length > 0;
+    
+    const { data: exportDataSet, columns: exportCols } = extractSelectedData(
+      sortedData,
+      columnDefs,
+      hasSelection ? selectedIndices : sortedData.map((_, i) => i)
+    );
+    
+    const content = exportData(exportDataSet, exportCols, { format, includeHeaders });
+    
+    if (format === 'clipboard') {
+      copyToClipboard(content);
+    } else {
+      const { extension } = getFormatInfo(format);
+      const filename = `results.${extension}`;
+      
+      let fileType = 'Text';
+      switch (format) {
+        case 'json':
+          fileType = 'JSON';
+          break;
+        case 'csv':
+          fileType = 'CSV';
+          break;
+        case 'insert':
+          fileType = 'SQL';
+          break;
+        case 'tsv':
+          fileType = 'TSV';
+          break;
+        case 'markdown':
+          fileType = 'Markdown';
+          break;
+        case 'xml':
+          fileType = 'XML';
+          break;
+        case 'html':
+          fileType = 'HTML';
+          break;
+      }
+      
+      postMessage({
+        type: 'saveFile',
+        content,
+        defaultFileName: filename,
+        fileType,
+      });
+    }
+    
+    setExportMenu(null);
+  }, [sortedData, columnDefs, getSelectedRowIndices, postMessage]);
+
+  // Build context menu items dynamically based on editability
+  const isEditable = metadata?.isEditable ?? false;
+
+  const buildRowContextMenuItems = useCallback((rowIdx: number): ContextMenuItem[] => {
+    const isDeleted = isRowDeleted?.(rowIdx) ?? false;
+    const items: ContextMenuItem[] = [
+      { id: 'copyRow', label: 'Copy Row', shortcut: 'Ctrl+C' },
+      { id: 'copyRowAsInsert', label: 'Copy as INSERT' },
+    ];
+
+    if (isEditable) {
+      items.push({ id: 'separator1', label: '', separator: true });
+      if (isDeleted) {
+        items.push({ id: 'restoreRow', label: 'Restore Row' });
+      } else {
+        items.push({ id: 'deleteRow', label: 'Delete Row', shortcut: 'Del' });
+      }
+    }
+
+    items.push({ id: 'separator2', label: '', separator: true });
+    items.push({ id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' });
+    return items;
+  }, [isEditable, isRowDeleted]);
+
+  const buildCellContextMenuItems = useCallback((): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      { id: 'copyCell', label: 'Copy Cell', shortcut: 'Ctrl+C' },
+      { id: 'copyRow', label: 'Copy Row' },
+    ];
+
+    if (isEditable) {
+      items.push({ id: 'separator1', label: '', separator: true });
+      items.push({ id: 'editCell', label: 'Edit Cell', shortcut: 'F2' });
+      items.push({ id: 'setNull', label: 'Set to NULL' });
+      items.push({ id: 'separator_del', label: '', separator: true });
+      items.push({ id: 'deleteRow', label: 'Delete Row' });
+    }
+
+    items.push({ id: 'separator2', label: '', separator: true });
+    items.push({ id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' });
+    return items;
+  }, [isEditable]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, rowIndex?: number, colIndex?: number) => {
+    e.preventDefault();
+    
+    let items: ContextMenuItem[];
+    if (rowIndex !== undefined) {
+      items = colIndex !== undefined ? buildCellContextMenuItems() : buildRowContextMenuItems(rowIndex);
+    } else {
+      items = ROW_CONTEXT_MENU_ITEMS;
+    }
+    
+    setContextMenu({
+      items,
+      position: { x: e.clientX, y: e.clientY },
+      rowIndex,
+      colIndex,
+    });
+  }, [buildCellContextMenuItems, buildRowContextMenuItems]);
+
+  // Track which cell to start editing via context menu
+  const [editingCellFromMenu, setEditingCellFromMenu] = useState<{ rowIndex: number; colIndex: number } | null>(null);
+
+  const handleContextMenuSelect = useCallback((itemId: string) => {
+    const ctx = contextMenu;
+    switch (itemId) {
+      case 'copyCell':
+      case 'copyRow':
+      case 'copySelection':
+      case 'copyRowAsInsert':
+        handleCopy();
+        break;
+      case 'copyAsCSV':
+        handleExport('csv', true);
+        break;
+      case 'copyAsJSON':
+        handleExport('json', true);
+        break;
+      case 'selectAll':
+        selectAllRows(sortedData.length);
+        break;
+      case 'deleteRow': {
+        if (ctx?.rowIndex !== undefined) {
+          // Delete all selected rows if the clicked row is selected, otherwise just the clicked row
+          const selectedIndices = getSelectedRowIndices();
+          if (selectedIndices.includes(ctx.rowIndex) && selectedIndices.length > 1) {
+            selectedIndices.forEach(idx => onDeleteRow?.(idx));
+          } else {
+            onDeleteRow?.(ctx.rowIndex);
+          }
+        }
+        break;
+      }
+      case 'restoreRow': {
+        if (ctx?.rowIndex !== undefined) {
+          onRestoreRow?.(ctx.rowIndex);
+        }
+        break;
+      }
+      case 'editCell': {
+        if (ctx?.rowIndex !== undefined && ctx?.colIndex !== undefined) {
+          setEditingCellFromMenu({ rowIndex: ctx.rowIndex, colIndex: ctx.colIndex });
+        }
+        break;
+      }
+      case 'setNull': {
+        if (ctx?.rowIndex !== undefined && ctx?.colIndex !== undefined) {
+          const colName = columnDefs[ctx.colIndex]?.name;
+          if (colName) {
+            onCellEdit?.(ctx.rowIndex, colName, null);
+          }
+        }
+        break;
+      }
+    }
+    setContextMenu(null);
+  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onCellEdit, columnDefs, handleCopy, handleExport]);
+
   // Global keyboard shortcut for Ctrl+C when grid is active
   useEffect(() => {
     if (!isGridActive) return;
@@ -651,62 +789,6 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
   }, [isGridActive, handleCopy]);
-
-  const handleExport = useCallback((format: ExportFormat, includeHeaders: boolean) => {
-    const selectedIndices = getSelectedRowIndices();
-    const hasSelection = selectedIndices.length > 0;
-    
-    const { data: exportDataSet, columns: exportCols } = extractSelectedData(
-      sortedData,
-      columnDefs,
-      hasSelection ? selectedIndices : sortedData.map((_, i) => i)
-    );
-    
-    const content = exportData(exportDataSet, exportCols, { format, includeHeaders });
-    
-    if (format === 'clipboard') {
-      copyToClipboard(content);
-    } else {
-      // Use vscode.postMessage to save file via backend (like old version)
-      const { extension } = getFormatInfo(format);
-      const filename = `results.${extension}`;
-      
-      // Map format to fileType for backend (zgodnie z grid.js)
-      let fileType = 'Text';
-      switch (format) {
-        case 'json':
-          fileType = 'JSON';
-          break;
-        case 'csv':
-          fileType = 'CSV';
-          break;
-        case 'insert':
-          fileType = 'SQL';
-          break;
-        case 'tsv':
-          fileType = 'TSV';
-          break;
-        case 'markdown':
-          fileType = 'Markdown';
-          break;
-        case 'xml':
-          fileType = 'XML';
-          break;
-        case 'html':
-          fileType = 'HTML';
-          break;
-      }
-      
-      postMessage({
-        type: 'saveFile',
-        content,
-        defaultFileName: filename,
-        fileType,
-      });
-    }
-    
-    setExportMenu(null);
-  }, [sortedData, columnDefs, getSelectedRowIndices, postMessage]);
 
   const handleExportButtonClick = useCallback((e: React.MouseEvent) => {
     setExportMenu({
@@ -817,6 +899,10 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                 }
               });
               
+              const rowDeleted = isRowDeleted?.(virtualRow.index) ?? false;
+              // Check if a cell in this row should start editing (from context menu)
+              const editingCol = editingCellFromMenu?.rowIndex === virtualRow.index ? editingCellFromMenu.colIndex : undefined;
+              
               return (
                 <>
                   <GridRow
@@ -826,8 +912,12 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                     columns={columnDefs}
                     isSelected={isSelected}
                     isCellSelected={isCellSelected}
+                    isCellModified={isCellModified}
+                    isRowDeleted={rowDeleted}
                     expandedColumns={expandedForRow.map(k => k.split('-')[2])}
                     calculatePinnedOffset={calculatePinnedOffset}
+                    editingColIndex={editingCol}
+                    onEditingComplete={() => setEditingCellFromMenu(null)}
                     style={{
                       position: 'absolute',
                       top: adjustedTop,

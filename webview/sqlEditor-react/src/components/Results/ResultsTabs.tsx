@@ -23,6 +23,12 @@ interface ResultsTabsProps {
   activeFilterCount?: number;
   /** Callback to clear filters */
   onClearFilters?: () => void;
+  /** Number of pending changes (edits + deletes) */
+  pendingChangesCount?: number;
+  /** Quick save callback - commits all pending changes */
+  onQuickSave?: () => void;
+  /** SQL preview text for quick save tooltip */
+  sqlPreview?: string;
 }
 
 export function ResultsTabs({
@@ -39,6 +45,9 @@ export function ResultsTabs({
   columnType,
   activeFilterCount = 0,
   onClearFilters,
+  pendingChangesCount = 0,
+  onQuickSave,
+  sqlPreview,
 }: ResultsTabsProps) {
   return (
     <div className="results-tabs-container">
@@ -62,6 +71,44 @@ export function ResultsTabs({
           >
             Messages
           </button>
+
+          {pendingChangesCount > 0 && (
+            <button
+              className={`results-tab ${activeTab === 'pendingChanges' ? 'active' : ''}`}
+              onClick={() => onTabChange('pendingChanges')}
+              data-testid="pending-changes-tab"
+            >
+              Pending Changes
+              <span className="tab-badge pending-badge">{pendingChangesCount}</span>
+            </button>
+          )}
+
+          {pendingChangesCount > 0 && onQuickSave && (
+            <button
+              className="quick-save-button"
+              onClick={onQuickSave}
+              data-testid="quick-save-button"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
+                <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                <path d="M14 4l0 4l-6 0l0 -4" />
+              </svg>
+              {sqlPreview && (
+                <span className="quick-save-tooltip">{sqlPreview}</span>
+              )}
+            </button>
+          )}
 
           {hasPlan && (
             <button

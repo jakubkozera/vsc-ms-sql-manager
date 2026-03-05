@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface UseGlobalKeyboardShortcutsOptions {
   onCopy?: () => void;
@@ -13,6 +13,15 @@ interface UseGlobalKeyboardShortcutsOptions {
  * Note: Ctrl+V is NOT handled here to avoid interfering with Monaco's paste functionality.
  */
 export function useGlobalKeyboardShortcuts({ onCopy, onSave, onNewQuery, enabled = true }: UseGlobalKeyboardShortcutsOptions = {}) {
+  // Use refs for callbacks to avoid re-registering the listener on every render
+  const onCopyRef = useRef(onCopy);
+  const onSaveRef = useRef(onSave);
+  const onNewQueryRef = useRef(onNewQuery);
+  
+  useEffect(() => { onCopyRef.current = onCopy; }, [onCopy]);
+  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+  useEffect(() => { onNewQueryRef.current = onNewQuery; }, [onNewQuery]);
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -22,22 +31,21 @@ export function useGlobalKeyboardShortcuts({ onCopy, onSave, onNewQuery, enabled
       }
 
       // Ctrl+S - Save query (global, works even outside Monaco)
-      if (e.key === 's' && onSave) {
+      if (e.key === 's' && onSaveRef.current) {
         e.preventDefault();
         e.stopPropagation();
-        // Only handle if NOT in Monaco (Monaco has its own handler)
         if (!isElementInMonacoEditor(e.target as Element)) {
-          onSave();
+          onSaveRef.current();
         }
         return;
       }
 
       // Ctrl+N - New query (global, works even outside Monaco)
-      if (e.key === 'n' && onNewQuery) {
+      if (e.key === 'n' && onNewQueryRef.current) {
         e.preventDefault();
         e.stopPropagation();
         if (!isElementInMonacoEditor(e.target as Element)) {
-          onNewQuery();
+          onNewQueryRef.current();
         }
         return;
       }
@@ -47,43 +55,35 @@ export function useGlobalKeyboardShortcuts({ onCopy, onSave, onNewQuery, enabled
         return;
       }
       
-      console.log('[useGlobalKeyboardShortcuts] Ctrl+C detected, Target:', (e.target as any)?.tagName, (e.target as any)?.className);
-      
       // Check if event target is within Monaco editor
-      const targetIsInMonaco = isElementInMonacoEditor(e.target as Element);
-      
-      if (targetIsInMonaco) {
-        console.log('[useGlobalKeyboardShortcuts] Target in Monaco - letting Monaco handle copy');
+      const activeEl = document.activeElement as Element;
+      if (isElementInMonacoEditor(e.target as Element) || isElementInMonacoEditor(activeEl)) {
         return;
       }
 
       // Check if there's a text input focused (like filter inputs)
-      const target = e.target as HTMLElement;
+      const target = (e.target as HTMLElement)?.tagName ? e.target as HTMLElement : activeEl as HTMLElement;
       if (target && (
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
         target.isContentEditable
       )) {
-        console.log('[useGlobalKeyboardShortcuts] Target is text input - letting input handle copy');
         return;
       }
 
       // Check if there's a grid selection to copy
-      if (onCopy) {
-        console.log('[useGlobalKeyboardShortcuts] Calling grid onCopy handler');
+      if (onCopyRef.current) {
         e.preventDefault();
         e.stopPropagation();
-        onCopy();
+        onCopyRef.current();
       }
     };
 
-    console.log('[useGlobalKeyboardShortcuts] Adding keydown listener for Ctrl+C only');
     document.addEventListener('keydown', handleKeyDown, { capture: false });
     return () => {
-      console.log('[useGlobalKeyboardShortcuts] Removing keydown listener');
       document.removeEventListener('keydown', handleKeyDown, { capture: false });
     };
-  }, [onCopy, enabled]);
+  }, [enabled]);
 }
 
 /**
@@ -98,12 +98,13 @@ function isElementInMonacoEditor(element: Element | null): boolean {
   let current: Element | null = element;
   let depth = 0;
   while (current) {
-    if (current.classList.contains('monaco-editor') ||
+    if (current.classList &&
+        (current.classList.contains('monaco-editor') ||
         current.classList.contains('monaco-editor-background') ||
         (current as any).id === 'editor-container' ||
         current.classList.contains('sql-editor-container') ||
         current.classList.contains('native-edit-context') ||
-        current.classList.contains('overflow-guard')) {
+        current.classList.contains('overflow-guard'))) {
       return true;
     }
     

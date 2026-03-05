@@ -10,8 +10,6 @@ describe('ResultsTabs', () => {
     hasMessages: false,
     hasPlan: false,
     resultSetCount: 1,
-    activeResultSet: 0,
-    onResultSetChange: vi.fn(),
   };
 
   beforeEach(() => {
@@ -54,18 +52,10 @@ describe('ResultsTabs', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
-  it('shows result set selector for multiple result sets', () => {
+  it('shows badge count for multiple result sets', () => {
     render(<ResultsTabs {...defaultProps} resultSetCount={2} />);
     
-    expect(screen.getByTestId('result-set-0')).toBeInTheDocument();
-    expect(screen.getByTestId('result-set-1')).toBeInTheDocument();
-  });
-
-  it('calls onResultSetChange when result set tab clicked', () => {
-    render(<ResultsTabs {...defaultProps} resultSetCount={2} />);
-    
-    fireEvent.click(screen.getByTestId('result-set-1'));
-    expect(defaultProps.onResultSetChange).toHaveBeenCalledWith(1);
+    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('shows plan indicator when hasPlan is true', () => {
@@ -73,5 +63,35 @@ describe('ResultsTabs', () => {
     
     const planTab = screen.getByTestId('plan-tab');
     expect(planTab.querySelector('.tab-indicator')).toBeInTheDocument();
+  });
+
+  describe('Pending Changes tab', () => {
+    it('does not show pending changes tab when count is 0', () => {
+      render(<ResultsTabs {...defaultProps} pendingChangesCount={0} />);
+      expect(screen.queryByTestId('pending-changes-tab')).not.toBeInTheDocument();
+    });
+
+    it('shows pending changes tab with badge when count > 0', () => {
+      render(<ResultsTabs {...defaultProps} pendingChangesCount={3} />);
+      
+      const tab = screen.getByTestId('pending-changes-tab');
+      expect(tab).toBeInTheDocument();
+      expect(screen.getByText('3')).toBeInTheDocument();
+      expect(tab.querySelector('.pending-badge')).toBeInTheDocument();
+    });
+
+    it('marks pending changes tab as active when selected', () => {
+      render(<ResultsTabs {...defaultProps} activeTab="pendingChanges" pendingChangesCount={2} />);
+      
+      const tab = screen.getByTestId('pending-changes-tab');
+      expect(tab).toHaveClass('active');
+    });
+
+    it('calls onTabChange with pendingChanges when clicked', () => {
+      render(<ResultsTabs {...defaultProps} pendingChangesCount={1} />);
+      
+      fireEvent.click(screen.getByTestId('pending-changes-tab'));
+      expect(defaultProps.onTabChange).toHaveBeenCalledWith('pendingChanges');
+    });
   });
 });

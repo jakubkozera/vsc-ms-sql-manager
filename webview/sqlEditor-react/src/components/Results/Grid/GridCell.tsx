@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from 'react';
+import { useState, useMemo, useCallback, useEffect, memo } from 'react';
 import { ColumnDef } from '../../../types/grid';
 import { InlineCellEditor } from './InlineCellEditor';
 import './GridCell.css';
@@ -14,6 +14,10 @@ interface GridCellProps {
   isEditable?: boolean;
   isExpanded?: boolean;
   pinnedOffset?: number;
+  /** Force this cell into edit mode (e.g. from context menu) */
+  forceEdit?: boolean;
+  /** Called when a force-edit session is complete */
+  onForceEditComplete?: () => void;
   onClick?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onDoubleClick?: (e: React.MouseEvent) => void;
@@ -32,6 +36,8 @@ function GridCellComponent({
   isEditable = true,
   isExpanded = false,
   pinnedOffset,
+  forceEdit = false,
+  onForceEditComplete,
   onClick,
   onContextMenu,
   onDoubleClick,
@@ -39,6 +45,14 @@ function GridCellComponent({
   onCellEdit,
 }: GridCellProps) {
   const [isEditing, setIsEditing] = useState(false);
+
+  // Handle forceEdit from context menu
+  useEffect(() => {
+    if (forceEdit && isEditable && !isEditing) {
+      setIsEditing(true);
+      onForceEditComplete?.();
+    }
+  }, [forceEdit, isEditable, isEditing, onForceEditComplete]);
   
   // DIAGNOSTIC: Count renders for this cell (only first few cells when debugging)
   const renderCountRef = useState(() => ({ count: 0 }))[0];
@@ -205,6 +219,7 @@ function arePropsEqual(prev: GridCellProps, next: GridCellProps): boolean {
     prev.isEditable === next.isEditable &&
     prev.isExpanded === next.isExpanded &&
     prev.pinnedOffset === next.pinnedOffset &&
+    prev.forceEdit === next.forceEdit &&
     prev.column.width === next.column.width &&
     prev.column.pinned === next.column.pinned
   );

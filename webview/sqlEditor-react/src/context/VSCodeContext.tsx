@@ -58,6 +58,7 @@ interface VSCodeState {
   lastPlanXml: string | null;
   executionTime: number | null;
   rowsAffected: number | null;
+  originalQuery: string | null;
   
   // FK Expansion
   pendingExpansions: Map<string, RelationResultsMessage>;
@@ -104,6 +105,7 @@ const initialState: VSCodeState = {
   lastPlanXml: null,
   executionTime: null,
   rowsAffected: null,
+  originalQuery: null,
   pendingExpansions: new Map(),
   shouldAutoExecute: false,
   pasteContent: null,
@@ -191,6 +193,7 @@ function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
         executionTime: action.payload.executionTime ?? null,
         rowsAffected: action.payload.rowsAffected ?? null,
         lastError: null,
+        originalQuery: action.payload.originalQuery ?? null,
       };
       
     case 'SET_ERROR':
@@ -417,6 +420,12 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
             dispatch({ type: 'SET_PASTE_CONTENT', content: message.content });
             console.log('[VSCode] Received paste content:', message.content);
           }
+          break;
+          
+        case 'commitSuccess':
+          console.log('[VSCode] Commit success:', message.message);
+          // Dispatch event so pending changes hook can clear state
+          window.dispatchEvent(new CustomEvent('commitSuccess', { detail: message }));
           break;
           
         default:
