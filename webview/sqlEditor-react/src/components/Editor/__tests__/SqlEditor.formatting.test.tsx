@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '../../../test/testUtils';
+import { render, act } from '../../../test/testUtils';
 import { SqlEditor } from '../SqlEditor';
 
 // Mock @monaco-editor/react to call onMount with our fake editor & monaco instances
@@ -45,9 +45,18 @@ vi.mock('@monaco-editor/react', () => {
         languages: {
           registerDocumentFormattingEditProvider: registerSpy,
           registerDocumentRangeFormattingEditProvider: registerSpy,
+          registerCompletionItemProvider: registerSpy,
+          registerHoverProvider: registerSpy,
+          CompletionItemKind: {
+            Class: 5, Field: 3, Function: 1, Interface: 7,
+            Method: 0, Operator: 11, Snippet: 27,
+          },
+          CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
         },
-        KeyCode: { F5: 116, KeyF: 70, KeyV: 86 },
-        KeyMod: { CtrlCmd: 2, Shift: 4 },
+        editor: { setModelMarkers: vi.fn() },
+        KeyCode: { F5: 116, KeyF: 70, KeyV: 86, KeyS: 83, KeyN: 78, KeyE: 69 },
+        KeyMod: { CtrlCmd: 2048, Shift: 1024 },
+        MarkerSeverity: { Error: 8, Warning: 4, Info: 2 },
         languagesModule: {},
       };
 
@@ -85,12 +94,19 @@ describe('SqlEditor formatting integration', () => {
 
     render(<SqlEditor ref={ref} onExecute={onExecute} initialValue={"select * from myTable where id=1"} />);
 
+    // Wait for async onMount to fire
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
     // ensure ref is available and has formatSql method
     expect(ref.current).toBeDefined();
     expect(typeof ref.current.formatSql).toBe('function');
 
     // Call formatSql which uses sql-formatter to transform the text
-    ref.current.formatSql();
+    act(() => {
+      ref.current.formatSql();
+    });
 
     // The mocked editor.executeEdits updated the internal value, so verify it changed
     // We cannot directly access the mock's valueHolder here, but we can call getValue via exposed ref

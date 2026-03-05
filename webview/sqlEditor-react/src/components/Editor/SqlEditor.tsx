@@ -1,24 +1,10 @@
 import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle, useState } from 'react';
 import MonacoEditor, { OnMount } from '@monaco-editor/react';
-import type { editor, languages } from 'monaco-editor';
+import type { editor } from 'monaco-editor';
 import { format } from 'sql-formatter';
 import { useVSCode } from '../../context/VSCodeContext';
 import { useFormatOptions } from '../Toolbar/FormatButton';
-import type { TableInfo, ViewInfo, StoredProcedureInfo, FunctionInfo, ColumnInfo } from '../../types/schema';
-import {
-  validateSql,
-  builtInSnippets,
-  analyzeSqlContext,
-  extractTablesFromQuery,
-  findTable,
-  findTableForAlias,
-  getColumnsForTable,
-  getRelatedTables,
-  generateSmartAlias,
-  getSqlOperators,
-  getAggregateFunctions,
-  provideHoverContent,
-} from '../../services';
+import { useEditorSetup, useEditorActions, useCompletionProvider, useSchemaProviders } from './hooks';
 import './SqlEditor.css';
 
 export interface SqlEditorHandle {
@@ -36,46 +22,6 @@ interface SqlEditorProps {
 
 type MonacoType = typeof import('monaco-editor');
 
-/**
- * Helper: find the table at a given editor cursor position.
- * Works by getting the word under cursor and checking it against the schema.
- * Uses a provided dbSchema to avoid stale closure over the component's state.
- */
-function findTableAtCursorPosition(
-  ed: Pick<editor.IStandaloneCodeEditor, 'getModel' | 'getPosition'>,
-  position: { lineNumber: number; column: number } | null,
-  schema?: import('../../types/schema').DatabaseSchema
-): { schema: string; table: string } | null {
-  if (!position) return null;
-  const model = ed.getModel();
-  if (!model) return null;
-
-  const wordInfo = model.getWordAtPosition(position);
-  console.log('[findTableAtCursorPosition] wordInfo:', wordInfo);
-  if (!wordInfo?.word) return null;
-
-  const rawWord = wordInfo.word;
-
-  // Strip brackets/quotes if present
-  let normalizedName = rawWord.trim();
-  if (
-    (normalizedName.startsWith('[') && normalizedName.endsWith(']')) ||
-    (normalizedName.startsWith('"') && normalizedName.endsWith('"'))
-  ) {
-    normalizedName = normalizedName.substring(1, normalizedName.length - 1);
-  }
-
-  console.log('[findTableAtCursorPosition] normalizedName:', normalizedName);
-
-  if (schema) {
-    const result = findTable(normalizedName, schema);
-    console.log('[findTableAtCursorPosition] findTable result:', result);
-    return result;
-  }
-
-  return null;
-}
-
 export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
   ({ onExecute, initialValue = '' }, ref) => {
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -90,34 +36,40 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     const formatOptions = useFormatOptions();
 
     // Keep refs in sync so that Monaco callbacks always see fresh state
-    useEffect(() => {
-      dbSchemaRef.current = dbSchema;
-    }, [dbSchema]);
-    useEffect(() => {
-      currentConnectionIdRef.current = currentConnectionId;
-    }, [currentConnectionId]);
-    useEffect(() => {
-      currentDatabaseRef.current = currentDatabase;
-    }, [currentDatabase]);
+    useEffect(() => { dbSchemaRef.current = dbSchema; }, [dbSchema]);
+    useEffect(() => { currentConnectionIdRef.current = currentConnectionId; }, [currentConnectionId]);
+    useEffect(() => { currentDatabaseRef.current = currentDatabase; }, [currentDatabase]);
+
+    // Hooks
+    const setupEditor = useEditorSetup(editorRef, monacoRef, setEditorReady, formatOptions, initialValue);
+
+    const registerActions = useEditorActions({
+      editorRef, monacoRef, dbSchemaRef, currentConnectionIdRef, currentDatabaseRef,
+      lastContextPositionRef, tableAtCursorContextKeyRef,
+      onExecute, requestPaste, postMessage, currentConnectionId, currentDatabase,
+    });
+
+    useCompletionProvider(monacoRef, dbSchema, editorReady);
+    useSchemaProviders(monacoRef, editorRef, dbSchema, editorReady);
 
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
       getValue: () => editorRef.current?.getValue() || '',
       getSelectedText: () => {
-        const editor = editorRef.current;
-        if (!editor) return '';
-        const selection = editor.getSelection();
+        const ed = editorRef.current;
+        if (!ed) return '';
+        const selection = ed.getSelection();
         if (!selection || selection.isEmpty()) return '';
-        return editor.getModel()?.getValueInRange(selection) || '';
+        return ed.getModel()?.getValueInRange(selection) || '';
       },
       formatSql: () => handleFormat(),
       focus: () => editorRef.current?.focus(),
       executeCurrentLine: () => {
-        const editor = editorRef.current;
-        if (!editor) return;
-        const position = editor.getPosition();
+        const ed = editorRef.current;
+        if (!ed) return;
+        const position = ed.getPosition();
         if (!position) return;
-        const model = editor.getModel();
+        const model = ed.getModel();
         if (!model) return;
         const lineContent = model.getLineContent(position.lineNumber);
         if (lineContent.trim()) {
@@ -127,13 +79,12 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     }));
 
     const handleFormat = useCallback(() => {
-      const editor = editorRef.current;
-      if (!editor) return;
-
-      const model = editor.getModel();
+      const ed = editorRef.current;
+      if (!ed) return;
+      const model = ed.getModel();
       if (!model) return;
 
-      const selection = editor.getSelection();
+      const selection = ed.getSelection();
       const textToFormat = selection && !selection.isEmpty()
         ? model.getValueInRange(selection)
         : model.getValue();
@@ -150,758 +101,44 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           logicalOperatorNewline: formatOptions.logicalOperatorNewline,
         });
 
-        if (selection && !selection.isEmpty()) {
-          editor.executeEdits('format', [{
-            range: selection,
-            text: formatted,
-          }]);
-        } else {
-          const fullRange = model.getFullModelRange();
-          editor.executeEdits('format', [{
-            range: fullRange,
-            text: formatted,
-          }]);
-        }
+        const range = selection && !selection.isEmpty() ? selection : model.getFullModelRange();
+        ed.executeEdits('format', [{ range, text: formatted }]);
       } catch (error) {
         console.error('Format error:', error);
       }
     }, [formatOptions]);
 
     const handleEditorMount: OnMount = useCallback((editor, monacoInstance) => {
-      console.log('[SqlEditor] Monaco editor mounted successfully');
-      editorRef.current = editor;
-      monacoRef.current = monacoInstance;
-      setEditorReady(true);
+      const disposables = setupEditor(editor, monacoInstance);
+      registerActions(editor, monacoInstance);
 
-      // Configure editor options
-      editor.updateOptions({
-        fontSize: 14,
-        fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
-        fontLigatures: true,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        lineNumbers: 'on',
-        renderLineHighlight: 'all',
-        automaticLayout: true,
-        wordWrap: 'on',
-        padding: { top: 8, bottom: 8 },
-        scrollbar: {
-          vertical: 'visible',
-          horizontal: 'visible',
-          verticalScrollbarSize: 10,
-          horizontalScrollbarSize: 10,
-        },
-      });
-
-      // Add keybindings
-      editor.addAction({
-        id: 'execute-query',
-        label: 'Execute Query',
-        keybindings: [
-          monacoInstance.KeyCode.F5,
-          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyMod.Shift | monacoInstance.KeyCode.KeyE,
-        ],
-        run: () => {
-          console.log('[SqlEditor] F5 execute-query action triggered');
-          const selection = editor.getSelection();
-          const model = editor.getModel();
-          if (!model) {
-            console.log('[SqlEditor] No model found, cannot execute');
-            return;
-          }
-
-          let sql: string;
-          if (selection && !selection.isEmpty()) {
-            sql = model.getValueInRange(selection);
-            console.log('[SqlEditor] Executing selection:', sql.substring(0, 100) + '...');
-          } else {
-            sql = model.getValue();
-            console.log('[SqlEditor] Executing entire content:', sql.substring(0, 100) + '...');
-          }
-
-          if (sql.trim()) {
-            console.log('[SqlEditor] Calling onExecute with SQL of length:', sql.length);
-            onExecute(sql);
-          } else {
-            console.log('[SqlEditor] No SQL to execute (empty or whitespace only)');
-          }
-        },
-      });
-
-      // Add paste action that requests content from extension
-      editor.addAction({
-        id: 'paste',
-        label: 'Paste',
-        keybindings: [
-          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyV,
-        ],
-        run: () => {
-          console.log('[SqlEditor] Paste action triggered - requesting from extension');
-          requestPaste();
-        },
-      });
-
-      // Add Ctrl+S - Save query
-      editor.addAction({
-        id: 'save-query',
-        label: 'Save Query',
-        keybindings: [
-          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS,
-        ],
-        run: (ed) => {
-          const content = ed.getValue();
-          console.log('[SqlEditor] Save query triggered');
-          postMessage({ type: 'saveQuery', content });
-        },
-      });
-
-      // Add Ctrl+N - New query
-      editor.addAction({
-        id: 'new-query',
-        label: 'New Query',
-        keybindings: [
-          monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyN,
-        ],
-        run: () => {
-          console.log('[SqlEditor] New query triggered');
-          postMessage({
-            type: 'newQueryFromWebview',
-            connectionId: currentConnectionId || null,
-            databaseName: currentDatabase || null,
-          });
-        },
-      });
-
-      // Create context key for table at cursor (for conditional context menu items)
-      if (typeof editor.createContextKey === 'function') {
-        tableAtCursorContextKeyRef.current = editor.createContextKey('tableAtCursor', false);
-      }
-
-      // Track right-click position for context menu actions
-      editor.onMouseDown((e: any) => {
-        try {
-          let isRight = false;
-          try {
-            if (e.event) {
-              isRight = !!(e.event.rightButton || e.event.button === 2 || e.event.which === 3);
-            }
-          } catch (_inner) {
-            isRight = false;
-          }
-
-          if (isRight) {
-            const pos = (e.target && e.target.position) ? e.target.position : editor.getPosition();
-            lastContextPositionRef.current = pos;
-            console.log('[SqlEditor] Right-click at position', pos);
-
-            // Check if there's a table at cursor position for conditional context menu
-            const tableInfo = findTableAtCursorPosition(editor, pos, dbSchemaRef.current);
-            tableAtCursorContextKeyRef.current?.set(!!tableInfo);
-            console.log('[SqlEditor] Table at cursor:', !!tableInfo, tableInfo);
-          }
-        } catch (err) {
-          console.error('[SqlEditor] Error in onMouseDown handler', err);
-        }
-      });
-
-      // Script as INSERT action
-      editor.addAction({
-        id: 'mssqlmanager.scriptRowAsInsert',
-        label: 'Script as INSERT',
-        keybindings: [],
-        contextMenuGroupId: 'script',
-        contextMenuOrder: 1.1,
-        precondition: 'tableAtCursor',
-        run: (ed) => {
-          try {
-            const position = lastContextPositionRef.current || ed.getPosition();
-            const tableInfo = findTableAtCursorPosition(ed, position, dbSchemaRef.current);
-            if (tableInfo) {
-              console.log('[SqlEditor] Script as INSERT for:', tableInfo);
-              postMessage({
-                type: 'scriptRowAsInsert',
-                schema: tableInfo.schema,
-                table: tableInfo.table,
-                connectionId: currentConnectionIdRef.current || '',
-                database: currentDatabaseRef.current || '',
-              });
-            }
-          } catch (error) {
-            console.error('[SqlEditor] Error in Script as INSERT:', error);
-          }
-        },
-      });
-
-      // Script as UPDATE action
-      editor.addAction({
-        id: 'mssqlmanager.scriptRowAsUpdate',
-        label: 'Script as UPDATE',
-        keybindings: [],
-        contextMenuGroupId: 'script',
-        contextMenuOrder: 1.2,
-        precondition: 'tableAtCursor',
-        run: (ed) => {
-          try {
-            const position = lastContextPositionRef.current || ed.getPosition();
-            const tableInfo = findTableAtCursorPosition(ed, position, dbSchemaRef.current);
-            if (tableInfo) {
-              console.log('[SqlEditor] Script as UPDATE for:', tableInfo);
-              postMessage({
-                type: 'scriptRowAsUpdate',
-                schema: tableInfo.schema,
-                table: tableInfo.table,
-                connectionId: currentConnectionIdRef.current || '',
-                database: currentDatabaseRef.current || '',
-              });
-            }
-          } catch (error) {
-            console.error('[SqlEditor] Error in Script as UPDATE:', error);
-          }
-        },
-      });
-
-      // Script as DELETE action
-      editor.addAction({
-        id: 'mssqlmanager.scriptRowAsDelete',
-        label: 'Script as DELETE',
-        keybindings: [],
-        contextMenuGroupId: 'script',
-        contextMenuOrder: 1.3,
-        precondition: 'tableAtCursor',
-        run: (ed) => {
-          try {
-            const position = lastContextPositionRef.current || ed.getPosition();
-            const tableInfo = findTableAtCursorPosition(ed, position, dbSchemaRef.current);
-            if (tableInfo) {
-              console.log('[SqlEditor] Script as DELETE for:', tableInfo);
-              postMessage({
-                type: 'scriptRowAsDelete',
-                schema: tableInfo.schema,
-                table: tableInfo.table,
-                connectionId: currentConnectionIdRef.current || '',
-                database: currentDatabaseRef.current || '',
-              });
-            }
-          } catch (error) {
-            console.error('[SqlEditor] Error in Script as DELETE:', error);
-          }
-        },
-      });
-
-      // Register formatting providers immediately when editor mounts
-      // This enables Monaco's built-in formatting commands:
-      // - Alt+Shift+F (Format Document)
-      // - Ctrl+K Ctrl+F (Format Selection)
-      // - Right-click context menu "Format Document" and "Format Selection"
-      console.log('[SqlEditor] Registering formatting providers');
-      
-      const documentFormattingProvider = monacoInstance.languages.registerDocumentFormattingEditProvider('sql', {
-        provideDocumentFormattingEdits: (model: editor.ITextModel, _options: languages.FormattingOptions, _token: any) => {
-          console.log('[SqlEditor] Document formatting requested');
-
-          const documentText = model.getValue();
-
-          try {
-            const formattedText = format(documentText, {
-              language: 'transactsql',
-              tabWidth: formatOptions.tabWidth,
-              keywordCase: formatOptions.keywordCase,
-              dataTypeCase: formatOptions.dataTypeCase,
-              functionCase: formatOptions.functionCase,
-              linesBetweenQueries: formatOptions.linesBetweenQueries,
-              indentStyle: formatOptions.indentStyle,
-              logicalOperatorNewline: formatOptions.logicalOperatorNewline,
-            });
-
-            const fullRange = model.getFullModelRange();
-            return [{
-              range: fullRange,
-              text: formattedText,
-            }];
-          } catch (error) {
-            console.error('[SqlEditor] Error formatting document:', error);
-            return [];
-          }
-        },
-      });
-
-      const documentRangeFormattingProvider = monacoInstance.languages.registerDocumentRangeFormattingEditProvider('sql', {
-        provideDocumentRangeFormattingEdits: (model: editor.ITextModel, range: any, _options: languages.FormattingOptions, _token: any) => {
-          console.log('[SqlEditor] Selection formatting requested for range:', range);
-
-          const selectedText = model.getValueInRange(range);
-
-          try {
-            const formattedText = format(selectedText, {
-              language: 'transactsql',
-              tabWidth: formatOptions.tabWidth,
-              keywordCase: formatOptions.keywordCase,
-              dataTypeCase: formatOptions.dataTypeCase,
-              functionCase: formatOptions.functionCase,
-              linesBetweenQueries: formatOptions.linesBetweenQueries,
-              indentStyle: formatOptions.indentStyle,
-              logicalOperatorNewline: formatOptions.logicalOperatorNewline,
-            });
-
-            return [{
-              range: range,
-              text: formattedText,
-            }];
-          } catch (error) {
-            console.error('[SqlEditor] Error formatting selection:', error);
-            return [];
-          }
-        },
-      });
-
-      console.log('[SqlEditor] Formatting providers registered successfully');
-
-      // Store disposables for cleanup
-      const formattingDisposables = [documentFormattingProvider, documentRangeFormattingProvider];
-
-      // Set initial value if provided
-      if (initialValue) {
-        editor.setValue(initialValue);
-      }
-
-      // Focus editor
-      editor.focus();
-      console.log('[SqlEditor] Editor focused');
-
-      // Cleanup function to dispose formatting providers when editor unmounts
       return () => {
-        console.log('[SqlEditor] Disposing formatting providers');
-        formattingDisposables.forEach(d => d.dispose());
+        disposables.forEach(d => d.dispose());
       };
-    }, [onExecute, initialValue, formatOptions]);
+    }, [setupEditor, registerActions]);
 
     // Handle paste content from extension
     useEffect(() => {
       if (pasteContent !== null && editorRef.current) {
-        console.log('[SqlEditor] Inserting paste content:', pasteContent);
-        const editor = editorRef.current;
-        const selection = editor.getSelection();
+        const ed = editorRef.current;
+        const selection = ed.getSelection();
         if (selection) {
-          editor.executeEdits('paste', [{
-            range: selection,
-            text: pasteContent,
-          }]);
+          ed.executeEdits('paste', [{ range: selection, text: pasteContent }]);
         }
-        // Clear paste content after use
         clearPasteContent();
       }
     }, [pasteContent, clearPasteContent]);
 
     // Update editor value when initialValue changes (for loading from history/commands)
     useEffect(() => {
-      console.log('[SqlEditor] useEffect triggered - initialValue or editorReady changed:', {
-        initialValue: initialValue?.substring(0, 100) + '...',
-        hasEditor: !!editorRef.current,
-        editorReady
-      });
-
       if (editorRef.current && initialValue !== undefined && editorReady) {
         const currentValue = editorRef.current.getValue();
-        console.log('[SqlEditor] Checking if update needed:', {
-          initialValueLength: initialValue.length,
-          currentValueLength: currentValue.length,
-          initialValuePreview: initialValue.substring(0, 50) + '...',
-          currentValuePreview: currentValue.substring(0, 50) + '...',
-          areEqual: initialValue === currentValue
-        });
-
-        // Always update if initial value is different from current value
-        // This ensures query history and other programmatic content changes work
         if (initialValue !== currentValue) {
-          console.log('[SqlEditor] Updating editor with new SQL:', initialValue.substring(0, 100));
           editorRef.current.setValue(initialValue);
           editorRef.current.setPosition({ lineNumber: 1, column: 1 });
-          console.log('[SqlEditor] Editor updated successfully');
-        } else {
-          console.log('[SqlEditor] No update needed - values are identical');
         }
-      } else {
-        console.log('[SqlEditor] Skipping update - no editor, undefined initialValue, or editor not ready');
       }
     }, [initialValue, editorReady]);
-
-    // Update autocomplete and validation when schema changes
-    useEffect(() => {
-      if (!monacoRef.current || !dbSchema) return;
-
-      const monacoInstance = monacoRef.current;
-      const disposables: { dispose: () => void }[] = [];
-
-      // Register completions provider for T-SQL
-      const completionProvider = monacoInstance.languages.registerCompletionItemProvider('sql', {
-        triggerCharacters: ['.', ' '],
-        provideCompletionItems: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
-          const word = model.getWordUntilPosition(position);
-          const range = {
-            startLineNumber: position.lineNumber,
-            endLineNumber: position.lineNumber,
-            startColumn: word.startColumn,
-            endColumn: word.endColumn,
-          };
-
-          const textUntilPosition = model.getValueInRange({
-            startLineNumber: 1,
-            startColumn: 1,
-            endLineNumber: position.lineNumber,
-            endColumn: position.column,
-          });
-
-          const lineUntilPosition = model.getValueInRange({
-            startLineNumber: position.lineNumber,
-            startColumn: 1,
-            endLineNumber: position.lineNumber,
-            endColumn: position.column,
-          });
-
-          const suggestions: languages.CompletionItem[] = [];
-
-          // Check if we're after a dot (for column suggestions)
-          const dotMatch = lineUntilPosition.match(/(\w+)\.\w*$/);
-          if (dotMatch) {
-            const prefix = dotMatch[1];
-            const tableAlias = findTableForAlias(textUntilPosition, prefix, dbSchema);
-
-            if (tableAlias) {
-              const columns = getColumnsForTable(tableAlias.schema, tableAlias.table, dbSchema);
-              return {
-                suggestions: columns.map((col: ColumnInfo) => ({
-                  label: col.name,
-                  kind: monacoInstance.languages.CompletionItemKind.Field,
-                  detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
-                  insertText: col.name,
-                  range,
-                })),
-              };
-            }
-          }
-
-          // Analyze SQL context
-          const sqlContext = analyzeSqlContext(textUntilPosition, lineUntilPosition);
-          const fullText = model.getValue();
-
-          // Handle different SQL contexts
-          switch (sqlContext.type) {
-            case 'JOIN_TABLE': {
-              const tablesInQuery = extractTablesFromQuery(textUntilPosition, dbSchema);
-              if (tablesInQuery.length > 0) {
-                const relatedTables = getRelatedTables(tablesInQuery, dbSchema);
-                relatedTables.forEach((table) => {
-                  if (!table || !table.name) return;
-                  const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
-                  const tableAlias = generateSmartAlias(table.name);
-
-                  let insertText = `${fullName} ${tableAlias}`;
-                  let detailText = `Table (${table.columns?.length || 0} columns)`;
-
-                  if (table.foreignKeyInfo) {
-                    const fkInfo = table.foreignKeyInfo;
-                    const toAlias = tableAlias;
-                    const fromAlias = fkInfo.fromAlias;
-
-                    if (fkInfo.direction === 'to') {
-                      insertText = `${fullName} ${toAlias} ON ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
-                      detailText = `Join on ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
-                    } else {
-                      insertText = `${fullName} ${toAlias} ON ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
-                      detailText = `Join on ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
-                    }
-                  }
-
-                  suggestions.push({
-                    label: fullName,
-                    kind: monacoInstance.languages.CompletionItemKind.Class,
-                    detail: detailText,
-                    insertText: insertText,
-                    insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                    range,
-                    sortText: `0_${fullName}`,
-                  });
-                });
-                return { suggestions };
-              }
-              break;
-            }
-
-            case 'ORDER_BY':
-            case 'GROUP_BY':
-            case 'SELECT':
-            case 'WHERE':
-            case 'AFTER_FROM': {
-              // Suggest columns from tables in query
-              const tablesInQuery = extractTablesFromQuery(fullText, dbSchema);
-              tablesInQuery.forEach((tableInfo) => {
-                const columns = getColumnsForTable(tableInfo.schema, tableInfo.table, dbSchema);
-                const displayAlias = tableInfo.alias || tableInfo.table;
-
-                columns.forEach((col: ColumnInfo) => {
-                  if (tableInfo.hasExplicitAlias || tablesInQuery.length > 1) {
-                    suggestions.push({
-                      label: `${displayAlias}.${col.name}`,
-                      kind: monacoInstance.languages.CompletionItemKind.Field,
-                      detail: `${col.type}${col.nullable ? ' (nullable)' : ''} - from ${tableInfo.table}`,
-                      insertText: `${displayAlias}.${col.name}`,
-                      range,
-                      sortText: `1_${col.name}`,
-                    });
-                  }
-                  suggestions.push({
-                    label: col.name,
-                    kind: monacoInstance.languages.CompletionItemKind.Field,
-                    detail: `${col.type}${col.nullable ? ' (nullable)' : ''} - from ${tableInfo.table}`,
-                    insertText: col.name,
-                    range,
-                    sortText: `2_${col.name}`,
-                  });
-                });
-              });
-
-              // Add operators for WHERE/HAVING
-              if (sqlContext.suggestOperators) {
-                getSqlOperators().forEach((op) => {
-                  suggestions.push({
-                    label: op.label,
-                    kind: monacoInstance.languages.CompletionItemKind.Operator,
-                    detail: op.detail,
-                    insertText: op.insertText,
-                    insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                    range,
-                    sortText: `0_${op.label}`,
-                  });
-                });
-              }
-              break;
-            }
-
-            case 'HAVING': {
-              // Add aggregate functions
-              getAggregateFunctions().forEach((fn) => {
-                suggestions.push({
-                  label: fn.label,
-                  kind: monacoInstance.languages.CompletionItemKind.Function,
-                  detail: fn.detail,
-                  insertText: fn.insertText,
-                  insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                  range,
-                  sortText: `0_${fn.label}`,
-                });
-              });
-
-              if (sqlContext.suggestOperators) {
-                getSqlOperators().forEach((op) => {
-                  suggestions.push({
-                    label: op.label,
-                    kind: monacoInstance.languages.CompletionItemKind.Operator,
-                    detail: op.detail,
-                    insertText: op.insertText,
-                    insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                    range,
-                    sortText: `1_${op.label}`,
-                  });
-                });
-              }
-              break;
-            }
-
-            case 'INSERT_COLUMNS': {
-              if (sqlContext.tableName) {
-                const tableInfo = dbSchema.tables?.find(
-                  (t: TableInfo) => t.name.toLowerCase() === sqlContext.tableName?.toLowerCase()
-                );
-                if (tableInfo) {
-                  tableInfo.columns.forEach((col: ColumnInfo) => {
-                    suggestions.push({
-                      label: col.name,
-                      kind: monacoInstance.languages.CompletionItemKind.Field,
-                      detail: `${col.type}${col.nullable ? ' (nullable)' : ''}`,
-                      insertText: col.name,
-                      range,
-                    });
-                  });
-                }
-              }
-              break;
-            }
-          }
-
-          // Add tables
-          dbSchema.tables?.forEach((table: TableInfo) => {
-            suggestions.push({
-              label: table.name,
-              kind: monacoInstance.languages.CompletionItemKind.Class,
-              insertText: table.name,
-              range,
-              detail: `Table (${table.columns.length} columns)`,
-              sortText: `3_${table.name}`,
-            });
-
-            // Dynamic table snippets: TableName100 and TableName*
-            const schema = (table as any).schema || 'dbo';
-            const bracketedName = `[${schema}].[${table.name}]`;
-            const aliasName = generateSmartAlias(table.name);
-            const fullName = schema === 'dbo' ? table.name : `${schema}.${table.name}`;
-
-            const table100Label = `${table.name}100`;
-            const tableAllLabel = `${table.name}*`;
-
-            // Check if labels already exist (from user snippets)
-            const existingLabels = new Set(suggestions.map(s => (typeof s.label === 'string' ? s.label : '').toLowerCase()));
-
-            if (!existingLabels.has(table100Label.toLowerCase())) {
-              suggestions.push({
-                label: table100Label,
-                kind: monacoInstance.languages.CompletionItemKind.Snippet,
-                detail: `📅 Generate SELECT TOP 100 from ${fullName}`,
-                insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
-                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range,
-                sortText: `0_${table.name}_100`,
-                documentation: {
-                  value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`,
-                },
-              });
-            }
-
-            if (!existingLabels.has(tableAllLabel.toLowerCase())) {
-              suggestions.push({
-                label: tableAllLabel,
-                kind: monacoInstance.languages.CompletionItemKind.Snippet,
-                detail: `📅 Generate SELECT * from ${fullName}`,
-                insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
-                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range,
-                sortText: `0_${table.name}_all`,
-                documentation: {
-                  value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`,
-                },
-              });
-            }
-          });
-
-          // Add views
-          dbSchema.views?.forEach((view: ViewInfo) => {
-            suggestions.push({
-              label: view.name,
-              kind: monacoInstance.languages.CompletionItemKind.Interface,
-              insertText: view.name,
-              range,
-              detail: 'View',
-              sortText: `4_${view.name}`,
-            });
-          });
-
-          // Add stored procedures
-          dbSchema.storedProcedures?.forEach((sp: StoredProcedureInfo) => {
-            suggestions.push({
-              label: sp.name,
-              kind: monacoInstance.languages.CompletionItemKind.Function,
-              insertText: sp.name,
-              range,
-              detail: 'Stored Procedure',
-              sortText: `5_${sp.name}`,
-            });
-          });
-
-          // Add functions
-          dbSchema.functions?.forEach((fn: FunctionInfo) => {
-            suggestions.push({
-              label: fn.name,
-              kind: monacoInstance.languages.CompletionItemKind.Method,
-              insertText: fn.name,
-              range,
-              detail: 'Function',
-              sortText: `5_${fn.name}`,
-            });
-          });
-
-          // Add snippets
-          builtInSnippets.forEach((snippet) => {
-            suggestions.push({
-              label: snippet.prefix,
-              kind: monacoInstance.languages.CompletionItemKind.Snippet,
-              insertText: snippet.body,
-              insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              range,
-              detail: snippet.name,
-              documentation: snippet.description,
-              sortText: `9_${snippet.prefix}`,
-            });
-          });
-
-          // Remove duplicates
-          const seen = new Set<string>();
-          const uniqueSuggestions = suggestions.filter((s) => {
-            const key = `${s.label}-${s.kind}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-
-          return { suggestions: uniqueSuggestions };
-        },
-      });
-      disposables.push(completionProvider);
-
-      // Register SQL hover provider — shows table/column schema on hover
-      console.log('[SQL-HOVER] Registering hover provider');
-      const hoverProvider = monacoInstance.languages.registerHoverProvider('sql', {
-        provideHover: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
-          try {
-            const fullText = model.getValue();
-            const lineText = model.getLineContent(position.lineNumber);
-            const wordObj = model.getWordAtPosition(position);
-            return provideHoverContent(fullText, lineText, position, wordObj, dbSchema);
-          } catch (err) {
-            console.error('[SQL-HOVER] Error in hover provider', err);
-          }
-          return null;
-        },
-      });
-      disposables.push(hoverProvider);
-
-      // Set up validation on content change
-      const validationDisposable = editorRef.current?.onDidChangeModelContent(() => {
-        const model = editorRef.current?.getModel();
-        if (!model) return;
-
-        // Debounce validation
-        const timeoutId = setTimeout(() => {
-          const sql = model.getValue();
-          const markers = validateSql(sql, dbSchema);
-
-          // Convert our markers to Monaco markers
-          const monacoMarkers = markers.map((m) => ({
-            severity:
-              m.severity === 'error'
-                ? monacoInstance.MarkerSeverity.Error
-                : m.severity === 'warning'
-                ? monacoInstance.MarkerSeverity.Warning
-                : monacoInstance.MarkerSeverity.Info,
-            message: m.message,
-            startLineNumber: m.startLineNumber,
-            startColumn: m.startColumn,
-            endLineNumber: m.endLineNumber,
-            endColumn: m.endColumn,
-          }));
-
-          monacoInstance.editor.setModelMarkers(model, 'sql-validator', monacoMarkers);
-        }, 500);
-
-        return () => clearTimeout(timeoutId);
-      });
-
-      if (validationDisposable) {
-        disposables.push(validationDisposable);
-      }
-
-      return () => {
-        disposables.forEach((d) => d.dispose());
-      };
-    }, [dbSchema, editorReady]);
 
     return (
       <div className="sql-editor-container">
