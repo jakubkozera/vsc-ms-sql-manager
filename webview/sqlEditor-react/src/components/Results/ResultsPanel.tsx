@@ -55,14 +55,18 @@ export function ResultsPanel() {
 
   // Auto-show pending changes tab when changes exist
   useEffect(() => {
-    if (pendingChanges.hasPendingChanges && activeTab === 'results') {
-      // Don't auto-switch, but the tab badge will be visible
-    }
     // When changes are cleared (committed/reverted), switch back to results
     if (!pendingChanges.hasPendingChanges && activeTab === 'pendingChanges') {
       setActiveTab('results');
     }
   }, [pendingChanges.hasPendingChanges, activeTab]);
+
+  // Auto-switch to messages tab when an error arrives (e.g. commit failure)
+  useEffect(() => {
+    if (lastError && activeTab === 'pendingChanges') {
+      setActiveTab('messages');
+    }
+  }, [lastError]);
 
   // Selection aggregation state
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo>({ values: [], rowCount: 0 });
@@ -180,6 +184,48 @@ export function ResultsPanel() {
     }
     return '';
   }, [lastMetadata, lastColumnNames]);
+
+  // Commit a single cell change
+  const handleCommitCell = useCallback((resultSetIndex: number, rowIndex: number, columnName: string) => {
+    const meta = lastMetadata?.[resultSetIndex];
+    if (!meta || !currentConnectionId || !currentDatabase) return;
+
+    const columns = lastColumnNames?.[resultSetIndex] || [];
+    const pkColumns = meta.primaryKeyColumns || [];
+    const tableName = meta.sourceTable || '';
+    const schemaName = meta.sourceSchema || 'dbo';
+
+    const rowChanges = pendingChanges.getChangesForResultSet(resultSetIndex);
+    const rowChange = rowChanges.find(r => r.rowIndex === rowIndex);
+    if (!rowChange) return;
+
+    const cellChange = rowChange.changes.get(columnName);
+    if (!cellChange) return;
+
+    const pkValues: Record<string, any> = {};
+    for (const pk of pkColumns) {
+      const colIdx = columns.indexOf(pk);
+      if (colIdx >= 0) pkValues[pk] = rowChange.originalRow[colIdx];
+    }
+
+    const whereClause = Object.entries(pkValues)
+      .map(([col, val]) => `[${col}] = ${sqlEscape(val)}`)
+      .join(' AND ');
+    const statement = `UPDATE [${schemaName}].[${tableName}]\nSET     [${columnName}] = ${sqlEscape(cellChange.new)}\nWHERE ${whereClause};`;
+
+    const changeMap: Record<string, { oldValue: any; newValue: any }> = {
+      [columnName]: { oldValue: cellChange.original, newValue: cellChange.new },
+    };
+
+    postMessage({
+      type: 'commitChanges',
+      changes: [{ type: 'UPDATE', tableName, schemaName, primaryKeyValues: pkValues, changes: changeMap, rowIndex }],
+      statements: [statement],
+      connectionId: currentConnectionId,
+      databaseName: currentDatabase,
+      originalQuery: originalQuery || undefined,
+    });
+  }, [lastMetadata, lastColumnNames, currentConnectionId, currentDatabase, originalQuery, pendingChanges.getChangesForResultSet, postMessage]);
 
   // Preview SQL in new editor
   const handlePreviewSql = useCallback((resultSetIndex: number) => {
@@ -435,6 +481,8 @@ export function ResultsPanel() {
               pendingChanges.revertAll(firstEditableIndex);
             }}
             onCommit={() => handleCommit(firstEditableIndex)}
+            onCommitRow={(_rowIndex) => handleCommit(firstEditableIndex)}
+            onCommitCell={(rowIndex, columnName) => handleCommitCell(firstEditableIndex, rowIndex, columnName)}
             onPreviewSql={() => handlePreviewSql(firstEditableIndex)}
             generateRowSql={(rowChange) => generateRowSql(firstEditableIndex, rowChange)}
           />

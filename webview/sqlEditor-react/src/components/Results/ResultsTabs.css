@@ -192,8 +192,8 @@
   font-size: 12px;
   white-space: pre-wrap;
   text-align: left;
-  min-width: 300px;
-  max-width: 600px;
+  min-width: 500px;
+  max-width: 900px;
   max-height: 400px;
   overflow-y: auto;
   pointer-events: none;

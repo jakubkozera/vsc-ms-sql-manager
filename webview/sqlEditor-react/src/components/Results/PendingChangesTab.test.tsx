@@ -29,6 +29,7 @@ describe('PendingChangesTab', () => {
     onRevertAll: vi.fn(),
     onCommit: vi.fn(),
     onCommitRow: vi.fn(),
+    onCommitCell: vi.fn(),
     onPreviewSql: vi.fn(),
     generateRowSql: vi.fn(() => 'UPDATE [dbo].[Users]\nSET     [name] = \'Jane\'\nWHERE [id] = 1;'),
   };
@@ -230,6 +231,29 @@ describe('PendingChangesTab', () => {
     // Now details should be visible
     expect(screen.getAllByText('Old:').length).toBeGreaterThan(0);
     expect(screen.getAllByText('New:').length).toBeGreaterThan(0);
+  });
+
+  it('shows commit button per column in expanded multi-change rows', () => {
+    const onCommitCell = vi.fn();
+    const changes: RowChange[] = [
+      createRowChange(0, [
+        ['name', { original: 'John', new: 'Jane' }],
+        ['email', { original: 'john@test.com', new: 'jane@test.com' }],
+      ]),
+    ];
+
+    render(<PendingChangesTab {...defaultProps} changes={changes} onCommitCell={onCommitCell} />);
+
+    // Expand the row
+    fireEvent.click(screen.getByTestId('expand-0'));
+
+    // Should have "Commit this change" buttons
+    const commitBtns = screen.getAllByTitle('Commit this change');
+    expect(commitBtns.length).toBe(2); // one per column
+
+    // Click first one (name column, index 0 in expanded list)
+    fireEvent.click(commitBtns[0]);
+    expect(onCommitCell).toHaveBeenCalledWith(0, 'name');
   });
 
   it('shows change count text for modified rows', () => {
