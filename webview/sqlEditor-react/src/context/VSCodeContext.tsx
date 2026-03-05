@@ -502,7 +502,7 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   }, [postMessage]);
   
   const selectConnection = useCallback((connectionId: string) => {
-    postMessage({ type: 'selectConnection', connectionId });
+    postMessage({ type: 'switchConnection', connectionId });
   }, [postMessage]);
   
   const selectDatabase = useCallback((databaseName: string) => {

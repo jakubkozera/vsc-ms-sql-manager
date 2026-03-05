@@ -169,7 +169,7 @@ export interface ManageConnectionsOutgoing {
 }
 
 export interface SelectConnectionOutgoing {
-  type: 'selectConnection';
+  type: 'switchConnection';
   connectionId: string;
 }
 

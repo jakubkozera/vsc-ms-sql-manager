@@ -46,17 +46,7 @@ describe('renderTableMarkdown', () => {
     const md = renderTableMarkdown('dbo', 'Users', sampleColumns);
     expect(md).toContain('**dbo.Users**');
     expect(md).toContain('4 columns');
-    expect(md).toContain('| Column | Type | Nullable | Key |');
-  });
-
-  it('includes PK indicator for primary key columns', () => {
-    const md = renderTableMarkdown('dbo', 'Users', sampleColumns);
-    expect(md).toContain('🔑 PK');
-  });
-
-  it('includes FK indicator for foreign key columns', () => {
-    const md = renderTableMarkdown('dbo', 'Users', sampleColumns);
-    expect(md).toContain('🔗 FK');
+    expect(md).toContain('| Column | Type | Nullable |');
   });
 
   it('shows maxLength in type', () => {
@@ -116,7 +106,7 @@ describe('renderMultiTableColumnMarkdown', () => {
     expect(md).toContain('dbo.Users');
     expect(md).toContain('dbo.Departments');
     expect(md).toContain('hr.Employees');
-    expect(md).toContain('| Table | Column | Type | Nullable | Key |');
+    expect(md).toContain('| Table | Column | Type | Nullable |');
   });
 });
 

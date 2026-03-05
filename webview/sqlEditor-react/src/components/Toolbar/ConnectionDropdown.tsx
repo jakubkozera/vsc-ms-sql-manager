@@ -65,16 +65,6 @@ export function ConnectionDropdown() {
               {conn.name || conn.server}
             </div>
           ))}
-          <div className="dropdown-separator" />
-          <div
-            className="dropdown-item"
-            onClick={() => {
-              manageConnections();
-              setIsOpen(false);
-            }}
-          >
-            Manage Connections...
-          </div>
         </div>
       )}
     </div>

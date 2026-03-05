@@ -23,25 +23,17 @@ function formatColumnType(col: ColumnInfo): string {
   return type;
 }
 
-function columnFlags(col: ColumnInfo): string {
-  const flags: string[] = [];
-  if (col.isPrimaryKey) flags.push('🔑 PK');
-  if (col.isForeignKey) flags.push('🔗 FK');
-  return flags.join(' ');
-}
-
 /**
- * Render a table's columns as a markdown table with PK/FK indicators.
+ * Render a table's columns as a markdown table.
  */
 export function renderTableMarkdown(schemaName: string, tableName: string, cols: ColumnInfo[]): string {
   let md = `**${schemaName}.${tableName}** *(${cols.length} columns)*\n\n`;
-  md += '| Column | Type | Nullable | Key |\n';
-  md += '|:---|:---|:---:|:---:|\n';
+  md += '| Column | Type | Nullable |\n';
+  md += '|:---|:---|:---:|\n';
   for (const c of cols) {
     const type = formatColumnType(c);
     const nullable = c.nullable ? 'YES' : 'NO';
-    const flags = columnFlags(c);
-    md += `| ${c.name} | ${type} | ${nullable} | ${flags} |\n`;
+    md += `| ${c.name} | ${type} | ${nullable} |\n`;
   }
   return md;
 }
@@ -65,15 +57,14 @@ export function renderColumnMarkdown(schemaName: string, tableName: string, col:
  * Render multiple tables' matching column as a markdown table.
  */
 export function renderMultiTableColumnMarkdown(tables: TableInfo[], columnName: string): string {
-  let md = '| Table | Column | Type | Nullable | Key |\n';
-  md += '|:---|:---|:---|:---:|:---:|\n';
+  let md = '| Table | Column | Type | Nullable |\n';
+  md += '|:---|:---|:---|:---:|\n';
   for (const mt of tables) {
     const mc = mt.columns.find((c) => c.name.toLowerCase() === columnName.toLowerCase());
     if (mc) {
       const type = formatColumnType(mc);
       const nullable = mc.nullable ? 'YES' : 'NO';
-      const flags = columnFlags(mc);
-      md += `| ${mt.schema}.${mt.name} | ${mc.name} | ${type} | ${nullable} | ${flags} |\n`;
+      md += `| ${mt.schema}.${mt.name} | ${mc.name} | ${type} | ${nullable} |\n`;
     }
   }
   return md;
