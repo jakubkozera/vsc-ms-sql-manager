@@ -141,11 +141,11 @@ export function extractTablesFromQuery(query: string, dbSchema: DatabaseSchema):
 
   const patterns = [
     // Pattern for bracketed identifiers: FROM [schema].[table] [alias] or FROM [table] [alias]
-    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
+    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join)\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
     // Pattern for schema.table with alias (must have dot)
-    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
+    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join)\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
     // Pattern for just table name with alias (no schema)
-    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?:\s+on\s+|\s+where\s+|\s+order\s+by\s+|\s+group\s+by\s+|\s+having\s+|\s*$|\s*\r?\n)/gi,
+    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join)\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
   ];
 
   patterns.forEach((pattern, patternIndex) => {
@@ -525,6 +525,242 @@ export function getAggregateFunctions(): { label: string; detail: string; insert
     { label: 'STDEV(column)', detail: 'Standard deviation', insertText: 'STDEV(${1:column})' },
     { label: 'VAR(column)', detail: 'Variance', insertText: 'VAR(${1:column})' },
   ];
+}
+
+// --- CTE Support ---
+
+export interface CTEDefinition {
+  name: string;
+  body: string;
+  explicitColumns?: string[];
+}
+
+/**
+ * Extract CTE definitions from a SQL query (WITH ... AS (...) blocks)
+ */
+export function extractCTEsFromQuery(query: string): CTEDefinition[] {
+  const ctes: CTEDefinition[] = [];
+
+  const withMatch = query.match(/\bWITH\s+/i);
+  if (!withMatch || withMatch.index === undefined) return ctes;
+
+  let pos = withMatch.index + withMatch[0].length;
+  const text = query;
+
+  while (pos < text.length) {
+    const cteHeaderMatch = text.substring(pos).match(
+      /^(\[?\w+\]?)\s*(?:\(([^)]+)\)\s*)?AS\s*\(/i
+    );
+    if (!cteHeaderMatch) break;
+
+    const cteName = cteHeaderMatch[1].replace(/^\[|\]$/g, '');
+    const explicitColumns = cteHeaderMatch[2]
+      ? cteHeaderMatch[2].split(',').map(c => c.trim().replace(/^\[|\]$/g, ''))
+      : undefined;
+
+    // Find matching closing paren (handle nested parens)
+    const bodyStart = pos + cteHeaderMatch[0].length;
+    let depth = 1;
+    let bodyEnd = bodyStart;
+
+    while (bodyEnd < text.length && depth > 0) {
+      if (text[bodyEnd] === '(') depth++;
+      else if (text[bodyEnd] === ')') depth--;
+      if (depth > 0) bodyEnd++;
+    }
+
+    if (depth !== 0) break;
+
+    const body = text.substring(bodyStart, bodyEnd);
+    ctes.push({ name: cteName, body, explicitColumns });
+
+    // Check for comma (more CTEs) or stop
+    pos = bodyEnd + 1;
+    const afterCTE = text.substring(pos).match(/^\s*,\s*/);
+    if (afterCTE) {
+      pos += afterCTE[0].length;
+    } else {
+      break;
+    }
+  }
+
+  return ctes;
+}
+
+/**
+ * Split a SELECT column list respecting parentheses
+ */
+function splitSelectColumns(selectPart: string): string[] {
+  const columns: string[] = [];
+  let depth = 0;
+  let current = '';
+
+  for (const char of selectPart) {
+    if (char === '(') depth++;
+    else if (char === ')') depth--;
+    else if (char === ',' && depth === 0) {
+      columns.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+
+  if (current.trim()) {
+    columns.push(current.trim());
+  }
+
+  return columns;
+}
+
+/**
+ * Find the position of the first FROM keyword at depth 0 (not inside parentheses)
+ */
+function findOuterFromPosition(text: string): number {
+  let depth = 0;
+  const lower = text.toLowerCase();
+  for (let i = 0; i < lower.length; i++) {
+    if (lower[i] === '(') depth++;
+    else if (lower[i] === ')') depth--;
+    else if (depth === 0 && lower.substring(i, i + 4) === 'from' &&
+      (i === 0 || /\s/.test(lower[i - 1])) &&
+      (i + 4 >= lower.length || /[\s\r\n]/.test(lower[i + 4]))) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Get columns from a CTE definition
+ */
+export function getCTEColumns(
+  cte: CTEDefinition,
+  dbSchema: DatabaseSchema
+): ColumnInfo[] {
+  if (cte.explicitColumns && cte.explicitColumns.length > 0) {
+    return cte.explicitColumns.map(name => ({
+      name,
+      type: 'unknown',
+      nullable: true,
+    }));
+  }
+
+  // Strip leading SELECT keyword (and DISTINCT / TOP N)
+  const selectMatch = cte.body.match(/^\s*SELECT\s+(?:DISTINCT\s+)?(?:TOP\s+\d+\s+)?/i);
+  if (!selectMatch) return [];
+
+  const afterSelect = cte.body.substring(selectMatch[0].length);
+
+  // Find the outer FROM (not inside subqueries)
+  const fromPos = findOuterFromPosition(afterSelect);
+  const selectPart = (fromPos === -1 ? afterSelect : afterSelect.substring(0, fromPos)).trim();
+
+  // Handle SELECT *
+  if (selectPart === '*') {
+    const innerTables = extractTablesFromQuery(cte.body, dbSchema);
+    const columns: ColumnInfo[] = [];
+    innerTables.forEach(t => {
+      columns.push(...getColumnsForTable(t.schema, t.table, dbSchema));
+    });
+    return columns;
+  }
+
+  const columns: ColumnInfo[] = [];
+  const columnExprs = splitSelectColumns(selectPart);
+
+  for (const expr of columnExprs) {
+    const trimmed = expr.trim();
+    if (!trimmed) continue;
+
+    // alias = expr (T-SQL assignment style)
+    const assignMatch = trimmed.match(/^\[?(\w+)\]?\s*=/);
+    if (assignMatch) {
+      columns.push({ name: assignMatch[1], type: 'unknown', nullable: true });
+      continue;
+    }
+
+    // expr AS alias
+    const asMatch = trimmed.match(/\bAS\s+\[?(\w+)\]?\s*$/i);
+    if (asMatch) {
+      columns.push({ name: asMatch[1], type: 'unknown', nullable: true });
+      continue;
+    }
+
+    // qualified: alias.column or [alias].[column]
+    const qualMatch = trimmed.match(/^\[?\w+\]?\.\[?(\w+)\]?$/);
+    if (qualMatch) {
+      columns.push({ name: qualMatch[1], type: 'unknown', nullable: true });
+      continue;
+    }
+
+    // Simple column name
+    const simpleMatch = trimmed.match(/^\[?(\w+)\]?$/);
+    if (simpleMatch) {
+      columns.push({ name: simpleMatch[1], type: 'unknown', nullable: true });
+      continue;
+    }
+
+    // Complex expression without alias — skip
+  }
+
+  return columns;
+}
+
+/**
+ * Build an augmented schema that includes CTE definitions as virtual tables
+ */
+export function buildAugmentedSchema(dbSchema: DatabaseSchema, query: string): DatabaseSchema {
+  const ctes = extractCTEsFromQuery(query);
+  if (ctes.length === 0) return dbSchema;
+
+  const cteTableInfos: TableInfo[] = ctes.map(cte => ({
+    schema: 'cte',
+    name: cte.name,
+    columns: getCTEColumns(cte, dbSchema),
+  }));
+
+  return {
+    ...dbSchema,
+    tables: [...(dbSchema.tables || []), ...cteTableInfos],
+  };
+}
+
+/**
+ * Get the main query text after stripping CTE definitions.
+ * This returns only the portion of the query after WITH...AS(...) blocks.
+ */
+export function getMainQueryText(query: string): string {
+  const withMatch = query.match(/\bWITH\s+/i);
+  if (!withMatch || withMatch.index === undefined) return query;
+
+  let pos = withMatch.index + withMatch[0].length;
+
+  while (pos < query.length) {
+    const cteHeaderMatch = query.substring(pos).match(
+      /^(\[?\w+\]?)\s*(?:\(([^)]+)\)\s*)?AS\s*\(/i
+    );
+    if (!cteHeaderMatch) break;
+
+    const bodyStart = pos + cteHeaderMatch[0].length;
+    let depth = 1;
+    let bodyEnd = bodyStart;
+    while (bodyEnd < query.length && depth > 0) {
+      if (query[bodyEnd] === '(') depth++;
+      else if (query[bodyEnd] === ')') depth--;
+      if (depth > 0) bodyEnd++;
+    }
+
+    pos = bodyEnd + 1;
+    const afterCTE = query.substring(pos).match(/^\s*,\s*/);
+    if (afterCTE) {
+      pos += afterCTE[0].length;
+    } else {
+      break;
+    }
+  }
+
+  return query.substring(pos);
 }
 
 /**

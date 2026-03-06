@@ -11,6 +11,9 @@ import {
   generateSmartAlias,
   getSqlOperators,
   getAggregateFunctions,
+  buildAugmentedSchema,
+  getMainQueryText,
+  type SqlContextType,
 } from '../../../services';
 
 type MonacoType = typeof import('monaco-editor');
@@ -55,15 +58,20 @@ export function useCompletionProvider(
         });
 
         const suggestions: languages.CompletionItem[] = [];
+        const fullText = model.getValue();
+
+        // Build augmented schema with CTE definitions as virtual tables
+        const augmentedSchema = buildAugmentedSchema(dbSchema, fullText);
 
         // Check if we're after a dot (for column suggestions)
         const dotMatch = lineUntilPosition.match(/(\w+)\.\w*$/);
         if (dotMatch) {
           const prefix = dotMatch[1];
-          const tableAlias = findTableForAlias(textUntilPosition, prefix, dbSchema);
+          // Use fullText so aliases defined after cursor (e.g. FROM below SELECT) are resolved
+          const tableAlias = findTableForAlias(fullText, prefix, augmentedSchema);
 
           if (tableAlias) {
-            const columns = getColumnsForTable(tableAlias.schema, tableAlias.table, dbSchema);
+            const columns = getColumnsForTable(tableAlias.schema, tableAlias.table, augmentedSchema);
             return {
               suggestions: columns.map((col: ColumnInfo) => ({
                 label: col.name,
@@ -78,17 +86,20 @@ export function useCompletionProvider(
 
         // Analyze SQL context
         const sqlContext = analyzeSqlContext(textUntilPosition, lineUntilPosition);
-        const fullText = model.getValue();
+
+        // Pre-extract tables from main query (excluding CTE bodies) for column suggestion contexts
+        const mainQueryText = getMainQueryText(fullText);
+        const tablesInQuery = extractTablesFromQuery(mainQueryText, augmentedSchema);
 
         // Handle different SQL contexts
         switch (sqlContext.type) {
           case 'JOIN_TABLE': {
-            const tablesInQuery = extractTablesFromQuery(textUntilPosition, dbSchema);
-            if (tablesInQuery.length > 0) {
-              const relatedTables = getRelatedTables(tablesInQuery, dbSchema);
+            const tablesBeforeCursor = extractTablesFromQuery(textUntilPosition, augmentedSchema);
+            if (tablesBeforeCursor.length > 0) {
+              const relatedTables = getRelatedTables(tablesBeforeCursor, augmentedSchema);
 
               // Collect existing aliases (lowercase) to guarantee uniqueness for new aliases
-              const usedAliases = new Set(tablesInQuery.map(t => (t.alias || t.table).toLowerCase()));
+              const usedAliases = new Set(tablesBeforeCursor.map(t => (t.alias || t.table).toLowerCase()));
 
               const generateUniqueAlias = (tableName: string): string => {
                 const base = generateSmartAlias(tableName);
@@ -142,14 +153,15 @@ export function useCompletionProvider(
             break;
           }
 
+          case 'ON_CONDITION':
           case 'ORDER_BY':
           case 'GROUP_BY':
           case 'SELECT':
           case 'WHERE':
+          case 'UPDATE_SET':
           case 'AFTER_FROM': {
-            const tablesInQuery = extractTablesFromQuery(fullText, dbSchema);
             tablesInQuery.forEach((tableInfo) => {
-              const columns = getColumnsForTable(tableInfo.schema, tableInfo.table, dbSchema);
+              const columns = getColumnsForTable(tableInfo.schema, tableInfo.table, augmentedSchema);
               const displayAlias = tableInfo.alias || tableInfo.table;
 
               columns.forEach((col: ColumnInfo) => {
@@ -240,107 +252,119 @@ export function useCompletionProvider(
           }
         }
 
-        // Add tables
-        dbSchema.tables?.forEach((table: TableInfo) => {
-          suggestions.push({
-            label: table.name,
-            kind: monacoInstance.languages.CompletionItemKind.Class,
-            insertText: table.name,
-            range,
-            detail: `Table (${table.columns.length} columns)`,
-            sortText: `3_${table.name}`,
+        // Determine whether to add global suggestions (all tables, views, procs, functions, snippets)
+        // In column-focused contexts with tables already in the query, only show relevant columns
+        const columnFocusedContexts: SqlContextType[] = [
+          'SELECT', 'WHERE', 'ORDER_BY', 'GROUP_BY', 'AFTER_FROM',
+          'ON_CONDITION', 'UPDATE_SET', 'HAVING',
+        ];
+        const suppressGlobal =
+          (columnFocusedContexts.includes(sqlContext.type) && tablesInQuery.length > 0) ||
+          sqlContext.type === 'INSERT_COLUMNS';
+
+        if (!suppressGlobal) {
+          // Add tables
+          dbSchema.tables?.forEach((table: TableInfo) => {
+            suggestions.push({
+              label: table.name,
+              kind: monacoInstance.languages.CompletionItemKind.Class,
+              insertText: table.name,
+              range,
+              detail: `Table (${table.columns.length} columns)`,
+              sortText: `3_${table.name}`,
+            });
+
+            const schema = (table as any).schema || 'dbo';
+            const bracketedName = `[${schema}].[${table.name}]`;
+            const aliasName = generateSmartAlias(table.name);
+            const fullName = schema === 'dbo' ? table.name : `${schema}.${table.name}`;
+
+            const table100Label = `${table.name}100`;
+            const tableAllLabel = `${table.name}*`;
+
+            const existingLabels = new Set(suggestions.map(s => (typeof s.label === 'string' ? s.label : '').toLowerCase()));
+
+            if (!existingLabels.has(table100Label.toLowerCase())) {
+              suggestions.push({
+                label: table100Label,
+                kind: monacoInstance.languages.CompletionItemKind.Snippet,
+                detail: `📅 Generate SELECT TOP 100 from ${fullName}`,
+                insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
+                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range,
+                sortText: `0_${table.name}_100`,
+                documentation: {
+                  value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`,
+                },
+              });
+            }
+
+            if (!existingLabels.has(tableAllLabel.toLowerCase())) {
+              suggestions.push({
+                label: tableAllLabel,
+                kind: monacoInstance.languages.CompletionItemKind.Snippet,
+                detail: `📅 Generate SELECT * from ${fullName}`,
+                insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
+                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range,
+                sortText: `0_${table.name}_all`,
+                documentation: {
+                  value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`,
+                },
+              });
+            }
           });
 
-          const schema = (table as any).schema || 'dbo';
-          const bracketedName = `[${schema}].[${table.name}]`;
-          const aliasName = generateSmartAlias(table.name);
-          const fullName = schema === 'dbo' ? table.name : `${schema}.${table.name}`;
-
-          const table100Label = `${table.name}100`;
-          const tableAllLabel = `${table.name}*`;
-
-          const existingLabels = new Set(suggestions.map(s => (typeof s.label === 'string' ? s.label : '').toLowerCase()));
-
-          if (!existingLabels.has(table100Label.toLowerCase())) {
+          // Add views
+          dbSchema.views?.forEach((view: ViewInfo) => {
             suggestions.push({
-              label: table100Label,
+              label: view.name,
+              kind: monacoInstance.languages.CompletionItemKind.Interface,
+              insertText: view.name,
+              range,
+              detail: 'View',
+              sortText: `4_${view.name}`,
+            });
+          });
+
+          // Add stored procedures
+          dbSchema.storedProcedures?.forEach((sp: StoredProcedureInfo) => {
+            suggestions.push({
+              label: sp.name,
+              kind: monacoInstance.languages.CompletionItemKind.Function,
+              insertText: sp.name,
+              range,
+              detail: 'Stored Procedure',
+              sortText: `5_${sp.name}`,
+            });
+          });
+
+          // Add functions
+          dbSchema.functions?.forEach((fn: FunctionInfo) => {
+            suggestions.push({
+              label: fn.name,
+              kind: monacoInstance.languages.CompletionItemKind.Method,
+              insertText: fn.name,
+              range,
+              detail: 'Function',
+              sortText: `5_${fn.name}`,
+            });
+          });
+
+          // Add snippets
+          builtInSnippets.forEach((snippet) => {
+            suggestions.push({
+              label: snippet.prefix,
               kind: monacoInstance.languages.CompletionItemKind.Snippet,
-              detail: `📅 Generate SELECT TOP 100 from ${fullName}`,
-              insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
+              insertText: snippet.body,
               insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
               range,
-              sortText: `0_${table.name}_100`,
-              documentation: {
-                value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`,
-              },
+              detail: snippet.name,
+              documentation: snippet.description,
+              sortText: `9_${snippet.prefix}`,
             });
-          }
-
-          if (!existingLabels.has(tableAllLabel.toLowerCase())) {
-            suggestions.push({
-              label: tableAllLabel,
-              kind: monacoInstance.languages.CompletionItemKind.Snippet,
-              detail: `📅 Generate SELECT * from ${fullName}`,
-              insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
-              insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              range,
-              sortText: `0_${table.name}_all`,
-              documentation: {
-                value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`,
-              },
-            });
-          }
-        });
-
-        // Add views
-        dbSchema.views?.forEach((view: ViewInfo) => {
-          suggestions.push({
-            label: view.name,
-            kind: monacoInstance.languages.CompletionItemKind.Interface,
-            insertText: view.name,
-            range,
-            detail: 'View',
-            sortText: `4_${view.name}`,
           });
-        });
-
-        // Add stored procedures
-        dbSchema.storedProcedures?.forEach((sp: StoredProcedureInfo) => {
-          suggestions.push({
-            label: sp.name,
-            kind: monacoInstance.languages.CompletionItemKind.Function,
-            insertText: sp.name,
-            range,
-            detail: 'Stored Procedure',
-            sortText: `5_${sp.name}`,
-          });
-        });
-
-        // Add functions
-        dbSchema.functions?.forEach((fn: FunctionInfo) => {
-          suggestions.push({
-            label: fn.name,
-            kind: monacoInstance.languages.CompletionItemKind.Method,
-            insertText: fn.name,
-            range,
-            detail: 'Function',
-            sortText: `5_${fn.name}`,
-          });
-        });
-
-        // Add snippets
-        builtInSnippets.forEach((snippet) => {
-          suggestions.push({
-            label: snippet.prefix,
-            kind: monacoInstance.languages.CompletionItemKind.Snippet,
-            insertText: snippet.body,
-            insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            range,
-            detail: snippet.name,
-            documentation: snippet.description,
-            sortText: `9_${snippet.prefix}`,
-          });
-        });
+        }
 
         // Remove duplicates
         const seen = new Set<string>();
