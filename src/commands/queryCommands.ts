@@ -154,7 +154,7 @@ export function registerQueryCommands(
                 
                 // Open empty SQL editor (no comment, completely empty)
                 const query = ``;
-                await openSqlInCustomEditor(query, `query_${item.database}.sql`, context);
+                await openSqlInCustomEditor(query, `query_${item.database}.sql`, context, item.connectionId, item.database);
                 
                 outputChannel.appendLine(`[QueryCommands] Opened new query for database: ${item.database}`);
                 

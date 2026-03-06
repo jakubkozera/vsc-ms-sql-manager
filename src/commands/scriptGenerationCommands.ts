@@ -348,7 +348,7 @@ async function handleScriptGeneration(
                 progress.report({ message: 'Finalizing script...' });
 
                 // Output the script
-                await outputScript(script, database, options, context, outputChannel);
+                await outputScript(script, database, options, context, outputChannel, connectionId);
 
                 vscode.window.showInformationMessage(
                     `Successfully generated scripts for ${totalObjects} database objects`
@@ -876,7 +876,8 @@ async function outputScript(
     database: string,
     options: any,
     context: vscode.ExtensionContext,
-    outputChannel: vscode.OutputChannel
+    outputChannel: vscode.OutputChannel,
+    connectionId?: string
 ): Promise<void> {
     const scriptTypeLabel = getScriptTypeLabel(options.scriptType).replace(/ /g, '_');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -884,7 +885,7 @@ async function outputScript(
 
     switch (options.destination) {
         case 'editor':
-            await openSqlInCustomEditor(script, filename, context);
+            await openSqlInCustomEditor(script, filename, context, connectionId, database);
             break;
 
         case 'file':

@@ -334,7 +334,7 @@ export function registerTableCommands(
                 createScript += `ALTER TABLE [${schema}].[${table}] CHECK CONSTRAINT [${fk.constraint_name}]\nGO\n`;
             }
 
-            await openSqlInCustomEditor(createScript, `create_${table}.sql`, context);
+            await openSqlInCustomEditor(createScript, `create_${table}.sql`, context, tableNode.connectionId, tableNode.database);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate CREATE script: ${errorMessage}`);
@@ -356,7 +356,7 @@ export function registerTableCommands(
 DROP TABLE [${schema}].[${table}]
 GO`;
 
-            await openSqlInCustomEditor(dropScript, `drop_${table}.sql`, context);
+            await openSqlInCustomEditor(dropScript, `drop_${table}.sql`, context, tableNode.connectionId, tableNode.database);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate DROP script: ${errorMessage}`);
@@ -451,7 +451,7 @@ GO`;
             }).join('\n');
             insertScript += '\n)';
 
-            await openSqlInCustomEditor(insertScript, `insert_${table}.sql`, context);
+            await openSqlInCustomEditor(insertScript, `insert_${table}.sql`, context, tableNode.connectionId, tableNode.database);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate INSERT script: ${errorMessage}`);
@@ -546,7 +546,7 @@ GO`;
                 }).join('\n');
             }
 
-            await openSqlInCustomEditor(updateScript, `update_${table}.sql`, context);
+            await openSqlInCustomEditor(updateScript, `update_${table}.sql`, context, tableNode.connectionId, tableNode.database);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate UPDATE script: ${errorMessage}`);
@@ -856,7 +856,7 @@ GO`;
             deleteScript += `    THROW;\n`;
             deleteScript += `END CATCH;\n`;
 
-            await openSqlInCustomEditor(deleteScript, `delete_${table}_cascading.sql`, context);
+            await openSqlInCustomEditor(deleteScript, `delete_${table}_cascading.sql`, context, tableNode.connectionId, tableNode.database);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to generate DELETE script: ${errorMessage}`);
