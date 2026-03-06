@@ -8,6 +8,9 @@ import {
   renderCteMarkdown,
   renderCteColumnMarkdown,
   provideHoverContent,
+  isColumnAliasDefinition,
+  renderFunctionHover,
+  SQL_FUNCTION_DOCS,
 } from './sqlHoverService';
 import type { ColumnInfo, DatabaseSchema, ForeignKeyInfo } from '../types/schema';
 
@@ -77,27 +80,23 @@ describe('renderTableMarkdown', () => {
 });
 
 describe('renderColumnMarkdown', () => {
-  it('renders column properties table', () => {
+  it('renders column in horizontal table format', () => {
     const col = sampleColumns[0]; // Id
     const md = renderColumnMarkdown('dbo', 'Users', col);
-    expect(md).toContain('| **Table** | dbo.Users |');
-    expect(md).toContain('| **Column** | Id |');
-    expect(md).toContain('| **Type** | int |');
-    expect(md).toContain('| **Nullable** | NO |');
-    expect(md).toContain('| **Primary Key** | YES |');
+    expect(md).toContain('| Table | Column | Type | Nullable |');
+    expect(md).toContain('| dbo.Users | Id | int | NO |');
   });
 
-  it('shows FK for foreign key columns', () => {
-    const col = sampleColumns[3]; // DepartmentId
+  it('shows maxLength in type', () => {
+    const col = sampleColumns[1]; // Name nvarchar(100)
     const md = renderColumnMarkdown('dbo', 'Users', col);
-    expect(md).toContain('| **Foreign Key** | YES |');
+    expect(md).toContain('nvarchar(100)');
   });
 
-  it('does not show PK/FK for non-key columns', () => {
-    const col = sampleColumns[1]; // Name
+  it('shows nullable YES', () => {
+    const col = sampleColumns[2]; // Email nullable
     const md = renderColumnMarkdown('dbo', 'Users', col);
-    expect(md).not.toContain('Primary Key');
-    expect(md).not.toContain('Foreign Key');
+    expect(md).toContain('| YES |');
   });
 });
 
@@ -739,6 +738,7 @@ describe('formatColumnType maxLength -1 as max', () => {
     const md = renderColumnMarkdown('dbo', 'Articles', col);
     expect(md).toContain('nvarchar(max)');
     expect(md).not.toContain('nvarchar(-1)');
+    expect(md).toContain('| dbo.Articles | Body | nvarchar(max) | YES |');
   });
 
   it('preserves normal maxLength values', () => {
@@ -753,18 +753,15 @@ describe('formatColumnType maxLength -1 as max', () => {
 // ─── CTE alias hover ────────────────────────────────────────────────────────
 
 describe('renderCteColumnMarkdown', () => {
-  it('renders CTE column properties table', () => {
+  it('renders CTE column in horizontal table format', () => {
     const md = renderCteColumnMarkdown('MyCte', { name: 'ProjectId', type: 'int', nullable: false });
-    expect(md).toContain('MyCte');
-    expect(md).toContain('ProjectId');
-    expect(md).toContain('int');
-    expect(md).toContain('NO');
+    expect(md).toContain('| CTE | Column | Type | Nullable |');
+    expect(md).toContain('| MyCte | ProjectId | int | NO |');
   });
 
   it('shows ? for unknown type', () => {
     const md = renderCteColumnMarkdown('MyCte', { name: 'Calc', type: '', nullable: true });
-    expect(md).toContain('?');
-    expect(md).toContain('YES');
+    expect(md).toContain('| MyCte | Calc | ? | YES |');
   });
 });
 
@@ -915,5 +912,147 @@ INNER JOIN RemoveEvents r ON a.ProjectId = r.ProjectId`;
     const md = result!.contents[0].value;
     expect(md).toContain('RemoveEvents');
     expect(md).toContain('ProjectId');
+  });
+});
+
+// ─── Column alias detection ──────────────────────────────────────────────────
+
+describe('isColumnAliasDefinition', () => {
+  it('returns true for word directly after AS', () => {
+    expect(isColumnAliasDefinition('SELECT td.Name AS Tool', 19)).toBe(true);
+  });
+
+  it('returns true for word after AS with extra spaces', () => {
+    expect(isColumnAliasDefinition('SELECT x AS   Alias', 15)).toBe(true);
+  });
+
+  it('returns false for regular column reference', () => {
+    expect(isColumnAliasDefinition('SELECT Name FROM Users', 8)).toBe(false);
+  });
+
+  it('returns false for FROM clause table', () => {
+    expect(isColumnAliasDefinition('SELECT * FROM Users', 15)).toBe(false);
+  });
+
+  it('returns true for bracketed alias [Project name] — first word', () => {
+    // "SELECT td.Name AS [Project name]"
+    // Word "Project" starts at column 20 (after "[")
+    expect(isColumnAliasDefinition('SELECT td.Name AS [Project name]', 20)).toBe(true);
+  });
+
+  it('returns true for bracketed alias [Project name] — second word', () => {
+    // Word "name" starts at column 28
+    expect(isColumnAliasDefinition('SELECT td.Name AS [Project name]', 28)).toBe(true);
+  });
+
+  it('returns false for bracketed column reference without AS', () => {
+    expect(isColumnAliasDefinition('SELECT [Name] FROM Users', 9)).toBe(false);
+  });
+});
+
+describe('provideHoverContent column alias skip', () => {
+  it('returns null for word preceded by AS (column alias definition)', () => {
+    const sql = 'SELECT td.Name AS Tool FROM Users td';
+    const line = 'SELECT td.Name AS Tool FROM Users td';
+    // cursor on 'Tool' (startColumn = 19)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 20 },
+      { word: 'Tool', startColumn: 19, endColumn: 23 },
+      sampleSchema
+    );
+    // Tool is a column alias — should NOT trigger column hover
+    expect(result).toBeNull();
+  });
+
+  it('still shows hover for alias.column (not preceded by AS)', () => {
+    const sql = 'SELECT u.Name FROM Users u';
+    const line = 'SELECT u.Name FROM Users u';
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 13 },
+      { word: 'Name', startColumn: 10, endColumn: 14 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    expect(result!.contents[0].value).toContain('Name');
+  });
+});
+
+// ─── SQL function hover ──────────────────────────────────────────────────────
+
+describe('renderFunctionHover', () => {
+  it('renders function name, description, syntax and example', () => {
+    const doc = SQL_FUNCTION_DOCS['lower'];
+    const md = renderFunctionHover('LOWER', doc);
+    expect(md).toContain('**LOWER**');
+    expect(md).toContain('lowercase');
+    expect(md).toContain('LOWER(string)');
+    expect(md).toContain("SELECT LOWER('Hello World')");
+    expect(md).toContain("'hello world'");
+  });
+
+  it('renders function without result when result is undefined', () => {
+    const doc = SQL_FUNCTION_DOCS['openjson'];
+    const md = renderFunctionHover('OPENJSON', doc);
+    expect(md).toContain('**OPENJSON**');
+    expect(md).toContain('OPENJSON');
+    expect(md).not.toContain('→ undefined');
+  });
+});
+
+describe('provideHoverContent function hover', () => {
+  it('shows hover for LOWER function', () => {
+    const result = provideHoverContent(
+      'SELECT LOWER(Name) FROM Users',
+      'SELECT LOWER(Name) FROM Users',
+      { lineNumber: 1, column: 10 },
+      { word: 'LOWER', startColumn: 8, endColumn: 13 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**LOWER**');
+    expect(md).toContain('lowercase');
+  });
+
+  it('shows hover for DATEDIFF function (case insensitive)', () => {
+    const result = provideHoverContent(
+      'SELECT datediff(day, a, b) FROM t',
+      'SELECT datediff(day, a, b) FROM t',
+      { lineNumber: 1, column: 12 },
+      { word: 'datediff', startColumn: 8, endColumn: 16 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    expect(result!.contents[0].value).toContain('**DATEDIFF**');
+    expect(result!.contents[0].value).toContain('DATEDIFF');
+  });
+
+  it('shows hover for JSON_VALUE function', () => {
+    const result = provideHoverContent(
+      "SELECT JSON_VALUE(data, '$.name') FROM t",
+      "SELECT JSON_VALUE(data, '$.name') FROM t",
+      { lineNumber: 1, column: 12 },
+      { word: 'JSON_VALUE', startColumn: 8, endColumn: 18 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    expect(result!.contents[0].value).toContain('**JSON_VALUE**');
+    expect(result!.contents[0].value).toContain('scalar');
+  });
+
+  it('prefers table/column hover over function hover when name matches', () => {
+    // If "Name" matches a column, it should show column hover, not function hover
+    const result = provideHoverContent(
+      'SELECT Name FROM Users',
+      'SELECT Name FROM Users',
+      { lineNumber: 1, column: 10 },
+      { word: 'Name', startColumn: 8, endColumn: 12 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    // Should show column info, not a function (since Name is not in SQL_FUNCTION_DOCS)
+    expect(result!.contents[0].value).toContain('dbo.Users');
   });
 });

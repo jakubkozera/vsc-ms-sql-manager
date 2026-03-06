@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, forwardRef, useImperativeHandle, useState } from 'react';
-import MonacoEditor, { OnMount } from '@monaco-editor/react';
+import MonacoEditor, { BeforeMount, OnMount } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { format } from 'sql-formatter';
 import { useVSCode } from '../../context/VSCodeContext';
@@ -108,6 +108,23 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       }
     }, [formatOptions]);
 
+    /** Extra SQL functions not in Monaco's built-in SQL Monarch tokenizer */
+    const EXTRA_BUILTIN_FUNCTIONS = [
+      'OPENJSON', 'JSON_VALUE', 'JSON_QUERY', 'JSON_MODIFY', 'ISJSON',
+      'STRING_SPLIT', 'STRING_AGG', 'CONCAT_WS', 'TRANSLATE', 'TRIM',
+      'DATEDIFF_BIG', 'GREATEST', 'LEAST', 'GENERATE_SERIES',
+    ];
+
+    const handleEditorWillMount: BeforeMount = useCallback((monacoInstance) => {
+      // Extend the SQL Monarch tokenizer with extra built-in functions
+      // @ts-expect-error — no type declarations for internal Monaco SQL module
+      import('monaco-editor/esm/vs/basic-languages/sql/sql').then(({ language }: { language: any }) => {
+        const extended = { ...language };
+        extended.builtinFunctions = [...(language.builtinFunctions || []), ...EXTRA_BUILTIN_FUNCTIONS];
+        monacoInstance.languages.setMonarchTokensProvider('sql', extended);
+      });
+    }, []);
+
     const handleEditorMount: OnMount = useCallback((editor, monacoInstance) => {
       const disposables = setupEditor(editor, monacoInstance);
       registerActions(editor, monacoInstance);
@@ -147,6 +164,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           language="sql"
           theme="vs-dark"
           defaultValue={initialValue}
+          beforeMount={handleEditorWillMount}
           onMount={handleEditorMount}
           options={{
             automaticLayout: true,

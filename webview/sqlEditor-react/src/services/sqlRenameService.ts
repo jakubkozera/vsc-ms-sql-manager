@@ -1,6 +1,6 @@
 /**
  * SQL Rename Service
- * Provides rename functionality for CTE names and table aliases in SQL queries.
+ * Provides rename functionality for CTE names, table aliases, and SQL variables in SQL queries.
  */
 
 import { extractCTEs } from './sqlValidator';
@@ -27,7 +27,8 @@ export interface SqlRenameEdit {
 
 /**
  * Find the word at a given position in the text.
- * Handles both plain identifiers and bracketed identifiers [name].
+ * Handles plain identifiers, bracketed identifiers [name], and @variables.
+ * Also works when cursor is one position past the end of the word.
  */
 function getWordAtPosition(
   text: string,
@@ -38,10 +39,29 @@ function getWordAtPosition(
   if (lineNumber < 1 || lineNumber > lines.length) return null;
   const line = lines[lineNumber - 1];
 
-  const col = column - 1; // 0-based
+  let col = column - 1; // 0-based
+
+  // If col is at end of line or on a non-identifier char, try one position back
+  // This handles cursor-after-last-character case
+  if ((col >= line.length || !/[a-zA-Z0-9_@\[]/.test(line[col])) && col > 0 && /[a-zA-Z0-9_\]]/.test(line[col - 1])) {
+    col = col - 1;
+  }
+
   if (col < 0 || col >= line.length) return null;
 
-  // Check if inside bracketed identifier [name]
+  // Check if inside or adjacent to bracketed identifier [name]
+  if (line[col] === ']') {
+    // Find opening bracket
+    let bracketStart = -1;
+    for (let i = col - 1; i >= 0; i--) {
+      if (line[i] === '[') { bracketStart = i; break; }
+    }
+    if (bracketStart >= 0) {
+      const word = line.substring(bracketStart + 1, col);
+      return { word, startColumn: bracketStart + 2, endColumn: col + 1 };
+    }
+  }
+
   if (line[col] !== '[' && line[col] !== ']') {
     // Look for surrounding brackets
     let bracketStart = -1;
@@ -58,18 +78,47 @@ function getWordAtPosition(
     }
   }
 
-  // Regular word
-  if (!/[a-zA-Z0-9_]/.test(line[col])) return null;
+  // Check for @variable or @@system variable
+  if (line[col] === '@' || (col > 0 && line[col - 1] === '@' && /[a-zA-Z_]/.test(line[col]))) {
+    // Find the start of @/@@ prefix
+    let start = col;
+    if (line[start] !== '@') {
+      while (start > 0 && /[a-zA-Z0-9_]/.test(line[start - 1])) start--;
+      if (start > 0 && line[start - 1] === '@') start--;
+    }
+    if (line[start] === '@') {
+      // Check for @@system variable — skip one more @ if present
+      if (start > 0 && line[start - 1] === '@') return null; // @@var — not renameable
+      // Check if next char is also @ (cursor on first @ of @@var)
+      if (start + 1 < line.length && line[start + 1] === '@') return null;
+      let end = start + 1;
+      while (end < line.length && /[a-zA-Z0-9_]/.test(line[end])) end++;
+      const word = line.substring(start, end); // includes @
+      if (word.length <= 1) return null; // just "@" — invalid
+      return { word, startColumn: start + 1, endColumn: end + 1 };
+    }
+  }
 
-  let start = col;
-  let end = col;
-  while (start > 0 && /[a-zA-Z0-9_]/.test(line[start - 1])) start--;
-  while (end < line.length - 1 && /[a-zA-Z0-9_]/.test(line[end + 1])) end++;
+  // Regular word (or @variable if cursor is on any part)
+  if (/[a-zA-Z0-9_]/.test(line[col])) {
+    let start = col;
+    let end = col;
+    while (start > 0 && /[a-zA-Z0-9_]/.test(line[start - 1])) start--;
+    while (end < line.length - 1 && /[a-zA-Z0-9_]/.test(line[end + 1])) end++;
+    // Check if preceded by @
+    if (start > 0 && line[start - 1] === '@') {
+      // Reject @@system variables
+      if (start > 1 && line[start - 2] === '@') return null;
+      start--;
+      const word = line.substring(start, end + 1);
+      return { word, startColumn: start + 1, endColumn: end + 2 };
+    }
+    const word = line.substring(start, end + 1);
+    if (!/^[a-zA-Z_]/.test(word)) return null;
+    return { word, startColumn: start + 1, endColumn: end + 2 };
+  }
 
-  const word = line.substring(start, end + 1);
-  if (!/^[a-zA-Z_]/.test(word)) return null;
-
-  return { word, startColumn: start + 1, endColumn: end + 2 };
+  return null;
 }
 
 /**
@@ -117,7 +166,7 @@ function isInsideStringOrComment(text: string, offset: number): boolean {
 /**
  * Find all occurrences of an identifier in SQL text, respecting
  * word boundaries and excluding string literals and comments.
- * Handles both bare identifiers and bracketed [identifier].
+ * Handles bare identifiers, bracketed [identifier], and @variables.
  */
 function findAllOccurrences(
   text: string,
@@ -126,7 +175,14 @@ function findAllOccurrences(
   const results: { startOffset: number; endOffset: number; isBracketed: boolean }[] = [];
 
   const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`\\[${escaped}\\]|\\b${escaped}\\b`, 'gi');
+
+  let regex: RegExp;
+  if (identifier.startsWith('@')) {
+    // For @variables, match exactly (they start with @ so no word boundary before)
+    regex = new RegExp(`${escaped}\\b`, 'gi');
+  } else {
+    regex = new RegExp(`\\[${escaped}\\]|\\b${escaped}\\b`, 'gi');
+  }
 
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -176,6 +232,16 @@ function isTableAlias(sql: string, word: string): boolean {
 }
 
 /**
+ * Check if a word is a SQL variable (starts with @, not a system @@variable).
+ */
+function isSqlVariable(sql: string, word: string): boolean {
+  if (!word.startsWith('@') || word.startsWith('@@')) return false;
+  // Verify it appears somewhere in the SQL
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(escaped + '\\b', 'i').test(sql);
+}
+
+/**
  * Resolve rename location — determines if the word at the cursor can be renamed.
  * Returns the current range and text if renameable, null otherwise.
  */
@@ -189,36 +255,35 @@ export function resolveRenameLocation(
 
   const word = wordInfo.word;
 
-  // Skip SQL keywords
-  if (/^(select|from|where|join|inner|left|right|full|cross|outer|on|and|or|not|in|is|null|as|with|set|insert|update|delete|into|values|order|group|by|having|union|all|distinct|top|case|when|then|else|end|exists|between|like|asc|desc|begin|commit|rollback|declare|exec|execute|create|alter|drop|table|view|procedure|function|index|trigger|go)$/i.test(word)) {
+  // Skip SQL keywords (but not @variables)
+  if (!word.startsWith('@') && /^(select|from|where|join|inner|left|right|full|cross|outer|on|and|or|not|in|is|null|as|with|set|insert|update|delete|into|values|order|group|by|having|union|all|distinct|top|case|when|then|else|end|exists|between|like|asc|desc|begin|commit|rollback|declare|exec|execute|create|alter|drop|table|view|procedure|function|index|trigger|go)$/i.test(word)) {
     return null;
+  }
+
+  const makeResult = () => ({
+    range: {
+      startLineNumber: lineNumber,
+      startColumn: wordInfo.startColumn,
+      endLineNumber: lineNumber,
+      endColumn: wordInfo.endColumn,
+    },
+    text: word,
+  });
+
+  // Check if it's a SQL variable
+  if (isSqlVariable(sql, word)) {
+    return makeResult();
   }
 
   // Check if it's a CTE name
   const ctes = extractCTEs(sql);
   if (ctes.has(word.toLowerCase())) {
-    return {
-      range: {
-        startLineNumber: lineNumber,
-        startColumn: wordInfo.startColumn,
-        endLineNumber: lineNumber,
-        endColumn: wordInfo.endColumn,
-      },
-      text: word,
-    };
+    return makeResult();
   }
 
   // Check if it's a table alias
   if (isTableAlias(sql, word)) {
-    return {
-      range: {
-        startLineNumber: lineNumber,
-        startColumn: wordInfo.startColumn,
-        endLineNumber: lineNumber,
-        endColumn: wordInfo.endColumn,
-      },
-      text: word,
-    };
+    return makeResult();
   }
 
   return null;

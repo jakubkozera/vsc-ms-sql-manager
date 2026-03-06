@@ -39,10 +39,11 @@ describe('sqlRenameService', () => {
       expect(result).toBeNull();
     });
 
-    it('should reject non-identifier positions', () => {
+    it('should resolve word before dot when cursor is on dot', () => {
       const sql = 'SELECT u.Id FROM Users u';
-      const result = resolveRenameLocation(sql, 1, 9); // "." dot
-      expect(result).toBeNull();
+      const result = resolveRenameLocation(sql, 1, 9); // "." dot — resolves to 'u' before the dot
+      expect(result).not.toBeNull();
+      expect(result!.text).toBe('u');
     });
 
     it('should resolve bracketed CTE name', () => {
@@ -125,6 +126,60 @@ describe('sqlRenameService', () => {
       expect(prefixEdit).toBeDefined();
       expect(prefixEdit!.range.startLineNumber).toBe(1);
       expect(prefixEdit!.range.endColumn).toBe(9);
+    });
+  });
+
+  describe('@variable rename', () => {
+    it('should resolve @variable at DECLARE', () => {
+      const sql = 'DECLARE @Test INT = 1; SELECT @Test';
+      const result = resolveRenameLocation(sql, 1, 10); // "@" of @Test in DECLARE
+      expect(result).not.toBeNull();
+      expect(result!.text).toBe('@Test');
+    });
+
+    it('should resolve @variable at usage', () => {
+      const sql = 'DECLARE @Test INT = 1; SELECT @Test';
+      const result = resolveRenameLocation(sql, 1, 31); // "@" of @Test in SELECT
+      expect(result).not.toBeNull();
+      expect(result!.text).toBe('@Test');
+    });
+
+    it('should rename @variable across all occurrences', () => {
+      const sql = 'DECLARE @Test INT = 1; SELECT @Test';
+      const edits = provideRenameEdits(sql, 1, 10, '@NewVar');
+      expect(edits).toHaveLength(2);
+      expect(edits.every(e => e.newText === '@NewVar')).toBe(true);
+    });
+
+    it('should rename @variable in multiline SQL', () => {
+      const sql = 'DECLARE @Cnt INT = 0;\nSET @Cnt = @Cnt + 1;\nSELECT @Cnt';
+      const edits = provideRenameEdits(sql, 1, 10, '@Counter');
+      expect(edits).toHaveLength(4); // DECLARE @Cnt, SET @Cnt, @Cnt + 1, SELECT @Cnt
+      expect(edits.every(e => e.newText === '@Counter')).toBe(true);
+    });
+
+    it('should not rename @@system variables', () => {
+      const sql = 'SELECT @@IDENTITY, @Test FROM t; DECLARE @Test INT = 1';
+      const result = resolveRenameLocation(sql, 1, 9); // "@@" of @@IDENTITY
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('cursor-at-end rename', () => {
+    it('should resolve rename when cursor is after last character of CTE', () => {
+      const sql = 'WITH MyCTE AS (SELECT Id FROM dbo.Users) SELECT * FROM MyCTE';
+      // cursor right after "MyCTE" (column 11 = after the E)
+      const result = resolveRenameLocation(sql, 1, 11);
+      expect(result).not.toBeNull();
+      expect(result!.text).toBe('MyCTE');
+    });
+
+    it('should resolve rename when cursor is after last character of alias', () => {
+      const sql = 'SELECT u.Id FROM Users u';
+      // cursor after "u" at end of line (col 25)
+      const result = resolveRenameLocation(sql, 1, 25);
+      expect(result).not.toBeNull();
+      expect(result!.text).toBe('u');
     });
   });
 });
