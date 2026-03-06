@@ -147,8 +147,9 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
         getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 
 
-
       // ── Dark theme ──
+      // Note: Monaco's built-in vs-dark base overrides string.sql→FF0000 and predefined.sql→FF00FF,
+      // so we must explicitly override those .sql-suffixed tokens as well.
       monacoInstance.editor.defineTheme('sql-dark', {
         base: 'vs-dark',
         inherit: true,
@@ -158,14 +159,17 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           { token: 'keyword.choice', foreground: '569CD6' },
           { token: 'keyword.try', foreground: '569CD6' },
           { token: 'keyword.catch', foreground: '569CD6' },
-          { token: 'operator', foreground: '569CD6' },         // INNER, JOIN, AND — same blue as keywords
-          { token: 'string', foreground: 'CE9178' },           // warm orange (like VS Code)
+          { token: 'operator', foreground: '569CD6' },         // word operators same blue
+          { token: 'operator.sql', foreground: '569CD6' },     // override base 778899
+          { token: 'string', foreground: 'CE9178' },           // warm orange
+          { token: 'string.sql', foreground: 'CE9178' },       // override base FF0000
           { token: 'predefined', foreground: 'DCDCAA' },       // yellow — functions
-          { token: 'number', foreground: 'B5CEA8' },           // light green
-          { token: 'comment', foreground: '6A9955' },          // green
+          { token: 'predefined.sql', foreground: 'DCDCAA' },   // override base FF00FF (magenta)
+          { token: 'number', foreground: 'B5CEA8' },
+          { token: 'comment', foreground: '6A9955' },
           { token: 'comment.quote', foreground: '6A9955' },
-          { token: 'identifier', foreground: 'D4D4D4' },       // default foreground
-          { token: 'identifier.quote', foreground: 'D4D4D4' }, // brackets [] same as identifiers
+          { token: 'identifier', foreground: 'D4D4D4' },
+          { token: 'identifier.quote', foreground: 'D4D4D4' },
           { token: 'delimiter', foreground: 'D4D4D4' },
           { token: 'delimiter.parenthesis', foreground: 'D4D4D4' },
           { token: 'type', foreground: '4EC9B0' },
@@ -183,8 +187,11 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           { token: 'keyword.try', foreground: '0000FF' },
           { token: 'keyword.catch', foreground: '0000FF' },
           { token: 'operator', foreground: '0000FF' },
+          { token: 'operator.sql', foreground: '0000FF' },     // override base 778899
           { token: 'string', foreground: 'A31515' },
+          { token: 'string.sql', foreground: 'A31515' },       // override base FF0000
           { token: 'predefined', foreground: '795E26' },
+          { token: 'predefined.sql', foreground: '795E26' },   // override base C700C7 (magenta)
           { token: 'number', foreground: '098658' },
           { token: 'comment', foreground: '008000' },
           { token: 'comment.quote', foreground: '008000' },
@@ -207,8 +214,11 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           { token: 'keyword.try', foreground: '569CD6', fontStyle: 'bold' },
           { token: 'keyword.catch', foreground: '569CD6', fontStyle: 'bold' },
           { token: 'operator', foreground: '569CD6', fontStyle: 'bold' },
+          { token: 'operator.sql', foreground: '569CD6' },
           { token: 'string', foreground: 'CE9178' },
+          { token: 'string.sql', foreground: 'CE9178' },
           { token: 'predefined', foreground: 'DCDCAA' },
+          { token: 'predefined.sql', foreground: 'DCDCAA' },
           { token: 'number', foreground: 'B5CEA8' },
           { token: 'comment', foreground: '7CA668' },
           { token: 'comment.quote', foreground: '7CA668' },
@@ -228,8 +238,11 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           { token: 'keyword.try', foreground: '0000FF', fontStyle: 'bold' },
           { token: 'keyword.catch', foreground: '0000FF', fontStyle: 'bold' },
           { token: 'operator', foreground: '0000FF', fontStyle: 'bold' },
+          { token: 'operator.sql', foreground: '0000FF' },
           { token: 'string', foreground: 'A31515' },
+          { token: 'string.sql', foreground: 'A31515' },
           { token: 'predefined', foreground: '795E26' },
+          { token: 'predefined.sql', foreground: '795E26' },
           { token: 'number', foreground: '098658' },
           { token: 'comment', foreground: '008000' },
           { token: 'comment.quote', foreground: '008000' },
