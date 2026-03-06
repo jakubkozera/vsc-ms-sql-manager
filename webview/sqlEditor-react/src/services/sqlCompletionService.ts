@@ -26,6 +26,7 @@ export interface SqlContext {
   type: SqlContextType;
   confidence: 'high' | 'medium' | 'low';
   suggestOperators?: boolean;
+  suggestSortDirection?: boolean;
   tableName?: string;
 }
 
@@ -360,7 +361,8 @@ export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: 
   if (lastOrderByPos !== -1 && (lastOrderByPos > lastWherePos || lastWherePos === -1)) {
     const textAfterOrderBy = lowerText.substring(lastOrderByPos + 8);
     if (!/\b(limit|offset|fetch|for|union|intersect|except)\b/.test(textAfterOrderBy)) {
-      return { type: 'ORDER_BY', confidence: 'high' };
+      const shouldSuggestSortDirection = analyzeOrderByContext(textAfterOrderBy);
+      return { type: 'ORDER_BY', confidence: 'high', suggestSortDirection: shouldSuggestSortDirection };
     }
   }
 
@@ -486,6 +488,47 @@ function analyzeHavingContext(textAfterHaving: string): boolean {
       );
       return !hasOperator;
     }
+  }
+
+  return false;
+}
+
+/**
+ * Analyze ORDER BY clause to determine if we should suggest ASC/DESC
+ * Returns true when cursor is positioned after a column expression (not after a comma or at the start)
+ */
+function analyzeOrderByContext(textAfterOrderBy: string): boolean {
+  const trimmed = textAfterOrderBy.trim();
+  if (!trimmed) return false;
+
+  // Split by commas to find the last ordering item
+  // Respect parentheses so expressions like COUNT(*) aren't split
+  const items: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of trimmed) {
+    if (char === '(') depth++;
+    else if (char === ')') depth--;
+    else if (char === ',' && depth === 0) {
+      items.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  items.push(current.trim());
+
+  const lastItem = items[items.length - 1];
+  if (!lastItem) return false;
+
+  // If last item already ends with ASC or DESC, no need to suggest direction
+  if (/\b(?:asc|desc)\s*$/i.test(lastItem)) return false;
+
+  // Check if the last item looks like a column reference (possibly qualified)
+  // e.g., "CostCentre", "p.Name", "[p].[Name]", "COUNT(*)"
+  if (/^(?:\[?\w+\]?\.)?(?:\[?\w+\]?)$/.test(lastItem) ||
+      /^(?:count|sum|avg|min|max)\s*\([^)]*\)$/i.test(lastItem)) {
+    return true;
   }
 
   return false;

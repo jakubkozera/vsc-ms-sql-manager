@@ -160,6 +160,29 @@ export function useCompletionProvider(
           case 'WHERE':
           case 'UPDATE_SET':
           case 'AFTER_FROM': {
+            // In ORDER BY with suggestSortDirection, show ASC/DESC instead of columns
+            if (sqlContext.type === 'ORDER_BY' && sqlContext.suggestSortDirection) {
+              suggestions.push(
+                {
+                  label: 'ASC',
+                  kind: monacoInstance.languages.CompletionItemKind.Keyword,
+                  detail: 'Sort ascending',
+                  insertText: 'ASC',
+                  range,
+                  sortText: '0_ASC',
+                },
+                {
+                  label: 'DESC',
+                  kind: monacoInstance.languages.CompletionItemKind.Keyword,
+                  detail: 'Sort descending',
+                  insertText: 'DESC',
+                  range,
+                  sortText: '0_DESC',
+                },
+              );
+              break;
+            }
+
             tablesInQuery.forEach((tableInfo) => {
               const columns = getColumnsForTable(tableInfo.schema, tableInfo.table, augmentedSchema);
               const displayAlias = tableInfo.alias || tableInfo.table;

@@ -403,6 +403,74 @@ ORDER BY `;
       const result = analyzeSqlContext(text, text);
       expect(result.type).toBe('SELECT');
     });
+
+    // ORDER BY sort direction tests
+
+    it('should suggest ASC/DESC after column in ORDER BY', () => {
+      const text = `SELECT p.Id, p.Name, p.CostCentre
+FROM [dbo].[Projects] [p]
+JOIN [dbo].[Packages] [p2] ON [p].[PackageId] = [p2].[Id]
+ORDER BY CostCentre `;
+      const result = analyzeSqlContext(text, 'ORDER BY CostCentre ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBe(true);
+    });
+
+    it('should suggest ASC/DESC after qualified column in ORDER BY', () => {
+      const text = 'SELECT * FROM Users u ORDER BY u.Name ';
+      const result = analyzeSqlContext(text, 'ORDER BY u.Name ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBe(true);
+    });
+
+    it('should suggest columns after ORDER BY keyword (no column yet)', () => {
+      const text = 'SELECT * FROM Users ORDER BY ';
+      const result = analyzeSqlContext(text, 'ORDER BY ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBeFalsy();
+    });
+
+    it('should suggest columns after comma in ORDER BY', () => {
+      const text = 'SELECT * FROM Users ORDER BY Name ASC, ';
+      const result = analyzeSqlContext(text, 'ORDER BY Name ASC, ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBeFalsy();
+    });
+
+    it('should not suggest sort direction after ASC/DESC already present', () => {
+      const text = 'SELECT * FROM Users ORDER BY Name DESC ';
+      const result = analyzeSqlContext(text, 'ORDER BY Name DESC ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBe(false);
+    });
+
+    it('should suggest columns after comma following DESC', () => {
+      const text = 'SELECT * FROM Users ORDER BY Name DESC, ';
+      const result = analyzeSqlContext(text, 'ORDER BY Name DESC, ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBeFalsy();
+    });
+
+    it('should suggest ASC/DESC after second column in ORDER BY', () => {
+      const text = 'SELECT * FROM Users ORDER BY Name ASC, Email ';
+      const result = analyzeSqlContext(text, 'ORDER BY Name ASC, Email ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBe(true);
+    });
+
+    it('should suggest ASC/DESC after bracketed column in ORDER BY', () => {
+      const text = 'SELECT * FROM Users ORDER BY [Name] ';
+      const result = analyzeSqlContext(text, 'ORDER BY [Name] ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBe(true);
+    });
+
+    it('should suggest ASC/DESC after bracketed qualified column in ORDER BY', () => {
+      const text = 'SELECT * FROM Users ORDER BY [u].[Name] ';
+      const result = analyzeSqlContext(text, 'ORDER BY [u].[Name] ');
+      expect(result.type).toBe('ORDER_BY');
+      expect(result.suggestSortDirection).toBe(true);
+    });
   });
 
   describe('getSqlOperators', () => {
