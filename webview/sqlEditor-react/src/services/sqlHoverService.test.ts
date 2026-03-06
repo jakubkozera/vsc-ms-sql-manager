@@ -6,6 +6,7 @@ import {
   renderOutboundForeignKeys,
   renderInboundForeignKeys,
   renderCteMarkdown,
+  renderCteColumnMarkdown,
   provideHoverContent,
 } from './sqlHoverService';
 import type { ColumnInfo, DatabaseSchema, ForeignKeyInfo } from '../types/schema';
@@ -700,5 +701,219 @@ describe('provideHoverContent table alias hover', () => {
     expect(result).not.toBeNull();
     const md = result!.contents[0].value;
     expect(md).toContain('**dbo.Users**');
+  });
+});
+
+// ─── nvarchar(-1) → nvarchar(max) formatting ────────────────────────────────
+
+describe('formatColumnType maxLength -1 as max', () => {
+  it('renders nvarchar(-1) as nvarchar(max) in table markdown', () => {
+    const cols: ColumnInfo[] = [
+      { name: 'Description', type: 'nvarchar', nullable: true, maxLength: -1 },
+    ];
+    const md = renderTableMarkdown('dbo', 'Items', cols);
+    expect(md).toContain('nvarchar(max)');
+    expect(md).not.toContain('nvarchar(-1)');
+  });
+
+  it('renders varchar(-1) as varchar(max) in table markdown', () => {
+    const cols: ColumnInfo[] = [
+      { name: 'Content', type: 'varchar', nullable: false, maxLength: -1 },
+    ];
+    const md = renderTableMarkdown('dbo', 'Posts', cols);
+    expect(md).toContain('varchar(max)');
+    expect(md).not.toContain('varchar(-1)');
+  });
+
+  it('renders varbinary(-1) as varbinary(max) in table markdown', () => {
+    const cols: ColumnInfo[] = [
+      { name: 'Data', type: 'varbinary', nullable: true, maxLength: -1 },
+    ];
+    const md = renderTableMarkdown('dbo', 'Files', cols);
+    expect(md).toContain('varbinary(max)');
+    expect(md).not.toContain('varbinary(-1)');
+  });
+
+  it('renders nvarchar(-1) as nvarchar(max) in column markdown', () => {
+    const col: ColumnInfo = { name: 'Body', type: 'nvarchar', nullable: true, maxLength: -1 };
+    const md = renderColumnMarkdown('dbo', 'Articles', col);
+    expect(md).toContain('nvarchar(max)');
+    expect(md).not.toContain('nvarchar(-1)');
+  });
+
+  it('preserves normal maxLength values', () => {
+    const cols: ColumnInfo[] = [
+      { name: 'Name', type: 'nvarchar', nullable: false, maxLength: 100 },
+    ];
+    const md = renderTableMarkdown('dbo', 'Items', cols);
+    expect(md).toContain('nvarchar(100)');
+  });
+});
+
+// ─── CTE alias hover ────────────────────────────────────────────────────────
+
+describe('renderCteColumnMarkdown', () => {
+  it('renders CTE column properties table', () => {
+    const md = renderCteColumnMarkdown('MyCte', { name: 'ProjectId', type: 'int', nullable: false });
+    expect(md).toContain('MyCte');
+    expect(md).toContain('ProjectId');
+    expect(md).toContain('int');
+    expect(md).toContain('NO');
+  });
+
+  it('shows ? for unknown type', () => {
+    const md = renderCteColumnMarkdown('MyCte', { name: 'Calc', type: '', nullable: true });
+    expect(md).toContain('?');
+    expect(md).toContain('YES');
+  });
+});
+
+describe('provideHoverContent CTE alias.column hover', () => {
+  const cteSchema: DatabaseSchema = {
+    tables: [
+      {
+        schema: 'dbo', name: 'OrchestrationOperations', columns: [
+          { name: 'Id', type: 'int', nullable: false, isPrimaryKey: true },
+          { name: 'ProjectId', type: 'int', nullable: true },
+          { name: 'CreatedAt', type: 'datetime2', nullable: false },
+          { name: 'ParentId', type: 'int', nullable: true },
+          { name: 'ToolId', type: 'int', nullable: true },
+          { name: 'OperationType', type: 'nvarchar', nullable: false, maxLength: 100 },
+          { name: 'Status', type: 'int', nullable: false },
+          { name: 'Args', type: 'nvarchar', nullable: true, maxLength: -1 },
+        ],
+      },
+      {
+        schema: 'dbo', name: 'Projects', columns: [
+          { name: 'Id', type: 'int', nullable: false, isPrimaryKey: true },
+          { name: 'Name', type: 'nvarchar', nullable: false, maxLength: 200 },
+          { name: 'IsArchived', type: 'bit', nullable: false },
+        ],
+      },
+    ],
+    views: [],
+    foreignKeys: [],
+    storedProcedures: [],
+    functions: [],
+  };
+
+  const cteQuery = `WITH AddEvents AS (
+    SELECT parent.ProjectId, parent.CreatedAt AS AddedDate
+    FROM dbo.OrchestrationOperations parent
+)
+SELECT a.ProjectId FROM AddEvents a`;
+
+  it('returns CTE column hover for alias.column where alias is CTE alias', () => {
+    const line = 'SELECT a.ProjectId FROM AddEvents a';
+    // cursor on 'P' in ProjectId (column 10)
+    const result = provideHoverContent(
+      cteQuery, line,
+      { lineNumber: 5, column: 10 },
+      { word: 'ProjectId', startColumn: 10, endColumn: 19 },
+      cteSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('AddEvents');
+    expect(md).toContain('ProjectId');
+    expect(md).toContain('int');
+    // Should show single CTE column detail, not the full CTE
+    expect(md).not.toContain('columns)');
+  });
+
+  it('returns CTE column hover for alias.column with aliased CTE column', () => {
+    const line = 'SELECT a.AddedDate FROM AddEvents a';
+    const result = provideHoverContent(
+      cteQuery, line,
+      { lineNumber: 5, column: 15 },
+      { word: 'AddedDate', startColumn: 10, endColumn: 19 },
+      cteSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('AddEvents');
+    expect(md).toContain('AddedDate');
+    expect(md).toContain('datetime2');
+  });
+
+  it('returns full CTE schema when hovering CTE alias with unknown column', () => {
+    const line = 'SELECT a.Unknown FROM AddEvents a';
+    const result = provideHoverContent(
+      cteQuery, line,
+      { lineNumber: 5, column: 15 },
+      { word: 'Unknown', startColumn: 10, endColumn: 17 },
+      cteSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**CTE: AddEvents**');
+    expect(md).toContain('columns)');
+  });
+
+  it('returns CTE definition when hovering standalone CTE alias', () => {
+    const line = 'SELECT a.ProjectId FROM AddEvents a';
+    // cursor on 'a' after AddEvents (column 35)
+    const result = provideHoverContent(
+      cteQuery, line,
+      { lineNumber: 5, column: 35 },
+      { word: 'a', startColumn: 35, endColumn: 36 },
+      cteSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**CTE: AddEvents**');
+    expect(md).toContain('ProjectId');
+    expect(md).toContain('AddedDate');
+  });
+
+  it('handles CTE alias in JOIN ON clause like a.ProjectId = r.ProjectId', () => {
+    const sql = `WITH AddEvents AS (
+    SELECT parent.ProjectId, parent.CreatedAt AS AddedDate
+    FROM dbo.OrchestrationOperations parent
+),
+RemoveEvents AS (
+    SELECT parent.ProjectId, parent.CreatedAt AS RemovedDate
+    FROM dbo.OrchestrationOperations parent
+)
+SELECT * FROM AddEvents a
+INNER JOIN RemoveEvents r ON a.ProjectId = r.ProjectId`;
+    const line = 'INNER JOIN RemoveEvents r ON a.ProjectId = r.ProjectId';
+    // hover on a.ProjectId — cursor on 'P' (column 32)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 10, column: 32 },
+      { word: 'ProjectId', startColumn: 32, endColumn: 41 },
+      cteSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('AddEvents');
+    expect(md).toContain('ProjectId');
+    expect(md).toContain('int');
+  });
+
+  it('resolves r.ProjectId to RemoveEvents CTE in JOIN', () => {
+    const sql = `WITH AddEvents AS (
+    SELECT parent.ProjectId, parent.CreatedAt AS AddedDate
+    FROM dbo.OrchestrationOperations parent
+),
+RemoveEvents AS (
+    SELECT parent.ProjectId, parent.CreatedAt AS RemovedDate
+    FROM dbo.OrchestrationOperations parent
+)
+SELECT * FROM AddEvents a
+INNER JOIN RemoveEvents r ON a.ProjectId = r.ProjectId`;
+    const line = 'INNER JOIN RemoveEvents r ON a.ProjectId = r.ProjectId';
+    // hover on r.ProjectId — cursor on 'P' (column 46)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 10, column: 46 },
+      { word: 'ProjectId', startColumn: 46, endColumn: 55 },
+      cteSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('RemoveEvents');
+    expect(md).toContain('ProjectId');
   });
 });

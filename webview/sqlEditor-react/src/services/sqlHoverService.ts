@@ -1,6 +1,6 @@
 import type { ColumnInfo, TableInfo, ForeignKeyInfo, DatabaseSchema } from '../types/schema';
 import { extractTablesFromQuery, findTable, findTableForAlias, getColumnsForTable } from './sqlCompletionService';
-import { extractCTEsWithColumns, type CteDefinition } from './sqlValidator';
+import { extractCTEsWithColumns, type CteDefinition, type CteColumnInfo } from './sqlValidator';
 
 export interface HoverResult {
   contents: { value: string }[];
@@ -15,7 +15,7 @@ export interface HoverResult {
 function formatColumnType(col: ColumnInfo): string {
   let type = col.type;
   if (col.maxLength) {
-    type += `(${col.maxLength})`;
+    type += `(${col.maxLength === -1 ? 'max' : col.maxLength})`;
   } else if (col.precision && col.scale) {
     type += `(${col.precision},${col.scale})`;
   } else if (col.precision) {
@@ -146,6 +146,19 @@ export function renderInboundForeignKeys(
 }
 
 /**
+ * Render a single CTE column's details as a properties markdown table.
+ */
+export function renderCteColumnMarkdown(cteName: string, col: CteColumnInfo): string {
+  let md = '| Property | Value |\n';
+  md += '|:---|---:|\n';
+  md += `| **CTE** | ${cteName} |\n`;
+  md += `| **Column** | ${col.name} |\n`;
+  md += `| **Type** | ${col.type || '?'} |\n`;
+  md += `| **Nullable** | ${col.nullable ? 'YES' : 'NO'} |\n`;
+  return md;
+}
+
+/**
  * Render a CTE's inferred columns as a markdown table.
  */
 export function renderCteMarkdown(cte: CteDefinition): string {
@@ -165,6 +178,31 @@ export function renderCteMarkdown(cte: CteDefinition): string {
     }
   }
   return md;
+}
+
+/**
+ * Resolve an alias to a CTE definition by searching FROM/JOIN patterns in the query.
+ */
+function findCteForAlias(query: string, alias: string, ctes: CteDefinition[]): CteDefinition | null {
+  if (ctes.length === 0) return null;
+  // Direct CTE name match
+  const directMatch = ctes.find(c => c.name.toLowerCase() === alias.toLowerCase());
+  if (directMatch) return directMatch;
+  // Check FROM/JOIN patterns: FROM CteName alias, JOIN CteName AS alias
+  const lowerAlias = alias.toLowerCase();
+  const patterns = [
+    new RegExp(`from\\s+(\\w+)\\s+(?:as\\s+)?${lowerAlias}(?:\\s|,|$)`, 'i'),
+    new RegExp(`join\\s+(\\w+)\\s+(?:as\\s+)?${lowerAlias}(?:\\s|,|$)`, 'i'),
+  ];
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (match) {
+      const tableName = match[1];
+      const cte = ctes.find(c => c.name.toLowerCase() === tableName.toLowerCase());
+      if (cte) return cte;
+    }
+  }
+  return null;
 }
 
 /**
@@ -208,6 +246,32 @@ export function provideHoverContent(
       if (closingBracket) {
         colName = dotPatternBefore[3] + closingBracket[0].slice(0, -1);
       }
+    }
+
+    // First check if alias resolves to a CTE
+    const ctes = extractCTEsWithColumns(fullText, dbSchema);
+    const aliasedCte = findCteForAlias(fullText, alias, ctes);
+    if (aliasedCte) {
+      const cteCol = colName ? aliasedCte.columns.find(c => c.name.toLowerCase() === colName.toLowerCase()) : undefined;
+      if (cteCol) {
+        const mdCteCol = renderCteColumnMarkdown(aliasedCte.name, cteCol);
+        const matchText = dotPatternBefore[0];
+        const startCol = beforeCursor.length - matchText.length + 1;
+        const colEndInLine = wordAtPosition ? wordAtPosition.endColumn : position.column;
+        return {
+          contents: [{ value: mdCteCol }],
+          range: { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: startCol, endColumn: colEndInLine },
+        };
+      }
+      // Column not matched — show full CTE schema
+      const cteMd = renderCteMarkdown(aliasedCte);
+      const matchText = dotPatternBefore[0];
+      const startCol = beforeCursor.length - matchText.length + 1;
+      const colEndInLine = wordAtPosition ? wordAtPosition.endColumn : position.column;
+      return {
+        contents: [{ value: cteMd }],
+        range: { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: startCol, endColumn: colEndInLine },
+      };
     }
 
     const tableInfo = findTableForAlias(fullText, alias, dbSchema) || findTable(alias, dbSchema);
@@ -294,7 +358,22 @@ export function provideHoverContent(
       };
     }
 
-    // 2c. Check if the word is a table alias — show the aliased table definition
+    // 2c. Check if the word is a CTE alias — show the CTE definition
+    const cteAliased = findCteForAlias(fullText, w, ctes);
+    if (cteAliased) {
+      const cteMd = renderCteMarkdown(cteAliased);
+      return {
+        contents: [{ value: cteMd }],
+        range: {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: wordAtPosition.startColumn,
+          endColumn: wordAtPosition.endColumn,
+        },
+      };
+    }
+
+    // 2d. Check if the word is a table alias — show the aliased table definition
     const aliasedTable = findTableForAlias(fullText, w, dbSchema);
     if (aliasedTable && !findTable(w, dbSchema)) {
       const cols3 = getColumnsForTable(aliasedTable.schema, aliasedTable.table, dbSchema) || [];
