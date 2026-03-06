@@ -495,3 +495,210 @@ SELECT * FROM Users`;
     expect(result).toBeNull();
   });
 });
+
+// ─── Alias.column hover & table alias hover ──────────────────────────────────
+
+describe('provideHoverContent alias.column hover', () => {
+  it('returns column definition for alias.column (cursor mid-word)', () => {
+    const sql = 'SELECT u.Name FROM Users u';
+    const line = 'SELECT u.Name FROM Users u';
+    // cursor on 'N' (column 10) — partialCol = 'N', wordAtPosition = 'Name'
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 10 },
+      { word: 'Name', startColumn: 10, endColumn: 14 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('dbo.Users');
+    expect(md).toContain('Name');
+    expect(md).toContain('nvarchar(100)');
+    // Should be single column detail, not table overview
+    expect(md).not.toContain('columns)');
+  });
+
+  it('returns column definition for alias.column (cursor at end)', () => {
+    const sql = 'SELECT u.Email FROM Users u';
+    const line = 'SELECT u.Email FROM Users u';
+    // cursor after 'Email' (column 15)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 15 },
+      { word: 'Email', startColumn: 10, endColumn: 15 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('Email');
+    expect(md).toContain('nvarchar(255)');
+  });
+
+  it('returns column definition for table.column (no alias)', () => {
+    const sql = 'SELECT Users.Id FROM Users';
+    const line = 'SELECT Users.Id FROM Users';
+    // cursor on 'Id' (column 15)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 15 },
+      { word: 'Id', startColumn: 14, endColumn: 16 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('dbo.Users');
+    expect(md).toContain('Id');
+    expect(md).toContain('int');
+    expect(md).not.toContain('columns)');
+  });
+
+  it('returns column definition for schema.table.column', () => {
+    const sql = 'SELECT dbo.Users.Email FROM Users';
+    const line = 'SELECT dbo.Users.Email FROM Users';
+    // cursor on 'Email' (column 18): beforeCursor = 'SELECT dbo.Users.E'
+    // the dot pattern matches 'Users.E' → alias='Users', partialCol='E'
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 18 },
+      { word: 'Email', startColumn: 18, endColumn: 23 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('Email');
+    expect(md).toContain('nvarchar(255)');
+  });
+
+  it('returns table hover for alias.column when column is unknown', () => {
+    const sql = 'SELECT u.NonExistent FROM Users u';
+    const line = 'SELECT u.NonExistent FROM Users u';
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 15 },
+      { word: 'NonExistent', startColumn: 10, endColumn: 21 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    // Falls back to table overview
+    expect(md).toContain('**dbo.Users**');
+    expect(md).toContain('columns)');
+  });
+});
+
+describe('provideHoverContent bracketed identifiers', () => {
+  it('returns column definition for [alias].[column]', () => {
+    const sql = 'SELECT [u].[Name] FROM Users u';
+    const line = 'SELECT [u].[Name] FROM Users u';
+    // cursor on 'Name' inside brackets (column 13)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 13 },
+      { word: 'Name', startColumn: 13, endColumn: 17 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('Name');
+    expect(md).toContain('nvarchar(100)');
+  });
+
+  it('returns column definition for [table].[column]', () => {
+    const sql = 'SELECT [Users].[Email] FROM Users';
+    const line = 'SELECT [Users].[Email] FROM Users';
+    // cursor on 'Email' inside brackets (column 17)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 17 },
+      { word: 'Email', startColumn: 17, endColumn: 22 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('Email');
+    expect(md).toContain('nvarchar(255)');
+  });
+
+  it('returns column definition for table.[column]', () => {
+    const sql = 'SELECT Users.[Id] FROM Users';
+    const line = 'SELECT Users.[Id] FROM Users';
+    // cursor on 'Id' inside brackets (column 15)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 15 },
+      { word: 'Id', startColumn: 15, endColumn: 17 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('Id');
+    expect(md).toContain('int');
+  });
+});
+
+describe('provideHoverContent table alias hover', () => {
+  it('shows aliased table definition when hovering on alias (FROM ... alias)', () => {
+    const sql = 'SELECT u.Name FROM Users u WHERE u.Id = 1';
+    const line = 'SELECT u.Name FROM Users u WHERE u.Id = 1';
+    // cursor on 'u' at position 26 (the alias after Users)
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 26 },
+      { word: 'u', startColumn: 26, endColumn: 27 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**dbo.Users**');
+    expect(md).toContain('Id');
+    expect(md).toContain('Name');
+    expect(md).toContain('Email');
+  });
+
+  it('shows aliased table definition for JOIN alias', () => {
+    const sql = 'SELECT * FROM Users u JOIN Departments d ON u.DepartmentId = d.Id';
+    const line = 'SELECT * FROM Users u JOIN Departments d ON u.DepartmentId = d.Id';
+    // cursor on 'd' (column 40) — alias of Departments
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 40 },
+      { word: 'd', startColumn: 40, endColumn: 41 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**dbo.Departments**');
+    expect(md).toContain('Id');
+    expect(md).toContain('Name');
+  });
+
+  it('shows aliased table for AS alias syntax', () => {
+    const sql = 'SELECT e.Name FROM hr.Employees AS e';
+    const line = 'SELECT e.Name FROM hr.Employees AS e';
+    // cursor on 'e' (column 36) — alias of Employees
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 36 },
+      { word: 'e', startColumn: 36, endColumn: 37 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('hr.Employees');
+  });
+
+  it('does not treat actual table name as alias', () => {
+    const sql = 'SELECT * FROM Users';
+    const line = 'SELECT * FROM Users';
+    // cursor on 'Users' — should show table definition, not alias
+    const result = provideHoverContent(
+      sql, line,
+      { lineNumber: 1, column: 18 },
+      { word: 'Users', startColumn: 15, endColumn: 20 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**dbo.Users**');
+  });
+});

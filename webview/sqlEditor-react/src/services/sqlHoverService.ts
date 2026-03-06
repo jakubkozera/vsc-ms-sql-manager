@@ -181,47 +181,75 @@ export function provideHoverContent(
   const tablesInQuery = extractTablesFromQuery(fullText, dbSchema) || [];
   const beforeCursor = lineText.substring(0, position.column - 1);
 
-  // 1. Detect alias.column or table.column pattern before cursor
-  const aliasColMatch = beforeCursor.match(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/);
-  if (aliasColMatch) {
-    const alias = aliasColMatch[1];
-    const colName = aliasColMatch[2];
+  // 1. Detect alias.column or table.column pattern before/at cursor
+  // Also handle bracketed identifiers: [alias].[column], [table].[column]
+  const afterCursor = lineText.substring(position.column - 1);
+  const dotPatternBefore = beforeCursor.match(/(?:\[([^\]]+)\]|([A-Za-z0-9_]+))\.(?:\[([^\]]*)\]|([A-Za-z0-9_]*))$/);
+  if (dotPatternBefore) {
+    const alias = dotPatternBefore[1] || dotPatternBefore[2];
+    // The column name from beforeCursor may be partial — complete it with afterCursor
+    const partialCol = dotPatternBefore[3] ?? dotPatternBefore[4] ?? '';
+    let colName = partialCol;
+
+    // If there's a wordAtPosition and it extends beyond our partial capture, use the full word
+    if (wordAtPosition?.word && partialCol) {
+      const fullWord = wordAtPosition.word;
+      if (fullWord.toLowerCase().startsWith(partialCol.toLowerCase()) || partialCol.toLowerCase().startsWith(fullWord.toLowerCase())) {
+        colName = fullWord;
+      }
+    } else if (wordAtPosition?.word && !partialCol) {
+      // Cursor is right after the dot — wordAtPosition has the column
+      colName = wordAtPosition.word;
+    }
+
+    // Complete bracketed column from afterCursor if needed
+    if (dotPatternBefore[3] !== undefined && !dotPatternBefore[3].includes(']')) {
+      const closingBracket = afterCursor.match(/^[^\]]*\]/);
+      if (closingBracket) {
+        colName = dotPatternBefore[3] + closingBracket[0].slice(0, -1);
+      }
+    }
 
     const tableInfo = findTableForAlias(fullText, alias, dbSchema) || findTable(alias, dbSchema);
     if (tableInfo) {
       const cols = getColumnsForTable(tableInfo.schema, tableInfo.table, dbSchema) || [];
 
       // If colName matches a column, show single-column detail
-      const col = cols.find((c) => c.name.toLowerCase() === colName.toLowerCase());
+      const col = colName ? cols.find((c) => c.name.toLowerCase() === colName.toLowerCase()) : undefined;
       if (col) {
         const mdSingle = renderColumnMarkdown(tableInfo.schema, tableInfo.table, col);
-        const matchText = aliasColMatch[0];
-        const startCol = beforeCursor.lastIndexOf(matchText) + 1;
+        // Highlight the full alias.column range
+        const matchText = dotPatternBefore[0];
+        const startCol = beforeCursor.length - matchText.length + 1;
+        // Calculate end: add remaining part of column word after cursor
+        const colEndInLine = wordAtPosition ? wordAtPosition.endColumn : position.column;
         return {
           contents: [{ value: mdSingle }],
           range: {
             startLineNumber: position.lineNumber,
             endLineNumber: position.lineNumber,
             startColumn: startCol,
-            endColumn: startCol + matchText.length,
+            endColumn: colEndInLine,
           },
         };
       }
 
-      // Column not found — show table schema preview
+      // Column not found or empty — show table schema preview
       const previewCols = cols.slice(0, 15);
       const tableMd =
         renderTableMarkdown(tableInfo.schema, tableInfo.table, previewCols) +
         renderOutboundForeignKeys(tableInfo.schema, tableInfo.table, dbSchema.foreignKeys || []) +
         renderInboundForeignKeys(tableInfo.schema, tableInfo.table, dbSchema.foreignKeys || []);
-      const startCol2 = beforeCursor.lastIndexOf(alias) + 1;
+      const matchText = dotPatternBefore[0];
+      const startCol2 = beforeCursor.length - matchText.length + 1;
+      const colEndInLine = wordAtPosition ? wordAtPosition.endColumn : position.column;
       return {
         contents: [{ value: tableMd }],
         range: {
           startLineNumber: position.lineNumber,
           endLineNumber: position.lineNumber,
           startColumn: startCol2,
-          endColumn: startCol2 + alias.length,
+          endColumn: colEndInLine,
         },
       };
     }
@@ -257,6 +285,25 @@ export function provideHoverContent(
         renderInboundForeignKeys(table.schema, table.table, dbSchema.foreignKeys || []);
       return {
         contents: [{ value: md2 }],
+        range: {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: wordAtPosition.startColumn,
+          endColumn: wordAtPosition.endColumn,
+        },
+      };
+    }
+
+    // 2c. Check if the word is a table alias — show the aliased table definition
+    const aliasedTable = findTableForAlias(fullText, w, dbSchema);
+    if (aliasedTable && !findTable(w, dbSchema)) {
+      const cols3 = getColumnsForTable(aliasedTable.schema, aliasedTable.table, dbSchema) || [];
+      const md3 =
+        renderTableMarkdown(aliasedTable.schema, aliasedTable.table, cols3) +
+        renderOutboundForeignKeys(aliasedTable.schema, aliasedTable.table, dbSchema.foreignKeys || []) +
+        renderInboundForeignKeys(aliasedTable.schema, aliasedTable.table, dbSchema.foreignKeys || []);
+      return {
+        contents: [{ value: md3 }],
         range: {
           startLineNumber: position.lineNumber,
           endLineNumber: position.lineNumber,
