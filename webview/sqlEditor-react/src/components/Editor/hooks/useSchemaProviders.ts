@@ -64,7 +64,7 @@ export function useSchemaProviders(
       resolveRenameLocation: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
         const sql = model.getValue();
         const location = resolveRenameLocation(sql, position.lineNumber, position.column);
-        if (!location) return { range: { startLineNumber: 0, startColumn: 0, endLineNumber: 0, endColumn: 0 }, text: '', rejectReason: 'Only CTE names and table aliases can be renamed.' };
+        if (!location) return { range: { startLineNumber: 0, startColumn: 0, endLineNumber: 0, endColumn: 0 }, text: '', rejectReason: 'Cannot rename this element.' };
         return location;
       },
     });

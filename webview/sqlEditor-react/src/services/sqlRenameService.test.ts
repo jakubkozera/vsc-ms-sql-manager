@@ -130,21 +130,31 @@ describe('sqlRenameService', () => {
   });
 
   describe('@variable rename', () => {
-    it('should resolve @variable at DECLARE', () => {
+    it('should resolve @variable at DECLARE — display without @', () => {
       const sql = 'DECLARE @Test INT = 1; SELECT @Test';
       const result = resolveRenameLocation(sql, 1, 10); // "@" of @Test in DECLARE
       expect(result).not.toBeNull();
-      expect(result!.text).toBe('@Test');
+      expect(result!.text).toBe('Test'); // without @ for rename popup display
+      // Range should exclude the @ prefix
+      expect(result!.range.startColumn).toBe(10); // after the @
     });
 
-    it('should resolve @variable at usage', () => {
+    it('should resolve @variable at usage — display without @', () => {
       const sql = 'DECLARE @Test INT = 1; SELECT @Test';
       const result = resolveRenameLocation(sql, 1, 31); // "@" of @Test in SELECT
       expect(result).not.toBeNull();
-      expect(result!.text).toBe('@Test');
+      expect(result!.text).toBe('Test');
     });
 
-    it('should rename @variable across all occurrences', () => {
+    it('should rename @variable across all occurrences — prepends @', () => {
+      const sql = 'DECLARE @Test INT = 1; SELECT @Test';
+      // User types "NewVar" (without @) in the rename popup
+      const edits = provideRenameEdits(sql, 1, 10, 'NewVar');
+      expect(edits).toHaveLength(2);
+      expect(edits.every(e => e.newText === '@NewVar')).toBe(true);
+    });
+
+    it('should handle user typing @ in new name — no double @', () => {
       const sql = 'DECLARE @Test INT = 1; SELECT @Test';
       const edits = provideRenameEdits(sql, 1, 10, '@NewVar');
       expect(edits).toHaveLength(2);
@@ -153,7 +163,7 @@ describe('sqlRenameService', () => {
 
     it('should rename @variable in multiline SQL', () => {
       const sql = 'DECLARE @Cnt INT = 0;\nSET @Cnt = @Cnt + 1;\nSELECT @Cnt';
-      const edits = provideRenameEdits(sql, 1, 10, '@Counter');
+      const edits = provideRenameEdits(sql, 1, 10, 'Counter');
       expect(edits).toHaveLength(4); // DECLARE @Cnt, SET @Cnt, @Cnt + 1, SELECT @Cnt
       expect(edits.every(e => e.newText === '@Counter')).toBe(true);
     });

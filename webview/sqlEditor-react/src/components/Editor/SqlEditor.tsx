@@ -115,12 +115,176 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       'DATEDIFF_BIG', 'GREATEST', 'LEAST', 'GENERATE_SERIES',
     ];
 
+    /**
+     * Detect VS Code theme kind from document.body class.
+     * VS Code adds vscode-dark / vscode-light / vscode-high-contrast / vscode-high-contrast-light.
+     */
+    const getVscodeThemeKind = (): 'sql-dark' | 'sql-light' | 'sql-hc-dark' | 'sql-hc-light' => {
+      const body = document.body;
+      if (body.classList.contains('vscode-high-contrast-light')) return 'sql-hc-light';
+      if (body.classList.contains('vscode-high-contrast')) return 'sql-hc-dark';
+      if (body.classList.contains('vscode-light')) return 'sql-light';
+      return 'sql-dark';
+    };
+
+    const [monacoTheme, setMonacoTheme] = useState<string>('sql-dark');
+
+    // Watch for VS Code theme changes via MutationObserver on body class
+    useEffect(() => {
+      setMonacoTheme(getVscodeThemeKind());
+      const observer = new MutationObserver(() => {
+        setMonacoTheme(getVscodeThemeKind());
+      });
+      observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      return () => observer.disconnect();
+    }, []);
+
     const handleEditorWillMount: BeforeMount = useCallback((monacoInstance) => {
+      // Define custom themes matching VS Code / Azure Data Studio token colors
+      const cssVar = (name: string, fallback: string) =>
+        getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+
+      const editorBg = cssVar('--vscode-editor-background', '#1E1E1E');
+      const editorFg = cssVar('--vscode-editor-foreground', '#D4D4D4');
+
+      // ── Dark theme ──
+      monacoInstance.editor.defineTheme('sql-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        colors: {
+          'editor.background': editorBg,
+          'editor.foreground': editorFg,
+        },
+        rules: [
+          { token: 'keyword', foreground: '569CD6' },          // blue — SELECT, FROM, WHERE, etc.
+          { token: 'keyword.block', foreground: '569CD6' },
+          { token: 'keyword.choice', foreground: '569CD6' },
+          { token: 'keyword.try', foreground: '569CD6' },
+          { token: 'keyword.catch', foreground: '569CD6' },
+          { token: 'operator', foreground: '569CD6' },         // INNER, JOIN, AND — same blue as keywords
+          { token: 'string', foreground: 'CE9178' },           // warm orange (like VS Code)
+          { token: 'predefined', foreground: 'DCDCAA' },       // yellow — functions
+          { token: 'number', foreground: 'B5CEA8' },           // light green
+          { token: 'comment', foreground: '6A9955' },          // green
+          { token: 'comment.quote', foreground: '6A9955' },
+          { token: 'identifier', foreground: 'D4D4D4' },       // default foreground
+          { token: 'identifier.quote', foreground: 'D4D4D4' }, // brackets [] same as identifiers
+          { token: 'delimiter', foreground: 'D4D4D4' },
+          { token: 'delimiter.parenthesis', foreground: 'D4D4D4' },
+          { token: 'type', foreground: '4EC9B0' },
+        ],
+      });
+
+      // ── Light theme ──
+      monacoInstance.editor.defineTheme('sql-light', {
+        base: 'vs',
+        inherit: true,
+        colors: {
+          'editor.background': cssVar('--vscode-editor-background', '#FFFFFF'),
+          'editor.foreground': cssVar('--vscode-editor-foreground', '#000000'),
+        },
+        rules: [
+          { token: 'keyword', foreground: '0000FF' },
+          { token: 'keyword.block', foreground: '0000FF' },
+          { token: 'keyword.choice', foreground: '0000FF' },
+          { token: 'keyword.try', foreground: '0000FF' },
+          { token: 'keyword.catch', foreground: '0000FF' },
+          { token: 'operator', foreground: '0000FF' },
+          { token: 'string', foreground: 'A31515' },
+          { token: 'predefined', foreground: '795E26' },
+          { token: 'number', foreground: '098658' },
+          { token: 'comment', foreground: '008000' },
+          { token: 'comment.quote', foreground: '008000' },
+          { token: 'identifier', foreground: '001080' },
+          { token: 'identifier.quote', foreground: '001080' },
+          { token: 'delimiter', foreground: '000000' },
+          { token: 'delimiter.parenthesis', foreground: '000000' },
+          { token: 'type', foreground: '267F99' },
+        ],
+      });
+
+      // ── High-contrast dark ──
+      monacoInstance.editor.defineTheme('sql-hc-dark', {
+        base: 'hc-black',
+        inherit: true,
+        colors: {
+          'editor.background': cssVar('--vscode-editor-background', '#000000'),
+          'editor.foreground': cssVar('--vscode-editor-foreground', '#FFFFFF'),
+        },
+        rules: [
+          { token: 'keyword', foreground: '569CD6', fontStyle: 'bold' },
+          { token: 'keyword.block', foreground: '569CD6', fontStyle: 'bold' },
+          { token: 'keyword.choice', foreground: '569CD6', fontStyle: 'bold' },
+          { token: 'keyword.try', foreground: '569CD6', fontStyle: 'bold' },
+          { token: 'keyword.catch', foreground: '569CD6', fontStyle: 'bold' },
+          { token: 'operator', foreground: '569CD6', fontStyle: 'bold' },
+          { token: 'string', foreground: 'CE9178' },
+          { token: 'predefined', foreground: 'DCDCAA' },
+          { token: 'number', foreground: 'B5CEA8' },
+          { token: 'comment', foreground: '7CA668' },
+          { token: 'comment.quote', foreground: '7CA668' },
+          { token: 'identifier', foreground: 'FFFFFF' },
+          { token: 'identifier.quote', foreground: 'FFFFFF' },
+        ],
+      });
+
+      // ── High-contrast light ──
+      monacoInstance.editor.defineTheme('sql-hc-light', {
+        base: 'hc-light',
+        inherit: true,
+        colors: {
+          'editor.background': cssVar('--vscode-editor-background', '#FFFFFF'),
+          'editor.foreground': cssVar('--vscode-editor-foreground', '#000000'),
+        },
+        rules: [
+          { token: 'keyword', foreground: '0000FF', fontStyle: 'bold' },
+          { token: 'keyword.block', foreground: '0000FF', fontStyle: 'bold' },
+          { token: 'keyword.choice', foreground: '0000FF', fontStyle: 'bold' },
+          { token: 'keyword.try', foreground: '0000FF', fontStyle: 'bold' },
+          { token: 'keyword.catch', foreground: '0000FF', fontStyle: 'bold' },
+          { token: 'operator', foreground: '0000FF', fontStyle: 'bold' },
+          { token: 'string', foreground: 'A31515' },
+          { token: 'predefined', foreground: '795E26' },
+          { token: 'number', foreground: '098658' },
+          { token: 'comment', foreground: '008000' },
+          { token: 'comment.quote', foreground: '008000' },
+          { token: 'identifier', foreground: '000000' },
+          { token: 'identifier.quote', foreground: '000000' },
+        ],
+      });
+
       // Extend the SQL Monarch tokenizer with extra built-in functions
+      // and add APPLY, MATCHED to keywords (they're only in operators by default)
       // @ts-expect-error — no type declarations for internal Monaco SQL module
       import('monaco-editor/esm/vs/basic-languages/sql/sql').then(({ language }: { language: any }) => {
         const extended = { ...language };
         extended.builtinFunctions = [...(language.builtinFunctions || []), ...EXTRA_BUILTIN_FUNCTIONS];
+        // Add APPLY and MATCHED to keywords so they also match @keywords
+        const existingKeywords: string[] = language.keywords || [];
+        const missingKeywords = ['APPLY', 'MATCHED'].filter(
+          k => !existingKeywords.some((ek: string) => ek.toUpperCase() === k)
+        );
+        if (missingKeywords.length > 0) {
+          extended.keywords = [...existingKeywords, ...missingKeywords];
+        }
+
+        // Fix tokenizer: make word-based operators match as keywords (same blue color).
+        // Copy the tokenizer deeply enough to modify the root rules.
+        const origTokenizer = language.tokenizer;
+        extended.tokenizer = { ...origTokenizer, root: [...origTokenizer.root] };
+        // Find the case-match rule in root and change @operators from "operator" to "keyword"
+        extended.tokenizer.root = extended.tokenizer.root.map((rule: any) => {
+          if (Array.isArray(rule) && rule.length === 2 && rule[1]?.cases?.['@operators']) {
+            return [rule[0], {
+              cases: {
+                ...rule[1].cases,
+                '@operators': 'keyword',
+              },
+            }];
+          }
+          return rule;
+        });
+
         monacoInstance.languages.setMonarchTokensProvider('sql', extended);
       });
     }, []);
@@ -162,7 +326,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
         <MonacoEditor
           height="100%"
           language="sql"
-          theme="vs-dark"
+          theme={monacoTheme}
           defaultValue={initialValue}
           beforeMount={handleEditorWillMount}
           onMount={handleEditorMount}

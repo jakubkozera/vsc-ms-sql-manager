@@ -270,9 +270,17 @@ export function resolveRenameLocation(
     text: word,
   });
 
-  // Check if it's a SQL variable
+  // Check if it's a SQL variable — show name without @ in rename popup
   if (isSqlVariable(sql, word)) {
-    return makeResult();
+    return {
+      range: {
+        startLineNumber: lineNumber,
+        startColumn: wordInfo.startColumn + 1, // skip the @ prefix
+        endLineNumber: lineNumber,
+        endColumn: wordInfo.endColumn,
+      },
+      text: word.substring(1), // display without @
+    };
   }
 
   // Check if it's a CTE name
@@ -298,10 +306,24 @@ export function provideRenameEdits(
   column: number,
   newName: string
 ): SqlRenameEdit[] {
-  const location = resolveRenameLocation(sql, lineNumber, column);
-  if (!location) return [];
+  const wordInfo = getWordAtPosition(sql, lineNumber, column);
+  if (!wordInfo) return [];
 
-  const word = location.text;
+  const word = wordInfo.word;
+
+  // Validate: skip keywords, require CTE/alias/variable
+  if (!word.startsWith('@') && /^(select|from|where|join|inner|left|right|full|cross|outer|on|and|or|not|in|is|null|as|with|set|insert|update|delete|into|values|order|group|by|having|union|all|distinct|top|case|when|then|else|end|exists|between|like|asc|desc|begin|commit|rollback|declare|exec|execute|create|alter|drop|table|view|procedure|function|index|trigger|go)$/i.test(word)) {
+    return [];
+  }
+
+  const isVariable = isSqlVariable(sql, word);
+  if (!isVariable) {
+    const ctes = extractCTEs(sql);
+    if (!ctes.has(word.toLowerCase()) && !isTableAlias(sql, word)) return [];
+  }
+
+  // For @variables, user typed name without @, so prepend it
+  const effectiveNewName = isVariable ? '@' + newName.replace(/^@/, '') : newName;
   const occurrences = findAllOccurrences(sql, word);
 
   return occurrences.map(occ => {
@@ -314,7 +336,7 @@ export function provideRenameEdits(
         endLineNumber: end.lineNumber,
         endColumn: end.column,
       },
-      newText: newName,
+      newText: effectiveNewName,
     };
   });
 }
