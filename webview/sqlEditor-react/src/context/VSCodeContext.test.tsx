@@ -319,6 +319,74 @@ describe('VSCodeContext - Database Operations', () => {
       databaseName: 'Test DB',
     });
   });
+
+  it('should optimistically update currentDatabase immediately when selectDatabase is called', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    // Set up connection with initial databases
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    sendMessage({
+      type: 'databasesUpdate',
+      databases: ['master', 'TestDB', 'ProductionDB'],
+      currentDatabase: 'master',
+    });
+
+    expect(result.current.currentDatabase).toBe('master');
+
+    // Select a new database - the local state should update immediately
+    act(() => {
+      result.current.selectDatabase('TestDB');
+    });
+
+    // Should update immediately without waiting for extension response
+    expect(result.current.currentDatabase).toBe('TestDB');
+    // The databases list should remain unchanged
+    expect(result.current.databases).toEqual(['master', 'TestDB', 'ProductionDB']);
+  });
+
+  it('should send switchDatabase message AND update local state in selectDatabase', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [
+        { id: 'conn1', name: 'Test', server: 'localhost', connectionType: 'server' },
+      ],
+      currentConnectionId: 'conn1',
+    });
+
+    sendMessage({
+      type: 'databasesUpdate',
+      databases: ['master', 'TestDB'],
+      currentDatabase: 'master',
+    });
+
+    postMessageMock.mockClear();
+
+    act(() => {
+      result.current.selectDatabase('TestDB');
+    });
+
+    // Local state updated immediately
+    expect(result.current.currentDatabase).toBe('TestDB');
+    // Message still sent to extension
+    expect(postMessageMock).toHaveBeenCalledWith({
+      type: 'switchDatabase',
+      connectionId: 'conn1',
+      databaseName: 'TestDB',
+    });
+  });
 });
 
 describe('VSCodeContext - Query Execution', () => {
@@ -657,5 +725,108 @@ describe('VSCodeContext - Query Execution', () => {
       databaseName: undefined,
       includeActualPlan: undefined,
     });
+  });
+});
+
+describe('VSCodeContext - Error State', () => {
+  let postMessageMock: ReturnType<typeof vi.fn>;
+  let messageHandler: ((event: MessageEvent) => void) | null = null;
+
+  beforeEach(() => {
+    postMessageMock = vi.fn();
+
+    (global as any).acquireVsCodeApi = () => ({
+      postMessage: postMessageMock,
+      getState: () => null,
+      setState: () => {},
+    });
+
+    const originalAddEventListener = window.addEventListener;
+    vi.spyOn(window, 'addEventListener').mockImplementation((event, handler) => {
+      if (event === 'message') {
+        messageHandler = handler as (event: MessageEvent) => void;
+      }
+      return originalAddEventListener.call(window, event, handler);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    messageHandler = null;
+  });
+
+  const sendMessage = (message: IncomingMessage) => {
+    if (!messageHandler) {
+      throw new Error('Message handler not registered');
+    }
+    act(() => {
+      messageHandler!(new MessageEvent('message', { data: message }));
+    });
+  };
+
+  it('should initialize lastErrorId to 0', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    expect(result.current.lastErrorId).toBe(0);
+  });
+
+  it('should increment lastErrorId when an error message is received', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    expect(result.current.lastErrorId).toBe(0);
+
+    sendMessage({ type: 'error', error: 'Something went wrong' });
+
+    expect(result.current.lastErrorId).toBe(1);
+  });
+
+  it('should increment lastErrorId on each subsequent error, even with the same message', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    sendMessage({ type: 'error', error: 'Duplicate error' });
+    expect(result.current.lastErrorId).toBe(1);
+
+    sendMessage({ type: 'error', error: 'Duplicate error' });
+    expect(result.current.lastErrorId).toBe(2);
+
+    sendMessage({ type: 'error', error: 'Duplicate error' });
+    expect(result.current.lastErrorId).toBe(3);
+  });
+
+  it('should update lastError and lastMessages when error is received', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    sendMessage({ type: 'error', error: 'Connection failed' });
+
+    expect(result.current.lastError).toBe('Connection failed');
+    expect(result.current.lastErrorId).toBe(1);
+  });
+
+  it('should not increment lastErrorId for non-error messages', () => {
+    const { result } = renderHook(() => useVSCode(), {
+      wrapper: VSCodeProvider,
+    });
+
+    sendMessage({
+      type: 'connectionsUpdate',
+      connections: [],
+      currentConnectionId: undefined,
+    });
+
+    sendMessage({
+      type: 'databasesUpdate',
+      databases: ['master'],
+      currentDatabase: 'master',
+    });
+
+    expect(result.current.lastErrorId).toBe(0);
   });
 });

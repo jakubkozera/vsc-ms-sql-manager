@@ -522,12 +522,15 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
       console.warn('[VSCode] Cannot select database without active connection');
       return;
     }
+    // Optimistic update: update local state immediately so the dropdown reflects
+    // the selection without waiting for the extension round-trip
+    dispatch({ type: 'SET_DATABASES', databases: state.databases, currentDatabase: databaseName });
     postMessage({ 
       type: 'switchDatabase', 
       connectionId: state.currentConnectionId,
       databaseName 
     });
-  }, [state.currentConnectionId, postMessage]);
+  }, [state.currentConnectionId, state.databases, postMessage]);
   
   const manageConnections = useCallback(() => {
     postMessage({ type: 'manageConnections' });

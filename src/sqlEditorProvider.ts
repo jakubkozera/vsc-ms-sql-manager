@@ -2210,6 +2210,7 @@ COMMIT TRANSACTION;
                     const cid = `${message.connectionId}::${message.databaseName}`;
                     this.webviewSelectedConnection.set(panel.webview, cid);
                     this.connectionProvider.setCurrentDatabase(message.connectionId, message.databaseName);
+                    await this.sendDatabasesList(panel.webview, message.connectionId, message.databaseName);
                     await this.sendSchemaUpdate(panel.webview, cid);
                     break;
                 }
