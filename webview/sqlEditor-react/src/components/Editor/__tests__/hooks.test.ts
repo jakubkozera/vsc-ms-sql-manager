@@ -314,7 +314,7 @@ describe('useSchemaProviders', () => {
     const monacoRef = { current: mockMonaco } as any;
     const editorRef = { current: createMockEditor() } as any;
 
-    renderHook(() => useSchemaProviders(monacoRef, editorRef, testSchema, false));
+    renderHook(() => useSchemaProviders(monacoRef, editorRef, testSchema, false, 'test-connection-id'));
 
     expect(mockMonaco.languages.registerHoverProvider).not.toHaveBeenCalled();
   });
@@ -324,7 +324,7 @@ describe('useSchemaProviders', () => {
     const monacoRef = { current: mockMonaco } as any;
     const editorRef = { current: createMockEditor() } as any;
 
-    renderHook(() => useSchemaProviders(monacoRef, editorRef, undefined, true));
+    renderHook(() => useSchemaProviders(monacoRef, editorRef, undefined, true, 'test-connection-id'));
 
     expect(mockMonaco.languages.registerHoverProvider).not.toHaveBeenCalled();
   });
@@ -335,7 +335,7 @@ describe('useSchemaProviders', () => {
     const monacoRef = { current: mockMonaco } as any;
     const editorRef = { current: mockEditor } as any;
 
-    renderHook(() => useSchemaProviders(monacoRef, editorRef, testSchema, true));
+    renderHook(() => useSchemaProviders(monacoRef, editorRef, testSchema, true, 'test-connection-id'));
 
     expect(mockMonaco.languages.registerHoverProvider).toHaveBeenCalledWith(
       'sql',
@@ -354,7 +354,7 @@ describe('useSchemaProviders', () => {
     const monacoRef = { current: mockMonaco } as any;
     const editorRef = { current: mockEditor } as any;
 
-    const { unmount } = renderHook(() => useSchemaProviders(monacoRef, editorRef, testSchema, true));
+    const { unmount } = renderHook(() => useSchemaProviders(monacoRef, editorRef, testSchema, true, 'test-connection-id'));
     unmount();
 
     expect(hoverDispose).toHaveBeenCalled();

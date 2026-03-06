@@ -50,7 +50,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     });
 
     useCompletionProvider(monacoRef, dbSchema, editorReady);
-    useSchemaProviders(monacoRef, editorRef, dbSchema, editorReady);
+    useSchemaProviders(monacoRef, editorRef, dbSchema, editorReady, currentConnectionId);
 
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
