@@ -381,58 +381,63 @@ export function calculatePlanStats(plan: QueryPlan): {
 /**
  * Get icon/color for operation type
  */
+export type OperationIconId = 
+  | 'target' | 'list-search' | 'table' | 'link' | 'refresh'
+  | 'git-merge' | 'sort-ascending' | 'calculator' | 'filter'
+  | 'sum' | 'bolt' | 'key' | 'arrow-up' | 'edit' | 'upload' | 'settings';
+
 export function getOperationStyle(physicalOp: string): {
-  icon: string;
+  icon: OperationIconId;
   color: string;
   category: string;
 } {
   const op = physicalOp.toLowerCase();
   
   if (op.includes('clustered index seek') || op.includes('index seek')) {
-    return { icon: '🎯', color: '#4caf50', category: 'Seek' };
+    return { icon: 'target', color: '#4caf50', category: 'Seek' };
   }
   if (op.includes('clustered index scan') || op.includes('index scan')) {
-    return { icon: '📋', color: '#ff9800', category: 'Scan' };
+    return { icon: 'list-search', color: '#ff9800', category: 'Scan' };
   }
   if (op.includes('table scan')) {
-    return { icon: '📋', color: '#f44336', category: 'Table Scan' };
+    return { icon: 'table', color: '#f44336', category: 'Table Scan' };
   }
   if (op.includes('hash match') || op.includes('hash join')) {
-    return { icon: '🔗', color: '#9c27b0', category: 'Hash Join' };
+    return { icon: 'link', color: '#9c27b0', category: 'Hash Join' };
   }
   if (op.includes('nested loops')) {
-    return { icon: '🔄', color: '#2196f3', category: 'Nested Loops' };
+    return { icon: 'refresh', color: '#2196f3', category: 'Nested Loops' };
   }
   if (op.includes('merge join')) {
-    return { icon: '🔀', color: '#00bcd4', category: 'Merge Join' };
+    return { icon: 'git-merge', color: '#00bcd4', category: 'Merge Join' };
   }
   if (op.includes('sort')) {
-    return { icon: '📊', color: '#ff5722', category: 'Sort' };
+    return { icon: 'sort-ascending', color: '#ff5722', category: 'Sort' };
   }
   if (op.includes('compute scalar')) {
-    return { icon: '🔢', color: '#607d8b', category: 'Compute' };
+    return { icon: 'calculator', color: '#607d8b', category: 'Compute' };
   }
   if (op.includes('filter')) {
-    return { icon: '🔍', color: '#795548', category: 'Filter' };
+    return { icon: 'filter', color: '#795548', category: 'Filter' };
   }
   if (op.includes('aggregate') || op.includes('stream aggregate') || op.includes('hash aggregate')) {
-    return { icon: '∑', color: '#673ab7', category: 'Aggregate' };
+    return { icon: 'sum', color: '#673ab7', category: 'Aggregate' };
   }
   if (op.includes('parallelism')) {
-    return { icon: '⚡', color: '#ffc107', category: 'Parallelism' };
+    return { icon: 'bolt', color: '#ffc107', category: 'Parallelism' };
   }
   if (op.includes('key lookup') || op.includes('rid lookup')) {
-    return { icon: '🔑', color: '#e91e63', category: 'Lookup' };
+    return { icon: 'key', color: '#e91e63', category: 'Lookup' };
   }
   if (op.includes('top')) {
-    return { icon: '⬆️', color: '#03a9f4', category: 'Top' };
+    return { icon: 'arrow-up', color: '#03a9f4', category: 'Top' };
   }
   if (op.includes('insert') || op.includes('update') || op.includes('delete')) {
-    return { icon: '✏️', color: '#ff5722', category: 'DML' };
+    return { icon: 'edit', color: '#ff5722', category: 'DML' };
   }
   if (op.includes('select')) {
-    return { icon: '📤', color: '#4caf50', category: 'Select' };
+    return { icon: 'upload', color: '#4caf50', category: 'Select' };
   }
   
-  return { icon: '⚙️', color: '#9e9e9e', category: 'Other' };
+  return { icon: 'settings', color: '#9e9e9e', category: 'Other' };
 }

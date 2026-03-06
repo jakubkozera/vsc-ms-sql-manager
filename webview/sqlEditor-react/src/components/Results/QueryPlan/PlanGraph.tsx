@@ -1,11 +1,18 @@
-import { useRef, useEffect, useMemo, useState } from 'react';
-import { PlanNode, QueryPlan, getOperationStyle } from '../../../services/queryPlanParser';
+import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { PlanNode, QueryPlan, getOperationStyle, OperationIconId } from '../../../services/queryPlanParser';
+import {
+  IconTarget, IconListSearch, IconTable, IconLink, IconRefresh,
+  IconGitMerge, IconSortAscending, IconCalculator, IconFilter,
+  IconSum, IconBolt, IconKey, IconArrowUp, IconEdit, IconUpload,
+  IconSettings, IconZoomIn, IconZoomOut, IconMaximize, IconAlertTriangle,
+} from './icons';
 import './PlanGraph.css';
 
 interface PlanGraphProps {
   plan: QueryPlan;
   onNodeClick?: (node: PlanNode) => void;
   onNodeHover?: (node: PlanNode | null) => void;
+  focusNodeId?: string | null;
 }
 
 interface LayoutNode extends PlanNode {
@@ -20,6 +27,30 @@ const NODE_HEIGHT = 80;
 const NODE_MARGIN_X = 40;
 const NODE_MARGIN_Y = 30;
 const ARROW_SIZE = 8;
+
+function getOperationIcon(iconId: OperationIconId, size = 16) {
+  const map: Record<OperationIconId, JSX.Element> = {
+    'target': <IconTarget size={size} />,
+    'list-search': <IconListSearch size={size} />,
+    'table': <IconTable size={size} />,
+    'link': <IconLink size={size} />,
+    'refresh': <IconRefresh size={size} />,
+    'git-merge': <IconGitMerge size={size} />,
+    'sort-ascending': <IconSortAscending size={size} />,
+    'calculator': <IconCalculator size={size} />,
+    'filter': <IconFilter size={size} />,
+    'sum': <IconSum size={size} />,
+    'bolt': <IconBolt size={size} />,
+    'key': <IconKey size={size} />,
+    'arrow-up': <IconArrowUp size={size} />,
+    'edit': <IconEdit size={size} />,
+    'upload': <IconUpload size={size} />,
+    'settings': <IconSettings size={size} />,
+  };
+  return map[iconId];
+}
+
+export { getOperationIcon };
 
 /**
  * Calculate tree layout (right-to-left flow like SSMS)
@@ -78,13 +109,17 @@ function calculateLayout(root: PlanNode): { nodes: LayoutNode[]; maxX: number; m
   return { nodes, maxX, maxY };
 }
 
-export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
+export function PlanGraph({ plan, onNodeClick, onNodeHover, focusNodeId }: PlanGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState({ x: 20, y: 20, scale: 1 });
   const [hoveredNode, setHoveredNode] = useState<LayoutNode | null>(null);
+  const [pinnedNode, setPinnedNode] = useState<LayoutNode | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  
+  // The node whose tooltip is currently visible (pinned takes priority)
+  const activeTooltipNode = pinnedNode || hoveredNode;
   
   // Calculate layout
   const layout = useMemo(() => {
@@ -104,6 +139,31 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
       setTransform({ x: 20, y: 20, scale });
     }
   }, [layout]);
+
+  // Focus on a specific node (zoom + pan)
+  const focusOnNode = useCallback((nodeId: string) => {
+    if (!containerRef.current) return;
+    const targetNode = layout.nodes.find(n => n.id === nodeId);
+    if (!targetNode) return;
+
+    const containerWidth = containerRef.current.clientWidth;
+    const containerHeight = containerRef.current.clientHeight;
+    const scale = 1;
+    const x = containerWidth / 2 - (targetNode.x + NODE_WIDTH / 2) * scale;
+    const y = containerHeight / 2 - (targetNode.y + NODE_HEIGHT / 2) * scale;
+    setTransform({ x, y, scale });
+  }, [layout.nodes]);
+
+  // React to focusNodeId changes
+  useEffect(() => {
+    if (focusNodeId) {
+      focusOnNode(focusNodeId);
+      const target = layout.nodes.find(n => n.id === focusNodeId);
+      if (target) {
+        setPinnedNode(prev => prev?.id === target.id ? null : target);
+      }
+    }
+  }, [focusNodeId, focusOnNode, layout.nodes]);
   
   // Pan handling
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -138,7 +198,20 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
   };
   
   const handleNodeClick = (node: LayoutNode) => {
+    // Toggle pin on click: if same node is pinned, unpin; otherwise pin this one
+    setPinnedNode(prev => prev?.id === node.id ? null : node);
     onNodeClick?.(node);
+  };
+
+  // Click on background dismisses pinned tooltip
+  const handleBackgroundClick = (e: React.MouseEvent) => {
+    if ((e.target as SVGElement).tagName === 'svg' || (e.target as SVGElement).tagName === 'rect') {
+      // Only dismiss if click is on the SVG background, not on a node
+      const target = e.target as SVGElement;
+      if (!target.closest('.plan-node')) {
+        setPinnedNode(null);
+      }
+    }
   };
   
   const handleNodeHover = (node: LayoutNode | null) => {
@@ -167,7 +240,7 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
     }
   };
   
-  // Render edges
+  // Render edges (uniform thin lines)
   const renderEdges = () => {
     const edges: JSX.Element[] = [];
     
@@ -177,9 +250,6 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
         const startY = node.y + NODE_HEIGHT / 2;
         const endX = child.x;
         const endY = child.y + NODE_HEIGHT / 2;
-        
-        // Calculate line width based on estimated rows (log scale)
-        const lineWidth = Math.max(1, Math.min(10, Math.log10(child.estimatedRows + 1) * 2));
         
         // Curved path
         const midX = (startX + endX) / 2;
@@ -191,7 +261,7 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
               d={path}
               fill="none"
               stroke="var(--vscode-foreground)"
-              strokeWidth={lineWidth}
+              strokeWidth={1.5}
               strokeOpacity={0.3}
               markerEnd="url(#arrowhead)"
             />
@@ -221,7 +291,9 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
   const renderNodes = () => {
     return layout.nodes.map(node => {
       const style = getOperationStyle(node.physicalOp);
+      const isPinned = pinnedNode?.id === node.id;
       const isHovered = hoveredNode?.id === node.id;
+      const isHighlighted = isPinned || isHovered;
       const costPercent = (node.estimatedCost / plan.estimatedTotalCost) * 100;
       const hasWarnings = node.warnings && node.warnings.length > 0;
       
@@ -229,8 +301,8 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
         <g
           key={node.id}
           transform={`translate(${node.x}, ${node.y})`}
-          className={`plan-node ${isHovered ? 'hovered' : ''}`}
-          onClick={() => handleNodeClick(node)}
+          className={`plan-node ${isHighlighted ? 'hovered' : ''} ${isPinned ? 'pinned' : ''}`}
+          onClick={(e) => { e.stopPropagation(); handleNodeClick(node); }}
           onMouseEnter={() => handleNodeHover(node)}
           onMouseLeave={() => handleNodeHover(null)}
           style={{ cursor: 'pointer' }}
@@ -241,8 +313,8 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
             height={NODE_HEIGHT}
             rx={6}
             fill="var(--vscode-editor-background)"
-            stroke={isHovered ? 'var(--vscode-focusBorder)' : style.color}
-            strokeWidth={isHovered ? 2 : 1}
+            stroke={isHighlighted ? 'var(--vscode-focusBorder)' : style.color}
+            strokeWidth={isHighlighted ? 2 : 1}
           />
           
           {/* Cost bar */}
@@ -257,13 +329,15 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
           />
           
           {/* Icon */}
-          <text x={12} y={28} fontSize="18">
-            {style.icon}
-          </text>
+          <foreignObject x={8} y={12} width={20} height={20}>
+            <div style={{ color: style.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {getOperationIcon(style.icon, 16)}
+            </div>
+          </foreignObject>
           
           {/* Operation name */}
           <text
-            x={38}
+            x={34}
             y={24}
             fontSize="12"
             fontWeight="600"
@@ -275,7 +349,7 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
           {/* Object name */}
           {node.object && (
             <text
-              x={38}
+              x={34}
               y={40}
               fontSize="10"
               fill="var(--vscode-descriptionForeground)"
@@ -320,10 +394,11 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
           
           {/* Warning indicator */}
           {hasWarnings && (
-            <g transform={`translate(${NODE_WIDTH - 20}, 4)`}>
-              <circle r={8} fill="#ff9800" />
-              <text x={0} y={4} textAnchor="middle" fontSize="12" fill="white">⚠</text>
-            </g>
+            <foreignObject x={NODE_WIDTH - 24} y={2} width={20} height={20}>
+              <div style={{ color: '#ff9800', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <IconAlertTriangle size={14} />
+              </div>
+            </foreignObject>
           )}
         </g>
       );
@@ -338,9 +413,9 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
     >
       {/* Toolbar */}
       <div className="plan-graph-toolbar">
-        <button onClick={handleZoomIn} title="Zoom In">+</button>
-        <button onClick={handleZoomOut} title="Zoom Out">−</button>
-        <button onClick={handleZoomFit} title="Fit to View">⊡</button>
+        <button onClick={handleZoomIn} title="Zoom In"><IconZoomIn size={16} /></button>
+        <button onClick={handleZoomOut} title="Zoom Out"><IconZoomOut size={16} /></button>
+        <button onClick={handleZoomFit} title="Fit to View"><IconMaximize size={16} /></button>
         <span className="zoom-level">{Math.round(transform.scale * 100)}%</span>
       </div>
       
@@ -354,6 +429,7 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
+        onClick={handleBackgroundClick}
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
       >
         <defs>
@@ -379,64 +455,79 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover }: PlanGraphProps) {
         </g>
       </svg>
       
-      {/* Tooltip */}
-      {hoveredNode && (
-        <div 
-          className="plan-node-tooltip"
+      {/* Tooltip - shown for pinned or hovered node */}
+      {activeTooltipNode && (
+        <div
+          className={`plan-node-tooltip ${pinnedNode ? 'pinned' : ''}`}
+          data-testid="plan-node-tooltip"
           style={{
-            left: (hoveredNode.x + NODE_WIDTH) * transform.scale + transform.x + 10,
-            top: hoveredNode.y * transform.scale + transform.y,
+            left: (activeTooltipNode.x + NODE_WIDTH) * transform.scale + transform.x + 10,
+            top: activeTooltipNode.y * transform.scale + transform.y,
+          }}
+          onMouseEnter={() => {
+            // Keep tooltip visible when mouse enters it (for hover mode)
+            if (!pinnedNode) {
+              setHoveredNode(activeTooltipNode);
+            }
+          }}
+          onMouseLeave={() => {
+            // Hide tooltip when mouse leaves it (for hover mode only)
+            if (!pinnedNode) {
+              setHoveredNode(null);
+            }
           }}
         >
-          <div className="tooltip-header">{hoveredNode.physicalOp}</div>
+          <div className="tooltip-header">{activeTooltipNode.physicalOp}</div>
           <div className="tooltip-row">
             <span>Logical Op:</span>
-            <span>{hoveredNode.logicalOp}</span>
+            <span>{activeTooltipNode.logicalOp}</span>
           </div>
           <div className="tooltip-row">
             <span>Est. Rows:</span>
-            <span>{formatNumber(hoveredNode.estimatedRows)}</span>
+            <span>{formatNumber(activeTooltipNode.estimatedRows)}</span>
           </div>
-          {hoveredNode.actualRows !== undefined && (
+          {activeTooltipNode.actualRows !== undefined && (
             <div className="tooltip-row">
               <span>Actual Rows:</span>
-              <span>{formatNumber(hoveredNode.actualRows)}</span>
+              <span>{formatNumber(activeTooltipNode.actualRows)}</span>
             </div>
           )}
           <div className="tooltip-row">
             <span>Est. I/O:</span>
-            <span>{hoveredNode.estimatedIO.toFixed(6)}</span>
+            <span>{activeTooltipNode.estimatedIO.toFixed(6)}</span>
           </div>
           <div className="tooltip-row">
             <span>Est. CPU:</span>
-            <span>{hoveredNode.estimatedCPU.toFixed(6)}</span>
+            <span>{activeTooltipNode.estimatedCPU.toFixed(6)}</span>
           </div>
           <div className="tooltip-row">
             <span>Subtree Cost:</span>
-            <span>{hoveredNode.estimatedSubtreeCost.toFixed(6)}</span>
+            <span>{activeTooltipNode.estimatedSubtreeCost.toFixed(6)}</span>
           </div>
-          {hoveredNode.object && (
+          {activeTooltipNode.object && (
             <div className="tooltip-row">
               <span>Object:</span>
-              <span>{[hoveredNode.object.schema, hoveredNode.object.table].filter(Boolean).join('.')}</span>
+              <span>{[activeTooltipNode.object.schema, activeTooltipNode.object.table].filter(Boolean).join('.')}</span>
             </div>
           )}
-          {hoveredNode.object?.index && (
+          {activeTooltipNode.object?.index && (
             <div className="tooltip-row">
               <span>Index:</span>
-              <span>{hoveredNode.object.index}</span>
+              <span>{activeTooltipNode.object.index}</span>
             </div>
           )}
-          {hoveredNode.predicate && (
+          {activeTooltipNode.predicate && (
             <div className="tooltip-row full-width">
               <span>Predicate:</span>
-              <span className="predicate-text">{hoveredNode.predicate}</span>
+              <span className="predicate-text">{activeTooltipNode.predicate}</span>
             </div>
           )}
-          {hoveredNode.warnings && hoveredNode.warnings.length > 0 && (
+          {activeTooltipNode.warnings && activeTooltipNode.warnings.length > 0 && (
             <div className="tooltip-warnings">
-              {hoveredNode.warnings.map((w, i) => (
-                <div key={i} className="warning-item">⚠ {w}</div>
+              {activeTooltipNode.warnings.map((w, i) => (
+                <div key={i} className="warning-item">
+                  <IconAlertTriangle size={12} /> {w}
+                </div>
               ))}
             </div>
           )}

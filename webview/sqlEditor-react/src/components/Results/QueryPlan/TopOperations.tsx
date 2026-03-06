@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { PlanNode, QueryPlan, getTopOperations, getOperationStyle } from '../../../services/queryPlanParser';
+import { getOperationIcon } from './PlanGraph';
+import { IconAlertTriangle } from './icons';
 import './TopOperations.css';
 
 interface TopOperationsProps {
@@ -9,7 +11,7 @@ interface TopOperationsProps {
   selectedNodeId?: string;
 }
 
-export function TopOperations({ plan, limit = 10, onOperationClick, selectedNodeId }: TopOperationsProps) {
+export function TopOperations({ plan, limit = Infinity, onOperationClick, selectedNodeId }: TopOperationsProps) {
   const topOps = useMemo(() => {
     return getTopOperations(plan, limit);
   }, [plan, limit]);
@@ -23,11 +25,14 @@ export function TopOperations({ plan, limit = 10, onOperationClick, selectedNode
   }
   
   const maxCost = topOps[0]?.estimatedCost || 1;
+  const headerLabel = limit === Infinity || limit >= topOps.length
+    ? `All Operations by Cost (${topOps.length})`
+    : `Top ${topOps.length} Operations by Cost`;
   
   return (
     <div className="top-operations" data-testid="top-operations">
       <div className="top-operations-header">
-        <span className="header-label">Top {topOps.length} Operations by Cost</span>
+        <span className="header-label">{headerLabel}</span>
         <span className="header-total">Total: {plan.estimatedTotalCost.toFixed(4)}</span>
       </div>
       
@@ -49,13 +54,17 @@ export function TopOperations({ plan, limit = 10, onOperationClick, selectedNode
               <div className="operation-rank">#{index + 1}</div>
               
               <div className="operation-icon" style={{ color: style.color }}>
-                {style.icon}
+                {getOperationIcon(style.icon, 18)}
               </div>
               
               <div className="operation-info">
                 <div className="operation-name">
                   {node.physicalOp}
-                  {hasWarnings && <span className="warning-badge">⚠</span>}
+                  {hasWarnings && (
+                    <span className="warning-badge">
+                      <IconAlertTriangle size={11} />
+                    </span>
+                  )}
                 </div>
                 <div className="operation-object">
                   {node.object ? (

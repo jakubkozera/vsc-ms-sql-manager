@@ -69,6 +69,10 @@
   font-size: 18px;
   width: 24px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .operation-info {
@@ -91,6 +95,8 @@
 .operation-name .warning-badge {
   color: #ff9800;
   font-size: 11px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .operation-object {

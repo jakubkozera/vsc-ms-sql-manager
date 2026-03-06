@@ -11,20 +11,66 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
   border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-sideBar-background);
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background));
   flex-shrink: 0;
 }
 
 .plan-tabs {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 0;
+}
+
+/* View mode tabs (left side, like results/messages tab style) */
+.plan-view-tabs {
+  display: flex;
+  gap: 0;
+}
+
+.plan-view-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  position: relative;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-view-tab:hover {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground);
+}
+
+.plan-view-tab.active {
+  opacity: 1;
+}
+
+.plan-view-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--vscode-focusBorder);
+}
+
+.plan-view-tab svg {
+  flex-shrink: 0;
 }
 
 .statement-tabs {
   display: flex;
   gap: 4px;
+  margin-left: 16px;
+  padding: 0 8px;
 }
 
 .statement-tab {
@@ -52,51 +98,33 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 0 8px;
 }
 
-.view-mode-toggle {
+.toggle-panel-btn {
+  width: 28px;
+  height: 28px;
   display: flex;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.view-mode-toggle button {
-  padding: 4px 10px;
+  align-items: center;
+  justify-content: center;
   background: transparent;
-  border: none;
-  border-right: 1px solid var(--vscode-panel-border);
-  color: var(--vscode-foreground);
-  font-size: 11px;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-
-.view-mode-toggle button:last-child {
-  border-right: none;
-}
-
-.view-mode-toggle button:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.view-mode-toggle button.active {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-.toggle-panel {
-  padding: 4px 8px;
-  background: transparent;
-  border: 1px solid var(--vscode-panel-border);
+  border: 1px solid transparent;
   border-radius: 4px;
   color: var(--vscode-foreground);
-  font-size: 12px;
   cursor: pointer;
+  opacity: 0.7;
+  transition: all 0.15s;
 }
 
-.toggle-panel:hover {
+.toggle-panel-btn:hover {
+  opacity: 1;
   background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-panel-border);
+}
+
+.toggle-panel-btn.active {
+  opacity: 1;
+  color: var(--vscode-focusBorder);
 }
 
 /* Stats bar */
@@ -230,20 +258,39 @@
 }
 
 .tree-node .tree-expand {
-  width: 12px;
-  font-size: 10px;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.tree-node .tree-expand.clickable {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.15s;
+}
+
+.tree-node .tree-expand.clickable:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+.tree-node .tree-leaf-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+  opacity: 0.5;
 }
 
 .tree-node .tree-icon {
   width: 24px;
-  font-size: 10px;
-  font-weight: 600;
-  text-align: center;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  border-radius: 3px;
-  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .tree-node .tree-name {
@@ -277,6 +324,8 @@
 .tree-node .tree-warning {
   color: #ff9800;
   margin-left: 4px;
+  display: flex;
+  align-items: center;
 }
 
 /* Error state */
