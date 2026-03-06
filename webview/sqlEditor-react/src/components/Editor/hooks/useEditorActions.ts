@@ -3,6 +3,7 @@ import type { editor } from 'monaco-editor';
 import type { DatabaseSchema } from '../../../types/schema';
 import type { OutgoingMessage } from '../../../types/messages';
 import { findTable } from '../../../services';
+import { copyToClipboard } from '../../../services/exportService';
 
 type MonacoType = typeof import('monaco-editor');
 
@@ -101,6 +102,38 @@ export function useEditorActions(deps: EditorActionsDeps) {
         label: 'Paste',
         keybindings: [monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyV],
         run: () => requestPaste(),
+      });
+
+      // Cut (Ctrl+X)
+      editor.addAction({
+        id: 'cut',
+        label: 'Cut',
+        keybindings: [monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyX],
+        run: (ed) => {
+          const model = ed.getModel();
+          const selection = ed.getSelection();
+          if (!model || !selection) return;
+
+          if (selection.isEmpty()) {
+            // No selection: cut the entire current line
+            const lineNumber = selection.startLineNumber;
+            const lineContent = model.getLineContent(lineNumber);
+            const eol = model.getEOL();
+            copyToClipboard(lineContent + eol);
+            // Delete the line
+            const range = lineNumber < model.getLineCount()
+              ? { startLineNumber: lineNumber, startColumn: 1, endLineNumber: lineNumber + 1, endColumn: 1 }
+              : lineNumber > 1
+                ? { startLineNumber: lineNumber - 1, startColumn: model.getLineMaxColumn(lineNumber - 1), endLineNumber: lineNumber, endColumn: model.getLineMaxColumn(lineNumber) }
+                : { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: model.getLineMaxColumn(1) };
+            ed.executeEdits('cut', [{ range, text: '' }]);
+          } else {
+            // Has selection: cut selected text
+            const text = model.getValueInRange(selection);
+            copyToClipboard(text);
+            ed.executeEdits('cut', [{ range: selection, text: '' }]);
+          }
+        },
       });
 
       // Save query (Ctrl+S)

@@ -632,5 +632,15 @@ describe('sqlValidator', () => {
       expect(colMarker!.startLineNumber).toBe(1);
       expect(colMarker!.startColumn).toBeGreaterThan(0);
     });
+
+    it('should not produce duplicate markers at the same position', () => {
+      const sql = 'SELECT u.NonExistent FROM dbo.Users u';
+      const markers = validateSql(sql, mockSchema);
+      const colMarkers = markers.filter(m => m.message.includes('NonExistent'));
+      expect(colMarkers).toHaveLength(1);
+      // Verify uniqueness by position
+      const keys = colMarkers.map(m => `${m.startLineNumber}:${m.startColumn}:${m.endLineNumber}:${m.endColumn}:${m.message}`);
+      expect(new Set(keys).size).toBe(keys.length);
+    });
   });
 });

@@ -58,6 +58,7 @@ function createMockMonaco() {
       registerDocumentFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerDocumentRangeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+      registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
       CompletionItemKind: {
         Class: 5,
         Field: 3,
@@ -72,7 +73,7 @@ function createMockMonaco() {
     editor: {
       setModelMarkers: vi.fn(),
     },
-    KeyCode: { F5: 116, KeyV: 86, KeyS: 83, KeyN: 78, KeyE: 69 },
+    KeyCode: { F5: 116, KeyV: 86, KeyX: 88, KeyS: 83, KeyN: 78, KeyE: 69 },
     KeyMod: { CtrlCmd: 2048, Shift: 1024 },
     MarkerSeverity: { Error: 8, Warning: 4, Info: 2 },
   };
@@ -193,12 +194,13 @@ describe('useEditorActions', () => {
     const mockMonaco = createMockMonaco();
     result.current(mockEditor as any, mockMonaco as any);
 
-    // 4 keybinding actions + 3 script actions = 7 addAction calls
-    expect(mockEditor.addAction).toHaveBeenCalledTimes(7);
+    // 5 keybinding actions + 3 script actions = 8 addAction calls
+    expect(mockEditor.addAction).toHaveBeenCalledTimes(8);
 
     const actionIds = mockEditor.addAction.mock.calls.map((c: any) => c[0].id);
     expect(actionIds).toContain('execute-query');
     expect(actionIds).toContain('paste');
+    expect(actionIds).toContain('cut');
     expect(actionIds).toContain('save-query');
     expect(actionIds).toContain('new-query');
     expect(actionIds).toContain('mssqlmanager.scriptRowAsInsert');
@@ -341,14 +343,20 @@ describe('useSchemaProviders', () => {
       'sql',
       expect.objectContaining({ provideHover: expect.any(Function) })
     );
+    expect(mockMonaco.languages.registerRenameProvider).toHaveBeenCalledWith(
+      'sql',
+      expect.objectContaining({ provideRenameEdits: expect.any(Function), resolveRenameLocation: expect.any(Function) })
+    );
     expect(mockEditor.onDidChangeModelContent).toHaveBeenCalled();
   });
 
   it('disposes all providers on unmount', () => {
     const hoverDispose = vi.fn();
+    const renameDispose = vi.fn();
     const validationDispose = vi.fn();
     const mockMonaco = createMockMonaco();
     mockMonaco.languages.registerHoverProvider = vi.fn(() => ({ dispose: hoverDispose }));
+    mockMonaco.languages.registerRenameProvider = vi.fn(() => ({ dispose: renameDispose }));
     const mockEditor = createMockEditor();
     mockEditor.onDidChangeModelContent = vi.fn(() => ({ dispose: validationDispose }));
     const monacoRef = { current: mockMonaco } as any;
@@ -358,6 +366,7 @@ describe('useSchemaProviders', () => {
     unmount();
 
     expect(hoverDispose).toHaveBeenCalled();
+    expect(renameDispose).toHaveBeenCalled();
     expect(validationDispose).toHaveBeenCalled();
   });
 });

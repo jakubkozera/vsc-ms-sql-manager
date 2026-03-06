@@ -1,7 +1,7 @@
 import { useEffect, type MutableRefObject } from 'react';
 import type { editor } from 'monaco-editor';
 import type { DatabaseSchema } from '../../../types/schema';
-import { validateSql, provideHoverContent } from '../../../services';
+import { validateSql, provideHoverContent, resolveRenameLocation, provideRenameEdits } from '../../../services';
 
 type MonacoType = typeof import('monaco-editor');
 
@@ -46,6 +46,29 @@ export function useSchemaProviders(
       },
     });
     disposables.push(hoverProvider);
+
+    // Rename provider for CTE names and table aliases (F2)
+    const renameProvider = monacoInstance.languages.registerRenameProvider('sql', {
+      provideRenameEdits: (model: editor.ITextModel, position: { lineNumber: number; column: number }, newName: string) => {
+        const sql = model.getValue();
+        const edits = provideRenameEdits(sql, position.lineNumber, position.column, newName);
+        if (edits.length === 0) return { edits: [] };
+        return {
+          edits: edits.map(e => ({
+            resource: model.uri,
+            textEdit: { range: e.range, text: e.newText },
+            versionId: undefined,
+          })),
+        };
+      },
+      resolveRenameLocation: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
+        const sql = model.getValue();
+        const location = resolveRenameLocation(sql, position.lineNumber, position.column);
+        if (!location) return { range: { startLineNumber: 0, startColumn: 0, endLineNumber: 0, endColumn: 0 }, text: '', rejectReason: 'Only CTE names and table aliases can be renamed.' };
+        return location;
+      },
+    });
+    disposables.push(renameProvider);
 
     // Re-validate current content whenever the schema changes (e.g. after a connection
     // is established or the database is switched) so stale markers get cleared.

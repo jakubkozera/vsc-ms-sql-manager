@@ -964,5 +964,12 @@ export function validateSql(sql: string, dbSchema: DatabaseSchema): ValidationMa
     }
   }
 
-  return markers;
+  // Deduplicate markers by position + message
+  const seen = new Set<string>();
+  return markers.filter(m => {
+    const key = `${m.startLineNumber}:${m.startColumn}:${m.endLineNumber}:${m.endColumn}:${m.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
