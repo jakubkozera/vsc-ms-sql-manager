@@ -54,7 +54,7 @@ export function MessagesTab({
 
       {/* Messages list */}
       <div className="messages-list">
-        {messages.map((msg, index) => (
+        {messages.filter(msg => !(error && msg.type === 'error')).map((msg, index) => (
           <div
             key={index}
             className={`message-item ${msg.type}`}

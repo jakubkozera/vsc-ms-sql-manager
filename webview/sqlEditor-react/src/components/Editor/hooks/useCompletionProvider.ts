@@ -86,12 +86,31 @@ export function useCompletionProvider(
             const tablesInQuery = extractTablesFromQuery(textUntilPosition, dbSchema);
             if (tablesInQuery.length > 0) {
               const relatedTables = getRelatedTables(tablesInQuery, dbSchema);
+
+              // Collect existing aliases (lowercase) to guarantee uniqueness for new aliases
+              const usedAliases = new Set(tablesInQuery.map(t => (t.alias || t.table).toLowerCase()));
+
+              const generateUniqueAlias = (tableName: string): string => {
+                const base = generateSmartAlias(tableName);
+                if (!usedAliases.has(base.toLowerCase())) {
+                  usedAliases.add(base.toLowerCase());
+                  return base;
+                }
+                let counter = 2;
+                while (usedAliases.has(`${base}${counter}`.toLowerCase())) {
+                  counter++;
+                }
+                const unique = `${base}${counter}`;
+                usedAliases.add(unique.toLowerCase());
+                return unique;
+              };
+
               relatedTables.forEach((table) => {
                 if (!table || !table.name) return;
-                const fullName = table.schema === 'dbo' ? table.name : `${table.schema}.${table.name}`;
-                const tableAlias = generateSmartAlias(table.name);
+                const fullName = `[${table.schema}].[${table.name}]`;
+                const tableAlias = generateUniqueAlias(table.name);
 
-                let insertText = `${fullName} ${tableAlias}`;
+                let insertText = `${fullName} [${tableAlias}]`;
                 let detailText = `Table (${table.columns?.length || 0} columns)`;
 
                 if (table.foreignKeyInfo) {
@@ -100,22 +119,22 @@ export function useCompletionProvider(
                   const fromAlias = fkInfo.fromAlias;
 
                   if (fkInfo.direction === 'to') {
-                    insertText = `${fullName} ${toAlias} ON ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
-                    detailText = `Join on ${fromAlias}.${fkInfo.fromColumn} = ${toAlias}.${fkInfo.toColumn}`;
+                    insertText = `${fullName} [${toAlias}] ON [${fromAlias}].[${fkInfo.fromColumn}] = [${toAlias}].[${fkInfo.toColumn}]`;
+                    detailText = `Join on [${fromAlias}].[${fkInfo.fromColumn}] = [${toAlias}].[${fkInfo.toColumn}]`;
                   } else {
-                    insertText = `${fullName} ${toAlias} ON ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
-                    detailText = `Join on ${toAlias}.${fkInfo.fromColumn} = ${fromAlias}.${fkInfo.toColumn}`;
+                    insertText = `${fullName} [${toAlias}] ON [${toAlias}].[${fkInfo.fromColumn}] = [${fromAlias}].[${fkInfo.toColumn}]`;
+                    detailText = `Join on [${toAlias}].[${fkInfo.fromColumn}] = [${fromAlias}].[${fkInfo.toColumn}]`;
                   }
                 }
 
                 suggestions.push({
-                  label: fullName,
+                  label: table.name,
                   kind: monacoInstance.languages.CompletionItemKind.Class,
                   detail: detailText,
                   insertText: insertText,
                   insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                   range,
-                  sortText: `0_${fullName}`,
+                  sortText: `0_${table.name}`,
                 });
               });
               return { suggestions };
