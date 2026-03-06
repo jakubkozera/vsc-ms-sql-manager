@@ -12,7 +12,11 @@ const SQL_KEYWORDS = new Set([
   'is', 'like', 'between', 'exists', 'case', 'when', 'then', 'else', 'end',
   'insert', 'into', 'values', 'update', 'set', 'delete', 'create', 'alter', 'drop',
   'table', 'view', 'index', 'procedure', 'function', 'trigger', 'with', 'union',
-  'except', 'intersect', 'distinct', 'top', 'asc', 'desc', 'limit', 'offset', 'fetch'
+  'except', 'intersect', 'distinct', 'top', 'asc', 'desc', 'limit', 'offset', 'fetch',
+  'outer', 'apply', 'pivot', 'unpivot', 'go', 'begin', 'commit', 'rollback',
+  'declare', 'exec', 'execute', 'return', 'if', 'while', 'break', 'continue',
+  'over', 'partition', 'rows', 'range', 'unbounded', 'preceding', 'following',
+  'merge', 'using', 'matched', 'output', 'option', 'nolock',
 ]);
 
 export interface TableInQuery {
@@ -109,9 +113,16 @@ export function findTableForAlias(
   for (const pattern of patterns) {
     const match = query.match(pattern);
     if (match) {
+      const matchedSchema = match[1];
+      const matchedTable = match[2];
+      // Resolve via findTable to get the correct schema (handles CTEs with schema 'cte')
+      const resolved = findTable(matchedSchema ? `${matchedSchema}.${matchedTable}` : matchedTable, dbSchema);
+      if (resolved) {
+        return resolved;
+      }
       return {
-        schema: match[1] || 'dbo',
-        table: match[2],
+        schema: matchedSchema || 'dbo',
+        table: matchedTable,
       };
     }
   }
@@ -188,40 +199,137 @@ export function extractTablesFromQuery(query: string, dbSchema: DatabaseSchema):
         alias = match[2] || match[3];
       }
 
-      // Skip if the captured alias is actually a SQL keyword
-      if (alias && SQL_KEYWORDS.has(alias.toLowerCase())) {
-        alias = undefined;
-      }
-
-      // Verify this is a valid table in our schema
-      const tableInfo = findTable(table.toLowerCase(), dbSchema);
-
-      if (tableInfo) {
-        const hasExplicitAlias = !!alias;
-
-        // If no explicit alias, use the table name as the alias
-        if (!alias) {
-          alias = tableInfo.table;
-        }
-
-        // Check if table is already added to avoid duplicates
-        const existingTable = tables.find(
-          (t) => t.schema === tableInfo.schema && t.table === tableInfo.table
-        );
-
-        if (!existingTable) {
-          tables.push({
-            schema: tableInfo.schema,
-            table: tableInfo.table,
-            alias: alias,
-            hasExplicitAlias: hasExplicitAlias,
-          });
-        }
-      }
+      addTableIfValid(table, alias, tables, dbSchema);
     }
   });
 
+  // Extract comma-separated tables: FROM table1 alias1, table2 alias2
+  extractCommaSeparatedTables(query, tables, dbSchema);
+
+  // Extract UPDATE target table: UPDATE [schema].[table] SET ...
+  extractUpdateTargetTable(query, tables, dbSchema);
+
   return tables;
+}
+
+/**
+ * Add a table to the list after validation
+ */
+function addTableIfValid(
+  table: string,
+  alias: string | undefined,
+  tables: TableInQuery[],
+  dbSchema: DatabaseSchema
+): void {
+  // Skip if the captured alias is actually a SQL keyword
+  if (alias && SQL_KEYWORDS.has(alias.toLowerCase())) {
+    alias = undefined;
+  }
+
+  // Verify this is a valid table in our schema
+  const tableInfo = findTable(table.toLowerCase(), dbSchema);
+
+  if (tableInfo) {
+    const hasExplicitAlias = !!alias;
+
+    // If no explicit alias, use the table name as the alias
+    if (!alias) {
+      alias = tableInfo.table;
+    }
+
+    // Check if table is already added to avoid duplicates
+    const existingTable = tables.find(
+      (t) => t.schema === tableInfo.schema && t.table === tableInfo.table
+    );
+
+    if (!existingTable) {
+      tables.push({
+        schema: tableInfo.schema,
+        table: tableInfo.table,
+        alias: alias,
+        hasExplicitAlias: hasExplicitAlias,
+      });
+    }
+  }
+}
+
+/**
+ * Extract comma-separated tables from FROM clause (old-style joins):
+ * FROM table1 alias1, table2 alias2, table3 alias3
+ */
+function extractCommaSeparatedTables(
+  query: string,
+  tables: TableInQuery[],
+  dbSchema: DatabaseSchema
+): void {
+  // Find FROM ... and look for ,table patterns
+  const commaTableRegex = /,\s*(?:\[([^\]]+)\]\.)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z_][a-zA-Z0-9_]*))?)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?/gi;
+  
+  // Only match commas that appear in FROM context (between FROM and WHERE/JOIN/ORDER/GROUP etc.)
+  const fromBlockRegex = /\bFROM\s+(?:\[?[^\s,]+\]?(?:\.\[?[^\s,]+\]?)?)(?:\s+(?:AS\s+)?(?:\[?\w+\]?))?\s*,([^;]*?)(?=\s+(?:WHERE|ORDER|GROUP|HAVING|UNION|INTERSECT|EXCEPT)\b|\s*$|\s*;)/gi;
+  let fromMatch;
+  
+  while ((fromMatch = fromBlockRegex.exec(query)) !== null) {
+    const commaBlock = fromMatch[1];
+    let commaMatch;
+    const localRegex = new RegExp(commaTableRegex.source, commaTableRegex.flags);
+    
+    // Prepend a comma to match the first item in the comma block
+    const textToSearch = ',' + commaBlock;
+    
+    while ((commaMatch = localRegex.exec(textToSearch)) !== null) {
+      // Resolve table name: bracketed schema.table, schema.table, or plain table
+      let table: string;
+      let alias: string | undefined;
+      
+      if (commaMatch[2]) {
+        // Bracketed: [schema].[table] or [table]
+        table = commaMatch[2];
+      } else if (commaMatch[4]) {
+        // schema.table (dot notation)
+        table = commaMatch[4];
+      } else if (commaMatch[3]) {
+        // Plain table name
+        table = commaMatch[3];
+      } else {
+        continue;
+      }
+      
+      alias = commaMatch[5] || commaMatch[6];
+      addTableIfValid(table, alias, tables, dbSchema);
+    }
+  }
+}
+
+/**
+ * Extract the target table from UPDATE statements:
+ * UPDATE [schema].[table] SET ... or UPDATE table SET ...
+ */
+function extractUpdateTargetTable(
+  query: string,
+  tables: TableInQuery[],
+  dbSchema: DatabaseSchema
+): void {
+  const updateRegex = /\bUPDATE\s+(?:\[([^\]]+)\]\.)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z_][a-zA-Z0-9_]*))?)(?:\s+(?:AS\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?\s+SET\b/gi;
+  let match;
+  
+  while ((match = updateRegex.exec(query)) !== null) {
+    let table: string;
+    let alias: string | undefined;
+    
+    if (match[2]) {
+      table = match[2];
+    } else if (match[4]) {
+      table = match[4];
+    } else if (match[3]) {
+      table = match[3];
+    } else {
+      continue;
+    }
+    
+    alias = match[5] || match[6];
+    addTableIfValid(table, alias, tables, dbSchema);
+  }
 }
 
 /**
@@ -445,12 +553,53 @@ export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: 
   if (lastUpdatePos !== -1 && lastSetPos !== -1 && lastSetPos > lastUpdatePos) {
     const textAfterSet = lowerText.substring(lastSetPos + 3);
     if (!/\bwhere\b/.test(textAfterSet) || lastWherePos === -1 || lastWherePos < lastSetPos) {
-      return { type: 'UPDATE_SET', confidence: 'high' };
+      // Extract target table name for column suggestions
+      const updateTableMatch = lowerText.substring(lastUpdatePos).match(
+        /update\s+(?:\[?\w+\]?\.)?\[?(\w+)\]?/i
+      );
+      return {
+        type: 'UPDATE_SET',
+        confidence: 'high',
+        tableName: updateTableMatch?.[1],
+      };
     }
   }
 
   // Check for WHERE context
   if (lastWherePos !== -1 && lastWherePos > Math.max(lastFromPos, lastSetPos)) {
+    // Check if we're inside a subquery (e.g., WHERE Id IN (SELECT ...))
+    // If the last SELECT is after the last WHERE and inside parentheses, it's a subquery
+    if (lastSelectPos > lastWherePos) {
+      // Count open parens between WHERE and the last SELECT
+      const textBetween = lowerText.substring(lastWherePos, lastSelectPos);
+      const openParens = (textBetween.match(/\(/g) || []).length;
+      const closeParens = (textBetween.match(/\)/g) || []).length;
+      if (openParens > closeParens) {
+        // We're inside a subquery — analyze based on the subquery text
+        const subqueryText = lowerText.substring(lastSelectPos);
+        // Find FROM within the subquery scope
+        const subFromPos = subqueryText.indexOf('from');
+        if (subFromPos === -1) {
+          return { type: 'SELECT', confidence: 'medium' };
+        }
+        const subFromTextAfter = subqueryText.substring(subFromPos);
+        if (subFromTextAfter.match(/from\s+(?:\[?\w+\]?\.)?(?:\[?\w+\]?)(?:\s+(?:as\s+)?(?:\[?\w+\]?))?/)) {
+          // Subquery has a table — check for WHERE inside subquery
+          const subWherePos = subqueryText.indexOf('where');
+          if (subWherePos !== -1 && subWherePos > subFromPos) {
+            const textAfterSubWhere = subqueryText.substring(subWherePos + 5);
+            return {
+              type: 'WHERE',
+              confidence: 'high',
+              suggestOperators: analyzeWhereContext(textAfterSubWhere),
+            };
+          }
+          return { type: 'AFTER_FROM', confidence: 'medium' };
+        } else {
+          return { type: 'FROM', confidence: 'high' };
+        }
+      }
+    }
     const textAfterWhere = lowerText.substring(lastWherePos + 5);
     const shouldSuggestOperators = analyzeWhereContext(textAfterWhere);
     return {

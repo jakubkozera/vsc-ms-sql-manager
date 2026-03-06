@@ -1740,4 +1740,825 @@ SELECT Id FROM `;
       expect(context.type).toBe('ORDER_BY');
     });
   });
+
+  // --------------------------------------------------------
+  // 11. Comma-separated FROM tables (old-style joins)
+  // --------------------------------------------------------
+
+  describe('extractTablesFromQuery - comma-separated tables', () => {
+    it('should extract tables from comma-separated FROM: FROM Users u, Orders o', () => {
+      const query = 'SELECT * FROM Users u, Orders o WHERE u.Id = o.UserId';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+    });
+
+    it('should capture aliases from comma-separated tables', () => {
+      const query = 'SELECT * FROM Users u, Orders o WHERE u.Id = o.UserId';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      const users = tables.find(t => t.table === 'Users');
+      const orders = tables.find(t => t.table === 'Orders');
+      expect(users?.alias).toBe('u');
+      expect(orders?.alias).toBe('o');
+    });
+
+    it('should extract three comma-separated tables', () => {
+      const query = 'SELECT * FROM Users u, Orders o, Projects p WHERE u.Id = o.UserId';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+      expect(tables.some(t => t.table === 'Projects')).toBe(true);
+    });
+
+    it('should extract comma-separated tables without aliases', () => {
+      const query = 'SELECT * FROM Users, Orders WHERE Users.Id = Orders.UserId';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+    });
+
+    it('should handle comma-separated tables with bracketed identifiers', () => {
+      const query = 'SELECT * FROM [dbo].[Users] [u], [dbo].[Orders] [o] WHERE [u].[Id] = [o].[UserId]';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------
+  // 12. UPDATE target table extraction
+  // --------------------------------------------------------
+
+  describe('extractTablesFromQuery - UPDATE target table', () => {
+    it('should extract target table from UPDATE statement', () => {
+      const query = "UPDATE Users SET Name = 'test' WHERE Id = 1";
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+    });
+
+    it('should extract target table with schema from UPDATE', () => {
+      const query = "UPDATE [dbo].[Users] SET Name = 'test'";
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+    });
+
+    it('should extract target table with alias from UPDATE', () => {
+      const query = "UPDATE u SET u.Name = 'test' FROM Users u WHERE u.Id = 1";
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+    });
+
+    it('should provide columns for UPDATE SET context', () => {
+      const query = "UPDATE Users SET ";
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      const cols = getColumnsForTable('dbo', 'Users', mockSchema);
+      expect(cols.map(c => c.name)).toContain('Name');
+      expect(cols.map(c => c.name)).toContain('Email');
+    });
+
+    it('should extract schema-qualified UPDATE target (no brackets)', () => {
+      const query = "UPDATE sales.Products SET Name = 'test'";
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Products' && t.schema === 'sales')).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------
+  // 13. analyzeSqlContext - UPDATE_SET with tableName
+  // --------------------------------------------------------
+
+  describe('analyzeSqlContext - UPDATE_SET tableName', () => {
+    it('should include tableName in UPDATE_SET context', () => {
+      const text = 'UPDATE Users SET ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('UPDATE_SET');
+      expect(result.tableName).toBe('users');
+    });
+
+    it('should include tableName for bracketed UPDATE', () => {
+      const text = 'UPDATE [dbo].[Users] SET ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('UPDATE_SET');
+      expect(result.tableName).toBe('users');
+    });
+
+    it('should include tableName for schema-qualified UPDATE', () => {
+      const text = 'UPDATE dbo.Users SET ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('UPDATE_SET');
+      expect(result.tableName).toBe('users');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 14. WHERE operator suggestion detection
+  // --------------------------------------------------------
+
+  describe('analyzeSqlContext - WHERE operator suggestions', () => {
+    it('should suggest operators after column name in WHERE', () => {
+      const text = 'SELECT * FROM Users WHERE Name ';
+      const result = analyzeSqlContext(text, 'WHERE Name ');
+      expect(result.type).toBe('WHERE');
+      expect(result.suggestOperators).toBe(true);
+    });
+
+    it('should suggest operators after qualified column in WHERE', () => {
+      const text = 'SELECT * FROM Users u WHERE u.Name ';
+      const result = analyzeSqlContext(text, 'WHERE u.Name ');
+      expect(result.type).toBe('WHERE');
+      expect(result.suggestOperators).toBe(true);
+    });
+
+    it('should NOT suggest operators after operator already typed', () => {
+      const text = "SELECT * FROM Users WHERE Name = ";
+      const result = analyzeSqlContext(text, "WHERE Name = ");
+      expect(result.type).toBe('WHERE');
+      expect(result.suggestOperators).toBeFalsy();
+    });
+
+    it('should NOT suggest operators after LIKE already typed', () => {
+      const text = "SELECT * FROM Users WHERE Name LIKE ";
+      const result = analyzeSqlContext(text, "WHERE Name LIKE ");
+      expect(result.type).toBe('WHERE');
+      expect(result.suggestOperators).toBeFalsy();
+    });
+
+    it('should suggest operators after column following AND', () => {
+      const text = "SELECT * FROM Users WHERE Id = 1 AND Name ";
+      const result = analyzeSqlContext(text, "WHERE Id = 1 AND Name ");
+      expect(result.type).toBe('WHERE');
+      expect(result.suggestOperators).toBe(true);
+    });
+
+    it('should suggest operators after column following OR', () => {
+      const text = "SELECT * FROM Users WHERE Id = 1 OR Email ";
+      const result = analyzeSqlContext(text, "WHERE Id = 1 OR Email ");
+      expect(result.type).toBe('WHERE');
+      expect(result.suggestOperators).toBe(true);
+    });
+
+    it('should NOT suggest operators at start of WHERE (no column yet)', () => {
+      const text = 'SELECT * FROM Users WHERE ';
+      const result = analyzeSqlContext(text, 'WHERE ');
+      expect(result.type).toBe('WHERE');
+      expect(result.suggestOperators).toBeFalsy();
+    });
+  });
+
+  // --------------------------------------------------------
+  // 15. HAVING operator suggestion detection
+  // --------------------------------------------------------
+
+  describe('analyzeSqlContext - HAVING operator suggestions', () => {
+    it('should suggest operators after aggregate in HAVING', () => {
+      const text = 'SELECT Name FROM Users GROUP BY Name HAVING COUNT(*) ';
+      const result = analyzeSqlContext(text, 'HAVING COUNT(*) ');
+      expect(result.type).toBe('HAVING');
+      expect(result.suggestOperators).toBe(true);
+    });
+
+    it('should NOT suggest operators at start of HAVING', () => {
+      const text = 'SELECT Name FROM Users GROUP BY Name HAVING ';
+      const result = analyzeSqlContext(text, 'HAVING ');
+      expect(result.type).toBe('HAVING');
+      expect(result.suggestOperators).toBeFalsy();
+    });
+
+    it('should NOT suggest operators after operator already typed in HAVING', () => {
+      const text = 'SELECT Name FROM Users GROUP BY Name HAVING COUNT(*) > ';
+      const result = analyzeSqlContext(text, 'HAVING COUNT(*) > ');
+      expect(result.type).toBe('HAVING');
+      expect(result.suggestOperators).toBeFalsy();
+    });
+  });
+
+  // --------------------------------------------------------
+  // 16. Subquery context awareness
+  // --------------------------------------------------------
+
+  describe('analyzeSqlContext - subquery contexts', () => {
+    it('should detect SELECT context inside WHERE IN subquery', () => {
+      const text = 'SELECT * FROM Users WHERE Id IN (SELECT ';
+      const result = analyzeSqlContext(text, 'SELECT ');
+      expect(result.type).toBe('SELECT');
+    });
+
+    it('should detect FROM context inside WHERE EXISTS subquery', () => {
+      const text = 'SELECT * FROM Users WHERE EXISTS (SELECT 1 FROM ';
+      const result = analyzeSqlContext(text, 'FROM ');
+      expect(result.type).toBe('FROM');
+    });
+
+    it('should detect WHERE context inside subquery', () => {
+      const text = 'SELECT * FROM Users WHERE Id IN (SELECT Id FROM Orders WHERE ';
+      const result = analyzeSqlContext(text, 'WHERE ');
+      expect(result.type).toBe('WHERE');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 17. Multiple statements / batch separators
+  // --------------------------------------------------------
+
+  describe('analyzeSqlContext - multiple statements', () => {
+    it('should detect FROM after semicolon (new statement)', () => {
+      const text = 'SELECT * FROM Users; SELECT * FROM ';
+      const result = analyzeSqlContext(text, 'SELECT * FROM ');
+      expect(result.type).toBe('FROM');
+    });
+
+    it('should detect SELECT context in second statement', () => {
+      const text = "INSERT INTO Users (Name) VALUES ('test'); SELECT ";
+      const result = analyzeSqlContext(text, 'SELECT ');
+      expect(result.type).toBe('SELECT');
+    });
+
+    it('should detect WHERE in second SELECT after UNION ALL', () => {
+      const text = 'SELECT Id FROM Users UNION ALL SELECT Id FROM Orders WHERE ';
+      const result = analyzeSqlContext(text, 'WHERE ');
+      expect(result.type).toBe('WHERE');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 18. Complex real-world T-SQL patterns
+  // --------------------------------------------------------
+
+  describe('complex real-world T-SQL patterns', () => {
+    it('should handle UPDATE with FROM and JOIN (T-SQL syntax)', () => {
+      const query = `UPDATE u
+SET u.Name = p.Name
+FROM Users u
+JOIN Projects p ON u.Id = p.Id
+WHERE p.Status = 'Active'`;
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Projects')).toBe(true);
+    });
+
+    it('should handle DELETE with JOIN (T-SQL syntax)', () => {
+      const query = `DELETE o
+FROM Orders o
+JOIN Users u ON o.UserId = u.Id
+WHERE u.Name = 'deleted'`;
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+    });
+
+    it('should handle multi-line SELECT with complex WHERE', () => {
+      const query = `SELECT
+  u.Name,
+  o.Total,
+  o.OrderDate
+FROM Users u
+INNER JOIN Orders o ON u.Id = o.UserId
+WHERE o.Total > 100
+  AND o.OrderDate >= '2024-01-01'
+  AND u.Email IS NOT NULL
+ORDER BY o.Total DESC`;
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+
+      const context = analyzeSqlContext(query, 'ORDER BY o.Total DESC');
+      expect(context.type).toBe('ORDER_BY');
+    });
+
+    it('should handle CTE with JOIN in main query', () => {
+      const query = `WITH TopUsers AS (
+  SELECT TOP 10 Id, Name FROM Users ORDER BY Id DESC
+)
+SELECT tu.Name, o.Total
+FROM TopUsers tu
+JOIN Orders o ON tu.Id = o.UserId
+WHERE o.Total > 50
+ORDER BY `;
+      const augmented = buildAugmentedSchema(mockSchema, query);
+      const mainQuery = getMainQueryText(query);
+      const tables = extractTablesFromQuery(mainQuery, augmented);
+      expect(tables.some(t => t.table === 'TopUsers')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+
+      const context = analyzeSqlContext(query, 'ORDER BY ');
+      expect(context.type).toBe('ORDER_BY');
+    });
+
+    it('should handle INSERT ... SELECT pattern', () => {
+      const query = `INSERT INTO Orders (UserId, Total)
+SELECT Id, 0 FROM Users WHERE Name IS NOT NULL`;
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+    });
+
+    it('should handle SELECT with CASE WHEN in context analysis', () => {
+      const text = `SELECT
+  u.Name,
+  CASE WHEN u.Email IS NULL THEN 'No Email' ELSE u.Email END AS EmailDisplay
+FROM Users u
+WHERE `;
+      const context = analyzeSqlContext(text, 'WHERE ');
+      expect(context.type).toBe('WHERE');
+    });
+
+    it('should detect GROUP BY context after WHERE with multiple conditions', () => {
+      const text = `SELECT u.Name, COUNT(o.Id) AS OrderCount
+FROM Users u
+JOIN Orders o ON u.Id = o.UserId
+WHERE o.Total > 10 AND u.Email IS NOT NULL
+GROUP BY `;
+      const context = analyzeSqlContext(text, 'GROUP BY ');
+      expect(context.type).toBe('GROUP_BY');
+    });
+
+    it('should detect HAVING context after GROUP BY with multiple columns', () => {
+      const text = `SELECT u.Name, u.Email, SUM(o.Total) AS TotalSpent
+FROM Users u
+JOIN Orders o ON u.Id = o.UserId
+GROUP BY u.Name, u.Email
+HAVING `;
+      const context = analyzeSqlContext(text, 'HAVING ');
+      expect(context.type).toBe('HAVING');
+    });
+
+    it('should handle query with window function (OVER clause)', () => {
+      const query = `SELECT
+  u.Name,
+  o.Total,
+  ROW_NUMBER() OVER (PARTITION BY u.Id ORDER BY o.OrderDate DESC) AS RowNum
+FROM Users u
+JOIN Orders o ON u.Id = o.UserId`;
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------
+  // 19. findTableForAlias - additional edge cases
+  // --------------------------------------------------------
+
+  describe('findTableForAlias - additional edge cases', () => {
+    it('should find table by alias in schema-qualified FROM', () => {
+      const query = 'SELECT * FROM dbo.Users u WHERE u.Id = 1';
+      const result = findTableForAlias(query, 'u', mockSchema);
+      expect(result).not.toBeNull();
+      expect(result?.table).toBe('Users');
+    });
+
+    it('should handle case-insensitive alias matching', () => {
+      const query = 'SELECT * FROM Users U WHERE U.Id = 1';
+      const result = findTableForAlias(query, 'u', mockSchema);
+      expect(result).not.toBeNull();
+      expect(result?.table).toBe('Users');
+    });
+
+    it('should return null for unknown alias', () => {
+      const query = 'SELECT * FROM Users u';
+      const result = findTableForAlias(query, 'xyz', mockSchema);
+      expect(result).toBeNull();
+    });
+
+    it('should find table by alias with AS keyword in JOIN', () => {
+      const query = 'SELECT * FROM Users u JOIN Orders AS o ON u.Id = o.UserId';
+      const result = findTableForAlias(query, 'o', mockSchema);
+      expect(result).not.toBeNull();
+      expect(result?.table).toBe('Orders');
+    });
+
+    it('should find table in LEFT JOIN with bracketed identifiers', () => {
+      const query = 'SELECT * FROM [Users] [u] LEFT JOIN [Orders] [o] ON [u].[Id] = [o].[UserId]';
+      const result = findTableForAlias(query, 'o', mockSchema);
+      expect(result).not.toBeNull();
+      expect(result?.table).toBe('Orders');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 20. getColumnsForTable - additional edge cases
+  // --------------------------------------------------------
+
+  describe('getColumnsForTable - additional cases', () => {
+    it('should be case-insensitive for table name', () => {
+      const columns = getColumnsForTable('dbo', 'users', mockSchema);
+      expect(columns).toHaveLength(3);
+    });
+
+    it('should return view columns', () => {
+      const columns = getColumnsForTable('dbo', 'ActiveUsers', mockSchema);
+      expect(columns).toHaveLength(1);
+      expect(columns[0].name).toBe('Id');
+    });
+
+    it('should return empty array for wrong schema', () => {
+      const columns = getColumnsForTable('sales', 'Users', mockSchema);
+      expect(columns).toHaveLength(0);
+    });
+
+    it('should include column metadata (type, nullable, isPrimaryKey)', () => {
+      const columns = getColumnsForTable('dbo', 'Users', mockSchema);
+      const idCol = columns.find(c => c.name === 'Id');
+      expect(idCol?.type).toBe('int');
+      expect(idCol?.nullable).toBe(false);
+      expect(idCol?.isPrimaryKey).toBe(true);
+    });
+
+    it('should include foreign key column metadata', () => {
+      const columns = getColumnsForTable('dbo', 'Orders', mockSchema);
+      const fkCol = columns.find(c => c.name === 'UserId');
+      expect(fkCol?.isForeignKey).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------
+  // 21. SQL_KEYWORDS - alias filtering for more keywords
+  // --------------------------------------------------------
+
+  describe('extractTablesFromQuery - SQL keyword alias filtering', () => {
+    it('should not treat OUTER as alias', () => {
+      const query = 'SELECT * FROM Users u FULL OUTER JOIN Orders o ON u.Id = o.UserId';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      expect(tables.every(t => t.alias !== 'OUTER' && t.alias !== 'outer')).toBe(true);
+    });
+
+    it('should not treat GO as alias', () => {
+      const query = 'SELECT * FROM Users\nGO';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      const users = tables.find(t => t.table === 'Users');
+      expect(users?.alias).not.toBe('GO');
+      expect(users?.alias).not.toBe('go');
+    });
+
+    it('should not treat OVER as alias', () => {
+      const query = 'SELECT ROW_NUMBER() OVER (ORDER BY Id) FROM Users';
+      const tables = extractTablesFromQuery(query, mockSchema);
+      const users = tables.find(t => t.table === 'Users');
+      expect(users?.alias).not.toBe('OVER');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 22. generateSmartAlias - more patterns
+  // --------------------------------------------------------
+
+  describe('generateSmartAlias - additional patterns', () => {
+    it('should handle t_ prefix', () => {
+      expect(generateSmartAlias('t_orders')).toBe('o');
+    });
+
+    it('should handle PascalCase with three words', () => {
+      expect(generateSmartAlias('UserOrderDetails')).toBe('uod');
+    });
+
+    it('should handle underscore with three segments', () => {
+      expect(generateSmartAlias('user_order_details')).toBe('uod');
+    });
+
+    it('should handle single lowercase word', () => {
+      expect(generateSmartAlias('orders')).toBe('o');
+    });
+
+    it('should handle vw_ prefix with PascalCase', () => {
+      expect(generateSmartAlias('vw_ActiveUsers')).toBe('au');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 23. Full integration: context + tables + columns
+  // --------------------------------------------------------
+
+  describe('full integration scenarios', () => {
+    it('should provide correct columns for comma-separated tables WHERE', () => {
+      const query = 'SELECT * FROM Users u, Orders o WHERE ';
+      const augmented = buildAugmentedSchema(mockSchema, query);
+      const tables = extractTablesFromQuery(query, augmented);
+      const context = analyzeSqlContext(query, 'WHERE ');
+
+      expect(context.type).toBe('WHERE');
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+      expect(tables.some(t => t.table === 'Orders')).toBe(true);
+
+      const allColumns: string[] = [];
+      tables.forEach(t => {
+        const cols = getColumnsForTable(t.schema, t.table, augmented);
+        allColumns.push(...cols.map(c => c.name));
+      });
+      expect(allColumns).toContain('Email');    // from Users
+      expect(allColumns).toContain('Total');    // from Orders
+      expect(allColumns).not.toContain('PackageId'); // not from Projects
+    });
+
+    it('should provide correct columns for UPDATE SET context', () => {
+      const query = 'UPDATE Users SET ';
+      const augmented = buildAugmentedSchema(mockSchema, query);
+      const tables = extractTablesFromQuery(query, augmented);
+      const context = analyzeSqlContext(query, query);
+
+      expect(context.type).toBe('UPDATE_SET');
+      expect(tables.some(t => t.table === 'Users')).toBe(true);
+
+      const allColumns: string[] = [];
+      tables.forEach(t => {
+        const cols = getColumnsForTable(t.schema, t.table, augmented);
+        allColumns.push(...cols.map(c => c.name));
+      });
+      expect(allColumns).toContain('Name');
+      expect(allColumns).toContain('Email');
+    });
+
+    it('should resolve CTE alias columns through full pipeline', () => {
+      const query = `WITH OrderSummary AS (
+  SELECT o.UserId, SUM(o.Total) AS TotalSpent
+  FROM Orders o
+  GROUP BY o.UserId
+)
+SELECT u.Name, os.
+FROM Users u
+JOIN OrderSummary os ON u.Id = os.UserId`;
+
+      const augmented = buildAugmentedSchema(mockSchema, query);
+      const context = analyzeSqlContext(query, 'os.');
+      expect(context.type).toBe('COLUMN');
+      expect(context.alias).toBe('os');
+
+      // Resolve alias to CTE table
+      const tableForAlias = findTableForAlias(query, 'os', augmented);
+      expect(tableForAlias).not.toBeNull();
+      expect(tableForAlias?.table).toBe('OrderSummary');
+
+      const columns = getColumnsForTable(tableForAlias!.schema, tableForAlias!.table, augmented);
+      expect(columns.map(c => c.name)).toContain('UserId');
+      expect(columns.map(c => c.name)).toContain('TotalSpent');
+    });
+
+    it('should handle the full flow for ORDER BY with sort direction', () => {
+      const query = `SELECT u.Name, u.Email
+FROM Users u
+ORDER BY u.Name `;
+      const context = analyzeSqlContext(query, 'ORDER BY u.Name ');
+      expect(context.type).toBe('ORDER_BY');
+      expect(context.suggestSortDirection).toBe(true);
+    });
+
+    it('should handle the full flow for JOIN_TABLE with FK suggestions', () => {
+      const query = 'SELECT * FROM Users u INNER JOIN ';
+      const context = analyzeSqlContext(query, 'INNER JOIN ');
+      expect(context.type).toBe('JOIN_TABLE');
+
+      const augmented = buildAugmentedSchema(mockSchema, query);
+      const tablesBeforeCursor = extractTablesFromQuery(query, augmented);
+      expect(tablesBeforeCursor.some(t => t.table === 'Users')).toBe(true);
+
+      const related = getRelatedTables(tablesBeforeCursor, augmented);
+      expect(related.some(t => t.name === 'Orders')).toBe(true);
+      const ordersEntry = related.find(t => t.name === 'Orders');
+      expect(ordersEntry?.foreignKeyInfo).toBeDefined();
+      expect(ordersEntry?.foreignKeyInfo?.fromColumn).toBe('UserId');
+      expect(ordersEntry?.foreignKeyInfo?.toColumn).toBe('Id');
+    });
+
+    it('should handle INSERT INTO with column suggestions', () => {
+      const text = 'INSERT INTO Users (';
+      const context = analyzeSqlContext(text, text);
+      expect(context.type).toBe('INSERT_COLUMNS');
+      // tableName is lowercased since it comes from lowerLine analysis
+      expect(context.tableName?.toLowerCase()).toBe('users');
+
+      const columns = getColumnsForTable('dbo', 'Users', mockSchema);
+      expect(columns.map(c => c.name)).toEqual(['Id', 'Name', 'Email']);
+    });
+
+    it('should not suggest columns from unrelated tables in multi-table query', () => {
+      const query = `SELECT p.Name, pk.Version
+FROM Projects p
+JOIN Packages pk ON p.PackageId = pk.Id
+WHERE `;
+      const augmented = buildAugmentedSchema(mockSchema, query);
+      const tables = extractTablesFromQuery(query, augmented);
+
+      const allColumns: string[] = [];
+      tables.forEach(t => {
+        const cols = getColumnsForTable(t.schema, t.table, augmented);
+        allColumns.push(...cols.map(c => c.name));
+      });
+
+      // Projects + Packages columns only
+      expect(allColumns).toContain('PackageId');
+      expect(allColumns).toContain('Version');
+      // NOT Users/Orders columns
+      expect(allColumns).not.toContain('Email');
+      expect(allColumns).not.toContain('Total');
+      expect(allColumns).not.toContain('OrderDate');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 24. Edge cases - empty/malformed input
+  // --------------------------------------------------------
+
+  describe('edge cases - empty and malformed input', () => {
+    it('should handle empty schema', () => {
+      const emptySchema: DatabaseSchema = { tables: [], views: [], foreignKeys: [] };
+      const tables = extractTablesFromQuery('SELECT * FROM Users', emptySchema);
+      expect(tables).toHaveLength(0);
+    });
+
+    it('should handle schema with no views', () => {
+      const schemaNoViews: DatabaseSchema = {
+        tables: mockSchema.tables,
+        views: [],
+        foreignKeys: mockSchema.foreignKeys,
+      };
+      const result = findTable('ActiveUsers', schemaNoViews);
+      expect(result).toBeNull();
+    });
+
+    it('should handle schema with no foreign keys', () => {
+      const schemaNoFK: DatabaseSchema = {
+        tables: mockSchema.tables,
+        views: mockSchema.views!,
+        foreignKeys: [],
+      };
+      const tablesInQuery = [{ schema: 'dbo', table: 'Users', alias: 'u', hasExplicitAlias: true }];
+      const related = getRelatedTables(tablesInQuery, schemaNoFK);
+      // Should fall back to all tables
+      expect(related.length).toBeGreaterThan(0);
+    });
+
+    it('should handle query with only whitespace', () => {
+      const context = analyzeSqlContext('   ', '   ');
+      expect(context.type).toBe('DEFAULT');
+    });
+
+    it('should handle newlines-only query', () => {
+      const context = analyzeSqlContext('\n\n\n', '\n');
+      expect(context.type).toBe('DEFAULT');
+    });
+
+    it('should handle getColumnsForTable with undefined schema', () => {
+      const schemaUndef = { tables: undefined, views: undefined } as unknown as DatabaseSchema;
+      const cols = getColumnsForTable('dbo', 'Users', schemaUndef);
+      expect(cols).toHaveLength(0);
+    });
+
+    it('should handle extractTablesFromQuery with undefined tables/views in schema', () => {
+      const schemaPartial = { tables: undefined, views: undefined, foreignKeys: [] } as unknown as DatabaseSchema;
+      const tables = extractTablesFromQuery('SELECT * FROM Users', schemaPartial);
+      expect(tables).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------
+  // 25. ON_CONDITION precision
+  // --------------------------------------------------------
+
+  describe('analyzeSqlContext - ON_CONDITION precision', () => {
+    it('should detect ON_CONDITION after LEFT JOIN table ON', () => {
+      const text = 'SELECT * FROM Users u LEFT JOIN Orders o ON ';
+      const result = analyzeSqlContext(text, 'LEFT JOIN Orders o ON ');
+      expect(result.type).toBe('ON_CONDITION');
+    });
+
+    it('should detect ON_CONDITION after RIGHT JOIN table ON', () => {
+      const text = 'SELECT * FROM Users u RIGHT JOIN Orders o ON ';
+      const result = analyzeSqlContext(text, 'RIGHT JOIN Orders o ON ');
+      expect(result.type).toBe('ON_CONDITION');
+    });
+
+    it('should detect ON_CONDITION after FULL OUTER JOIN table ON', () => {
+      const text = 'SELECT * FROM Users u FULL OUTER JOIN Orders o ON ';
+      const result = analyzeSqlContext(text, 'FULL OUTER JOIN Orders o ON ');
+      expect(result.type).toBe('ON_CONDITION');
+    });
+
+    it('should detect ON_CONDITION with bracketed alias after ON', () => {
+      const text = 'SELECT * FROM [Users] [u] JOIN [Orders] [o] ON ';
+      const result = analyzeSqlContext(text, 'JOIN [Orders] [o] ON ');
+      expect(result.type).toBe('ON_CONDITION');
+    });
+
+    it('should detect ON_CONDITION after already typed partial condition', () => {
+      const text = 'SELECT * FROM Users u JOIN Orders o ON u.Id = o.';
+      const result = analyzeSqlContext(text, 'o.');
+      // Should detect COLUMN context (dot after alias) which takes priority
+      expect(result.type).toBe('COLUMN');
+      expect(result.alias).toBe('o');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 26. AFTER_FROM vs FROM distinction edge cases
+  // --------------------------------------------------------
+
+  describe('analyzeSqlContext - AFTER_FROM vs FROM edge cases', () => {
+    it('should detect FROM when only FROM keyword typed', () => {
+      const text = 'SELECT * FROM ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('FROM');
+    });
+
+    it('should detect AFTER_FROM when table is already typed (with trailing space)', () => {
+      const text = 'SELECT * FROM Users ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect AFTER_FROM for bracketed table with AS alias', () => {
+      const text = 'SELECT * FROM [Users] AS u ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect WHERE (not AFTER_FROM) when WHERE keyword present', () => {
+      const text = 'SELECT * FROM Users u WHERE ';
+      const result = analyzeSqlContext(text, 'WHERE ');
+      expect(result.type).toBe('WHERE');
+    });
+
+    it('should detect JOIN_TABLE (not AFTER_FROM) when JOIN keyword at end', () => {
+      const text = 'SELECT * FROM Users u JOIN ';
+      const result = analyzeSqlContext(text, 'JOIN ');
+      expect(result.type).toBe('JOIN_TABLE');
+    });
+  });
+
+  // --------------------------------------------------------
+  // 27. CTE columns with complex expressions
+  // --------------------------------------------------------
+
+  describe('getCTEColumns - complex expressions', () => {
+    it('should handle SUM with alias in CTE', () => {
+      const cte = { name: 'Totals', body: 'SELECT UserId, SUM(Total) AS TotalAmount FROM Orders GROUP BY UserId' };
+      const columns = getCTEColumns(cte, mockSchema);
+      expect(columns.some(c => c.name === 'UserId')).toBe(true);
+      expect(columns.some(c => c.name === 'TotalAmount')).toBe(true);
+    });
+
+    it('should handle CONCAT with alias in CTE', () => {
+      const cte = { name: 'FullNames', body: "SELECT Id, CONCAT(Name, ' <', Email, '>') AS FullName FROM Users" };
+      const columns = getCTEColumns(cte, mockSchema);
+      expect(columns.some(c => c.name === 'Id')).toBe(true);
+      expect(columns.some(c => c.name === 'FullName')).toBe(true);
+    });
+
+    it('should handle DATEPART with alias in CTE', () => {
+      const cte = { name: 'OrderYears', body: 'SELECT DATEPART(YEAR, OrderDate) AS OrderYear, COUNT(*) AS OrderCount FROM Orders GROUP BY DATEPART(YEAR, OrderDate)' };
+      const columns = getCTEColumns(cte, mockSchema);
+      expect(columns.some(c => c.name === 'OrderYear')).toBe(true);
+      expect(columns.some(c => c.name === 'OrderCount')).toBe(true);
+    });
+
+    it('should handle multiple * from different aliases', () => {
+      const cte = { name: 'Combined', body: 'SELECT u.*, o.Total FROM Users u JOIN Orders o ON u.Id = o.UserId' };
+      const columns = getCTEColumns(cte, mockSchema);
+      // u.* expands Users columns
+      expect(columns.some(c => c.name === 'Id')).toBe(true);
+      expect(columns.some(c => c.name === 'Name')).toBe(true);
+      expect(columns.some(c => c.name === 'Email')).toBe(true);
+      // explicit column
+      expect(columns.some(c => c.name === 'Total')).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------
+  // 28. removeExecutionComments - additional cases
+  // --------------------------------------------------------
+
+  describe('removeExecutionComments - additional edge cases', () => {
+    it('should handle query with Result Sets metadata', () => {
+      const query = `-- Query from history
+-- Executed: 2025-01-01
+-- Connection: myserver
+-- Result Sets: 1
+
+SELECT * FROM Users`;
+      const result = removeExecutionComments(query);
+      expect(result).toBe('SELECT * FROM Users');
+    });
+
+    it('should handle multiple history queries in same text', () => {
+      const query = `-- Query from history
+-- Executed: 2025-01-01
+SELECT * FROM Users`;
+      const result = removeExecutionComments(query);
+      expect(result.trim()).toBe('SELECT * FROM Users');
+    });
+
+    it('should preserve multi-line SQL after history comments', () => {
+      const query = `-- Query from history
+-- Executed: 2025-06-01
+-- Connection: localhost
+
+SELECT u.Name, o.Total
+FROM Users u
+JOIN Orders o ON u.Id = o.UserId
+WHERE o.Total > 100
+ORDER BY o.Total DESC`;
+      const result = removeExecutionComments(query);
+      expect(result).toContain('SELECT u.Name, o.Total');
+      expect(result).toContain('ORDER BY o.Total DESC');
+      expect(result).not.toContain('Query from history');
+    });
+  });
 });
