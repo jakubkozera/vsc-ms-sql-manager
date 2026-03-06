@@ -28,6 +28,7 @@ export interface SqlContext {
   suggestOperators?: boolean;
   suggestSortDirection?: boolean;
   tableName?: string;
+  alias?: string;
 }
 
 export type SqlContextType =
@@ -43,18 +44,31 @@ export type SqlContextType =
   | 'INSERT_COLUMNS'
   | 'INSERT_VALUES'
   | 'UPDATE_SET'
+  | 'COLUMN'
   | 'DEFAULT';
 
 /**
  * Find a table in the schema by name
  */
 export function findTable(tableName: string, dbSchema: DatabaseSchema): { schema: string; table: string } | null {
-  const lowerName = tableName.toLowerCase();
+  // Strip brackets and extract schema/table parts
+  let cleanName = tableName.replace(/^\[|\]$/g, '');
+  let schemaFilter: string | undefined;
+
+  // Handle schema-qualified names: [schema].[table] or schema.table
+  const schemaMatch = cleanName.match(/^\[?([^\]]+)\]?\.\[?([^\]]+)\]?$/);
+  if (schemaMatch) {
+    schemaFilter = schemaMatch[1].toLowerCase();
+    cleanName = schemaMatch[2];
+  }
+
+  const lowerName = cleanName.toLowerCase();
 
   // Check tables first
   if (dbSchema?.tables) {
     for (const table of dbSchema.tables) {
-      if (table.name.toLowerCase() === lowerName) {
+      if (table.name.toLowerCase() === lowerName &&
+          (!schemaFilter || table.schema.toLowerCase() === schemaFilter)) {
         return { schema: table.schema, table: table.name };
       }
     }
@@ -63,7 +77,8 @@ export function findTable(tableName: string, dbSchema: DatabaseSchema): { schema
   // Then check views
   if (dbSchema?.views) {
     for (const view of dbSchema.views) {
-      if (view.name.toLowerCase() === lowerName) {
+      if (view.name.toLowerCase() === lowerName &&
+          (!schemaFilter || view.schema.toLowerCase() === schemaFilter)) {
         return { schema: view.schema, table: view.name };
       }
     }
@@ -142,11 +157,11 @@ export function extractTablesFromQuery(query: string, dbSchema: DatabaseSchema):
 
   const patterns = [
     // Pattern for bracketed identifiers: FROM [schema].[table] [alias] or FROM [table] [alias]
-    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join)\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
+    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+(?:outer\s+)?|cross\s+)?join)\s+(?:\[([^\]]+)\]\.)?\[([^\]]+)\](?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join|with\s*\()\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
     // Pattern for schema.table with alias (must have dot)
-    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join)\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
+    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+(?:outer\s+)?|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join|with\s*\()\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
     // Pattern for just table name with alias (no schema)
-    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join)\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
+    /\b(?:from|(?:inner\s+|left\s+|right\s+|full\s+(?:outer\s+)?|cross\s+)?join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+(?:as\s+)?(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*)))?(?=\s+(?:on|where|order|group|having|inner|left|right|full|cross|join|with\s*\()\b|\s*$|\s*\r?\n|\s*[,;)])/gi,
   ];
 
   patterns.forEach((pattern, patternIndex) => {
@@ -310,11 +325,21 @@ export interface ForeignKeyInfo {
  */
 export function generateSmartAlias(tableName: string): string {
   // Remove common prefixes
-  let name = tableName.replace(/^(tbl_?|t_)/i, '');
+  let name = tableName.replace(/^(tbl_?|t_|vw_?|fn_?)/i, '');
   
-  // If name has underscores, use first letter of each word
+  // If name has underscores, split by underscore first, then further split PascalCase parts
   if (name.includes('_')) {
-    return name.split('_').map((w) => w[0]?.toLowerCase() || '').join('');
+    const parts = name.split('_');
+    const initials: string[] = [];
+    for (const part of parts) {
+      const subWords = part.split(/(?=[A-Z])/).filter(Boolean);
+      if (subWords.length > 1) {
+        initials.push(...subWords.map(w => w[0]?.toLowerCase() || ''));
+      } else {
+        initials.push(part[0]?.toLowerCase() || '');
+      }
+    }
+    return initials.join('');
   }
   
   // If name is PascalCase, use first letter of each word
@@ -333,6 +358,12 @@ export function generateSmartAlias(tableName: string): string {
 export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: string): SqlContext {
   const lowerText = textUntilPosition.toLowerCase();
   const lowerLine = lineUntilPosition.toLowerCase();
+
+  // Check for alias dot notation (e.g., "u.", "[u].") — highest priority
+  const aliasDotMatch = lowerLine.match(/(?:\[?(\w+)\]?)\.\s*$/);
+  if (aliasDotMatch) {
+    return { type: 'COLUMN', confidence: 'high', alias: aliasDotMatch[1] };
+  }
 
   // Find positions of key SQL keywords
   const lastSelectPos = lowerText.lastIndexOf('select');
@@ -357,10 +388,24 @@ export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: 
     return { type: 'ON_CONDITION', confidence: 'high' };
   }
 
+  // Check for DELETE FROM context
+  const lastDeletePos = lowerText.lastIndexOf('delete');
+  if (lastDeletePos !== -1 && lastFromPos !== -1 && lastFromPos > lastDeletePos && lastSelectPos < lastDeletePos) {
+    // DELETE FROM <table> — if no WHERE yet, treat like FROM
+    if (lastWherePos === -1 || lastWherePos < lastFromPos) {
+      const textAfterFrom = lowerText.substring(lastFromPos);
+      if (textAfterFrom.match(/from\s+(?:\[?\w+\]?\.)?(?:\[?\w+\]?)(?:\s+(?:as\s+)?(?:\[?\w+\]?))?/)) {
+        // Already have a table — let WHERE detection handle it below
+      } else {
+        return { type: 'FROM', confidence: 'high' };
+      }
+    }
+  }
+
   // Check for ORDER BY context
   if (lastOrderByPos !== -1 && (lastOrderByPos > lastWherePos || lastWherePos === -1)) {
     const textAfterOrderBy = lowerText.substring(lastOrderByPos + 8);
-    if (!/\b(limit|offset|fetch|for|union|intersect|except)\b/.test(textAfterOrderBy)) {
+    if (!/\b(limit|for|union|intersect|except)\b/.test(textAfterOrderBy)) {
       const shouldSuggestSortDirection = analyzeOrderByContext(textAfterOrderBy);
       return { type: 'ORDER_BY', confidence: 'high', suggestSortDirection: shouldSuggestSortDirection };
     }
@@ -733,12 +778,31 @@ export function getCTEColumns(
     return columns;
   }
 
+  // Helper to expand alias.* patterns
+  const expandAliasStar = (aliasPart: string): ColumnInfo[] => {
+    const aliasName = aliasPart.replace(/^\[|\]$/g, '').replace(/\.\*$/, '');
+    // Find which table this alias refers to within the CTE body
+    const innerTables = extractTablesFromQuery(cte.body, dbSchema);
+    const matchingTable = innerTables.find(t => t.alias.toLowerCase() === aliasName.toLowerCase());
+    if (matchingTable) {
+      return getColumnsForTable(matchingTable.schema, matchingTable.table, dbSchema);
+    }
+    return [];
+  };
+
   const columns: ColumnInfo[] = [];
   const columnExprs = splitSelectColumns(selectPart);
 
   for (const expr of columnExprs) {
     const trimmed = expr.trim();
     if (!trimmed) continue;
+
+    // Handle alias.* pattern (e.g., u.*)
+    const aliasStarMatch = trimmed.match(/^\[?\w+\]?\.\*$/);
+    if (aliasStarMatch) {
+      columns.push(...expandAliasStar(trimmed));
+      continue;
+    }
 
     // alias = expr (T-SQL assignment style)
     const assignMatch = trimmed.match(/^\[?(\w+)\]?\s*=/);
@@ -771,7 +835,17 @@ export function getCTEColumns(
     // Complex expression without alias — skip
   }
 
-  return columns;
+  // Deduplicate columns by name
+  const seen = new Set<string>();
+  const deduped: ColumnInfo[] = [];
+  for (const col of columns) {
+    if (!seen.has(col.name)) {
+      seen.add(col.name);
+      deduped.push(col);
+    }
+  }
+
+  return deduped;
 }
 
 /**
