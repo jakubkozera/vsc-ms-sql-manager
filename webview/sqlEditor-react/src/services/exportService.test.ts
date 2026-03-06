@@ -114,4 +114,82 @@ describe('exportService', () => {
       expect(result.data[0]).toEqual([1, 'john@example.com']);
     });
   });
+
+  describe('INSERT statement generation', () => {
+    it('generates correct INSERT statement for a single row', () => {
+      const result = exportData([[1, 'John', 'john@example.com']], sampleColumns, {
+        format: 'insert',
+        tableName: 'Users',
+      });
+
+      expect(result).toBe(
+        "INSERT INTO [Users] ([id], [name], [email]) VALUES (1, 'John', 'john@example.com');"
+      );
+    });
+
+    it('generates multiple INSERT statements for multiple rows', () => {
+      const result = exportData(sampleData, sampleColumns, {
+        format: 'insert',
+        tableName: 'Users',
+      });
+
+      const lines = result.split('\n');
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).toContain("INSERT INTO [Users]");
+      expect(lines[1]).toContain("INSERT INTO [Users]");
+      expect(lines[2]).toContain("INSERT INTO [Users]");
+    });
+
+    it('wraps string values in single quotes', () => {
+      const result = exportData([[42, 'Alice', 'alice@example.com']], sampleColumns, {
+        format: 'insert',
+        tableName: 'Contacts',
+      });
+
+      expect(result).toContain("'Alice'");
+      expect(result).toContain("'alice@example.com'");
+      expect(result).toContain('42');
+      expect(result).not.toMatch(/'\d+'/); // numeric values should not be quoted
+    });
+
+    it('emits NULL (unquoted) for null values', () => {
+      const result = exportData([[1, null, 'john@example.com']], sampleColumns, {
+        format: 'insert',
+        tableName: 'Users',
+      });
+
+      expect(result).toContain('NULL');
+      expect(result).not.toContain("'null'");
+    });
+
+    it('escapes single quotes inside string values', () => {
+      const result = exportData([[1, "O'Brien", 'ob@example.com']], sampleColumns, {
+        format: 'insert',
+        tableName: 'Users',
+      });
+
+      expect(result).toContain("'O''Brien'");
+    });
+
+    it('uses fallback table name when none supplied', () => {
+      // exportData falls back to 'TableName' when tableName option is omitted
+      const result = exportData([[1, 'John', 'john@example.com']], sampleColumns, {
+        format: 'insert',
+      });
+
+      expect(result).toContain('[TableName]');
+    });
+
+    it('uses only selected columns when data is pre-filtered via extractSelectedData', () => {
+      const { data, columns } = extractSelectedData(sampleData, sampleColumns, [0], [0, 1]);
+      const result = exportData(data, columns, {
+        format: 'insert',
+        tableName: 'Users',
+      });
+
+      expect(result).toContain('[id], [name]');
+      expect(result).not.toContain('[email]');
+      expect(result).toContain("VALUES (1, 'John')");
+    });
+  });
 });

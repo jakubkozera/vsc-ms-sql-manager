@@ -563,17 +563,65 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     });
   }, [pendingExpansions]);
 
+  // Selection-aware copy: respects cell / column / row selection types
   const handleCopy = useCallback(async () => {
+    if (selection.type === 'cell' && selection.selections.length > 0) {
+      // Collect unique rows and columns involved
+      const rowIndices = [...new Set(selection.selections.map(s => s.rowIndex!))].sort((a, b) => a - b);
+      const colIndices = [...new Set(selection.selections.map(s => s.columnIndex!))].sort((a, b) => a - b);
+      // Build a 2-D text block: rows × cols, tab-separated
+      const lines = rowIndices.map(r => {
+        const row = sortedData[r];
+        return colIndices.map(c => {
+          const val = row?.[c];
+          return val === null || val === undefined ? '' : String(val);
+        }).join('\t');
+      });
+      await copyToClipboard(lines.join('\n'));
+      return;
+    }
+
+    if (selection.type === 'column' && selection.selections.length > 0) {
+      const colIndices = [...new Set(selection.selections.map(s => s.columnIndex!))].sort((a, b) => a - b);
+      const { data: selectedData, columns: selectedCols } = extractSelectedData(
+        sortedData,
+        columnDefs,
+        sortedData.map((_, i) => i),
+        colIndices
+      );
+      const text = exportData(selectedData, selectedCols, { format: 'clipboard', includeHeaders: true });
+      await copyToClipboard(text);
+      return;
+    }
+
+    // Row selection or no selection → copy selected rows (fallback: all rows)
     const selectedIndices = getSelectedRowIndices();
     const { data: selectedData, columns: selectedCols } = extractSelectedData(
       sortedData,
       columnDefs,
       selectedIndices.length > 0 ? selectedIndices : sortedData.map((_, i) => i)
     );
-    
     const text = exportData(selectedData, selectedCols, { format: 'clipboard', includeHeaders: true });
     await copyToClipboard(text);
-  }, [sortedData, columnDefs, getSelectedRowIndices]);
+  }, [sortedData, columnDefs, selection, getSelectedRowIndices]);
+
+  // Copy a single cell value to clipboard
+  const handleCopyCell = useCallback(async (rowIndex: number, colIndex: number) => {
+    const row = sortedData[rowIndex];
+    if (!row) return;
+    const val = row[colIndex];
+    const text = val === null || val === undefined ? '' : String(val);
+    await copyToClipboard(text);
+  }, [sortedData]);
+
+  // Copy a single row as an INSERT statement
+  const handleCopyRowAsInsert = useCallback(async (rowIndex: number) => {
+    const row = sortedData[rowIndex];
+    if (!row) return;
+    const tableName = metadata?.sourceTable || 'TableName';
+    const text = exportData([row], columnDefs, { format: 'insert', tableName });
+    await copyToClipboard(text);
+  }, [sortedData, columnDefs, metadata]);
 
   const handleExport = useCallback((format: ExportFormat, includeHeaders: boolean) => {
     const selectedIndices = getSelectedRowIndices();
@@ -682,12 +730,26 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const handleContextMenuSelect = useCallback((itemId: string) => {
     const ctx = contextMenu;
     switch (itemId) {
-      case 'copyCell':
+      case 'copyCell': {
+        if (ctx?.rowIndex !== undefined && ctx?.colIndex !== undefined) {
+          handleCopyCell(ctx.rowIndex, ctx.colIndex);
+        } else {
+          handleCopy();
+        }
+        break;
+      }
       case 'copyRow':
       case 'copySelection':
-      case 'copyRowAsInsert':
         handleCopy();
         break;
+      case 'copyRowAsInsert': {
+        if (ctx?.rowIndex !== undefined) {
+          handleCopyRowAsInsert(ctx.rowIndex);
+        } else {
+          handleCopy();
+        }
+        break;
+      }
       case 'copyAsCSV':
         handleExport('csv', true);
         break;
@@ -732,49 +794,61 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       }
     }
     setContextMenu(null);
-  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onCellEdit, columnDefs, handleCopy, handleExport]);
+  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleExport]);
 
-  // Global keyboard shortcut for Ctrl+C when grid is active
+  // Global keyboard shortcuts when grid is active
   useEffect(() => {
     if (!isGridActive) return;
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Handle Ctrl+C (or Cmd+C on Mac)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        // Check if Monaco editor has focus
-        const activeElement = document.activeElement;
-        if (activeElement) {
-          let element: Element | null = activeElement;
-          while (element) {
-            if (element.classList.contains('monaco-editor') || 
-                element.classList.contains('monaco-editor-background') ||
-                element.id === 'editor-container') {
-              // Monaco has focus, let it handle the copy
-              return;
-            }
-            element = element.parentElement;
+      const activeElement = document.activeElement;
+
+      // Don't intercept when Monaco editor has focus
+      if (activeElement) {
+        let el: Element | null = activeElement;
+        while (el) {
+          if (el.classList.contains('monaco-editor') ||
+              el.classList.contains('monaco-editor-background') ||
+              el.id === 'editor-container') {
+            return;
           }
+          el = el.parentElement;
         }
+      }
 
-        // Check if there's a text input focused
-        if (activeElement && (
-          activeElement.tagName === 'INPUT' ||
-          activeElement.tagName === 'TEXTAREA' ||
-          (activeElement as HTMLElement).isContentEditable
-        )) {
-          // Let the input handle the copy
-          return;
+      // Don't intercept when a text input / inline editor has focus
+      if (activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        (activeElement as HTMLElement).isContentEditable
+      )) {
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'c') {
+          e.preventDefault();
+          handleCopy();
+        } else if (e.key === 'a') {
+          e.preventDefault();
+          selectAllRows(sortedData.length);
         }
-
-        // Grid should handle the copy
-        e.preventDefault();
-        handleCopy();
+      } else if (e.key === 'F2') {
+        // F2 → start editing the last clicked / selected cell
+        if (isEditable && selection.lastClickedIndex?.rowIndex !== undefined &&
+            selection.lastClickedIndex?.columnIndex !== undefined) {
+          e.preventDefault();
+          setEditingCellFromMenu({
+            rowIndex: selection.lastClickedIndex.rowIndex,
+            colIndex: selection.lastClickedIndex.columnIndex,
+          });
+        }
       }
     };
 
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isGridActive, handleCopy]);
+  }, [isGridActive, handleCopy, selectAllRows, sortedData.length, isEditable, selection.lastClickedIndex]);
 
   const handleExportButtonClick = useCallback((e: React.MouseEvent) => {
     setExportMenu({
@@ -802,7 +876,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     selectColumn(colIndex, event.ctrlKey || event.metaKey, event.shiftKey);
   }, [columnDefs, selectColumn]);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts on the grid div itself
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'c') {
@@ -814,8 +888,17 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       }
     } else if (e.key === 'Escape') {
       clearSelection();
+    } else if (e.key === 'F2') {
+      if (isEditable && selection.lastClickedIndex?.rowIndex !== undefined &&
+          selection.lastClickedIndex?.columnIndex !== undefined) {
+        e.preventDefault();
+        setEditingCellFromMenu({
+          rowIndex: selection.lastClickedIndex.rowIndex,
+          colIndex: selection.lastClickedIndex.columnIndex,
+        });
+      }
     }
-  }, [handleCopy, selectAllRows, sortedData.length, clearSelection]);
+  }, [handleCopy, selectAllRows, sortedData.length, clearSelection, isEditable, selection.lastClickedIndex]);
 
   // Empty state
   if (!data || data.length === 0) {
