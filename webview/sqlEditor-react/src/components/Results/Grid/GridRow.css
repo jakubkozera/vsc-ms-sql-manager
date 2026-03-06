@@ -32,7 +32,7 @@
   position: -webkit-sticky !important;
   position: sticky !important;
   left: 0 !important;
-  z-index: 50 !important;
+  z-index: 48 !important;
   border-right: 2px solid var(--vscode-panel-border, #3c3c3c) !important;
   border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c) !important;
   min-width: 50px !important;
