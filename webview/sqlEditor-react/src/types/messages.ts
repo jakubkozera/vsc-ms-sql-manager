@@ -332,6 +332,7 @@ export interface ResultSetMetadata {
 export interface ResultColumnMetadata {
   name: string;
   type: string;
+  isNullable?: boolean;
   sourceTable?: string;
   sourceSchema?: string;
   isPrimaryKey?: boolean;

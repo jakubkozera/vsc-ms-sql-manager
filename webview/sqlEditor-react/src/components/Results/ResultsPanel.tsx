@@ -80,6 +80,13 @@ export function ResultsPanel() {
   const [loadingTime, setLoadingTime] = useState('00:00');
   const loadingStartRef = useState<number | null>(null);
 
+  // Reset all pending changes when a new query starts executing
+  useEffect(() => {
+    if (isExecuting) {
+      pendingChanges.revertAll();
+    }
+  }, [isExecuting]);
+
   // Manage timer when executing
   useEffect(() => {
     let interval: any | null = null;

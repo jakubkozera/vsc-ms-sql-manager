@@ -155,3 +155,32 @@ export const SELECTION_CONTEXT_MENU_ITEMS: ContextMenuItem[] = [
   { id: 'separator1', label: '', separator: true },
   { id: 'exportSelection', label: 'Export Selection...' },
 ];
+
+/**
+ * Build context menu items for a cell right-click.
+ * "Set to NULL" is only included when the column is nullable.
+ */
+export function buildCellMenuItems(options: {
+  isEditable: boolean;
+  isNullable?: boolean;
+}): ContextMenuItem[] {
+  const { isEditable, isNullable } = options;
+  const items: ContextMenuItem[] = [
+    { id: 'copyCell', label: 'Copy Cell', shortcut: 'Ctrl+C' },
+    { id: 'copyRow', label: 'Copy Row' },
+  ];
+
+  if (isEditable) {
+    items.push({ id: 'separator1', label: '', separator: true });
+    items.push({ id: 'editCell', label: 'Edit Cell', shortcut: 'F2' });
+    if (isNullable === true) {
+      items.push({ id: 'setNull', label: 'Set to NULL' });
+    }
+    items.push({ id: 'separator_del', label: '', separator: true });
+    items.push({ id: 'deleteRow', label: 'Delete Row' });
+  }
+
+  items.push({ id: 'separator2', label: '', separator: true });
+  items.push({ id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' });
+  return items;
+}

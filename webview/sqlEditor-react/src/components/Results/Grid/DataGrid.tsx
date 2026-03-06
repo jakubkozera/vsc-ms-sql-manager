@@ -7,7 +7,7 @@ import { GridHeader } from './GridHeader';
 import { GridRow } from './GridRow';
 import { ExpandedRow } from './ExpandedRow';
 import { FilterPopup } from './FilterPopup';
-import { ContextMenu, ContextMenuItem, ROW_CONTEXT_MENU_ITEMS } from './ContextMenu';
+import { ContextMenu, ContextMenuItem, ROW_CONTEXT_MENU_ITEMS, buildCellMenuItems } from './ContextMenu';
 import { ExportMenu } from './ExportMenu';
 import { FKQuickPick } from './FKQuickPick';
 import { exportData, copyToClipboard, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
@@ -653,31 +653,17 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     return items;
   }, [isEditable, isRowDeleted]);
 
-  const buildCellContextMenuItems = useCallback((): ContextMenuItem[] => {
-    const items: ContextMenuItem[] = [
-      { id: 'copyCell', label: 'Copy Cell', shortcut: 'Ctrl+C' },
-      { id: 'copyRow', label: 'Copy Row' },
-    ];
-
-    if (isEditable) {
-      items.push({ id: 'separator1', label: '', separator: true });
-      items.push({ id: 'editCell', label: 'Edit Cell', shortcut: 'F2' });
-      items.push({ id: 'setNull', label: 'Set to NULL' });
-      items.push({ id: 'separator_del', label: '', separator: true });
-      items.push({ id: 'deleteRow', label: 'Delete Row' });
-    }
-
-    items.push({ id: 'separator2', label: '', separator: true });
-    items.push({ id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' });
-    return items;
-  }, [isEditable]);
+  const buildCellContextMenuItems = useCallback((colIndex?: number): ContextMenuItem[] => {
+    const colMeta = colIndex !== undefined ? metadata?.columns?.[colIndex] : undefined;
+    return buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable });
+  }, [isEditable, metadata]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, rowIndex?: number, colIndex?: number) => {
     e.preventDefault();
     
     let items: ContextMenuItem[];
     if (rowIndex !== undefined) {
-      items = colIndex !== undefined ? buildCellContextMenuItems() : buildRowContextMenuItems(rowIndex);
+      items = colIndex !== undefined ? buildCellContextMenuItems(colIndex) : buildRowContextMenuItems(rowIndex);
     } else {
       items = ROW_CONTEXT_MENU_ITEMS;
     }

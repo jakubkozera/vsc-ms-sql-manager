@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '../../../test/testUtils';
-import { ContextMenu, ContextMenuItem } from './ContextMenu';
+import { ContextMenu, ContextMenuItem, buildCellMenuItems } from './ContextMenu';
 
 describe('ContextMenu', () => {
   const mockItems: ContextMenuItem[] = [
@@ -71,5 +71,53 @@ describe('ContextMenu', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     
     expect(defaultProps.onClose).toHaveBeenCalled();
+  });
+});
+
+describe('buildCellMenuItems - Set NULL visibility', () => {
+  it('does not include setNull when column is not editable', () => {
+    const items = buildCellMenuItems({ isEditable: false, isNullable: true });
+    expect(items.find(i => i.id === 'setNull')).toBeUndefined();
+  });
+
+  it('does not include setNull when column is editable but not nullable', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: false });
+    expect(items.find(i => i.id === 'setNull')).toBeUndefined();
+  });
+
+  it('includes setNull when column is editable AND nullable', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: true });
+    expect(items.find(i => i.id === 'setNull')).toBeDefined();
+  });
+
+  it('does not include setNull when nullable is undefined (unknown)', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: undefined });
+    expect(items.find(i => i.id === 'setNull')).toBeUndefined();
+  });
+
+  it('always includes copyCell and copyRow regardless of editability', () => {
+    const readOnly = buildCellMenuItems({ isEditable: false });
+    expect(readOnly.find(i => i.id === 'copyCell')).toBeDefined();
+    expect(readOnly.find(i => i.id === 'copyRow')).toBeDefined();
+
+    const editable = buildCellMenuItems({ isEditable: true, isNullable: true });
+    expect(editable.find(i => i.id === 'copyCell')).toBeDefined();
+    expect(editable.find(i => i.id === 'copyRow')).toBeDefined();
+  });
+
+  it('includes editCell and deleteRow when editable, regardless of nullable', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: false });
+    expect(items.find(i => i.id === 'editCell')).toBeDefined();
+    expect(items.find(i => i.id === 'deleteRow')).toBeDefined();
+  });
+
+  it('setNull appears between editCell and deleteRow', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: true });
+    const ids = items.filter(i => !i.separator).map(i => i.id);
+    const editIdx = ids.indexOf('editCell');
+    const nullIdx = ids.indexOf('setNull');
+    const delIdx = ids.indexOf('deleteRow');
+    expect(editIdx).toBeLessThan(nullIdx);
+    expect(nullIdx).toBeLessThan(delIdx);
   });
 });

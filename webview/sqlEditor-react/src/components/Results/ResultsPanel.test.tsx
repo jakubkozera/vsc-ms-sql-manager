@@ -160,3 +160,88 @@ describe('ResultsPanel - error → messages tab auto-switch', () => {
     expect(screen.getByTestId('messages-tab')).toHaveClass('active');
   });
 });
+
+describe('ResultsPanel - pending changes reset on new query', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should call revertAll when query starts executing', () => {
+    const pendingMock = makePendingChangesMock(true);
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: false } as any);
+    vi.mocked(usePendingChanges).mockReturnValue(pendingMock as any);
+
+    const { rerender } = render(<ResultsPanel />);
+
+    expect(pendingMock.revertAll).not.toHaveBeenCalled();
+
+    // Query starts
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: true } as any);
+
+    act(() => {
+      rerender(<ResultsPanel />);
+    });
+
+    expect(pendingMock.revertAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('should NOT call revertAll when query finishes (isExecuting goes false)', () => {
+    const pendingMock = makePendingChangesMock(false);
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: true } as any);
+    vi.mocked(usePendingChanges).mockReturnValue(pendingMock as any);
+
+    const { rerender } = render(<ResultsPanel />);
+    pendingMock.revertAll.mockClear();
+
+    // Query finishes
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: false } as any);
+
+    act(() => {
+      rerender(<ResultsPanel />);
+    });
+
+    expect(pendingMock.revertAll).not.toHaveBeenCalled();
+  });
+
+  it('should call revertAll once per query execution even if re-rendered while executing', () => {
+    const pendingMock = makePendingChangesMock(true);
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: false } as any);
+    vi.mocked(usePendingChanges).mockReturnValue(pendingMock as any);
+
+    const { rerender } = render(<ResultsPanel />);
+
+    // Query starts
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: true } as any);
+    act(() => { rerender(<ResultsPanel />); });
+
+    // Re-render while still executing (e.g. timer tick)
+    act(() => { rerender(<ResultsPanel />); });
+    act(() => { rerender(<ResultsPanel />); });
+
+    // revertAll should have been called exactly once (only on isExecuting transition to true)
+    expect(pendingMock.revertAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('should call revertAll for each new query execution in sequence', () => {
+    const pendingMock = makePendingChangesMock(true);
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: false } as any);
+    vi.mocked(usePendingChanges).mockReturnValue(pendingMock as any);
+
+    const { rerender } = render(<ResultsPanel />);
+
+    // First query
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: true } as any);
+    act(() => { rerender(<ResultsPanel />); });
+    expect(pendingMock.revertAll).toHaveBeenCalledTimes(1);
+
+    // Query finishes
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: false } as any);
+    act(() => { rerender(<ResultsPanel />); });
+
+    // Second query
+    vi.mocked(useVSCode).mockReturnValue({ ...makeVSCodeMock(0), isExecuting: true } as any);
+    act(() => { rerender(<ResultsPanel />); });
+
+    expect(pendingMock.revertAll).toHaveBeenCalledTimes(2);
+  });
+});
