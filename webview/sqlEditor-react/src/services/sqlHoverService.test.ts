@@ -3,9 +3,11 @@ import {
   renderTableMarkdown,
   renderColumnMarkdown,
   renderMultiTableColumnMarkdown,
+  renderOutboundForeignKeys,
+  renderInboundForeignKeys,
   provideHoverContent,
 } from './sqlHoverService';
-import type { ColumnInfo, DatabaseSchema } from '../types/schema';
+import type { ColumnInfo, DatabaseSchema, ForeignKeyInfo } from '../types/schema';
 
 const sampleColumns: ColumnInfo[] = [
   { name: 'Id', type: 'int', nullable: false, isPrimaryKey: true },
@@ -199,5 +201,137 @@ describe('provideHoverContent', () => {
       sampleSchema
     );
     expect(result).toBeNull();
+  });
+});
+
+// ─── FK render helpers ────────────────────────────────────────────────────────
+
+const fkSample: ForeignKeyInfo[] = [
+  // Users.DepartmentId → Departments.Id  (single-column FK)
+  {
+    fromSchema: 'dbo', fromTable: 'Users', fromColumn: 'DepartmentId',
+    toSchema: 'dbo', toTable: 'Departments', toColumn: 'Id',
+    constraintName: 'FK_Users_Departments',
+  },
+  // Orders multi-column FK: Orders.UserId + Orders.TenantId → Users.Id + Users.TenantId
+  {
+    fromSchema: 'dbo', fromTable: 'Orders', fromColumn: 'UserId',
+    toSchema: 'dbo', toTable: 'Users', toColumn: 'Id',
+    constraintName: 'FK_Orders_Users',
+  },
+  {
+    fromSchema: 'dbo', fromTable: 'Orders', fromColumn: 'TenantId',
+    toSchema: 'dbo', toTable: 'Users', toColumn: 'TenantId',
+    constraintName: 'FK_Orders_Users',
+  },
+];
+
+describe('renderOutboundForeignKeys', () => {
+  it('returns empty string when no outbound FKs', () => {
+    const md = renderOutboundForeignKeys('dbo', 'Departments', fkSample);
+    expect(md).toBe('');
+  });
+
+  it('renders single-column outbound FK', () => {
+    const md = renderOutboundForeignKeys('dbo', 'Users', fkSample);
+    expect(md).toContain('**References (FK →)**');
+    expect(md).toContain('| FK | Table |');
+    expect(md).toContain('DepartmentId');
+    expect(md).toContain('dbo.Departments');
+  });
+
+  it('renders multi-column FK as Col1:Col2', () => {
+    const md = renderOutboundForeignKeys('dbo', 'Orders', fkSample);
+    expect(md).toContain('UserId:TenantId');
+    expect(md).toContain('dbo.Users');
+  });
+
+  it('is case-insensitive for schema and table matching', () => {
+    const md = renderOutboundForeignKeys('DBO', 'USERS', fkSample);
+    expect(md).toContain('DepartmentId');
+  });
+});
+
+describe('renderInboundForeignKeys', () => {
+  it('returns empty string when no inbound FKs', () => {
+    const md = renderInboundForeignKeys('dbo', 'Orders', fkSample);
+    expect(md).toBe('');
+  });
+
+  it('renders single inbound FK', () => {
+    const md = renderInboundForeignKeys('dbo', 'Departments', fkSample);
+    expect(md).toContain('**Referenced By (← FK)**');
+    expect(md).toContain('| FK | Table |');
+    expect(md).toContain('DepartmentId');
+    expect(md).toContain('dbo.Users');
+  });
+
+  it('renders multi-column inbound FK as Col1:Col2', () => {
+    const md = renderInboundForeignKeys('dbo', 'Users', fkSample);
+    expect(md).toContain('**Referenced By (← FK)**');
+    expect(md).toContain('UserId:TenantId');
+    expect(md).toContain('dbo.Orders');
+  });
+
+  it('is case-insensitive for schema and table matching', () => {
+    const md = renderInboundForeignKeys('DBO', 'DEPARTMENTS', fkSample);
+    expect(md).toContain('DepartmentId');
+  });
+});
+
+describe('provideHoverContent with FK info', () => {
+  const schemaWithFKs: DatabaseSchema = {
+    ...sampleSchema,
+    foreignKeys: [
+      {
+        fromSchema: 'dbo', fromTable: 'Users', fromColumn: 'DepartmentId',
+        toSchema: 'dbo', toTable: 'Departments', toColumn: 'Id',
+        constraintName: 'FK_Users_Departments',
+      },
+    ],
+  };
+
+  it('includes outbound FK section when hovering on a table with outbound FKs', () => {
+    const result = provideHoverContent(
+      'SELECT * FROM Users',
+      'SELECT * FROM Users',
+      { lineNumber: 1, column: 18 },
+      { word: 'Users', startColumn: 15, endColumn: 20 },
+      schemaWithFKs
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('References (FK →)');
+    expect(md).toContain('DepartmentId');
+    expect(md).toContain('dbo.Departments');
+  });
+
+  it('includes inbound FK section when hovering on a referenced table', () => {
+    const result = provideHoverContent(
+      'SELECT * FROM Departments',
+      'SELECT * FROM Departments',
+      { lineNumber: 1, column: 22 },
+      { word: 'Departments', startColumn: 15, endColumn: 26 },
+      schemaWithFKs
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('Referenced By (← FK)');
+    expect(md).toContain('DepartmentId');
+    expect(md).toContain('dbo.Users');
+  });
+
+  it('does not show FK sections when table has no FKs at all', () => {
+    const result = provideHoverContent(
+      'SELECT * FROM Users',
+      'SELECT * FROM Users',
+      { lineNumber: 1, column: 18 },
+      { word: 'Users', startColumn: 15, endColumn: 20 },
+      sampleSchema  // foreignKeys: []
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).not.toContain('References (FK →)');
+    expect(md).not.toContain('Referenced By (← FK)');
   });
 });

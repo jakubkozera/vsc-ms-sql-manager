@@ -1,4 +1,4 @@
-import type { ColumnInfo, TableInfo, DatabaseSchema } from '../types/schema';
+import type { ColumnInfo, TableInfo, ForeignKeyInfo, DatabaseSchema } from '../types/schema';
 import { extractTablesFromQuery, findTable, findTableForAlias, getColumnsForTable } from './sqlCompletionService';
 
 export interface HoverResult {
@@ -71,6 +71,80 @@ export function renderMultiTableColumnMarkdown(tables: TableInfo[], columnName: 
 }
 
 /**
+ * Groups ForeignKeyInfo entries by constraint name.
+ * Entries without a constraintName are each treated as their own group.
+ */
+function groupForeignKeys(fks: ForeignKeyInfo[]): ForeignKeyInfo[][] {
+  const named = new Map<string, ForeignKeyInfo[]>();
+  const unnamed: ForeignKeyInfo[][] = [];
+  for (const fk of fks) {
+    if (fk.constraintName) {
+      if (!named.has(fk.constraintName)) named.set(fk.constraintName, []);
+      named.get(fk.constraintName)!.push(fk);
+    } else {
+      unnamed.push([fk]);
+    }
+  }
+  return [...Array.from(named.values()), ...unnamed];
+}
+
+/**
+ * Render FK columns of this table that reference other tables.
+ * Returns empty string when there are no outbound FKs.
+ */
+export function renderOutboundForeignKeys(
+  schemaName: string,
+  tableName: string,
+  foreignKeys: ForeignKeyInfo[]
+): string {
+  const outbound = foreignKeys.filter(
+    (fk) =>
+      fk.fromTable.toLowerCase() === tableName.toLowerCase() &&
+      fk.fromSchema.toLowerCase() === schemaName.toLowerCase()
+  );
+  if (outbound.length === 0) return '';
+
+  const groups = groupForeignKeys(outbound);
+  let md = '\n**References (FK →)**\n\n';
+  md += '| FK | Table |\n';
+  md += '|:---|:---|\n';
+  for (const group of groups) {
+    const cols = group.map((fk) => fk.fromColumn).join(':');
+    const toTable = `${group[0].toSchema}.${group[0].toTable}`;
+    md += `| ${cols} | ${toTable} |\n`;
+  }
+  return md;
+}
+
+/**
+ * Render tables that have FK columns pointing to this table.
+ * Returns empty string when there are no inbound FKs.
+ */
+export function renderInboundForeignKeys(
+  schemaName: string,
+  tableName: string,
+  foreignKeys: ForeignKeyInfo[]
+): string {
+  const inbound = foreignKeys.filter(
+    (fk) =>
+      fk.toTable.toLowerCase() === tableName.toLowerCase() &&
+      fk.toSchema.toLowerCase() === schemaName.toLowerCase()
+  );
+  if (inbound.length === 0) return '';
+
+  const groups = groupForeignKeys(inbound);
+  let md = '\n**Referenced By (← FK)**\n\n';
+  md += '| FK | Table |\n';
+  md += '|:---|:---|\n';
+  for (const group of groups) {
+    const cols = group.map((fk) => fk.fromColumn).join(':');
+    const fromTable = `${group[0].fromSchema}.${group[0].fromTable}`;
+    md += `| ${cols} | ${fromTable} |\n`;
+  }
+  return md;
+}
+
+/**
  * Provide hover information for SQL text at a given position.
  * Pure function — no Monaco dependency.
  */
@@ -113,7 +187,10 @@ export function provideHoverContent(
 
       // Column not found — show table schema preview
       const previewCols = cols.slice(0, 15);
-      const tableMd = renderTableMarkdown(tableInfo.schema, tableInfo.table, previewCols);
+      const tableMd =
+        renderTableMarkdown(tableInfo.schema, tableInfo.table, previewCols) +
+        renderOutboundForeignKeys(tableInfo.schema, tableInfo.table, dbSchema.foreignKeys || []) +
+        renderInboundForeignKeys(tableInfo.schema, tableInfo.table, dbSchema.foreignKeys || []);
       const startCol2 = beforeCursor.lastIndexOf(alias) + 1;
       return {
         contents: [{ value: tableMd }],
@@ -135,7 +212,10 @@ export function provideHoverContent(
     const table = findTable(w, dbSchema);
     if (table) {
       const cols2 = getColumnsForTable(table.schema, table.table, dbSchema) || [];
-      const md2 = renderTableMarkdown(table.schema, table.table, cols2);
+      const md2 =
+        renderTableMarkdown(table.schema, table.table, cols2) +
+        renderOutboundForeignKeys(table.schema, table.table, dbSchema.foreignKeys || []) +
+        renderInboundForeignKeys(table.schema, table.table, dbSchema.foreignKeys || []);
       return {
         contents: [{ value: md2 }],
         range: {
