@@ -190,11 +190,22 @@ export function PlanGraph({ plan, onNodeClick, onNodeHover, focusNodeId }: PlanG
   // Zoom handling
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    if (!containerRef.current) return;
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setTransform(prev => ({
-      ...prev,
-      scale: Math.min(Math.max(prev.scale * delta, 0.1), 3),
-    }));
+    const rect = containerRef.current.getBoundingClientRect();
+    // Cursor position relative to the container
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    setTransform(prev => {
+      const newScale = Math.min(Math.max(prev.scale * delta, 0.1), 3);
+      // Adjust translation so the point under the cursor stays fixed
+      const scaleRatio = newScale / prev.scale;
+      return {
+        x: mouseX - (mouseX - prev.x) * scaleRatio,
+        y: mouseY - (mouseY - prev.y) * scaleRatio,
+        scale: newScale,
+      };
+    });
   };
   
   const handleNodeClick = (node: LayoutNode) => {

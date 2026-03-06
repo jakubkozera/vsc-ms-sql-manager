@@ -134,7 +134,7 @@ export function QueryPlanView({ planXml, statementText }: QueryPlanViewProps) {
           <button
             className={`toggle-panel-btn ${showSidePanel ? 'active' : ''}`}
             onClick={() => setShowSidePanel(!showSidePanel)}
-            title={showSidePanel ? 'Hide Operations Panel' : 'Show Operations Panel'}
+            title="Top operations"
             data-testid="toggle-panel-btn"
           >
             <IconLayoutSidebar size={16} />
