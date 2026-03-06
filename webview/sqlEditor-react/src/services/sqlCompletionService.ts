@@ -353,7 +353,7 @@ export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: 
   }
 
   // Check for ON clause context
-  if (/\bjoin\s+(?:\w+\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?\s+on\s*/i.test(lowerLine) || /\bon\s*$/i.test(lowerLine)) {
+  if (/\bjoin\s+(?:\[?\w+\]?\.)?(?:\[?\w+\]?)(?:\s+(?:as\s+)?(?:\[?\w+\]?))?\s+on\s*/i.test(lowerLine) || /\bon\s*$/i.test(lowerLine)) {
     return { type: 'ON_CONDITION', confidence: 'high' };
   }
 
@@ -386,7 +386,7 @@ export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: 
 
   // Check for INSERT context
   if (lastInsertPos !== -1 && lastInsertPos > Math.max(lastSelectPos, lastUpdatePos)) {
-    const insertMatch = /insert\s+into\s+(?:\w+\.)?(\w+)\s*\(\s*([^)]*)?$/i.exec(lowerLine);
+    const insertMatch = /insert\s+into\s+(?:\[?\w+\]?\.)?(?:\[?(\w+)\]?)\s*\(\s*([^)]*)?$/i.exec(lowerLine);
     if (insertMatch) {
       return { type: 'INSERT_COLUMNS', confidence: 'high', tableName: insertMatch[1] };
     }
@@ -421,7 +421,7 @@ export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: 
       return { type: 'SELECT', confidence: 'medium' };
     } else if (lastFromPos !== -1 && lastSelectPos < lastFromPos) {
       const textAfterFrom = lowerText.substring(lastFromPos);
-      if (textAfterFrom.match(/from\s+(?:\w+\.)?(\w+)(?:\s+(?:as\s+)?(\w+))?/)) {
+      if (textAfterFrom.match(/from\s+(?:\[?\w+\]?\.)?(?:\[?\w+\]?)(?:\s+(?:as\s+)?(?:\[?\w+\]?))?/)) {
         return { type: 'AFTER_FROM', confidence: 'medium' };
       } else {
         return { type: 'FROM', confidence: 'high' };
@@ -567,6 +567,30 @@ export function getAggregateFunctions(): { label: string; detail: string; insert
     { label: 'MAX(column)', detail: 'Maximum value', insertText: 'MAX(${1:column})' },
     { label: 'STDEV(column)', detail: 'Standard deviation', insertText: 'STDEV(${1:column})' },
     { label: 'VAR(column)', detail: 'Variance', insertText: 'VAR(${1:column})' },
+  ];
+}
+
+/**
+ * Get SQL clause keywords valid immediately after a FROM clause table reference.
+ * Used when the cursor is positioned after a table name but before WHERE/JOIN/etc.
+ */
+export function getAfterFromKeywords(): { label: string; detail: string; insertText: string }[] {
+  return [
+    { label: 'WHERE', detail: 'Filter rows', insertText: 'WHERE ' },
+    { label: 'INNER JOIN', detail: 'Inner join', insertText: 'INNER JOIN ' },
+    { label: 'LEFT JOIN', detail: 'Left outer join', insertText: 'LEFT JOIN ' },
+    { label: 'LEFT OUTER JOIN', detail: 'Left outer join (explicit)', insertText: 'LEFT OUTER JOIN ' },
+    { label: 'RIGHT JOIN', detail: 'Right outer join', insertText: 'RIGHT JOIN ' },
+    { label: 'RIGHT OUTER JOIN', detail: 'Right outer join (explicit)', insertText: 'RIGHT OUTER JOIN ' },
+    { label: 'FULL OUTER JOIN', detail: 'Full outer join', insertText: 'FULL OUTER JOIN ' },
+    { label: 'CROSS JOIN', detail: 'Cross join (Cartesian product)', insertText: 'CROSS JOIN ' },
+    { label: 'CROSS APPLY', detail: 'Cross apply (lateral join)', insertText: 'CROSS APPLY ' },
+    { label: 'OUTER APPLY', detail: 'Outer apply (lateral join)', insertText: 'OUTER APPLY ' },
+    { label: 'GROUP BY', detail: 'Group results', insertText: 'GROUP BY ' },
+    { label: 'ORDER BY', detail: 'Sort results', insertText: 'ORDER BY ' },
+    { label: 'HAVING', detail: 'Filter grouped results', insertText: 'HAVING ' },
+    { label: 'UNION', detail: 'Combine result sets (distinct)', insertText: 'UNION\n' },
+    { label: 'UNION ALL', detail: 'Combine result sets (with duplicates)', insertText: 'UNION ALL\n' },
   ];
 }
 

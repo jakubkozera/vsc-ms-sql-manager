@@ -9,6 +9,7 @@ import {
   analyzeSqlContext,
   getSqlOperators,
   getAggregateFunctions,
+  getAfterFromKeywords,
   removeExecutionComments,
   extractCTEsFromQuery,
   getCTEColumns,
@@ -383,6 +384,104 @@ ORDER BY p.Name`;
       expect(result.type).toBe('AFTER_FROM');
     });
 
+    // FROM and AFTER_FROM context tests (user-reported scenarios)
+
+    it('should detect FROM context for SELECT * FROM with trailing space', () => {
+      // Cursor is right after FROM — only table names should be shown (no snippets)
+      const text = 'SELECT * FROM ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('FROM');
+    });
+
+    it('should detect FROM context for multi-line SELECT * FROM', () => {
+      const text = 'SELECT *\nFROM ';
+      const result = analyzeSqlContext(text, 'FROM ');
+      expect(result.type).toBe('FROM');
+    });
+
+    it('should detect AFTER_FROM when cursor is right after table name (no space)', () => {
+      // Cursor at end of "Packages" — should suggest WHERE/JOIN keywords, not columns
+      const text = 'SELECT * FROM Packages';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect AFTER_FROM when cursor is right after table name with alias', () => {
+      const text = 'SELECT * FROM Packages p';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect AFTER_FROM for schema-qualified table name', () => {
+      const text = 'SELECT * FROM dbo.Packages ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    // Bracketed identifier cases (reported as broken)
+
+    it('should detect AFTER_FROM for bracketed schema.table with unbracketed alias', () => {
+      const text = 'SELECT TOP 100 *\nFROM [dbo].[Projects] p';
+      const result = analyzeSqlContext(text, 'FROM [dbo].[Projects] p');
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect AFTER_FROM for bracketed schema.table with bracketed alias', () => {
+      const text = 'SELECT TOP 100 *\nFROM [dbo].[Projects] [p]';
+      const result = analyzeSqlContext(text, 'FROM [dbo].[Projects] [p]');
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect AFTER_FROM for bracketed schema.table with no alias', () => {
+      const text = 'SELECT * FROM [dbo].[Packages] ';
+      const result = analyzeSqlContext(text, 'FROM [dbo].[Packages] ');
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect AFTER_FROM for bracketed table name (no schema) with unbracketed alias', () => {
+      const text = 'SELECT * FROM [Projects] p';
+      const result = analyzeSqlContext(text, 'FROM [Projects] p');
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect AFTER_FROM for bracketed table name (no schema) with bracketed alias', () => {
+      const text = 'SELECT * FROM [Projects] [p]';
+      const result = analyzeSqlContext(text, 'FROM [Projects] [p]');
+      expect(result.type).toBe('AFTER_FROM');
+    });
+
+    it('should detect INSERT_COLUMNS for bracketed schema.table', () => {
+      const result = analyzeSqlContext(
+        'INSERT INTO [dbo].[Users] (',
+        'INSERT INTO [dbo].[Users] ('
+      );
+      expect(result.type).toBe('INSERT_COLUMNS');
+      expect(result.tableName).toBe('users'); // lowercased by lowerLine
+    });
+
+    it('should detect INSERT_COLUMNS for bracketed table without schema', () => {
+      const result = analyzeSqlContext(
+        'INSERT INTO [Users] (',
+        'INSERT INTO [Users] ('
+      );
+      expect(result.type).toBe('INSERT_COLUMNS');
+      expect(result.tableName).toBe('users');
+    });
+
+    it('should still detect FROM context (no table yet) with bracketed syntax start', () => {
+      // Only FROM keyword, cursor right after space — not AFTER_FROM
+      const text = 'SELECT * FROM ';
+      const result = analyzeSqlContext(text, 'FROM ');
+      expect(result.type).toBe('FROM');
+    });
+
+    it('should detect WHERE context (not AFTER_FROM) when WHERE already typed', () => {
+      // Ensure AFTER_FROM does not interfere once WHERE is present
+      const text = 'SELECT * FROM Packages WHERE ';
+      const result = analyzeSqlContext(text, 'WHERE ');
+      expect(result.type).toBe('WHERE');
+    });
+
     it('should detect WHERE context with columns already typed', () => {
       const text = 'SELECT * FROM Users u WHERE u.Name = \'test\' AND ';
       const result = analyzeSqlContext(text, 'AND ');
@@ -490,6 +589,48 @@ ORDER BY CostCentre `;
       expect(functions.some((fn) => fn.label === 'COUNT(*)')).toBe(true);
       expect(functions.some((fn) => fn.label.includes('SUM'))).toBe(true);
       expect(functions.some((fn) => fn.label.includes('AVG'))).toBe(true);
+    });
+  });
+
+  describe('getAfterFromKeywords', () => {
+    it('should return clause keywords valid after a FROM table reference', () => {
+      const kws = getAfterFromKeywords();
+      expect(kws.length).toBeGreaterThan(0);
+      expect(kws.some(k => k.label === 'WHERE')).toBe(true);
+    });
+
+    it('should include all JOIN variants', () => {
+      const kws = getAfterFromKeywords();
+      expect(kws.some(k => k.label === 'INNER JOIN')).toBe(true);
+      expect(kws.some(k => k.label === 'LEFT JOIN')).toBe(true);
+      expect(kws.some(k => k.label === 'RIGHT JOIN')).toBe(true);
+      expect(kws.some(k => k.label === 'CROSS JOIN')).toBe(true);
+      expect(kws.some(k => k.label === 'FULL OUTER JOIN')).toBe(true);
+    });
+
+    it('should include CROSS APPLY and OUTER APPLY', () => {
+      const kws = getAfterFromKeywords();
+      expect(kws.some(k => k.label === 'CROSS APPLY')).toBe(true);
+      expect(kws.some(k => k.label === 'OUTER APPLY')).toBe(true);
+    });
+
+    it('should include GROUP BY and ORDER BY', () => {
+      const kws = getAfterFromKeywords();
+      expect(kws.some(k => k.label === 'GROUP BY')).toBe(true);
+      expect(kws.some(k => k.label === 'ORDER BY')).toBe(true);
+    });
+
+    it('should include UNION and UNION ALL', () => {
+      const kws = getAfterFromKeywords();
+      expect(kws.some(k => k.label === 'UNION')).toBe(true);
+      expect(kws.some(k => k.label === 'UNION ALL')).toBe(true);
+    });
+
+    it('should have non-empty insertText for each keyword', () => {
+      const kws = getAfterFromKeywords();
+      kws.forEach(k => {
+        expect(k.insertText.length).toBeGreaterThan(0);
+      });
     });
   });
 

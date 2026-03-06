@@ -11,6 +11,7 @@ import {
   generateSmartAlias,
   getSqlOperators,
   getAggregateFunctions,
+  getAfterFromKeywords,
   buildAugmentedSchema,
   getMainQueryText,
   type SqlContextType,
@@ -153,13 +154,52 @@ export function useCompletionProvider(
             break;
           }
 
+          case 'FROM': {
+            // Only suggest table and view names — no snippets, no procs/functions
+            dbSchema.tables?.forEach((table: TableInfo) => {
+              suggestions.push({
+                label: table.name,
+                kind: monacoInstance.languages.CompletionItemKind.Class,
+                insertText: table.name,
+                range,
+                detail: `Table (${table.columns.length} columns)`,
+                sortText: `1_${table.name}`,
+              });
+            });
+            dbSchema.views?.forEach((view: ViewInfo) => {
+              suggestions.push({
+                label: view.name,
+                kind: monacoInstance.languages.CompletionItemKind.Interface,
+                insertText: view.name,
+                range,
+                detail: 'View',
+                sortText: `2_${view.name}`,
+              });
+            });
+            return { suggestions };
+          }
+
+          case 'AFTER_FROM': {
+            // Suggest SQL clause keywords valid after a table reference in FROM
+            getAfterFromKeywords().forEach((kw, i) => {
+              suggestions.push({
+                label: kw.label,
+                kind: monacoInstance.languages.CompletionItemKind.Keyword,
+                detail: kw.detail,
+                insertText: kw.insertText,
+                range,
+                sortText: `0_${String(i).padStart(2, '0')}_${kw.label}`,
+              });
+            });
+            return { suggestions };
+          }
+
           case 'ON_CONDITION':
           case 'ORDER_BY':
           case 'GROUP_BY':
           case 'SELECT':
           case 'WHERE':
-          case 'UPDATE_SET':
-          case 'AFTER_FROM': {
+          case 'UPDATE_SET': {
             // In ORDER BY with suggestSortDirection, show ASC/DESC instead of columns
             if (sqlContext.type === 'ORDER_BY' && sqlContext.suggestSortDirection) {
               suggestions.push(
@@ -278,7 +318,7 @@ export function useCompletionProvider(
         // Determine whether to add global suggestions (all tables, views, procs, functions, snippets)
         // In column-focused contexts with tables already in the query, only show relevant columns
         const columnFocusedContexts: SqlContextType[] = [
-          'SELECT', 'WHERE', 'ORDER_BY', 'GROUP_BY', 'AFTER_FROM',
+          'SELECT', 'WHERE', 'ORDER_BY', 'GROUP_BY',
           'ON_CONDITION', 'UPDATE_SET', 'HAVING',
         ];
         const suppressGlobal =
