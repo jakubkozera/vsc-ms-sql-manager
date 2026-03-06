@@ -4,7 +4,7 @@ import type { editor } from 'monaco-editor';
 import { format } from 'sql-formatter';
 import { useVSCode } from '../../context/VSCodeContext';
 import { useFormatOptions } from '../Toolbar/FormatButton';
-import { useEditorSetup, useEditorActions, useCompletionProvider, useSchemaProviders } from './hooks';
+import { useEditorSetup, useEditorActions, useCompletionProvider, useSchemaProviders, useWildcardExpansion } from './hooks';
 import './SqlEditor.css';
 
 export interface SqlEditorHandle {
@@ -183,6 +183,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
 
     useCompletionProvider(monacoRef, dbSchema, editorReady);
     useSchemaProviders(monacoRef, editorRef, dbSchema, editorReady, currentConnectionId);
+    useWildcardExpansion(monacoRef, editorRef, dbSchema, editorReady);
 
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
