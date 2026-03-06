@@ -62,10 +62,9 @@ export function ResultsPanel() {
     }
   }, [pendingChanges.hasPendingChanges, activeTab]);
 
-  // Auto-switch to messages when a commit fails:
-  // If an error arrives while pending changes still exist, the commit failed → go to messages
+  // Auto-switch to messages when a query error occurs
   useEffect(() => {
-    if (lastErrorId > 0 && pendingChanges.hasPendingChanges) {
+    if (lastErrorId > 0) {
       setActiveTab('messages');
     }
   }, [lastErrorId]);
@@ -418,8 +417,17 @@ export function ResultsPanel() {
               <line x1="3" y1="9" x2="21" y2="9"></line>
               <line x1="9" y1="21" x2="9" y2="9"></line>
             </svg>
-            <p>Execute a query to see results</p>
-            <p className="hint">Press F5 or Ctrl+Shift+E to run</p>
+            {lastError ? (
+              <>
+                <p>Query returned an error</p>
+                <p className="hint">See the Messages tab for details</p>
+              </>
+            ) : (
+              <>
+                <p>Execute a query to see results</p>
+                <p className="hint">Press F5 or Ctrl+Shift+E to run</p>
+              </>
+            )}
           </div>
         )}
 

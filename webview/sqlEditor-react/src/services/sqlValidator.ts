@@ -4,6 +4,7 @@
  */
 
 import type { DatabaseSchema, TableInfo, ViewInfo } from '../types/schema';
+import { getColumnsForTable } from './sqlCompletionService';
 
 export interface SqlStatement {
   text: string;
@@ -788,6 +789,54 @@ function getPositionAt(text: string, offset: number): { lineNumber: number; colu
   };
 }
 
+export interface ColumnReference {
+  prefix: string;       // alias or table name before the dot
+  column: string;       // column name after the dot
+  startIndex: number;   // position of the column name in the statement
+  length: number;       // length of the column name
+}
+
+/**
+ * Find qualified column references (alias.column, table.column) in a SQL statement.
+ * Only finds prefix.column patterns — standalone column names are too ambiguous.
+ * Skips string literals and ignores the table part of FROM/JOIN clauses.
+ */
+export function findColumnReferences(statementText: string): ColumnReference[] {
+  const refs: ColumnReference[] = [];
+  // Match prefix.column or [prefix].[column] patterns
+  // Negative lookbehind avoids matching table references after FROM/JOIN
+  const regex = /(?:\[([^\]]+)\]|([a-zA-Z_]\w*))\s*\.\s*(?:\[([^\]]+)\]|([a-zA-Z_]\w*))/g;
+  let m;
+  while ((m = regex.exec(statementText)) !== null) {
+    const prefix = m[1] || m[2];
+    const column = m[3] || m[4];
+    if (!column) continue;
+
+    // Skip if this is a FROM/JOIN table reference (schema.table)
+    const beforeMatch = statementText.substring(0, m.index);
+    if (/\b(?:from|join)\s+$/i.test(beforeMatch.trimEnd())) continue;
+    // Also skip if preceded by just whitespace after FROM/JOIN keyword
+    if (/\b(?:from|join)\s+$/i.test(beforeMatch)) continue;
+
+    // Calculate position of the column part
+    const fullMatch = m[0];
+    const dotIdx = fullMatch.indexOf('.');
+    // Find column start within the full match
+    const afterDot = fullMatch.substring(dotIdx + 1);
+    const colStart = afterDot.match(/^\s*\[?/);
+    const colOffset = dotIdx + 1 + (colStart ? colStart[0].length : 0);
+    const colLen = column.length;
+
+    refs.push({
+      prefix,
+      column,
+      startIndex: m.index + colOffset,
+      length: colLen,
+    });
+  }
+  return refs;
+}
+
 /**
  * Validate SQL and return validation markers
  */
@@ -825,6 +874,93 @@ export function validateSql(sql: string, dbSchema: DatabaseSchema): ValidationMa
         endLineNumber: endPos.lineNumber,
         endColumn: endPos.column,
       });
+    }
+
+    // ── Column validation ──────────────────────────────────────────────
+    const aliasMap = extractTableAliasMap(maskedText, dbSchema);
+    const cteDefs = extractCTEsWithColumns(maskedText, dbSchema);
+    const cteMap = new Map<string, CteDefinition>();
+    for (const cte of cteDefs) {
+      cteMap.set(cte.name.toLowerCase(), cte);
+    }
+
+    // Build CTE alias map: FROM CteName alias → alias maps to CTE
+    const cteAliasMap = new Map<string, CteDefinition>();
+    if (cteMap.size > 0) {
+      const aliasPatterns = [
+        /\b(?:from|join)\s+(?:\[([^\]]+)\]|([a-zA-Z_]\w*))(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+      ];
+      for (const pat of aliasPatterns) {
+        const regex = new RegExp(pat.source, pat.flags);
+        let am;
+        while ((am = regex.exec(maskedText)) !== null) {
+          const tName = am[1] || am[2];
+          const alias = am[3];
+          const cte = cteMap.get(tName.toLowerCase());
+          if (cte) {
+            // CTE name itself maps
+            cteAliasMap.set(tName.toLowerCase(), cte);
+            if (alias && !/^(on|where|inner|left|right|full|cross|outer|and|or|set|into|values|order|group|having)$/i.test(alias)) {
+              cteAliasMap.set(alias.toLowerCase(), cte);
+            }
+          }
+        }
+      }
+    }
+
+    const columnRefs = findColumnReferences(maskedText);
+    for (const colRef of columnRefs) {
+      const prefixLower = colRef.prefix.toLowerCase();
+
+      // 1. Try to resolve prefix as a CTE name or CTE alias
+      let resolvedCte: CteDefinition | undefined;
+      resolvedCte = cteMap.get(prefixLower) || cteAliasMap.get(prefixLower);
+      if (resolvedCte) {
+        // Validate column against CTE columns
+        // If CTE has * columns, skip validation
+        if (resolvedCte.columns.some(c => c.name === '*')) continue;
+        const colExists = resolvedCte.columns.some(
+          c => c.name.toLowerCase() === colRef.column.toLowerCase()
+        );
+        if (!colExists) {
+          const absStart = stmt.startOffset + colRef.startIndex;
+          const startPos = getPositionAt(sql, absStart);
+          const endPos = getPositionAt(sql, absStart + colRef.length);
+          markers.push({
+            severity: 'warning',
+            message: `Invalid column name '${colRef.column}'.`,
+            startLineNumber: startPos.lineNumber,
+            startColumn: startPos.column,
+            endLineNumber: endPos.lineNumber,
+            endColumn: endPos.column,
+          });
+        }
+        continue;
+      }
+
+      // 2. Try to resolve prefix as a table/view alias or name
+      const resolvedTable = aliasMap.get(prefixLower);
+      if (resolvedTable) {
+        const cols = getColumnsForTable(resolvedTable.schema, resolvedTable.table, dbSchema);
+        if (cols.length > 0) {
+          const colExists = cols.some(
+            c => c.name.toLowerCase() === colRef.column.toLowerCase()
+          );
+          if (!colExists) {
+            const absStart = stmt.startOffset + colRef.startIndex;
+            const startPos = getPositionAt(sql, absStart);
+            const endPos = getPositionAt(sql, absStart + colRef.length);
+            markers.push({
+              severity: 'warning',
+              message: `Invalid column name '${colRef.column}'.`,
+              startLineNumber: startPos.lineNumber,
+              startColumn: startPos.column,
+              endLineNumber: endPos.lineNumber,
+              endColumn: endPos.column,
+            });
+          }
+        }
+      }
     }
   }
 

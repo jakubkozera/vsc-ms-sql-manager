@@ -7,6 +7,7 @@ import {
   extractSelectColumnsWithTypes,
   findTableReferences,
   findTableInSchema,
+  findColumnReferences,
   validateSql,
 } from './sqlValidator';
 import type { DatabaseSchema } from '../types/schema';
@@ -510,6 +511,126 @@ describe('sqlValidator', () => {
         mockSchema
       );
       expect(cols[0]).toEqual({ name: 'Now', type: 'datetime', nullable: false });
+    });
+  });
+
+  describe('findColumnReferences', () => {
+    it('finds simple alias.column references', () => {
+      const refs = findColumnReferences('SELECT u.Id, u.Name FROM dbo.Users u');
+      expect(refs.length).toBeGreaterThanOrEqual(2);
+      const cols = refs.map(r => r.column);
+      expect(cols).toContain('Id');
+      expect(cols).toContain('Name');
+    });
+
+    it('finds bracketed references', () => {
+      const refs = findColumnReferences('SELECT [u].[Name] FROM dbo.Users u');
+      expect(refs.some(r => r.column === 'Name')).toBe(true);
+    });
+
+    it('does not include FROM/JOIN table references as column refs', () => {
+      const refs = findColumnReferences('SELECT u.Id FROM dbo.Users u');
+      // 'Users' preceded by 'dbo.' should not create a column ref for 'Users'
+      // Only u.Id should produce a useful column ref
+      const colNames = refs.map(r => r.column);
+      expect(colNames).toContain('Id');
+    });
+
+    it('finds column references in WHERE clause', () => {
+      const refs = findColumnReferences('SELECT * FROM dbo.Users u WHERE u.Name = 1');
+      expect(refs.some(r => r.prefix === 'u' && r.column === 'Name')).toBe(true);
+    });
+
+    it('finds column references in JOIN ON clause', () => {
+      const refs = findColumnReferences('SELECT * FROM Users u JOIN Orders o ON u.Id = o.UserId');
+      expect(refs.some(r => r.prefix === 'u' && r.column === 'Id')).toBe(true);
+      expect(refs.some(r => r.prefix === 'o' && r.column === 'UserId')).toBe(true);
+    });
+  });
+
+  describe('validateSql column validation', () => {
+    it('should not flag valid columns on known tables', () => {
+      const sql = 'SELECT u.Id, u.Name FROM dbo.Users u';
+      const markers = validateSql(sql, mockSchema);
+      expect(markers).toHaveLength(0);
+    });
+
+    it('should flag invalid column on known table alias', () => {
+      const sql = 'SELECT u.NonExistent FROM dbo.Users u';
+      const markers = validateSql(sql, mockSchema);
+      const colMarkers = markers.filter(m => m.message.includes('NonExistent'));
+      expect(colMarkers).toHaveLength(1);
+      expect(colMarkers[0].severity).toBe('warning');
+      expect(colMarkers[0].message).toContain('NonExistent');
+    });
+
+    it('should flag invalid column on table name (no alias)', () => {
+      const sql = 'SELECT Users.BadCol FROM dbo.Users';
+      const markers = validateSql(sql, mockSchema);
+      const colMarkers = markers.filter(m => m.message.includes('BadCol'));
+      expect(colMarkers).toHaveLength(1);
+      expect(colMarkers[0].severity).toBe('warning');
+    });
+
+    it('should not flag columns on unknown tables', () => {
+      // Unknown table already produces an error marker; no column warning needed.
+      const sql = 'SELECT x.Col FROM UnknownTable x';
+      const markers = validateSql(sql, mockSchema);
+      // Should have 1 error for table, but no column warning (table is unknown)
+      expect(markers.some(m => m.severity === 'error')).toBe(true);
+      expect(markers.filter(m => m.severity === 'warning')).toHaveLength(0);
+    });
+
+    it('should validate columns on CTE references', () => {
+      const sql = 'WITH MyCTE AS (SELECT Id, Name FROM dbo.Users) SELECT c.BadCol FROM MyCTE c';
+      const markers = validateSql(sql, mockSchema);
+      const colMarkers = markers.filter(m => m.message.includes('BadCol'));
+      expect(colMarkers).toHaveLength(1);
+      expect(colMarkers[0].severity).toBe('warning');
+    });
+
+    it('should not flag valid CTE columns', () => {
+      const sql = 'WITH MyCTE AS (SELECT Id, Name FROM dbo.Users) SELECT c.Id, c.Name FROM MyCTE c';
+      const markers = validateSql(sql, mockSchema);
+      expect(markers).toHaveLength(0);
+    });
+
+    it('should skip column validation for CTE with star columns', () => {
+      const sql = 'WITH MyCTE AS (SELECT * FROM dbo.Users) SELECT c.Whatever FROM MyCTE c';
+      const markers = validateSql(sql, mockSchema);
+      // Star CTE columns mean we cannot validate — no warning expected
+      const colMarkers = markers.filter(m => m.severity === 'warning');
+      expect(colMarkers).toHaveLength(0);
+    });
+
+    it('should validate columns in WHERE clause', () => {
+      const sql = 'SELECT u.Id FROM dbo.Users u WHERE u.FakeCol = 1';
+      const markers = validateSql(sql, mockSchema);
+      const colMarkers = markers.filter(m => m.message.includes('FakeCol'));
+      expect(colMarkers).toHaveLength(1);
+    });
+
+    it('should validate columns in JOIN ON clause', () => {
+      const sql = 'SELECT * FROM dbo.Users u JOIN dbo.Orders o ON u.Id = o.BadCol';
+      const markers = validateSql(sql, mockSchema);
+      const colMarkers = markers.filter(m => m.message.includes('BadCol'));
+      expect(colMarkers).toHaveLength(1);
+    });
+
+    it('should validate columns with bracketed identifiers', () => {
+      const sql = 'SELECT [u].[NonExistent] FROM dbo.Users u';
+      const markers = validateSql(sql, mockSchema);
+      const colMarkers = markers.filter(m => m.message.includes('NonExistent'));
+      expect(colMarkers).toHaveLength(1);
+    });
+
+    it('should provide correct position for column warnings', () => {
+      const sql = 'SELECT u.Bad FROM dbo.Users u';
+      const markers = validateSql(sql, mockSchema);
+      const colMarker = markers.find(m => m.message.includes('Bad'));
+      expect(colMarker).toBeDefined();
+      expect(colMarker!.startLineNumber).toBe(1);
+      expect(colMarker!.startColumn).toBeGreaterThan(0);
     });
   });
 });
