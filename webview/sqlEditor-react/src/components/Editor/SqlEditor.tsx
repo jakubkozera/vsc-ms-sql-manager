@@ -361,6 +361,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           onMount={handleEditorMount}
           options={{
             automaticLayout: true,
+            fixedOverflowWidgets: true,
           }}
         />
       </div>
