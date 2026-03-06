@@ -127,13 +127,15 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       return 'sql-dark';
     };
 
-    const [monacoTheme, setMonacoTheme] = useState<string>('sql-dark');
+    const [monacoTheme, setMonacoTheme] = useState<string>(() => getVscodeThemeKind());
 
     // Watch for VS Code theme changes via MutationObserver on body class
     useEffect(() => {
-      setMonacoTheme(getVscodeThemeKind());
       const observer = new MutationObserver(() => {
-        setMonacoTheme(getVscodeThemeKind());
+        const newTheme = getVscodeThemeKind();
+        setMonacoTheme(newTheme);
+        // Also set imperatively so the change applies immediately without waiting for re-render
+        monacoRef.current?.editor.setTheme(newTheme);
       });
       observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
       return () => observer.disconnect();
@@ -144,17 +146,12 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       const cssVar = (name: string, fallback: string) =>
         getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 
-      const editorBg = cssVar('--vscode-editor-background', '#1E1E1E');
-      const editorFg = cssVar('--vscode-editor-foreground', '#D4D4D4');
+
 
       // ── Dark theme ──
       monacoInstance.editor.defineTheme('sql-dark', {
         base: 'vs-dark',
         inherit: true,
-        colors: {
-          'editor.background': editorBg,
-          'editor.foreground': editorFg,
-        },
         rules: [
           { token: 'keyword', foreground: '569CD6' },          // blue — SELECT, FROM, WHERE, etc.
           { token: 'keyword.block', foreground: '569CD6' },
@@ -179,10 +176,6 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       monacoInstance.editor.defineTheme('sql-light', {
         base: 'vs',
         inherit: true,
-        colors: {
-          'editor.background': cssVar('--vscode-editor-background', '#FFFFFF'),
-          'editor.foreground': cssVar('--vscode-editor-foreground', '#000000'),
-        },
         rules: [
           { token: 'keyword', foreground: '0000FF' },
           { token: 'keyword.block', foreground: '0000FF' },
@@ -207,10 +200,6 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       monacoInstance.editor.defineTheme('sql-hc-dark', {
         base: 'hc-black',
         inherit: true,
-        colors: {
-          'editor.background': cssVar('--vscode-editor-background', '#000000'),
-          'editor.foreground': cssVar('--vscode-editor-foreground', '#FFFFFF'),
-        },
         rules: [
           { token: 'keyword', foreground: '569CD6', fontStyle: 'bold' },
           { token: 'keyword.block', foreground: '569CD6', fontStyle: 'bold' },
@@ -232,10 +221,6 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       monacoInstance.editor.defineTheme('sql-hc-light', {
         base: 'hc-light',
         inherit: true,
-        colors: {
-          'editor.background': cssVar('--vscode-editor-background', '#FFFFFF'),
-          'editor.foreground': cssVar('--vscode-editor-foreground', '#000000'),
-        },
         rules: [
           { token: 'keyword', foreground: '0000FF', fontStyle: 'bold' },
           { token: 'keyword.block', foreground: '0000FF', fontStyle: 'bold' },
