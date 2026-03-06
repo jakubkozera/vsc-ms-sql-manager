@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   splitSqlStatements,
   extractCTEs,
+  extractCTEsWithColumns,
+  extractSelectColumns,
+  extractSelectColumnsWithTypes,
   findTableReferences,
   findTableInSchema,
   validateSql,
@@ -273,6 +276,240 @@ describe('sqlValidator', () => {
       const sql = 'SELECT * FROM wrong.Products';
       const markers = validateSql(sql, mockSchema);
       expect(markers).toHaveLength(1);
+    });
+  });
+
+  describe('extractCTEsWithColumns', () => {
+    it('extracts columns from simple CTE', () => {
+      const sql = 'WITH MyCte AS (SELECT Id, Name FROM dbo.Users) SELECT * FROM MyCte';
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes).toHaveLength(1);
+      expect(ctes[0].name).toBe('MyCte');
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['Id', 'Name']);
+    });
+
+    it('extracts aliased columns', () => {
+      const sql = `WITH Stats AS (
+        SELECT COUNT(*) AS Total, MAX(CreatedAt) AS LastDate
+        FROM dbo.Orders
+      ) SELECT * FROM Stats`;
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes).toHaveLength(1);
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['Total', 'LastDate']);
+    });
+
+    it('extracts columns from multiple CTEs', () => {
+      const sql = `WITH
+        A AS (SELECT Id, Name FROM dbo.Users),
+        B AS (SELECT Id AS OrderId, UserId FROM dbo.Orders)
+      SELECT * FROM A JOIN B ON A.Id = B.UserId`;
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes).toHaveLength(2);
+      expect(ctes[0].name).toBe('A');
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['Id', 'Name']);
+      expect(ctes[1].name).toBe('B');
+      expect(ctes[1].columns.map(c => c.name)).toEqual(['OrderId', 'UserId']);
+    });
+
+    it('handles dotted column references (table.column)', () => {
+      const sql = 'WITH MyCte AS (SELECT u.Id, u.Name FROM dbo.Users u) SELECT * FROM MyCte';
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['Id', 'Name']);
+    });
+
+    it('handles bracketed aliases', () => {
+      const sql = `WITH MyCte AS (SELECT Id AS [User Id], Name AS [Full Name] FROM dbo.Users) SELECT * FROM MyCte`;
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['User Id', 'Full Name']);
+    });
+
+    it('handles function calls with alias', () => {
+      const sql = `WITH MyCte AS (
+        SELECT JSON_VALUE(data, '$.email') AS Email, COUNT(*) AS Total
+        FROM dbo.Users
+      ) SELECT * FROM MyCte`;
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['Email', 'Total']);
+    });
+
+    it('returns empty array for non-CTE statement', () => {
+      const sql = 'SELECT * FROM dbo.Users';
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes).toEqual([]);
+    });
+
+    it('handles bracketed CTE names', () => {
+      const sql = 'WITH [My CTE] AS (SELECT Id FROM dbo.Users) SELECT * FROM [My CTE]';
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes).toHaveLength(1);
+      expect(ctes[0].name).toBe('My CTE');
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['Id']);
+    });
+
+    it('handles star column', () => {
+      const sql = 'WITH MyCte AS (SELECT * FROM dbo.Users) SELECT * FROM MyCte';
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['*']);
+    });
+
+    it('handles DISTINCT keyword', () => {
+      const sql = 'WITH MyCte AS (SELECT DISTINCT Id, Name FROM dbo.Users) SELECT * FROM MyCte';
+      const ctes = extractCTEsWithColumns(sql);
+      expect(ctes[0].columns.map(c => c.name)).toEqual(['Id', 'Name']);
+    });
+
+    it('infers column types from schema when provided', () => {
+      const sql = 'WITH MyCte AS (SELECT Id, Name FROM dbo.Users) SELECT * FROM MyCte';
+      const ctes = extractCTEsWithColumns(sql, mockSchema);
+      expect(ctes[0].columns[0]).toEqual({ name: 'Id', type: 'int', nullable: false });
+      expect(ctes[0].columns[1]).toEqual({ name: 'Name', type: 'nvarchar', nullable: true });
+    });
+
+    it('infers types for SQL functions', () => {
+      const sql = `WITH Stats AS (
+        SELECT COUNT(*) AS Total, YEAR(CreatedAt) AS Yr
+        FROM dbo.Orders
+      ) SELECT * FROM Stats`;
+      const ctes = extractCTEsWithColumns(sql, mockSchema);
+      expect(ctes[0].columns[0]).toEqual({ name: 'Total', type: 'int', nullable: false });
+      expect(ctes[0].columns[1]).toEqual({ name: 'Yr', type: 'int', nullable: true });
+    });
+
+    it('infers type for aliased table.column reference', () => {
+      const sql = 'WITH MyCte AS (SELECT u.Id, u.Name FROM dbo.Users u) SELECT * FROM MyCte';
+      const ctes = extractCTEsWithColumns(sql, mockSchema);
+      expect(ctes[0].columns[0]).toEqual({ name: 'Id', type: 'int', nullable: false });
+      expect(ctes[0].columns[1]).toEqual({ name: 'Name', type: 'nvarchar', nullable: true });
+    });
+
+    it('infers type for CAST expression', () => {
+      const sql = 'WITH MyCte AS (SELECT CAST(Id AS VARCHAR(10)) AS IdStr FROM dbo.Users) SELECT * FROM MyCte';
+      const ctes = extractCTEsWithColumns(sql, mockSchema);
+      expect(ctes[0].columns[0].name).toBe('IdStr');
+      expect(ctes[0].columns[0].type).toBe('VARCHAR(10)');
+    });
+
+    it('infers type for JSON_VALUE', () => {
+      const sql = `WITH MyCte AS (SELECT JSON_VALUE(data, '$.email') AS Email FROM dbo.Users) SELECT * FROM MyCte`;
+      const ctes = extractCTEsWithColumns(sql, mockSchema);
+      expect(ctes[0].columns[0]).toEqual({ name: 'Email', type: 'nvarchar', nullable: true });
+    });
+
+    it('infers type for CONCAT', () => {
+      const sql = `WITH MyCte AS (SELECT CONCAT(Name, '_suffix') AS FullName FROM dbo.Users) SELECT * FROM MyCte`;
+      const ctes = extractCTEsWithColumns(sql, mockSchema);
+      expect(ctes[0].columns[0]).toEqual({ name: 'FullName', type: 'nvarchar', nullable: false });
+    });
+  });
+
+  describe('extractSelectColumns', () => {
+    it('extracts simple column list', () => {
+      const cols = extractSelectColumns('SELECT a, b, c FROM t');
+      expect(cols).toEqual(['a', 'b', 'c']);
+    });
+
+    it('handles AS aliases', () => {
+      const cols = extractSelectColumns('SELECT x AS Alpha, y AS Beta FROM t');
+      expect(cols).toEqual(['Alpha', 'Beta']);
+    });
+
+    it('handles nested function calls', () => {
+      const cols = extractSelectColumns("SELECT COALESCE(a, b) AS Result, YEAR(created) AS Yr FROM t");
+      expect(cols).toEqual(['Result', 'Yr']);
+    });
+
+    it('handles subquery in SELECT (skips parens)', () => {
+      const cols = extractSelectColumns('SELECT (SELECT TOP 1 x FROM y) AS Sub, Id FROM t');
+      expect(cols).toEqual(['Sub', 'Id']);
+    });
+
+    it('returns empty for non-SELECT', () => {
+      const cols = extractSelectColumns('INSERT INTO t VALUES (1)');
+      expect(cols).toEqual([]);
+    });
+  });
+
+  describe('extractSelectColumnsWithTypes', () => {
+    it('infers int type for direct column reference', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT Id FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Id', type: 'int', nullable: false });
+    });
+
+    it('infers nvarchar type for Name column', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT Name FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Name', type: 'nvarchar', nullable: true });
+    });
+
+    it('infers int type for COUNT function', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT COUNT(*) AS Total FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Total', type: 'int', nullable: false });
+    });
+
+    it('infers int type for YEAR function', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT YEAR(CreatedAt) AS Yr FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Yr', type: 'int', nullable: true });
+    });
+
+    it('infers nvarchar for JSON_VALUE', () => {
+      const cols = extractSelectColumnsWithTypes(
+        "SELECT JSON_VALUE(data, '$.email') AS Email FROM dbo.Users",
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Email', type: 'nvarchar', nullable: true });
+    });
+
+    it('infers CAST target type', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT CAST(Id AS VARCHAR(10)) AS IdStr FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('IdStr');
+      expect(cols[0].type).toBe('VARCHAR(10)');
+    });
+
+    it('infers nvarchar for CONCAT', () => {
+      const cols = extractSelectColumnsWithTypes(
+        "SELECT CONCAT(Name, '_x') AS Full FROM dbo.Users",
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Full', type: 'nvarchar', nullable: false });
+    });
+
+    it('resolves column via table alias', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT u.Id, u.Name FROM dbo.Users u',
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Id', type: 'int', nullable: false });
+      expect(cols[1]).toEqual({ name: 'Name', type: 'nvarchar', nullable: true });
+    });
+
+    it('returns empty type without schema', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT Id FROM dbo.Users'
+      );
+      expect(cols[0].name).toBe('Id');
+      expect(cols[0].type).toBe('');
+    });
+
+    it('infers datetime for GETDATE()', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT GETDATE() AS Now FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'Now', type: 'datetime', nullable: false });
     });
   });
 });

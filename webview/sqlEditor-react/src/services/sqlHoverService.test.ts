@@ -5,6 +5,7 @@ import {
   renderMultiTableColumnMarkdown,
   renderOutboundForeignKeys,
   renderInboundForeignKeys,
+  renderCteMarkdown,
   provideHoverContent,
 } from './sqlHoverService';
 import type { ColumnInfo, DatabaseSchema, ForeignKeyInfo } from '../types/schema';
@@ -333,5 +334,164 @@ describe('provideHoverContent with FK info', () => {
     const md = result!.contents[0].value;
     expect(md).not.toContain('References (FK →)');
     expect(md).not.toContain('Referenced By (← FK)');
+  });
+});
+
+describe('renderCteMarkdown', () => {
+  it('renders CTE with typed columns', () => {
+    const md = renderCteMarkdown({
+      name: 'MyCte',
+      columns: [
+        { name: 'Id', type: 'int', nullable: false },
+        { name: 'Name', type: 'nvarchar', nullable: true },
+        { name: 'Email', type: 'nvarchar(255)', nullable: true },
+      ],
+      body: '',
+    });
+    expect(md).toContain('**CTE: MyCte**');
+    expect(md).toContain('3 columns');
+    expect(md).toContain('| Column | Type | Nullable |');
+    expect(md).toContain('| Id | int | NO |');
+    expect(md).toContain('| Name | nvarchar | YES |');
+    expect(md).toContain('| Email | nvarchar(255) | YES |');
+  });
+
+  it('renders CTE without types when none inferred', () => {
+    const md = renderCteMarkdown({
+      name: 'Counts',
+      columns: [
+        { name: 'Total', type: '', nullable: true },
+        { name: 'Id', type: '', nullable: true },
+      ],
+      body: '',
+    });
+    expect(md).toContain('**CTE: Counts**');
+    expect(md).toContain('| Column |');
+    expect(md).toContain('| Total |');
+    expect(md).not.toContain('Type');
+  });
+
+  it('renders mixed typed/untyped columns in type mode', () => {
+    const md = renderCteMarkdown({
+      name: 'Mixed',
+      columns: [
+        { name: 'Id', type: 'int', nullable: false },
+        { name: 'Calc', type: '', nullable: true },
+      ],
+      body: '',
+    });
+    expect(md).toContain('| Column | Type | Nullable |');
+    expect(md).toContain('| Id | int | NO |');
+    expect(md).toContain('| Calc | ? | YES |');
+  });
+});
+
+describe('provideHoverContent with CTE', () => {
+  it('returns CTE columns on hover over CTE name in FROM clause', () => {
+    const sql = `WITH ActiveUsers AS (
+  SELECT Id, Name, Email
+  FROM dbo.Users
+  WHERE Active = 1
+)
+SELECT * FROM ActiveUsers`;
+    const line = 'SELECT * FROM ActiveUsers';
+    const result = provideHoverContent(
+      sql,
+      line,
+      { lineNumber: 6, column: 20 },
+      { word: 'ActiveUsers', startColumn: 15, endColumn: 26 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**CTE: ActiveUsers**');
+    expect(md).toContain('Id');
+    expect(md).toContain('Name');
+    expect(md).toContain('Email');
+    // Should have type info since schema is provided
+    expect(md).toContain('| Column | Type | Nullable |');
+  });
+
+  it('returns CTE columns with aliased columns and inferred types', () => {
+    const sql = `WITH Stats AS (
+  SELECT COUNT(*) AS Total, MAX(Name) AS LastName
+  FROM dbo.Users
+)
+SELECT * FROM Stats`;
+    const line = 'SELECT * FROM Stats';
+    const result = provideHoverContent(
+      sql,
+      line,
+      { lineNumber: 5, column: 18 },
+      { word: 'Stats', startColumn: 15, endColumn: 20 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**CTE: Stats**');
+    expect(md).toContain('Total');
+    expect(md).toContain('LastName');
+    expect(md).toContain('int');
+  });
+
+  it('returns CTE hover for second CTE in multi-CTE query', () => {
+    const sql = `WITH
+  First AS (SELECT Id FROM dbo.Users),
+  Second AS (SELECT Id AS OrderId, UserId FROM dbo.Orders)
+SELECT * FROM Second`;
+    const line = 'SELECT * FROM Second';
+    const result = provideHoverContent(
+      sql,
+      line,
+      { lineNumber: 4, column: 18 },
+      { word: 'Second', startColumn: 15, endColumn: 21 },
+      { ...sampleSchema, tables: [
+          ...sampleSchema.tables,
+          { schema: 'dbo', name: 'Orders', columns: [
+            { name: 'Id', type: 'int', nullable: false, isPrimaryKey: true },
+            { name: 'UserId', type: 'int', nullable: false },
+          ]},
+        ]}
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    expect(md).toContain('**CTE: Second**');
+    expect(md).toContain('OrderId');
+    expect(md).toContain('UserId');
+  });
+
+  it('prefers CTE over table when name matches both', () => {
+    const sql = `WITH Users AS (
+  SELECT Id AS UserId, Name AS UserName
+  FROM dbo.Users
+)
+SELECT * FROM Users`;
+    const line = 'SELECT * FROM Users';
+    const result = provideHoverContent(
+      sql,
+      line,
+      { lineNumber: 5, column: 18 },
+      { word: 'Users', startColumn: 15, endColumn: 20 },
+      sampleSchema
+    );
+    expect(result).not.toBeNull();
+    const md = result!.contents[0].value;
+    // Should show CTE definition, not the table schema
+    expect(md).toContain('**CTE: Users**');
+    expect(md).toContain('UserId');
+    expect(md).toContain('UserName');
+  });
+
+  it('returns null for word that is neither CTE nor table', () => {
+    const sql = 'WITH MyCte AS (SELECT Id FROM dbo.Users) SELECT * FROM MyCte WHERE something = 1';
+    const line = 'WITH MyCte AS (SELECT Id FROM dbo.Users) SELECT * FROM MyCte WHERE something = 1';
+    const result = provideHoverContent(
+      sql,
+      line,
+      { lineNumber: 1, column: 75 },
+      { word: 'something', startColumn: 68, endColumn: 77 },
+      sampleSchema
+    );
+    expect(result).toBeNull();
   });
 });

@@ -142,6 +142,532 @@ export function extractCTEs(statementText: string): Set<string> {
   return ctes;
 }
 
+export interface CteColumnInfo {
+  name: string;
+  type: string;
+  nullable: boolean;
+}
+
+export interface CteDefinition {
+  name: string;
+  columns: CteColumnInfo[];
+  body: string;
+}
+
+/**
+ * Extract CTE definitions with their inferred column names and types.
+ * Columns are inferred from the outermost SELECT clause aliases/names.
+ * Types are resolved from the database schema when possible.
+ */
+export function extractCTEsWithColumns(statementText: string, dbSchema?: DatabaseSchema): CteDefinition[] {
+  const ctes: CteDefinition[] = [];
+
+  const withMatch = statementText.match(/^\s*WITH\s+/i);
+  if (!withMatch) return ctes;
+
+  let remaining = statementText.substring(withMatch[0].length + (withMatch.index || 0));
+  const cteStartRegex = /^\s*(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*))\s+AS\s*\(/i;
+
+  while (true) {
+    const match = remaining.match(cteStartRegex);
+    if (!match) break;
+
+    const cteName = match[1] || match[2];
+
+    // Extract CTE body (balanced parentheses)
+    let openCount = 1;
+    let i = (match.index || 0) + match[0].length;
+    const bodyStart = i;
+
+    for (; i < remaining.length; i++) {
+      if (remaining[i] === '(') openCount++;
+      else if (remaining[i] === ')') openCount--;
+      if (openCount === 0) break;
+    }
+
+    const body = remaining.substring(bodyStart, i);
+    const columns = extractSelectColumnsWithTypes(body, dbSchema);
+
+    ctes.push({ name: cteName, columns, body });
+
+    if (i >= remaining.length) break;
+
+    remaining = remaining.substring(i + 1);
+
+    const commaMatch = remaining.match(/^\s*,/);
+    if (commaMatch) {
+      remaining = remaining.substring(commaMatch[0].length);
+    } else {
+      break;
+    }
+  }
+
+  return ctes;
+}
+
+/**
+ * Extract column names/aliases from the outermost SELECT clause of a CTE body.
+ * Returns string[] for backward compatibility.
+ */
+export function extractSelectColumns(cteBody: string): string[] {
+  return extractSelectColumnsWithTypes(cteBody).map(c => c.name);
+}
+
+/**
+ * Extract column names/aliases with inferred types from the outermost SELECT clause.
+ * Handles: `expr AS alias`, `table.column`, `[bracketed]`, `column`, `*`.
+ * Skips into subqueries.
+ */
+export function extractSelectColumnsWithTypes(cteBody: string, dbSchema?: DatabaseSchema): CteColumnInfo[] {
+  // Find the first SELECT (skip leading whitespace/comments)
+  const selectMatch = cteBody.match(/\bSELECT\s+(?:TOP\s+\d+\s+)?(?:DISTINCT\s+)?/i);
+  if (!selectMatch) return [];
+
+  const afterSelect = cteBody.substring((selectMatch.index || 0) + selectMatch[0].length);
+
+  // Find the end of the SELECT list — look for FROM at depth 0
+  let depth = 0;
+  let inQuote = false;
+  let quoteChar = '';
+  let inBrackets = false;
+  let fromIndex = -1;
+
+  for (let i = 0; i < afterSelect.length; i++) {
+    const ch = afterSelect[i];
+
+    if (inQuote) {
+      if (ch === quoteChar) {
+        if (afterSelect[i + 1] === quoteChar) { i++; } else { inQuote = false; }
+      }
+      continue;
+    }
+    if (inBrackets) {
+      if (ch === ']') inBrackets = false;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') { inQuote = true; quoteChar = ch; continue; }
+    if (ch === '[') { inBrackets = true; continue; }
+    if (ch === '-' && afterSelect[i + 1] === '-') {
+      const nl = afterSelect.indexOf('\n', i);
+      i = nl === -1 ? afterSelect.length : nl;
+      continue;
+    }
+    if (ch === '/' && afterSelect[i + 1] === '*') {
+      const close = afterSelect.indexOf('*/', i + 2);
+      i = close === -1 ? afterSelect.length : close + 1;
+      continue;
+    }
+    if (ch === '(') { depth++; continue; }
+    if (ch === ')') { depth--; continue; }
+
+    if (depth === 0) {
+      // Check for FROM keyword at word boundary
+      if (/\bFROM\b/i.test(afterSelect.substring(i, i + 4)) &&
+          (i === 0 || /\s/.test(afterSelect[i - 1]))) {
+        fromIndex = i;
+        break;
+      }
+    }
+  }
+
+  const selectList = fromIndex >= 0
+    ? afterSelect.substring(0, fromIndex)
+    : afterSelect;
+
+  // Extract table aliases from the CTE body for column resolution
+  const tableAliases = dbSchema ? extractTableAliasMap(cteBody, dbSchema) : new Map<string, { schema: string; table: string }>();
+
+  // Split the select list by commas at depth 0
+  const columns: CteColumnInfo[] = [];
+  let current = '';
+  depth = 0;
+  inQuote = false;
+  quoteChar = '';
+  inBrackets = false;
+
+  for (let i = 0; i < selectList.length; i++) {
+    const ch = selectList[i];
+
+    if (inQuote) {
+      current += ch;
+      if (ch === quoteChar) {
+        if (selectList[i + 1] === quoteChar) { current += selectList[++i]; } else { inQuote = false; }
+      }
+      continue;
+    }
+    if (inBrackets) {
+      current += ch;
+      if (ch === ']') inBrackets = false;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') { inQuote = true; quoteChar = ch; current += ch; continue; }
+    if (ch === '[') { inBrackets = true; current += ch; continue; }
+    if (ch === '(') { depth++; current += ch; continue; }
+    if (ch === ')') { depth--; current += ch; continue; }
+
+    if (ch === ',' && depth === 0) {
+      const col = inferColumnInfo(current.trim(), dbSchema, tableAliases);
+      if (col) columns.push(col);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+
+  // Last column
+  const lastCol = inferColumnInfo(current.trim(), dbSchema, tableAliases);
+  if (lastCol) columns.push(lastCol);
+
+  return columns;
+}
+
+/**
+ * Extract a map of alias → {schema, table} from FROM/JOIN clauses.
+ */
+function extractTableAliasMap(
+  cteBody: string,
+  dbSchema: DatabaseSchema
+): Map<string, { schema: string; table: string }> {
+  const map = new Map<string, { schema: string; table: string }>();
+
+  // Match FROM/JOIN table references with aliases
+  const patterns = [
+    // [schema].[table] alias
+    /\b(?:from|join)\s+\[([^\]]+)\]\s*\.\s*\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+    // schema.table alias
+    /\b(?:from|join)\s+([a-zA-Z_]\w*)\s*\.\s*([a-zA-Z_]\w*)(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+    // [table] alias
+    /\b(?:from|join)\s+\[([^\]]+)\](?!\s*\.)(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+    // table alias
+    /\b(?:from|join)\s+([a-zA-Z_]\w*)(?!\s*\.)(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+  ];
+
+  for (let pi = 0; pi < patterns.length; pi++) {
+    const regex = new RegExp(patterns[pi].source, patterns[pi].flags);
+    let m;
+    while ((m = regex.exec(cteBody)) !== null) {
+      let schemaName: string | undefined;
+      let tableName: string;
+      let alias: string | undefined;
+
+      if (pi <= 1) {
+        // Has schema
+        schemaName = m[1];
+        tableName = m[2];
+        alias = m[3];
+      } else {
+        // No schema
+        tableName = m[1];
+        alias = m[2];
+      }
+
+      // Skip SQL keywords as aliases
+      if (alias && /^(on|where|inner|left|right|full|cross|outer|and|or|set|into|values|order|group|having)$/i.test(alias)) {
+        alias = undefined;
+      }
+
+      // Resolve actual schema from dbSchema
+      const resolved = resolveTableSchema(tableName, schemaName, dbSchema);
+      if (resolved) {
+        if (alias) {
+          map.set(alias.toLowerCase(), resolved);
+        }
+        map.set(tableName.toLowerCase(), resolved);
+      }
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Resolve a table name to its schema info from the database schema.
+ */
+function resolveTableSchema(
+  tableName: string,
+  schemaName: string | undefined,
+  dbSchema: DatabaseSchema
+): { schema: string; table: string } | null {
+  const tLower = tableName.toLowerCase();
+  const sLower = schemaName?.toLowerCase();
+
+  for (const t of dbSchema.tables || []) {
+    if (t.name.toLowerCase() === tLower && (!sLower || t.schema.toLowerCase() === sLower)) {
+      return { schema: t.schema, table: t.name };
+    }
+  }
+  for (const v of dbSchema.views || []) {
+    if (v.name.toLowerCase() === tLower && (!sLower || v.schema.toLowerCase() === sLower)) {
+      return { schema: v.schema, table: v.name };
+    }
+  }
+  return null;
+}
+
+/** Map of SQL functions/expressions to their return types */
+const SQL_FUNCTION_TYPES: Record<string, { type: string; nullable: boolean }> = {
+  'count': { type: 'int', nullable: false },
+  'sum': { type: 'numeric', nullable: true },
+  'avg': { type: 'numeric', nullable: true },
+  'min': { type: 'varies', nullable: true },
+  'max': { type: 'varies', nullable: true },
+  'len': { type: 'int', nullable: true },
+  'datalength': { type: 'int', nullable: true },
+  'year': { type: 'int', nullable: true },
+  'month': { type: 'int', nullable: true },
+  'day': { type: 'int', nullable: true },
+  'datepart': { type: 'int', nullable: true },
+  'datediff': { type: 'int', nullable: true },
+  'getdate': { type: 'datetime', nullable: false },
+  'getutcdate': { type: 'datetime', nullable: false },
+  'sysdatetime': { type: 'datetime2', nullable: false },
+  'newid': { type: 'uniqueidentifier', nullable: false },
+  'isnull': { type: 'varies', nullable: false },
+  'coalesce': { type: 'varies', nullable: true },
+  'cast': { type: 'varies', nullable: true },
+  'convert': { type: 'varies', nullable: true },
+  'json_value': { type: 'nvarchar', nullable: true },
+  'json_query': { type: 'nvarchar', nullable: true },
+  'concat': { type: 'nvarchar', nullable: false },
+  'upper': { type: 'nvarchar', nullable: true },
+  'lower': { type: 'nvarchar', nullable: true },
+  'ltrim': { type: 'nvarchar', nullable: true },
+  'rtrim': { type: 'nvarchar', nullable: true },
+  'trim': { type: 'nvarchar', nullable: true },
+  'replace': { type: 'nvarchar', nullable: true },
+  'substring': { type: 'nvarchar', nullable: true },
+  'left': { type: 'nvarchar', nullable: true },
+  'right': { type: 'nvarchar', nullable: true },
+  'charindex': { type: 'int', nullable: false },
+  'patindex': { type: 'int', nullable: false },
+  'abs': { type: 'numeric', nullable: true },
+  'ceiling': { type: 'numeric', nullable: true },
+  'floor': { type: 'numeric', nullable: true },
+  'round': { type: 'numeric', nullable: true },
+  'row_number': { type: 'bigint', nullable: false },
+  'rank': { type: 'bigint', nullable: false },
+  'dense_rank': { type: 'bigint', nullable: false },
+  'ntile': { type: 'bigint', nullable: false },
+  'stuff': { type: 'nvarchar', nullable: true },
+};
+
+/**
+ * Look up a column's type from a table in the schema.
+ */
+function lookupColumnType(
+  columnName: string,
+  tableRef: string | undefined,
+  dbSchema: DatabaseSchema,
+  tableAliases: Map<string, { schema: string; table: string }>
+): { type: string; nullable: boolean } | null {
+  const colLower = columnName.toLowerCase();
+
+  // If we have a table/alias prefix, look it up directly
+  if (tableRef) {
+    const resolved = tableAliases.get(tableRef.toLowerCase());
+    if (resolved) {
+      const col = findColumnInTable(resolved.schema, resolved.table, colLower, dbSchema);
+      if (col) return col;
+    }
+  }
+
+  // Search all tables in schema for a matching column
+  for (const t of dbSchema.tables || []) {
+    for (const c of t.columns) {
+      if (c.name.toLowerCase() === colLower) {
+        return { type: formatColType(c), nullable: c.nullable };
+      }
+    }
+  }
+  for (const v of dbSchema.views || []) {
+    for (const c of v.columns || []) {
+      if (c.name.toLowerCase() === colLower) {
+        return { type: formatColType(c), nullable: c.nullable };
+      }
+    }
+  }
+
+  return null;
+}
+
+function findColumnInTable(
+  schemaName: string,
+  tableName: string,
+  columnName: string,
+  dbSchema: DatabaseSchema
+): { type: string; nullable: boolean } | null {
+  const sLower = schemaName.toLowerCase();
+  const tLower = tableName.toLowerCase();
+
+  for (const t of dbSchema.tables || []) {
+    if (t.schema.toLowerCase() === sLower && t.name.toLowerCase() === tLower) {
+      const col = t.columns.find(c => c.name.toLowerCase() === columnName);
+      if (col) return { type: formatColType(col), nullable: col.nullable };
+    }
+  }
+  for (const v of dbSchema.views || []) {
+    if (v.schema.toLowerCase() === sLower && v.name.toLowerCase() === tLower) {
+      const col = (v.columns || []).find(c => c.name.toLowerCase() === columnName);
+      if (col) return { type: formatColType(col), nullable: col.nullable };
+    }
+  }
+  return null;
+}
+
+function formatColType(col: { type: string; maxLength?: number; precision?: number; scale?: number }): string {
+  let t = col.type;
+  if (col.maxLength) t += `(${col.maxLength})`;
+  else if (col.precision && col.scale) t += `(${col.precision},${col.scale})`;
+  else if (col.precision) t += `(${col.precision})`;
+  return t;
+}
+
+/**
+ * Try to infer CAST/CONVERT target type from expression.
+ */
+function inferCastType(expr: string): string | null {
+  // CAST(x AS type)
+  const castMatch = expr.match(/\bCAST\s*\([\s\S]+\bAS\s+([a-zA-Z_]\w*(?:\s*\([^)]*\))?)\s*\)/i);
+  if (castMatch) return castMatch[1].trim();
+
+  // CONVERT(type, x)
+  const convertMatch = expr.match(/\bCONVERT\s*\(\s*([a-zA-Z_]\w*(?:\s*\([^)]*\))?)\s*,/i);
+  if (convertMatch) return convertMatch[1].trim();
+
+  return null;
+}
+
+/**
+ * Infer column name, type, and nullability from a single SELECT expression.
+ */
+function inferColumnInfo(
+  expr: string,
+  dbSchema?: DatabaseSchema,
+  tableAliases?: Map<string, { schema: string; table: string }>
+): CteColumnInfo | null {
+  if (!expr) return null;
+
+  // Strip trailing comments
+  expr = expr.replace(/--.*$/, '').trim();
+  if (!expr) return null;
+
+  const name = inferColumnName(expr);
+  if (!name) return null;
+
+  // Default
+  let type = '';
+  let nullable = true;
+
+  // Try to infer type from the expression
+  if (dbSchema) {
+    const aliases = tableAliases || new Map();
+
+    // Check for AS alias — analyze the expression part before AS
+    const asMatch = expr.match(/^([\s\S]+)\bAS\s+(?:\[([^\]]+)\]|'[^']+'|"[^"]+"|[a-zA-Z_]\w*)\s*$/i);
+    const exprPart = asMatch ? asMatch[1].trim() : expr;
+
+    // 1. Simple column reference: column or table.column
+    const dottedRef = exprPart.match(/^(?:(\[?[a-zA-Z_]\w*\]?)\s*\.\s*)?(\[?[a-zA-Z_]\w*\]?)$/);
+    if (dottedRef) {
+      const tableRef = dottedRef[1]?.replace(/^\[|\]$/g, '');
+      const colRef = dottedRef[2]?.replace(/^\[|\]$/g, '');
+      if (colRef) {
+        const resolved = lookupColumnType(colRef, tableRef, dbSchema, aliases);
+        if (resolved) {
+          type = resolved.type;
+          nullable = resolved.nullable;
+        }
+      }
+    }
+
+    // 2. Function call
+    if (!type) {
+      const funcMatch = exprPart.match(/^([a-zA-Z_]\w*)\s*\(/i);
+      if (funcMatch) {
+        const funcName = funcMatch[1].toLowerCase();
+        const funcInfo = SQL_FUNCTION_TYPES[funcName];
+        if (funcInfo) {
+          type = funcInfo.type;
+          nullable = funcInfo.nullable;
+
+          // For CAST/CONVERT, extract target type
+          if ((funcName === 'cast' || funcName === 'convert') && funcInfo.type === 'varies') {
+            const castType = inferCastType(exprPart);
+            if (castType) type = castType;
+          }
+        }
+      }
+    }
+
+    // 3. String literal
+    if (!type && /^'[^']*'$/.test(exprPart)) {
+      type = 'nvarchar';
+      nullable = false;
+    }
+
+    // 4. Numeric literal
+    if (!type && /^-?\d+$/.test(exprPart)) {
+      type = 'int';
+      nullable = false;
+    }
+    if (!type && /^-?\d+\.\d+$/.test(exprPart)) {
+      type = 'decimal';
+      nullable = false;
+    }
+  }
+
+  // Star
+  if (name === '*') {
+    return { name: '*', type: '', nullable: true };
+  }
+
+  return { name, type, nullable };
+}
+
+/**
+ * Infer the output column name from a single SELECT expression.
+ *   - `expr AS alias`         → alias
+ *   - `expr AS [alias]`       → alias
+ *   - `table.column`          → column
+ *   - `[table].[column]`      → column
+ *   - `column`                → column
+ *   - `*`                     → *
+ *   - function(...)           → (expression)
+ */
+function inferColumnName(expr: string): string | null {
+  if (!expr) return null;
+
+  // Strip trailing comments
+  expr = expr.replace(/--.*$/, '').trim();
+  if (!expr) return null;
+
+  // Check for AS alias (last occurrence, outside parens/quotes)
+  const asMatch = expr.match(/\bAS\s+(?:\[([^\]]+)\]|'([^']+)'|"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*$/i);
+  if (asMatch) {
+    return asMatch[1] || asMatch[2] || asMatch[3] || asMatch[4];
+  }
+
+  // `*` or `table.*`
+  if (expr === '*' || expr.endsWith('.*')) return '*';
+
+  // Simple identifier: column or [column]
+  const simpleMatch = expr.match(/^(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*))$/);
+  if (simpleMatch) {
+    return simpleMatch[1] || simpleMatch[2];
+  }
+
+  // Dotted: schema.table.column or table.column
+  const dottedMatch = expr.match(/\.(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*))\s*$/);
+  if (dottedMatch) {
+    return dottedMatch[1] || dottedMatch[2];
+  }
+
+  // Function call or complex expression without alias — use the expression itself
+  return `(${expr.length > 30 ? expr.substring(0, 27) + '...' : expr})`;
+}
+
 /**
  * Find table references in FROM/JOIN clauses
  */

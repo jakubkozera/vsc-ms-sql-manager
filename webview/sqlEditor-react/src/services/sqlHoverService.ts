@@ -1,5 +1,6 @@
 import type { ColumnInfo, TableInfo, ForeignKeyInfo, DatabaseSchema } from '../types/schema';
 import { extractTablesFromQuery, findTable, findTableForAlias, getColumnsForTable } from './sqlCompletionService';
+import { extractCTEsWithColumns, type CteDefinition } from './sqlValidator';
 
 export interface HoverResult {
   contents: { value: string }[];
@@ -145,6 +146,28 @@ export function renderInboundForeignKeys(
 }
 
 /**
+ * Render a CTE's inferred columns as a markdown table.
+ */
+export function renderCteMarkdown(cte: CteDefinition): string {
+  const hasTypes = cte.columns.some(c => c.type);
+  let md = `**CTE: ${cte.name}** *(${cte.columns.length} columns)*\n\n`;
+  if (hasTypes) {
+    md += '| Column | Type | Nullable |\n';
+    md += '|:---|:---|:---:|\n';
+    for (const col of cte.columns) {
+      md += `| ${col.name} | ${col.type || '?'} | ${col.nullable ? 'YES' : 'NO'} |\n`;
+    }
+  } else {
+    md += '| Column |\n';
+    md += '|:---|\n';
+    for (const col of cte.columns) {
+      md += `| ${col.name} |\n`;
+    }
+  }
+  return md;
+}
+
+/**
  * Provide hover information for SQL text at a given position.
  * Pure function — no Monaco dependency.
  */
@@ -207,6 +230,22 @@ export function provideHoverContent(
   // 2. No alias dot — check standalone word under cursor
   if (wordAtPosition?.word) {
     const w = wordAtPosition.word;
+
+    // 2a. Check if the word is a CTE name — show its inferred columns
+    const ctes = extractCTEsWithColumns(fullText, dbSchema);
+    const matchedCte = ctes.find((c) => c.name.toLowerCase() === w.toLowerCase());
+    if (matchedCte && matchedCte.columns.length > 0) {
+      const cteMd = renderCteMarkdown(matchedCte);
+      return {
+        contents: [{ value: cteMd }],
+        range: {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: wordAtPosition.startColumn,
+          endColumn: wordAtPosition.endColumn,
+        },
+      };
+    }
 
     // If it's a table name, show full table definition
     const table = findTable(w, dbSchema);
