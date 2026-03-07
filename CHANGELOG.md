@@ -5,6 +5,32 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-03-07
+
+### Added
+
+- **Microsoft Entra ID (Azure AD) Authentication**: Full support for Azure SQL authentication via OAuth
+  - **Interactive Browser Flow**: Launches browser for interactive login when selecting Entra ID auth
+  - **Device Code Flow**: Alternative login method displaying device code in VS Code for environments without browser access
+  - **Tenant ID Support**: Required field for specifying Azure AD tenant (GUID, domain, or 'organizations')
+  - **Token Caching**: Credential instances cached to prevent double authentication prompts during connection test and save workflow
+  - **Auto-encrypt**: Azure SQL connections automatically enforce encryption (required by Azure)
+
+### Enhanced
+
+- **Authentication Options**: Added "Microsoft Entra ID" as third auth type alongside SQL Server and Windows Authentication
+- **Connection Configuration**: Extended ConnectionConfig interface with `azureAuthMethod` and `tenantId` fields
+- **Connection UI Labels**: Auth type display now shows user-friendly names ("SQL Server", "Windows", "Microsoft Entra ID") in tree tooltips and quick-pick menus
+- **Token Acquisition**: Cache-based credential management ensures tokens are reused within the same session, eliminating redundant authentication prompts
+
+### Technical Details
+
+- Integrated `@azure/identity` v4.x library with InteractiveBrowserCredential and DeviceCodeCredential support
+- Token scope: `https://database.windows.net/.default` (Azure SQL scope)
+- Credential cache key: `"method:tenantId"` for proper session management
+- Tenant ID validation: Required field when Entra ID auth is selected; empty field defaults to `'organizations'` scope
+- MSSQL config uses `authentication.type: 'azure-active-directory-access-token'` with acquired OAuth token
+
 ## [0.13.0] - 2026-03-07
 
 ### Added

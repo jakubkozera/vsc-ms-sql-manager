@@ -2372,6 +2372,15 @@ export class ServerGroupNode extends TreeNode {
     }
 }
 
+function formatAuthType(authType: string): string {
+    switch (authType) {
+        case 'sql': return 'SQL Server';
+        case 'windows': return 'Windows';
+        case 'azure': return 'Microsoft Entra ID';
+        default: return authType;
+    }
+}
+
 // Server Connection nodes (connects to server, not specific database)
 export class ServerConnectionNode extends TreeNode {
     public isPending: boolean = false;
@@ -2412,7 +2421,7 @@ export class ServerConnectionNode extends TreeNode {
             tooltipSuffix = '\n(Connection Failed)';
         }
         
-        this.tooltip = `Server: ${server}\nAuth: ${authType}${tooltipSuffix}${hasFilter ? '\nFiltered' : ''}\nConnection Type: Server`;
+        this.tooltip = `Server: ${server}\nAuth: ${formatAuthType(authType)}${tooltipSuffix}${hasFilter ? '\nFiltered' : ''}\nConnection Type: Server`;
         
         // Set contextValue based on connection state
         if (isActive) {
@@ -2550,7 +2559,7 @@ export class ConnectionNode extends TreeNode {
             tooltipSuffix = '\n(Connection Failed)';
         }
         
-        this.tooltip = `Server: ${server}\nDatabase: ${database}\nAuth: ${authType}${tooltipSuffix}`;
+        this.tooltip = `Server: ${server}\nDatabase: ${database}\nAuth: ${formatAuthType(authType)}${tooltipSuffix}`;
         
         // Set contextValue based on connection state
         if (isActive) {

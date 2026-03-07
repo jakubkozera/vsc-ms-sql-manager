@@ -165,6 +165,8 @@ export class ConnectionWebview {
             cfg.authType = config.authType;
             cfg.username = config.username;
             cfg.password = config.password;
+            cfg.azureAuthMethod = config.azureAuthMethod;
+            cfg.tenantId = config.tenantId;
 
             const pool = await createPoolForConfig(cfg);
             await pool.connect();
@@ -207,7 +209,9 @@ export class ConnectionWebview {
                 trustServerCertificate: config.trustServerCertificate !== false,
                 connectionString: config.useConnectionString ? config.connectionString : undefined,
                 useConnectionString: config.useConnectionString || false,
-                serverGroupId: config.serverGroupId // Add this line!
+                serverGroupId: config.serverGroupId,
+                azureAuthMethod: config.authType === 'azure' ? (config.azureAuthMethod || 'browser') : undefined,
+                tenantId: config.authType === 'azure' ? (config.tenantId || undefined) : undefined
             };
 
             this.onConnectionCreated(connectionConfig);
@@ -677,8 +681,24 @@ export class ConnectionWebview {
                 <select id="authType" required>
                     <option value="sql">SQL Server Authentication</option>
                     <option value="windows">Windows Authentication</option>
-                    <option value="azure">Azure Active Directory</option>
+                    <option value="azure">Microsoft Entra ID</option>
                 </select>
+            </div>
+
+            <div id="azureAuthFields" class="auth-fields hidden">
+                <div class="form-group">
+                    <label for="azureAuthMethod">Entra ID Login Method</label>
+                    <select id="azureAuthMethod">
+                        <option value="browser">Interactive Browser</option>
+                        <option value="deviceCode">Device Code</option>
+                    </select>
+                    <div class="help-text">Browser: opens login page in browser. Device Code: displays a code to enter at microsoft.com/devicelogin</div>
+                </div>
+                <div class="form-group">
+                    <label for="tenantId">Tenant ID *</label>
+                    <input type="text" id="tenantId" placeholder="e.g. contoso.onmicrosoft.com or xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                    <div class="help-text">Azure AD tenant ID (GUID or domain). Required for Entra ID authentication.</div>
+                </div>
             </div>
 
             <div id="sqlAuthFields" class="auth-fields">
@@ -739,6 +759,8 @@ export class ConnectionWebview {
         const connectionTypeSelect = document.getElementById('connectionType');
         const connectionTypeGroup = document.getElementById('connectionTypeGroup');
         const sqlAuthFields = document.getElementById('sqlAuthFields');
+        const azureAuthFields = document.getElementById('azureAuthFields');
+        const azureAuthMethodSelect = document.getElementById('azureAuthMethod');
         const useConnectionStringCheckbox = document.getElementById('useConnectionString');
         const useConnectionStringBtn = document.getElementById('useConnectionStringBtn');
         const connectionStringSection = document.getElementById('connectionStringSection');
@@ -832,12 +854,22 @@ export class ConnectionWebview {
             const authType = this.value;
             if (authType === 'sql') {
                 sqlAuthFields.classList.remove('hidden');
+                azureAuthFields.classList.add('hidden');
                 document.getElementById('username').required = true;
                 document.getElementById('password').required = true;
-            } else {
+                document.getElementById('tenantId').required = false;
+            } else if (authType === 'azure') {
                 sqlAuthFields.classList.add('hidden');
+                azureAuthFields.classList.remove('hidden');
                 document.getElementById('username').required = false;
                 document.getElementById('password').required = false;
+                document.getElementById('tenantId').required = true;
+            } else {
+                sqlAuthFields.classList.add('hidden');
+                azureAuthFields.classList.add('hidden');
+                document.getElementById('username').required = false;
+                document.getElementById('password').required = false;
+                document.getElementById('tenantId').required = false;
             }
         });
 
@@ -1034,6 +1066,14 @@ export class ConnectionWebview {
                         return false;
                     }
                 }
+
+                if (authType === 'azure') {
+                    const tenantId = document.getElementById('tenantId').value.trim();
+                    if (!tenantId) {
+                        showMessage('error', 'Tenant ID is required for Microsoft Entra ID authentication');
+                        return false;
+                    }
+                }
             }
 
             if (requireName && !connectionName) {
@@ -1065,6 +1105,8 @@ export class ConnectionWebview {
                 database: rawDatabase,
                 port: document.getElementById('port').value || null,
                 authType: document.getElementById('authType').value,
+                azureAuthMethod: document.getElementById('azureAuthMethod').value,
+                tenantId: document.getElementById('tenantId').value.trim() || null,
                 username: document.getElementById('username').value.trim() || null,
                 password: document.getElementById('password').value || null,
                 encrypt: document.getElementById('encrypt').checked,
@@ -1096,6 +1138,8 @@ export class ConnectionWebview {
                         document.getElementById('database').value = config.database || '';
                     document.getElementById('port').value = config.port || '';
                     document.getElementById('authType').value = config.authType || 'sql';
+                    document.getElementById('azureAuthMethod').value = config.azureAuthMethod || 'browser';
+                    document.getElementById('tenantId').value = config.tenantId || '';
                     document.getElementById('username').value = config.username || '';
                     document.getElementById('password').value = config.password || '';
                     document.getElementById('encrypt').checked = config.encrypt !== false;

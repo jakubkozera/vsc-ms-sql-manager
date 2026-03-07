@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1066,7 +1066,6 @@
           "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
           "group": "3_danger@1"
         },
-
         {
           "command": "mssqlManager.filterTables",
           "when": "view == mssqlManager.explorer && viewItem == tables",
@@ -1477,6 +1476,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.0",
     "msnodesqlv8": "^5.1.1",
     "mssql": "^10.0.2"
   }

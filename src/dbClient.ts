@@ -1,4 +1,5 @@
 import * as os from 'os';
+import * as vscode from 'vscode';
 
 // Lightweight abstraction over two strategies:
 // - 'mssql' ConnectionPool for SQL auth
@@ -82,6 +83,63 @@ function buildMsNodeSqlv8ConnectionString(cfg: any, driver: string) {
     connectionString += 'Encrypt=No;TrustServerCertificate=Yes;';
     
     return connectionString;
+}
+
+const SQL_SCOPE = 'https://database.windows.net/.default';
+
+// Cache credential instances by "method:tenantId" key so that a second getToken()
+// call (e.g. test-connection followed immediately by save/connect) reuses the
+// already-authenticated instance and returns the cached token without prompting again.
+const credentialCache = new Map<string, any>();
+
+/**
+ * Acquire an OAuth access token for Azure SQL via Microsoft Entra ID.
+ * Supports two flows:
+ *  - 'browser'    – interactive browser popup (InteractiveBrowserCredential)
+ *  - 'deviceCode' – device-code flow shown in VS Code information message
+ *
+ * @param tenantId  Azure AD tenant ID, e.g. a GUID, 'contoso.onmicrosoft.com',
+ *                  or 'organizations' (default, accepts any work/school account).
+ */
+async function acquireEntraToken(method: 'browser' | 'deviceCode', tenantId?: string): Promise<string> {
+    const { InteractiveBrowserCredential, DeviceCodeCredential } = require('@azure/identity');
+
+    const resolvedTenantId = tenantId?.trim() || 'organizations';
+    const cacheKey = `${method}:${resolvedTenantId}`;
+
+    // Reuse existing credential — @azure/identity caches the token internally,
+    // so getToken() will return silently without re-prompting the user.
+    let credential = credentialCache.get(cacheKey);
+
+    if (!credential) {
+        if (method === 'deviceCode') {
+            credential = new DeviceCodeCredential({
+                tenantId: resolvedTenantId,
+                userPromptCallback: (info: any) => {
+                    const msg = info.message as string;
+                    vscode.window.showInformationMessage(msg, 'Copy Code').then(action => {
+                        if (action === 'Copy Code') {
+                            const codeMatch = msg.match(/code\s+([A-Z0-9-]+)/i);
+                            if (codeMatch) {
+                                vscode.env.clipboard.writeText(codeMatch[1]);
+                            }
+                        }
+                    });
+                }
+            });
+        } else {
+            credential = new InteractiveBrowserCredential({
+                tenantId: resolvedTenantId
+            });
+        }
+        credentialCache.set(cacheKey, credential);
+    }
+
+    const tokenResponse = await credential.getToken(SQL_SCOPE);
+    if (!tokenResponse?.token) {
+        throw new Error('Failed to acquire Entra ID token — no token returned.');
+    }
+    return tokenResponse.token;
 }
 
 export async function createPoolForConfig(cfg: any): Promise<DBPool> {
@@ -439,6 +497,17 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         if (cfg.authType === 'sql') {
             mssqlConfig.user = cfg.username;
             mssqlConfig.password = cfg.password;
+        } else if (cfg.authType === 'azure') {
+            // Microsoft Entra ID authentication — acquire OAuth token
+            const token = await acquireEntraToken(cfg.azureAuthMethod || 'browser', cfg.tenantId);
+            mssqlConfig.authentication = {
+                type: 'azure-active-directory-access-token',
+                options: {
+                    token: token
+                }
+            };
+            // Azure SQL always requires encryption
+            mssqlConfig.options.encrypt = true;
         }
     }
 
