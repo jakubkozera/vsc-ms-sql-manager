@@ -4,6 +4,7 @@ import './ExecuteButton.css';
 interface ExecuteButtonProps {
   onExecute: () => void;
   onCancel: () => void;
+  onEstimatedPlan: () => void;
   isExecuting: boolean;
   disabled: boolean;
   includeActualPlan: boolean;
@@ -13,6 +14,7 @@ interface ExecuteButtonProps {
 export function ExecuteButton({
   onExecute,
   onCancel,
+  onEstimatedPlan,
   isExecuting,
   disabled,
   includeActualPlan,
@@ -119,6 +121,17 @@ export function ExecuteButton({
               <span className="toggle-slider"></span>
             </label>
           </div>
+          <div className="dropdown-divider" />
+          <button
+            className="dropdown-action-item"
+            disabled={disabled}
+            onClick={() => {
+              onEstimatedPlan();
+              setDropdownOpen(false);
+            }}
+          >
+            Get Estimated Plan
+          </button>
         </div>
       )}
     </div>

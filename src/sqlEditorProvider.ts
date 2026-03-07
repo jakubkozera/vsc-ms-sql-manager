@@ -1672,22 +1672,60 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         try {
             const startTime = Date.now();
+            this.outputChannel.appendLine(`[EstimatedPlan] Starting. connectionId=${connectionId}`);
+            this.outputChannel.appendLine(`[EstimatedPlan] poolToUse: connected=${poolToUse?.connected}, hasRunInTransaction=${typeof poolToUse?.runInTransaction}`);
+            this.outputChannel.appendLine(`[EstimatedPlan] query (first 120): ${query.substring(0, 120).replace(/\n/g, ' ')}`);
             
-            // Enable SHOWPLAN_XML to get estimated plan without executing
-            const planQuery = `SET SHOWPLAN_XML ON;\n${query}\nSET SHOWPLAN_XML OFF;`;
-            
-            const result = await this.queryExecutor.executeQuery(planQuery, poolToUse);
+            // SET SHOWPLAN_XML must be the only statement in its batch and must
+            // run on the SAME connection as the query.  Use runInTransaction to
+            // pin all requests to one connection (important for mssql pool driver).
+            const runPinned = async (makeRequest: () => any) => {
+                this.outputChannel.appendLine('[EstimatedPlan] Step 1: SET SHOWPLAN_XML ON ...');
+                // Use batch() instead of query() for SET statements.
+                // query() uses sp_executesql internally, and SET SHOWPLAN_XML
+                // reverts when executed inside sp_executesql.
+                const req1 = makeRequest();
+                await (req1.batch ? req1.batch('SET SHOWPLAN_XML ON') : req1.query('SET SHOWPLAN_XML ON'));
+                this.outputChannel.appendLine('[EstimatedPlan] Step 2: executing query ...');
+                try {
+                    const req2 = makeRequest();
+                    const r = await (req2.batch ? req2.batch(query) : req2.query(query));
+                    const firstRowKeys = r?.recordsets?.[0]?.[0] ? Object.keys(r.recordsets[0][0]) : [];
+                    this.outputChannel.appendLine(`[EstimatedPlan] Step 2 done: recordsets=${r?.recordsets?.length}, firstRow keys=[${firstRowKeys.join(', ')}]`);
+                    return r;
+                } finally {
+                    try {
+                        this.outputChannel.appendLine('[EstimatedPlan] Step 3: SET SHOWPLAN_XML OFF ...');
+                        const req3 = makeRequest();
+                        await (req3.batch ? req3.batch('SET SHOWPLAN_XML OFF') : req3.query('SET SHOWPLAN_XML OFF'));
+                    } catch (e) {
+                        this.outputChannel.appendLine(`[EstimatedPlan] Step 3 failed (ignored): ${e}`);
+                    }
+                }
+            };
+
+            const result = poolToUse.runInTransaction
+                ? await poolToUse.runInTransaction(runPinned)
+                : await runPinned(() => poolToUse.request());
+
             const executionTime = Date.now() - startTime;
 
             // Extract the XML plan from result
             let planXml = null;
+            this.outputChannel.appendLine(`[EstimatedPlan] Extracting plan. result.recordsets=${result?.recordsets?.length ?? 'undefined'}`);
             if (result.recordsets && result.recordsets.length > 0) {
                 const planResultSet = result.recordsets[0];
+                this.outputChannel.appendLine(`[EstimatedPlan] First recordset rows=${planResultSet.length}, keys=${planResultSet[0] ? Object.keys(planResultSet[0]).join(', ') : 'none'}`);
                 if (planResultSet.length > 0 && planResultSet[0]['Microsoft SQL Server 2005 XML Showplan']) {
                     planXml = planResultSet[0]['Microsoft SQL Server 2005 XML Showplan'];
+                    this.outputChannel.appendLine(`[EstimatedPlan] planXml extracted, length=${planXml.length}`);
+                } else {
+                    this.outputChannel.appendLine(`[EstimatedPlan] planXml key not found. Available keys: ${planResultSet[0] ? Object.keys(planResultSet[0]).join(', ') : 'row is empty'}`);
                 }
+            } else {
+                this.outputChannel.appendLine(`[EstimatedPlan] No recordsets in result. Full result keys: ${result ? Object.keys(result).join(', ') : 'result is null'}`);
             }
-            
+
             if (planXml) {
                 webview.postMessage({
                     type: 'queryPlan',
@@ -1706,6 +1744,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 });
             }
         } catch (error: any) {
+            this.outputChannel.appendLine(`[EstimatedPlan] EXCEPTION: ${error?.message}\n${error?.stack || ''}`);
             webview.postMessage({
                 type: 'error',
                 error: error.message || 'Plan generation failed',

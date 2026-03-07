@@ -7,6 +7,7 @@ import './Toolbar.css';
 
 interface ToolbarProps {
   onExecute: () => void;
+  onEstimatedPlan: () => void;
   onFormat: () => void;
   isExecuting: boolean;
   includeActualPlan: boolean;
@@ -15,6 +16,7 @@ interface ToolbarProps {
 
 export function Toolbar({
   onExecute,
+  onEstimatedPlan,
   onFormat,
   isExecuting,
   includeActualPlan,
@@ -32,6 +34,7 @@ export function Toolbar({
       <ExecuteButton
         onExecute={onExecute}
         onCancel={cancelQuery}
+        onEstimatedPlan={onEstimatedPlan}
         isExecuting={isExecuting}
         disabled={!isConnected}
         includeActualPlan={includeActualPlan}

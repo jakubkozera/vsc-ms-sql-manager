@@ -85,6 +85,36 @@
   color: var(--vscode-foreground);
 }
 
+.dropdown-divider {
+  height: 1px;
+  background: var(--vscode-panel-border, var(--vscode-input-border));
+  margin: 8px 0;
+}
+
+.dropdown-action-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 4px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dropdown-action-item:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.dropdown-action-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Toggle switch */
 .toggle-switch {
   position: relative;

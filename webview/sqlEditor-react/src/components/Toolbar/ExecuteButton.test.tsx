@@ -6,6 +6,7 @@ describe('ExecuteButton', () => {
   const defaultProps = {
     onExecute: vi.fn(),
     onCancel: vi.fn(),
+    onEstimatedPlan: vi.fn(),
     isExecuting: false,
     disabled: false,
     includeActualPlan: false,
@@ -58,5 +59,33 @@ describe('ExecuteButton', () => {
     const checkbox = screen.getByRole('checkbox');
     fireEvent.click(checkbox);
     expect(defaultProps.onToggleActualPlan).toHaveBeenCalledWith(true);
+  });
+
+  it('shows Get Estimated Plan button in dropdown', () => {
+    render(<ExecuteButton {...defaultProps} />);
+    const dropdownToggle = screen.getAllByRole('button')[1];
+    fireEvent.click(dropdownToggle);
+    expect(screen.getByRole('button', { name: /get estimated plan/i })).toBeInTheDocument();
+  });
+
+  it('calls onEstimatedPlan and closes dropdown when Get Estimated Plan is clicked', () => {
+    render(<ExecuteButton {...defaultProps} />);
+    const dropdownToggle = screen.getAllByRole('button')[1];
+    fireEvent.click(dropdownToggle);
+
+    const estimatedPlanBtn = screen.getByRole('button', { name: /get estimated plan/i });
+    fireEvent.click(estimatedPlanBtn);
+    expect(defaultProps.onEstimatedPlan).toHaveBeenCalledTimes(1);
+    // Dropdown should be closed after click
+    expect(screen.queryByText(/get estimated plan/i)).not.toBeInTheDocument();
+  });
+
+  it('disables Get Estimated Plan button when disabled', () => {
+    render(<ExecuteButton {...defaultProps} disabled={true} />);
+    const dropdownToggle = screen.getAllByRole('button')[1];
+    fireEvent.click(dropdownToggle);
+
+    const estimatedPlanBtn = screen.getByRole('button', { name: /get estimated plan/i });
+    expect(estimatedPlanBtn).toBeDisabled();
   });
 });

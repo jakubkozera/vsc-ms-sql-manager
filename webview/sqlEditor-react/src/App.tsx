@@ -12,6 +12,7 @@ function App() {
   const {
     isExecuting,
     executeQuery,
+    executeEstimatedPlan,
     currentConnectionId,
     currentDatabase,
     postMessage,
@@ -87,6 +88,18 @@ function App() {
       console.log('[App] No SQL to execute');
     }
   }, [executeQuery, includeActualPlan, formatOptions.formatBeforeRun]);
+
+  const handleEstimatedPlan = useCallback(() => {
+    if (!editorRef.current) return;
+    let sql = editorRef.current.getSelectedText();
+    if (!sql) {
+      sql = editorRef.current.getValue();
+    }
+    if (sql.trim()) {
+      sql = removeExecutionComments(sql);
+      executeEstimatedPlan(sql);
+    }
+  }, [executeEstimatedPlan]);
 
   // Handle auto-execute query
   useEffect(() => {
@@ -180,6 +193,7 @@ function App() {
       {/* Toolbar */}
       <Toolbar
         onExecute={handleExecute}
+        onEstimatedPlan={handleEstimatedPlan}
         onFormat={handleFormat}
         isExecuting={isExecuting}
         includeActualPlan={includeActualPlan}
