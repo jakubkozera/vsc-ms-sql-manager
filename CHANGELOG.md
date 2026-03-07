@@ -5,6 +5,41 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-03-07
+
+### Added
+
+- **Settings Webview Command Integration**
+  - Added **Open settings** action to Database Explorer **More Actions** menu (three-dot menu), placed at the top.
+  - Added gear icon for the `MS SQL Manager: Settings` command and dedicated light/dark gear icon for the settings panel.
+
+- **Formatting Configuration in VS Code Settings**
+  - Added new `mssqlManager.formatting.*` configuration entries:
+    - `tabWidth`
+    - `keywordCase`
+    - `dataTypeCase`
+    - `functionCase`
+    - `linesBetweenQueries`
+    - `indentStyle`
+    - `logicalOperatorNewline`
+    - `formatBeforeRun`
+
+### Changed
+
+- **React Settings Webview UI**
+  - Reworked settings UI to use a **vertical tab column** (left navigation + right content panel).
+  - Replaced boolean checkboxes with **switch controls**.
+  - Updated boolean setting layout to use separate columns: switch column + name/description column.
+  - Removed explicit Save/Reset buttons and introduced **auto-save on change**.
+  - Added subtle visual indication for values changed from defaults.
+
+- **Settings Architecture**
+  - Refactored settings form fields into dedicated components:
+    - `BooleanSetting`
+    - `NumberSetting`
+    - `SelectSetting`
+  - Moved shared settings contracts/defaults to a separate `types` module.
+
 ## [0.14.0] - 2026-03-07
 
 ### Added

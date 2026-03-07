@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -449,6 +449,11 @@
         "command": "mssqlManager.refreshNotebooks",
         "title": "Refresh Notebooks",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "mssqlManager.openSettings",
+        "title": "MS SQL Manager: Settings",
+        "icon": "$(gear)"
       }
     ],
     "viewsContainers": {
@@ -558,6 +563,10 @@
     ],
     "menus": {
       "mssqlManager.moreActions": [
+        {
+          "command": "mssqlManager.openSettings",
+          "group": "0_view@0"
+        },
         {
           "command": "mssqlManager.collapseAll",
           "group": "0_view@1"
@@ -1438,6 +1447,74 @@
           "type": "boolean",
           "default": false,
           "description": "Use the new React-based SQL Editor UI. Disable to use the legacy JavaScript UI."
+        },
+        "mssqlManager.formatting.tabWidth": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Number of spaces used for SQL indentation."
+        },
+        "mssqlManager.formatting.keywordCase": {
+          "type": "string",
+          "enum": [
+            "upper",
+            "lower",
+            "preserve"
+          ],
+          "default": "upper",
+          "description": "Formatting: SQL keyword case."
+        },
+        "mssqlManager.formatting.dataTypeCase": {
+          "type": "string",
+          "enum": [
+            "upper",
+            "lower",
+            "preserve"
+          ],
+          "default": "upper",
+          "description": "Formatting: SQL data type case."
+        },
+        "mssqlManager.formatting.functionCase": {
+          "type": "string",
+          "enum": [
+            "upper",
+            "lower",
+            "preserve"
+          ],
+          "default": "upper",
+          "description": "Formatting: SQL function name case."
+        },
+        "mssqlManager.formatting.linesBetweenQueries": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Formatting: blank lines between SQL statements."
+        },
+        "mssqlManager.formatting.indentStyle": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "tabularLeft",
+            "tabularRight"
+          ],
+          "default": "standard",
+          "description": "Formatting: indentation style for SQL formatting."
+        },
+        "mssqlManager.formatting.logicalOperatorNewline": {
+          "type": "string",
+          "enum": [
+            "before",
+            "after"
+          ],
+          "default": "before",
+          "description": "Formatting: place AND/OR before or after line breaks."
+        },
+        "mssqlManager.formatting.formatBeforeRun": {
+          "type": "boolean",
+          "default": false,
+          "description": "Formatting: automatically format query before execution."
         }
       }
     }

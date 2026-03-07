@@ -824,9 +824,13 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         const reactDistPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor-react', 'dist');
         const scriptPath = vscode.Uri.joinPath(reactDistPath, 'sqlEditor.js');
         const stylePath = vscode.Uri.joinPath(reactDistPath, 'sqlEditor.css');
+        const globalScriptPath = vscode.Uri.joinPath(reactDistPath, 'global.js');
+        const globalStylePath = vscode.Uri.joinPath(reactDistPath, 'global.css');
         
         const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
         const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
+        const globalScriptUri = webview.asWebviewUri(globalScriptPath).toString() + `?v=${cacheBuster}`;
+        const globalStyleUri = webview.asWebviewUri(globalStylePath).toString() + `?v=${cacheBuster}`;
         
         // Monaco loader CDN
         const monacoLoaderUri = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
@@ -844,7 +848,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         worker-src blob:;
         connect-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
     <title>SQL Editor</title>
+    <link rel="stylesheet" href="${globalStyleUri}">
     <link rel="stylesheet" href="${styleUri}">
+    <link rel="modulepreload" href="${globalScriptUri}">
     <style>
         html, body, #root {
             height: 100%;

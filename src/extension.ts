@@ -13,6 +13,7 @@ import { DatabaseInstructionsManager } from './databaseInstructions';
 import { setCachedOdbcDriver, initializeDbClient } from './dbClient';
 import { NotebookTreeProvider } from './notebookTreeProvider';
 import { NotebookEditorProvider } from './notebookEditorProvider';
+import { SettingsWebview } from './settingsWebview';
 
 let outputChannel: vscode.OutputChannel;
 
@@ -247,6 +248,14 @@ async function initializeExtension(context: vscode.ExtensionContext) {
             outputChannel.appendLine('[Extension] Refreshing SQL snippets manually...');
             sqlEditorProvider.refreshSnippets();
             vscode.window.showInformationMessage('SQL snippets refreshed successfully!');
+        })
+    );
+
+    // Register Settings webview
+    const settingsWebview = new SettingsWebview(context, outputChannel);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mssqlManager.openSettings', () => {
+            settingsWebview.show();
         })
     );
 
