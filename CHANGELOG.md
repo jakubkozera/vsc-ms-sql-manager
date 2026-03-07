@@ -5,6 +5,91 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-03-07
+
+### Added
+
+- **React-based SQL Editor**: Complete refactor of SQL Editor from JavaScript to React + TypeScript
+  - Modern React architecture with TypeScript for improved type safety and maintainability
+  - Enhanced performance with optimized rendering and component management
+  - Improved state management for better user experience
+  - Global keyboard shortcuts for grid operations (copy, paste, save, new query)
+
+- **Advanced SQL Completion & Context Analysis**: Intelligent SQL autocompletion with context awareness
+  - FROM clause context suggestions for table discovery
+  - AFTER_FROM context suggestions for improved workflow
+  - ORDER BY completion with ASC/DESC suggestions
+  - Support for table extraction including comma-separated tables
+  - UPDATE target table extraction for better context
+  - Alias support in SQL context analysis
+
+- **Common Table Expression (CTE) Support**: Full CTE recognition and handling
+  - CTE parsing and rendering with inferred column types
+  - CTE column hover support and rename functionality
+  - CTE rename support directly in query editor
+  - CTE detection preventing false positives in validation
+
+- **Query Plan Enhancements**: Improved query plan visualization
+  - Zoom handling with cursor position maintenance
+  - Enhanced UI with icons and improved layout
+  - TopOperations component for detailed operation display
+
+- **Dynamic Theme Customization**: VS Code theme integration
+  - Dynamic theme detection with automatic updates
+  - SQL-specific token color overrides for better visibility
+  - Dynamic VS Code CSS variables for editor customization
+  - Theme-aware styling for all UI components
+
+- **Enhanced SQL Validation & Analysis**: Comprehensive query validation
+  - Column reference detection and validation in SQL statements
+  - Alias column detection and validation with hover support
+  - Support for bracketed identifiers in analysis
+  - CTE column rendering and hover support
+
+- **SQL Wildcard Expansion**: Expand wildcard queries automatically
+  - Convert SELECT * to explicit column lists
+  - Support for schema-aware expansion
+  - Maintains formatting and aliases
+
+- **Advanced DataGrid Features**: Enhanced result grid interactions
+  - Selection-aware copy functionality with context menu
+  - Insert statement generation from selected rows
+  - Cell commit functionality with pending changes tracking
+  - Optimistic database selection updates
+
+- **UI Improvements**: Multiple UI/UX enhancements
+  - Fixed z-index values for sticky elements (DataGrid, GridRow)
+  - Enhanced overflow widgets for improved layout stability
+  - Message display filtering to reduce error clutter
+  - Connect button in toolbar for connection management
+  - Improved toolbar and format button styles
+
+- **SQL Editor Provider Enhancements**: Better connection context handling
+  - Support for connection context in SQL editor opening
+  - Improved command registration with connectionId and database parameters
+  - Better foreign key rendering and hover support
+  - Enhanced metadata processing for accurate result set information
+
+### Changed
+
+- **SQL Editor Default Setting**: React-based SQL Editor UI is now enabled by default
+  - Users can disable via settings if needed
+  - Vanilla editor remains available as fallback option
+
+- **Error Message Display**: Filters out error messages in results panel for cleaner interface
+
+### Enhanced
+
+- **Query Execution**: Improved SQL context and table extraction with better alias support
+- **SQL Completion**: Context-aware suggestions for improved development workflow
+- **Grid Performance**: Diagnostic logging and optimized rendering for large datasets
+- **Connection Handling**: Better handling of connection switching and database selection
+
+### Fixed
+
+- **Sticky Element Layering**: Resolved z-index issues affecting DataGrid and GridRow visibility
+- **Overflow Widget Layout**: Fixed layout stability with fixed overflow widgets in SQL editor
+
 ## [0.12.4] - 2026-03-04
 
 ### Added

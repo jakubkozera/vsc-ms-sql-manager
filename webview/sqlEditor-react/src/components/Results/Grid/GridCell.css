@@ -1,0 +1,163 @@
+.grid-cell {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+  border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+  position: relative;
+}
+
+/* Pinned cells - sticky positioning */
+.grid-cell.pinned {
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  z-index: 40 !important;
+  background-color: var(--vscode-editor-background, #1e1e1e) !important;
+}
+
+.grid-cell.selected {
+  background: var(--vscode-editor-selectionBackground) !important;
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.grid-cell.modified {
+  background-color: rgba(255, 193, 7, 0.15);
+}
+
+.grid-cell.deleted {
+  background-color: rgba(220, 53, 69, 0.15);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.cell-content {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-modified-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: var(--vscode-inputValidation-warningBorder, #ffc107);
+  font-size: 8px;
+}
+
+/* PK/FK cell styling - use CSS variables that work with VS Code themes */
+.grid-cell.pk-cell {
+  color: #ffd700 !important; /* Default: gold for primary key */
+  font-weight: 500;
+  background-color: rgba(255, 215, 0, 0.08);
+}
+
+.grid-cell.fk-cell {
+  color: #6496ff !important; /* Default: blue for foreign key */
+  padding-right: 28px;
+  font-weight: 500;
+  background-color: rgba(100, 150, 255, 0.08);
+}
+
+/* PK takes priority over FK if both */
+.grid-cell.pk-cell.fk-cell {
+  color: #ffd700 !important;
+  background-color: rgba(255, 215, 0, 0.08);
+}
+
+/* Light theme overrides using media query */
+@media (prefers-color-scheme: light) {
+  .grid-cell.pk-cell {
+    color: #b8860b !important; /* Darker gold for light theme */
+    background-color: rgba(184, 134, 11, 0.06);
+  }
+  
+  .grid-cell.fk-cell {
+    color: #0066cc !important; /* Darker blue for light theme */
+    background-color: rgba(0, 102, 204, 0.06);
+  }
+
+  .grid-cell.pk-cell.fk-cell {
+    color: #b8860b !important;
+    background-color: rgba(184, 134, 11, 0.06);
+  }
+}
+
+/* Expand chevron for PK/FK cells - shows on hover */
+.cell-expand-chevron {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: none;
+  opacity: 0;
+  cursor: pointer;
+  color: var(--vscode-button-background);
+  transition: all 0.2s;
+  align-items: center;
+  justify-content: center;
+}
+
+.grid-cell:hover .cell-expand-chevron {
+  display: inline-flex;
+  opacity: 1;
+}
+
+.cell-expand-chevron:hover {
+  color: var(--vscode-button-hoverBackground);
+}
+
+.cell-expand-chevron.expanded {
+  display: inline-flex;
+  opacity: 1;
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* Cell type styling */
+.grid-cell.null .cell-content {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.grid-cell.number .cell-content {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-cell.boolean .cell-content {
+  color: var(--vscode-debugTokenExpression-boolean, #569cd6);
+}
+
+.grid-cell.date .cell-content {
+  color: var(--vscode-debugTokenExpression-string, #ce9178);
+}
+
+.grid-cell.json .cell-content,
+.grid-cell.xml .cell-content {
+  color: var(--vscode-textPreformat-foreground);
+  cursor: pointer;
+}
+
+.grid-cell.json:hover,
+.grid-cell.xml:hover {
+  background: var(--vscode-editor-selectionBackground);
+}
+
+.grid-cell.long-text {
+  cursor: help;
+}
+
+.grid-cell.long-text .cell-content::after {
+  content: '...';
+  color: var(--vscode-descriptionForeground);
+}
+/* Editing state */
+.grid-cell.editing {
+  padding: 0;
+  overflow: visible;
+}

@@ -1,0 +1,388 @@
+.query-plan-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+}
+
+/* Header */
+.plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background));
+  flex-shrink: 0;
+}
+
+.plan-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* View mode tabs (left side, like results/messages tab style) */
+.plan-view-tabs {
+  display: flex;
+  gap: 0;
+}
+
+.plan-view-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  position: relative;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-view-tab:hover {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground);
+}
+
+.plan-view-tab.active {
+  opacity: 1;
+}
+
+.plan-view-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--vscode-focusBorder);
+}
+
+.plan-view-tab svg {
+  flex-shrink: 0;
+}
+
+.statement-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 16px;
+  padding: 0 8px;
+}
+
+.statement-tab {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.statement-tab:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.statement-tab.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+.plan-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.toggle-panel-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: all 0.15s;
+}
+
+.toggle-panel-btn:hover {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-panel-border);
+}
+
+.toggle-panel-btn.active {
+  opacity: 1;
+  color: var(--vscode-focusBorder);
+}
+
+/* Stats bar */
+.plan-stats-bar {
+  display: flex;
+  gap: 16px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-textBlockQuote-background);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.plan-stats-bar .stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.plan-stats-bar .stat-label {
+  color: var(--vscode-descriptionForeground);
+}
+
+.plan-stats-bar .stat-value {
+  color: var(--vscode-foreground);
+  font-weight: 500;
+}
+
+.plan-stats-bar .stat-item.warning {
+  color: #ff9800;
+}
+
+/* Statement text */
+.plan-statement {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-textCodeBlock-background);
+  flex-shrink: 0;
+}
+
+.plan-statement code {
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+/* Main content */
+.plan-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.plan-main {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.plan-main.with-panel {
+  flex: 3;
+}
+
+.plan-side-panel {
+  width: 300px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--vscode-panel-border);
+  overflow: hidden;
+}
+
+/* XML view */
+.plan-xml {
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+  background: var(--vscode-textBlockQuote-background);
+}
+
+.plan-xml pre {
+  margin: 0;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.plan-xml code {
+  color: var(--vscode-foreground);
+}
+
+/* Tree view */
+.plan-tree-view {
+  height: 100%;
+  overflow: auto;
+  padding: 8px;
+}
+
+.tree-node-container {
+  /* Container for node + children */
+}
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  font-size: 12px;
+}
+
+.tree-node:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.tree-node.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.tree-node.has-warning {
+  border-left: 3px solid #ff9800;
+  padding-left: 7px;
+}
+
+.tree-node .tree-expand {
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.tree-node .tree-expand.clickable {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.15s;
+}
+
+.tree-node .tree-expand.clickable:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+.tree-node .tree-leaf-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+  opacity: 0.5;
+}
+
+.tree-node .tree-icon {
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tree-node .tree-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.tree-node .tree-object {
+  font-size: 11px;
+  color: var(--vscode-textLink-foreground);
+}
+
+.tree-node .tree-cost {
+  font-size: 11px;
+  min-width: 40px;
+  text-align: right;
+  font-weight: 500;
+}
+
+.tree-node .tree-cost.high {
+  color: #f44336;
+}
+
+.tree-node .tree-rows {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  min-width: 50px;
+  text-align: right;
+}
+
+.tree-node .tree-warning {
+  color: #ff9800;
+  margin-left: 4px;
+  display: flex;
+  align-items: center;
+}
+
+/* Error state */
+.query-plan-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+}
+
+.query-plan-error .error-icon {
+  font-size: 48px;
+  color: #f44336;
+  margin-bottom: 16px;
+}
+
+.query-plan-error .error-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  margin-bottom: 8px;
+}
+
+.query-plan-error .error-message {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  max-width: 400px;
+}
+
+/* Empty state */
+.query-plan-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+}
+
+.query-plan-empty .empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.query-plan-empty .empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  margin-bottom: 8px;
+}
+
+.query-plan-empty .empty-hint {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}

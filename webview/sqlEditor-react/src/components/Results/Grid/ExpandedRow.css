@@ -1,0 +1,108 @@
+/* Expanded Row Container */
+.expanded-row-container {
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  z-index: 1;
+}
+
+.expanded-row-cell {
+  padding: 0 !important;
+  border: none;
+  vertical-align: top;
+  box-sizing: border-box;
+}
+
+.expanded-row-content {
+  border-left: 3px solid var(--vscode-button-background);
+  background: var(--vscode-editor-background);
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 60px;
+  padding: 4px;
+}
+
+.expanded-row-content.loading,
+.expanded-row-content.error,
+.expanded-row-content.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.expanded-row-content.error span {
+  color: var(--vscode-errorForeground);
+}
+
+.expanded-row-content.empty span {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+/* Loader Spinner */
+.loader-spinner {
+  border: 3px solid var(--vscode-panel-border);
+  border-top: 3px solid var(--vscode-button-background);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Nested Table Container */
+.nested-table-container {
+  font-size: 0.9em;
+  background: var(--vscode-editor-background);
+  overflow: auto;
+  min-height: 80px;
+  max-height: 400px;
+  border: 1px solid var(--vscode-panel-border);
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px;
+}
+
+.nested-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 100%;
+}
+
+.nested-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.nested-table .grid-cell {
+  display: table-cell !important;
+  padding: 4px 8px !important;
+  border: 1px solid var(--vscode-panel-border) !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 100px;
+  max-width: 300px;
+}
+
+.nested-table .row-number-cell {
+  display: table-cell !important;
+  width: 50px !important;
+  min-width: 50px !important;
+}
+
+.nested-table tbody tr {
+  position: relative;
+}
+
+/* Override some grid styles for nested tables */
+.nested-table .grid-cell {
+  font-size: 0.9em;
+}

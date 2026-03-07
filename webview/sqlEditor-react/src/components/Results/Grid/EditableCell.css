@@ -1,0 +1,75 @@
+.editable-cell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  cursor: text;
+  position: relative;
+}
+
+.editable-cell:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.editable-cell.editing {
+  padding: 0;
+}
+
+.editable-cell.modified {
+  background-color: rgba(255, 193, 7, 0.15);
+}
+
+.editable-cell.deleted {
+  background-color: rgba(220, 53, 69, 0.15);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.editable-cell.null-value .cell-content {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.cell-content {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.null-indicator {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.modified-indicator {
+  color: var(--vscode-inputValidation-warningBorder, #ffc107);
+  margin-left: 4px;
+  font-size: 8px;
+  flex-shrink: 0;
+}
+
+.cell-input {
+  width: 100%;
+  height: 100%;
+  min-height: 28px;
+  border: 2px solid var(--vscode-focusBorder);
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  outline: none;
+  resize: none;
+}
+
+textarea.cell-input {
+  min-height: 60px;
+}
+
+.cell-input:focus {
+  border-color: var(--vscode-focusBorder);
+}

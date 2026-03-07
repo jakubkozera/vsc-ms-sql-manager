@@ -1,0 +1,16 @@
+.inline-cell-editor {
+  width: 100%;
+  height: 100%;
+  padding: 4px 8px;
+  border: 2px solid var(--vscode-focusBorder);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.inline-cell-editor:focus {
+  border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
+}

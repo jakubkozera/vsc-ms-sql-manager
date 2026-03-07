@@ -1,0 +1,52 @@
+.grid-row {
+  transition: background-color 0.1s ease;
+}
+
+.grid-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.grid-row:nth-child(even) {
+  background: rgba(127, 127, 127, 0.04);
+}
+
+.grid-row:nth-child(even):hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.grid-row.selected {
+  background: var(--vscode-list-activeSelectionBackground) !important;
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.grid-row.selected:hover {
+  background: var(--vscode-list-activeSelectionBackground) !important;
+}
+
+.row-number-cell {
+  text-align: center;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  background-color: var(--vscode-editor-background, #1e1e1e) !important;
+  user-select: none;
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 48 !important;
+  border-right: 2px solid var(--vscode-panel-border, #3c3c3c) !important;
+  border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c) !important;
+  min-width: 50px !important;
+  max-width: 50px !important;
+  width: 50px !important;
+  padding: 6px 12px !important;
+}
+/* Row marked for deletion */
+.grid-row.marked-for-deletion {
+  background-color: rgba(220, 53, 69, 0.15) !important;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.grid-row.marked-for-deletion .grid-cell {
+  text-decoration: line-through;
+}

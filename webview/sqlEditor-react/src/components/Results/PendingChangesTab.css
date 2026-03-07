@@ -1,0 +1,218 @@
+.pending-changes-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+
+#pendingChangesContent {
+  padding: 16px;
+  overflow: auto;
+}
+
+.pending-changes-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.pending-changes-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pending-changes-actions {
+  display: flex;
+  gap: 8px;
+  margin-right: 12px;
+}
+
+.icon-button {
+  padding: 4px;
+  background-color: transparent;
+  color: var(--vscode-foreground);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.change-item {
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-left: 3px solid #ff8f00;
+  border-radius: 3px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.change-item-delete {
+  border-left-color: #f48771;
+}
+
+.change-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.change-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.change-row-actions {
+  display: flex;
+  gap: 8px;
+  margin-right: 8px;
+}
+
+.change-revert {
+  padding: 4px;
+  background-color: transparent;
+  color: var(--vscode-foreground);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.change-revert:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.change-commit {
+  padding: 4px;
+  background-color: transparent;
+  color: var(--vscode-foreground);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.change-commit:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.change-expand-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.change-expand-icon {
+  transition: transform 0.2s;
+}
+
+.change-expand-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.change-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.change-detail-row {
+  display: contents;
+}
+
+.change-label {
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+
+.change-value {
+  font-family: var(--vscode-editor-font-family);
+  display: flex;
+  align-items: center;
+}
+
+.change-value-old {
+  color: #f48771;
+  text-decoration: line-through;
+}
+
+.change-value-new {
+  color: #89d185;
+}
+
+.change-sql {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--vscode-foreground);
+}
+
+.change-details-expanded {
+  margin-top: 8px;
+  padding-left: 22px;
+}
+
+.change-detail-item {
+  margin-bottom: 8px;
+  padding: 8px;
+  background: var(--vscode-editor-background);
+  border-radius: 4px;
+}
+
+.change-detail-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.change-detail-item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.change-detail-item-col {
+  font-weight: 500;
+}
+
+.change-detail-item-values {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.change-detail-label {
+  color: var(--vscode-descriptionForeground);
+}
+
+.no-pending-changes {
+  text-align: center;
+  padding: 40px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}

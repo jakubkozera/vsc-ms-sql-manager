@@ -6,6 +6,12 @@ import * as os from 'os';
 
 export interface DBRequest {
     query(sql: string): Promise<any>;
+    /**
+     * Execute SQL directly without sp_executesql wrapping.
+     * Required for SET statements (e.g. SHOWPLAN_XML) that revert
+     * when executed via sp_executesql.
+     */
+    batch?(sql: string): Promise<any>;
     execute?(proc: string, params?: any): Promise<any>;
     cancel?(): void;
     // mssql.Request has `input` for parameters; optional here for msnodesqlv8 wrapper
@@ -18,6 +24,11 @@ export interface DBPool {
     close(): Promise<void>;
     request(): DBRequest;
     connected: boolean;
+    /**
+     * Execute a callback with multiple queries pinned to the same connection.
+     * Guarantees session-level SET options persist across calls.
+     */
+    runInTransaction?: (fn: (request: () => DBRequest) => Promise<any>) => Promise<any>;
 }
 
 interface OdbcError {
@@ -353,6 +364,10 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                 // We just prevent the crash here
                             }
                         } as DBRequest;
+                    },
+                    async runInTransaction(fn: (request: () => DBRequest) => Promise<any>) {
+                        // msnodesqlv8 uses a single connection, so session state persists naturally
+                        return fn(() => pool.request());
                     }
                 };
 
@@ -448,6 +463,37 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
             } finally {
                 this.connected = false;
             }
+        },
+        async runInTransaction(fn: (request: () => DBRequest) => Promise<any>) {
+            // mssql.Transaction acquires ONE connection from the pool and holds it
+            // for the duration — no sp_reset_connection is called between individual
+            // requests.  This guarantees session-level SET options such as
+            // SET SHOWPLAN_XML ON persist across consecutive .query() calls.
+            const transaction = new mssql.Transaction(poolInstance);
+            await transaction.begin();
+            let fnResult: any;
+            let fnError: any = null;
+            try {
+                fnResult = await fn(() => {
+                    // Each makeRequest() call creates a new Request bound to the
+                    // SAME transaction connection — sequential, no resets.
+                    const req = new mssql.Request(transaction);
+                    return {
+                        async query(sqlText: string) { return req.query(sqlText); },
+                        async batch(sqlText: string) { return req.batch(sqlText); },
+                        cancel() { req.cancel(); }
+                    } as DBRequest;
+                });
+            } catch (err) {
+                fnError = err;
+            } finally {
+                // Always rollback: SET SHOWPLAN_XML ON does not execute DML so
+                // there is nothing to commit.  Rollback cleanly releases the
+                // pinned connection back to the pool.
+                try { await transaction.rollback(); } catch { /* ignore if already closed */ }
+            }
+            if (fnError) { throw fnError; }
+            return fnResult;
         },
         request() {
             const request = poolInstance.request();

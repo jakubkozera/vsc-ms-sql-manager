@@ -103,10 +103,8 @@ export function registerAllCommands(
             context,
             historyManager,
             historyTreeProvider,
-            connectionProvider,
             outputChannel,
-            unifiedTreeProvider,
-            sqlEditorProvider
+            unifiedTreeProvider
         );
         allCommands.push(...historyCommands);
     }

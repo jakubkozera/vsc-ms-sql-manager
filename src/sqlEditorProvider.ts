@@ -21,6 +21,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private sqlSnippets: any[] = [];
     // Schema cache instance
     private schemaCache: SchemaCache;
+    // Use React webview (set to true to enable new React UI)
+    private useReactWebview: boolean = true;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -31,6 +33,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         this.loadSqlSnippets();
         this.setupSnippetsWatcher();
         this.schemaCache = SchemaCache.getInstance(context);
+        
+        // Check configuration for React webview preference
+        const config = vscode.workspace.getConfiguration('mssqlManager');
+        this.useReactWebview = config.get<boolean>('useReactWebview', true);
     }
 
     public async resolveCustomTextEditor(
@@ -46,8 +52,10 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             ]
         };
 
-        // Set initial HTML content
-        webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
+        // Set initial HTML content (React or legacy)
+        webviewPanel.webview.html = this.useReactWebview 
+            ? this.getReactHtmlForWebview(webviewPanel.webview)
+            : this.getHtmlForWebview(webviewPanel.webview);
 
         // Track webview to document mapping
         this.webviewToDocument.set(webviewPanel.webview, document.uri);
@@ -88,6 +96,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         // Set the preferred connection+database for this webview
                         const compositeId = `${preferredDb.connectionId}::${preferredDb.database}`;
                         this.webviewSelectedConnection.set(webviewPanel.webview, compositeId);
+                    } else {
+                        // No preferred database, check if there's an active connection
+                        const activeConfig = this.connectionProvider.getCurrentConfig();
+                        if (activeConfig) {
+                            // Set the active connection for this webview
+                            const compositeId = `${activeConfig.id}::${activeConfig.database || 'master'}`;
+                            this.webviewSelectedConnection.set(webviewPanel.webview, compositeId);
+                            this.outputChannel.appendLine(`[SqlEditorProvider] Set active connection for webview: ${compositeId}`);
+                        }
                     }
 
                     // Send initial connections list
@@ -178,6 +195,9 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     // Update current database in connection provider for history tracking
                     this.connectionProvider.setCurrentDatabase(message.connectionId, message.databaseName);
                     
+                    // Send updated databases list to update UI
+                    await this.sendDatabasesList(webviewPanel.webview, message.connectionId, message.databaseName);
+                    
                     await this.sendSchemaUpdate(webviewPanel.webview, compositeId);
                     break;
 
@@ -192,6 +212,19 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         this.webviewSelectedConnection.set(webviewPanel.webview, message.connectionId);
                     }
                     await this.sendSchemaUpdate(webviewPanel.webview, message.connectionId);
+                    break;
+
+                case 'requestPaste':
+                    // Handle paste request from webview - read from VS Code clipboard and send back
+                    try {
+                        const clipboardContent = await vscode.env.clipboard.readText();
+                        webviewPanel.webview.postMessage({
+                            type: 'pasteContent',
+                            content: clipboardContent
+                        });
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] Failed to read clipboard: ${err}`);
+                    }
                     break;
 
                 case 'goToDefinition':
@@ -457,6 +490,17 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                         await vscode.commands.executeCommand('mssqlManager.newQuery', connectionItem, message.query, true);
                     } catch (err) {
                         this.outputChannel.appendLine(`[SqlEditorProvider] openNewQuery failed: ${err}`);
+                    }
+                    break;
+
+                case 'showMessage':
+                    // Display message from webview
+                    if (message.level === 'error') {
+                        vscode.window.showErrorMessage(message.message);
+                    } else if (message.level === 'warning') {
+                        vscode.window.showWarningMessage(message.message);
+                    } else {
+                        vscode.window.showInformationMessage(message.message);
                     }
                     break;
             }
@@ -770,6 +814,53 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
+    /**
+     * Get HTML for the new React-based SQL Editor webview
+     */
+    private getReactHtmlForWebview(webview: vscode.Webview): string {
+        const cacheBuster = Date.now();
+        
+        // React build output paths
+        const reactDistPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor-react', 'dist');
+        const scriptPath = vscode.Uri.joinPath(reactDistPath, 'sqlEditor.js');
+        const stylePath = vscode.Uri.joinPath(reactDistPath, 'sqlEditor.css');
+        
+        const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
+        const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
+        
+        // Monaco loader CDN
+        const monacoLoaderUri = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
+        
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; 
+        style-src ${webview.cspSource} 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; 
+        font-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net data:; 
+        script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net blob:; 
+        img-src ${webview.cspSource} data:; 
+        worker-src blob:;
+        connect-src ${webview.cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
+    <title>SQL Editor</title>
+    <link rel="stylesheet" href="${styleUri}">
+    <style>
+        html, body, #root {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="${scriptUri}"></script>
+</body>
+</html>`;
+    }
+
     private getHtmlForWebview(webview: vscode.Webview): string {
         // External resources (Monaco loader stays on CDN)
         const monacoLoaderUri = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
@@ -876,6 +967,45 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     /**
+     * Force content update in SQL editor webview
+     */
+    public forceContentUpdate(fileUri: vscode.Uri, content: string): boolean {
+        console.log('[SqlEditorProvider] forceContentUpdate called:', {
+            fileUri: fileUri.toString(),
+            contentLength: content.length,
+            contentPreview: content.substring(0, 100) + '...'
+        });
+        this.outputChannel.appendLine(`[SqlEditorProvider] forceContentUpdate called for ${fileUri.fsPath}`);
+        
+        // Find the webview for this file
+        for (const [webview, uri] of this.webviewToDocument.entries()) {
+            console.log('[SqlEditorProvider] Checking webview:', {
+                webviewUri: uri.toString(),
+                targetUri: fileUri.toString(),
+                matches: uri.toString() === fileUri.toString(),
+                disposed: this.disposedWebviews.has(webview)
+            });
+            if (uri.toString() === fileUri.toString() && !this.disposedWebviews.has(webview)) {
+                console.log('[SqlEditorProvider] Found matching webview, sending update message');
+                this.outputChannel.appendLine(`[SqlEditorProvider] Found matching webview, updating content`);
+                
+                // Send update message to webview
+                webview.postMessage({
+                    type: 'update',
+                    content: content
+                });
+                console.log('[SqlEditorProvider] Update message sent to webview');
+                
+                return true;
+            }
+        }
+        
+        console.log('[SqlEditorProvider] No matching webview found');
+        this.outputChannel.appendLine(`[SqlEditorProvider] WARNING: No matching webview found for ${fileUri.toString()}`);
+        return false;
+    }
+
+    /**
      * Insert text into SQL editor webview
      */
     public insertTextToEditor(fileUri: vscode.Uri, text: string): boolean {
@@ -944,12 +1074,12 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             authType: conn.config.authType
         }));
 
-        // Prefer the webview's last selected connection
+        // Prefer the webview's last selected connection, then active connection, then first active connection
         const preserved = this.webviewSelectedConnection.get(webview);
         let currentConnectionIdToSend = activeConnectionId;
         let currentDatabase: string | null = null;
 
-        this.outputChannel.appendLine(`[SqlEditorProvider] updateConnectionsList: preserved=${preserved}, activeConnectionId=${activeConnectionId}`);
+        this.outputChannel.appendLine(`[SqlEditorProvider] updateConnectionsList: preserved=${preserved}, activeConnectionId=${activeConnectionId}, activeConnections=${activeConnections.length}`);
 
         // Parse preserved selection if it's composite
         if (preserved && typeof preserved === 'string' && preserved.includes('::')) {
@@ -960,6 +1090,11 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         } else if (preserved) {
             currentConnectionIdToSend = preserved;
             this.outputChannel.appendLine(`[SqlEditorProvider] Using simple preserved connection: ${preserved}`);
+        } else if (!currentConnectionIdToSend && activeConnections.length > 0) {
+            // No preserved or active connection, use the first active connection
+            currentConnectionIdToSend = activeConnections[0].id;
+            currentDatabase = activeConnections[0].config.database || 'master';
+            this.outputChannel.appendLine(`[SqlEditorProvider] Using first active connection: ${currentConnectionIdToSend} -> ${currentDatabase}`);
         } else {
             this.outputChannel.appendLine(`[SqlEditorProvider] No preserved connection, using active: ${activeConnectionId}`);
         }
@@ -1537,22 +1672,60 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         try {
             const startTime = Date.now();
+            this.outputChannel.appendLine(`[EstimatedPlan] Starting. connectionId=${connectionId}`);
+            this.outputChannel.appendLine(`[EstimatedPlan] poolToUse: connected=${poolToUse?.connected}, hasRunInTransaction=${typeof poolToUse?.runInTransaction}`);
+            this.outputChannel.appendLine(`[EstimatedPlan] query (first 120): ${query.substring(0, 120).replace(/\n/g, ' ')}`);
             
-            // Enable SHOWPLAN_XML to get estimated plan without executing
-            const planQuery = `SET SHOWPLAN_XML ON;\n${query}\nSET SHOWPLAN_XML OFF;`;
-            
-            const result = await this.queryExecutor.executeQuery(planQuery, poolToUse);
+            // SET SHOWPLAN_XML must be the only statement in its batch and must
+            // run on the SAME connection as the query.  Use runInTransaction to
+            // pin all requests to one connection (important for mssql pool driver).
+            const runPinned = async (makeRequest: () => any) => {
+                this.outputChannel.appendLine('[EstimatedPlan] Step 1: SET SHOWPLAN_XML ON ...');
+                // Use batch() instead of query() for SET statements.
+                // query() uses sp_executesql internally, and SET SHOWPLAN_XML
+                // reverts when executed inside sp_executesql.
+                const req1 = makeRequest();
+                await (req1.batch ? req1.batch('SET SHOWPLAN_XML ON') : req1.query('SET SHOWPLAN_XML ON'));
+                this.outputChannel.appendLine('[EstimatedPlan] Step 2: executing query ...');
+                try {
+                    const req2 = makeRequest();
+                    const r = await (req2.batch ? req2.batch(query) : req2.query(query));
+                    const firstRowKeys = r?.recordsets?.[0]?.[0] ? Object.keys(r.recordsets[0][0]) : [];
+                    this.outputChannel.appendLine(`[EstimatedPlan] Step 2 done: recordsets=${r?.recordsets?.length}, firstRow keys=[${firstRowKeys.join(', ')}]`);
+                    return r;
+                } finally {
+                    try {
+                        this.outputChannel.appendLine('[EstimatedPlan] Step 3: SET SHOWPLAN_XML OFF ...');
+                        const req3 = makeRequest();
+                        await (req3.batch ? req3.batch('SET SHOWPLAN_XML OFF') : req3.query('SET SHOWPLAN_XML OFF'));
+                    } catch (e) {
+                        this.outputChannel.appendLine(`[EstimatedPlan] Step 3 failed (ignored): ${e}`);
+                    }
+                }
+            };
+
+            const result = poolToUse.runInTransaction
+                ? await poolToUse.runInTransaction(runPinned)
+                : await runPinned(() => poolToUse.request());
+
             const executionTime = Date.now() - startTime;
 
             // Extract the XML plan from result
             let planXml = null;
+            this.outputChannel.appendLine(`[EstimatedPlan] Extracting plan. result.recordsets=${result?.recordsets?.length ?? 'undefined'}`);
             if (result.recordsets && result.recordsets.length > 0) {
                 const planResultSet = result.recordsets[0];
+                this.outputChannel.appendLine(`[EstimatedPlan] First recordset rows=${planResultSet.length}, keys=${planResultSet[0] ? Object.keys(planResultSet[0]).join(', ') : 'none'}`);
                 if (planResultSet.length > 0 && planResultSet[0]['Microsoft SQL Server 2005 XML Showplan']) {
                     planXml = planResultSet[0]['Microsoft SQL Server 2005 XML Showplan'];
+                    this.outputChannel.appendLine(`[EstimatedPlan] planXml extracted, length=${planXml.length}`);
+                } else {
+                    this.outputChannel.appendLine(`[EstimatedPlan] planXml key not found. Available keys: ${planResultSet[0] ? Object.keys(planResultSet[0]).join(', ') : 'row is empty'}`);
                 }
+            } else {
+                this.outputChannel.appendLine(`[EstimatedPlan] No recordsets in result. Full result keys: ${result ? Object.keys(result).join(', ') : 'result is null'}`);
             }
-            
+
             if (planXml) {
                 webview.postMessage({
                     type: 'queryPlan',
@@ -1571,6 +1744,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 });
             }
         } catch (error: any) {
+            this.outputChannel.appendLine(`[EstimatedPlan] EXCEPTION: ${error?.message}\n${error?.stack || ''}`);
             webview.postMessage({
                 type: 'error',
                 error: error.message || 'Plan generation failed',
@@ -1861,7 +2035,9 @@ COMMIT TRANSACTION;
         this.webviewToDocument.set(panel.webview, syntheticUri);
         this.webviewSelectedConnection.set(panel.webview, compositeId);
 
-        panel.webview.html = this.getHtmlForWebview(panel.webview);
+        panel.webview.html = this.useReactWebview
+            ? this.getReactHtmlForWebview(panel.webview)
+            : this.getHtmlForWebview(panel.webview);
 
         // Setup state for serialization/restoration
         this.setupUntitledPanelHandlers(panel, connectionId, databaseName, initialQuery || '', autoExecute);
@@ -1894,7 +2070,9 @@ COMMIT TRANSACTION;
         };
 
         // Setup the restored panel
-        panel.webview.html = this.getHtmlForWebview(panel.webview);
+        panel.webview.html = this.useReactWebview
+            ? this.getReactHtmlForWebview(panel.webview)
+            : this.getHtmlForWebview(panel.webview);
         
         // Get connection config to determine base title
         const config = this.connectionProvider.getConnectionConfig(connectionId);
@@ -2029,6 +2207,18 @@ COMMIT TRANSACTION;
                     await this.executeRelationQuery(message.keyValue, message.schema, message.table, message.column, message.expansionId, message.connectionId, panel.webview);
                     break;
 
+                case 'requestPaste':
+                    try {
+                        const clipboardContent = await vscode.env.clipboard.readText();
+                        panel.webview.postMessage({
+                            type: 'pasteContent',
+                            content: clipboardContent
+                        });
+                    } catch (err) {
+                        this.outputChannel.appendLine(`[SqlEditorProvider] Failed to read clipboard: ${err}`);
+                    }
+                    break;
+
                 case 'executeEstimatedPlan': {
                     let planConnectionId = message.connectionId;
                     if (message.databaseName && planConnectionId && !planConnectionId.includes('::')) {
@@ -2059,6 +2249,7 @@ COMMIT TRANSACTION;
                     const cid = `${message.connectionId}::${message.databaseName}`;
                     this.webviewSelectedConnection.set(panel.webview, cid);
                     this.connectionProvider.setCurrentDatabase(message.connectionId, message.databaseName);
+                    await this.sendDatabasesList(panel.webview, message.connectionId, message.databaseName);
                     await this.sendSchemaUpdate(panel.webview, cid);
                     break;
                 }

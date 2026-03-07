@@ -1,0 +1,85 @@
+/* VS Code Theme Variables - automatically provided by VS Code webview */
+/* These are fallback values for development */
+
+:root {
+  /* Editor colors */
+  --vscode-editor-background: #1e1e1e;
+  --vscode-editor-foreground: #cccccc;
+  --vscode-foreground: #cccccc;
+  
+  /* Input */
+  --vscode-input-background: #3c3c3c;
+  --vscode-input-foreground: #cccccc;
+  --vscode-input-border: #3c3c3c;
+  --vscode-input-placeholderForeground: #a0a0a0;
+  --vscode-focusBorder: #007fd4;
+  
+  /* Buttons */
+  --vscode-button-background: #0e639c;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #1177bb;
+  --vscode-button-secondaryBackground: #3a3d41;
+  --vscode-button-secondaryForeground: #cccccc;
+  --vscode-button-secondaryHoverBackground: #45494e;
+  
+  /* Lists */
+  --vscode-list-activeSelectionBackground: #094771;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-list-inactiveSelectionBackground: #37373d;
+  
+  /* Panel */
+  --vscode-panel-border: #3c3c3c;
+  --vscode-panel-background: #1e1e1e;
+  
+  /* Editor groups */
+  --vscode-editorGroupHeader-tabsBackground: #252526;
+  --vscode-tab-activeBackground: #1e1e1e;
+  --vscode-tab-inactiveBackground: #2d2d2d;
+  
+  /* Dropdown */
+  --vscode-dropdown-background: #3c3c3c;
+  --vscode-dropdown-foreground: #cccccc;
+  --vscode-dropdown-border: #3c3c3c;
+  
+  /* Description foreground */
+  --vscode-descriptionForeground: #808080;
+  
+  /* Links */
+  --vscode-textLink-foreground: #3794ff;
+  
+  /* Widget */
+  --vscode-editorWidget-background: #252526;
+  --vscode-editorWidget-border: #454545;
+  
+  /* Toolbar */
+  --vscode-toolbar-hoverBackground: #5a5d5e50;
+  
+  /* Errors */
+  --vscode-errorForeground: #f48771;
+  
+  /* Fonts */
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: Consolas, "Courier New", monospace;
+  --vscode-editor-font-size: 14px;
+}
+
+/* Light theme override example */
+@media (prefers-color-scheme: light) {
+  :root {
+    --vscode-editor-background: #ffffff;
+    --vscode-editor-foreground: #333333;
+    --vscode-foreground: #333333;
+    --vscode-input-background: #ffffff;
+    --vscode-input-foreground: #333333;
+    --vscode-input-border: #cecece;
+    --vscode-button-background: #007acc;
+    --vscode-panel-border: #e0e0e0;
+    --vscode-editorGroupHeader-tabsBackground: #f3f3f3;
+    --vscode-list-hoverBackground: #e8e8e8;
+    --vscode-dropdown-background: #ffffff;
+    --vscode-dropdown-foreground: #333333;
+    --vscode-dropdown-border: #cecece;
+  }
+}

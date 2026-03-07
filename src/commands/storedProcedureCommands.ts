@@ -54,7 +54,7 @@ END
 GO
 `;
 
-            await openSqlInCustomEditor(template, `create_${procedureName}.sql`, context);
+            await openSqlInCustomEditor(template, `create_${procedureName}.sql`, context, node.connectionId, node.database);
         })
     );
 
@@ -89,7 +89,7 @@ GO
                     // Add USE database statement
                     const content = `USE [${node.database}];\nGO\n\n${definition}\nGO\n`;
 
-                    await openSqlInCustomEditor(content, `alter_${node.name}.sql`, context);
+                    await openSqlInCustomEditor(content, `alter_${node.name}.sql`, context, node.connectionId, node.database);
                 } else {
                     vscode.window.showErrorMessage('Could not retrieve procedure definition');
                 }
@@ -163,7 +163,7 @@ GO
                 
                 execStatement += ';\\nGO\\n';
 
-                await openSqlInCustomEditor(execStatement, `exec_${node.name}.sql`, context);
+                await openSqlInCustomEditor(execStatement, `exec_${node.name}.sql`, context, node.connectionId, node.database);
                 
             } catch (error) {
                 vscode.window.showErrorMessage(`Error executing procedure: ${error}`);
@@ -528,7 +528,7 @@ async function scriptProcedureTo(
 
         // Handle destination
         if (destination === 'window') {
-            await openSqlInCustomEditor(script, `${node.name}_${scriptType.toLowerCase()}.sql`, context);
+            await openSqlInCustomEditor(script, `${node.name}_${scriptType.toLowerCase()}.sql`, context, node.connectionId, node.database);
         } else if (destination === 'file') {
             const uri = await vscode.window.showSaveDialog({
                 defaultUri: vscode.Uri.file(`${node.name}_${scriptType.toLowerCase()}.sql`),

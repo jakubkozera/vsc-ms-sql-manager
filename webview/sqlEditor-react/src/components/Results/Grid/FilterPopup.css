@@ -1,0 +1,115 @@
+.filter-popup {
+  position: fixed;
+  z-index: 1000;
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 220px;
+}
+
+.filter-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.filter-popup-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.filter-popup-close {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+
+.filter-popup-close:hover {
+  opacity: 1;
+}
+
+.filter-popup-content {
+  padding: 12px;
+}
+
+.filter-field {
+  margin-bottom: 10px;
+}
+
+.filter-field:last-child {
+  margin-bottom: 0;
+}
+
+.filter-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 4px;
+}
+
+.filter-field select,
+.filter-field input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  color: var(--vscode-input-foreground);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.filter-field select:focus,
+.filter-field input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-popup-footer {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--vscode-panel-border);
+  justify-content: flex-end;
+}
+
+.filter-btn {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.filter-btn-clear {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-panel-border));
+}
+
+.filter-btn-clear:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.filter-btn-apply {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.filter-btn-apply:hover {
+  background: var(--vscode-button-hoverBackground);
+}

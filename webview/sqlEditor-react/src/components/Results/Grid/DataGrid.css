@@ -1,0 +1,123 @@
+.data-grid-container {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  outline: none;
+  border: 1px solid var(--vscode-panel-border);
+  min-height: 0;
+}
+
+.data-grid-container.full-height {
+  flex: 1;
+}
+
+.data-grid-scroll-container {
+  overflow: auto;
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+  max-height: 400px;
+  background: var(--vscode-editor-background);
+}
+
+.data-grid-scroll-container.full-height {
+  min-height: 0;
+  max-height: none;
+  flex: 1;
+  /* height must NOT be auto — that expands the container to fit all content,
+     breaking virtual scrolling and pushing the horizontal scrollbar to the
+     very bottom of a multi-million-pixel tall area. */
+}
+
+.data-grid-table {
+  display: block;
+  width: fit-content;
+  min-width: 100%;
+  border-spacing: 0;
+  font-size: 13px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
+  background: var(--vscode-editor-background);
+  position: relative;
+}
+
+.data-grid-table thead {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 49;
+}
+
+.data-grid-table thead tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.data-grid-table tbody {
+  display: block;
+  position: relative;
+}
+
+.data-grid-table tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.data-grid-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--vscode-sideBarSectionHeader-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+.toolbar-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.row-count {
+  font-weight: 500;
+}
+
+.filter-indicator {
+  color: var(--vscode-textLink-foreground);
+}
+
+.selection-indicator {
+  color: var(--vscode-descriptionForeground);
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.toolbar-btn {
+  padding: 4px 10px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: none;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.toolbar-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.data-grid-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+}

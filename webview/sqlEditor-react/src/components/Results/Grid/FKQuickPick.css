@@ -1,0 +1,211 @@
+/* FK Quick Pick Overlay */
+.fk-quick-pick-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* FK Quick Pick Container */
+.fk-quick-pick {
+  background: var(--vscode-quickInput-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  min-width: 800px;
+  max-width: 900px;
+  height: 500px;
+  display: flex;
+  flex-direction: row;
+}
+
+/* Left Panel */
+.fk-quick-pick-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--vscode-panel-border);
+  min-width: 300px;
+}
+
+.fk-quick-pick-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.fk-quick-pick-filter {
+  padding: 8px 16px;
+  background: var(--vscode-quickInput-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fk-quick-pick-filter input {
+  width: 100%;
+  padding: 6px 30px 6px 8px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 2px;
+  outline: none;
+  box-sizing: border-box;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+.fk-quick-pick-filter input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.fk-quick-pick-search-icon {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--vscode-input-foreground);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* List */
+.fk-quick-pick-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.fk-quick-pick-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  transition: background 0.1s;
+  position: relative;
+}
+
+.fk-quick-pick-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.fk-quick-pick-item.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.fk-quick-pick-item-label {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.fk-quick-pick-item-query {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.fk-quick-pick-item.selected .fk-quick-pick-item-query {
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 0.8;
+}
+
+/* Open Query Button */
+.fk-quick-pick-open-query-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  color: var(--vscode-button-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fk-quick-pick-item.selected .fk-quick-pick-open-query-btn {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.fk-quick-pick-open-query-btn:hover {
+  background: var(--vscode-button-background) !important;
+  color: var(--vscode-button-foreground) !important;
+}
+
+/* Right Panel */
+.fk-quick-pick-right {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+.fk-quick-pick-details-empty {
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+  margin-top: 20px;
+}
+
+.fk-quick-pick-details-header {
+  margin-bottom: 16px;
+}
+
+.fk-quick-pick-details-title {
+  font-weight: 600;
+  font-size: 1.1em;
+  margin-bottom: 4px;
+}
+
+.fk-quick-pick-details-subtitle {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+/* Details Table */
+.fk-quick-pick-details-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.fk-quick-pick-details-table thead tr {
+  text-align: left;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.fk-quick-pick-details-table th {
+  padding: 4px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 600;
+}
+
+.fk-quick-pick-details-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.fk-quick-pick-details-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.fk-quick-pick-details-table td:first-child {
+  font-weight: 500;
+}
+
+.fk-quick-pick-details-table td:last-child {
+  color: var(--vscode-descriptionForeground);
+}
