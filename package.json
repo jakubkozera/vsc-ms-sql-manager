@@ -1437,7 +1437,7 @@
         },
         "mssqlManager.useReactWebview": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Use the new React-based SQL Editor UI. Disable to use the legacy JavaScript UI."
         }
       }
