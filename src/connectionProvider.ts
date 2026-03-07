@@ -59,6 +59,8 @@ export interface ConnectionConfig {
     useConnectionString?: boolean;
     serverGroupId?: string; // New field for server group
     lastConnected?: string; // ISO date string of last successful connection
+    azureAuthMethod?: 'browser' | 'deviceCode'; // Entra ID auth method: interactive browser or device code flow
+    tenantId?: string; // Azure/Entra ID tenant ID (or 'common' / 'organizations')
 }
 
 export class ConnectionProvider {
@@ -308,7 +310,8 @@ export class ConnectionProvider {
                     : createDatabaseIcon(this.isConnectionActive(conn.id));
 
                 // Format last connected date
-                let authDetail = `Auth: ${conn.authType}`;
+                const authLabels: Record<string, string> = { sql: 'SQL Server', windows: 'Windows', azure: 'Entra ID' };
+                let authDetail = `Auth: ${authLabels[conn.authType] || conn.authType}`;
                 if (conn.lastConnected) {
                     const lastConnectedDate = new Date(conn.lastConnected);
                     const now = new Date();
@@ -489,7 +492,7 @@ export class ConnectionProvider {
                 let newConnection: DBPool | null = null;
                 try {
                     this.outputChannel.appendLine(`[ConnectionProvider] Creating pool for config...`);
-                    newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate, queryTimeout });
+                    newConnection = await createPoolForConfig({ ...sqlConfig, authType: config.authType, useConnectionString: config.useConnectionString, connectionString: config.connectionString, username: config.username, password: config.password, port: config.port, encrypt: config.encrypt, trustServerCertificate: config.trustServerCertificate, azureAuthMethod: config.azureAuthMethod, tenantId: config.tenantId, queryTimeout });
                     
                     this.outputChannel.appendLine(`[ConnectionProvider] Pool created, attempting to connect...`);
                     await newConnection.connect();
@@ -610,7 +613,9 @@ export class ConnectionProvider {
                 password: baseConfig.password,
                 port: baseConfig.port,
                 encrypt: baseConfig.encrypt,
-                trustServerCertificate: baseConfig.trustServerCertificate
+                trustServerCertificate: baseConfig.trustServerCertificate,
+                azureAuthMethod: baseConfig.azureAuthMethod,
+                tenantId: baseConfig.tenantId
             };
         }
 
