@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install React Webview Dependencies
+        run: npm ci --prefix webview/sqlEditor-react
+
       - name: Run Tests
         run: npm test
 
