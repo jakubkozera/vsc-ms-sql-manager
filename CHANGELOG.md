@@ -5,6 +5,15 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.2] - 2026-03-07
+
+### Fixed
+
+- **Schema Compare - SQL Session Kill State Recovery**
+  - Fixed issue where Schema Compare could fail with SQL Server error: "Cannot continue the execution because the session is in the kill state".
+  - Added automatic retry flow for kill-state failures by resetting database-scoped pools and retrying comparison.
+  - Added safe-mode fallback for metadata loading (sequential queries instead of aggressive parallel loading) to improve resilience on unstable sessions.
+
 ## [0.14.1] - 2026-03-07
 
 ### Added

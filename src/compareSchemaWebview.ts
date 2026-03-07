@@ -274,39 +274,30 @@ export class CompareSchemaWebview {
                 targetDatabase: this.targetDatabase
             });
 
-            // Preload schema cache for source database
-            this.outputChannel.appendLine(`[CompareSchema] Preloading schema cache for source...`);
-            this.panel?.webview.postMessage({
-                command: 'cacheLoadingStatus',
-                stage: 'source',
-                status: 'loading'
-            });
-            
-            await this.preloadSchemaCache(sourceConnectionId, this.sourceDatabase);
-            
-            this.panel?.webview.postMessage({
-                command: 'cacheLoadingStatus',
-                stage: 'source',
-                status: 'complete'
-            });
+            let changes: SchemaChange[];
+            try {
+                changes = await this.runComparisonWorkflow(sourceConnectionId, targetConnectionId, false);
+            } catch (error) {
+                if (!this.isSessionKillStateError(error)) {
+                    throw error;
+                }
 
-            // Preload schema cache for target database
-            this.outputChannel.appendLine(`[CompareSchema] Preloading schema cache for target...`);
-            this.panel?.webview.postMessage({
-                command: 'cacheLoadingStatus',
-                stage: 'target',
-                status: 'loading'
-            });
-            
-            await this.preloadSchemaCache(targetConnectionId, this.targetDatabase);
-            
-            this.panel?.webview.postMessage({
-                command: 'cacheLoadingStatus',
-                stage: 'target',
-                status: 'complete'
-            });
+                this.outputChannel.appendLine('[CompareSchema] SQL session entered kill state during comparison. Retrying with fresh pools and safe mode...');
+                await this.resetComparisonDbPools(sourceConnectionId, this.sourceDatabase, targetConnectionId, this.targetDatabase);
 
-            const changes = await this.detectSchemaChanges();
+                this.panel?.webview.postMessage({
+                    command: 'cacheLoadingStatus',
+                    stage: 'source',
+                    status: 'loading'
+                });
+                this.panel?.webview.postMessage({
+                    command: 'cacheLoadingStatus',
+                    stage: 'target',
+                    status: 'loading'
+                });
+
+                changes = await this.runComparisonWorkflow(sourceConnectionId, targetConnectionId, true);
+            }
             
             this.outputChannel.appendLine(`[CompareSchema] Comparison complete: ${changes.length} changes found`);
             this.outputChannel.appendLine(`[CompareSchema] Sending results to webview...`);
@@ -326,7 +317,62 @@ export class CompareSchemaWebview {
         }
     }
 
-    private async detectSchemaChanges(): Promise<SchemaChange[]> {
+    private async runComparisonWorkflow(sourceConnectionId: string, targetConnectionId: string, safeMode: boolean): Promise<SchemaChange[]> {
+        // Preload schema cache for source database
+        this.outputChannel.appendLine(`[CompareSchema] Preloading schema cache for source${safeMode ? ' (safe mode)' : ''}...`);
+        this.panel?.webview.postMessage({
+            command: 'cacheLoadingStatus',
+            stage: 'source',
+            status: 'loading'
+        });
+
+        await this.preloadSchemaCache(sourceConnectionId, this.sourceDatabase);
+
+        this.panel?.webview.postMessage({
+            command: 'cacheLoadingStatus',
+            stage: 'source',
+            status: 'complete'
+        });
+
+        // Preload schema cache for target database
+        this.outputChannel.appendLine(`[CompareSchema] Preloading schema cache for target${safeMode ? ' (safe mode)' : ''}...`);
+        this.panel?.webview.postMessage({
+            command: 'cacheLoadingStatus',
+            stage: 'target',
+            status: 'loading'
+        });
+
+        await this.preloadSchemaCache(targetConnectionId, this.targetDatabase);
+
+        this.panel?.webview.postMessage({
+            command: 'cacheLoadingStatus',
+            stage: 'target',
+            status: 'complete'
+        });
+
+        return await this.detectSchemaChanges(safeMode);
+    }
+
+    private isSessionKillStateError(error: unknown): boolean {
+        const message = error instanceof Error ? error.message : String(error);
+        return /session\s+is\s+in\s+the\s+kill\s+state/i.test(message);
+    }
+
+    private async resetComparisonDbPools(sourceConnectionId: string, sourceDatabase: string, targetConnectionId: string, targetDatabase: string): Promise<void> {
+        const operations: Promise<void>[] = [];
+
+        if (sourceConnectionId && sourceDatabase) {
+            operations.push(this.connectionProvider.closeDbPool(sourceConnectionId, sourceDatabase));
+        }
+
+        if (targetConnectionId && targetDatabase && (targetConnectionId !== sourceConnectionId || targetDatabase !== sourceDatabase)) {
+            operations.push(this.connectionProvider.closeDbPool(targetConnectionId, targetDatabase));
+        }
+
+        await Promise.all(operations);
+    }
+
+    private async detectSchemaChanges(safeMode: boolean = false): Promise<SchemaChange[]> {
         const changes: SchemaChange[] = [];
 
         // Get schema information for both databases
@@ -335,7 +381,7 @@ export class CompareSchemaWebview {
         
         // Cache all definitions upfront
         this.outputChannel.appendLine(`[CompareSchema] Caching object definitions...`);
-        await this.cacheAllDefinitions(sourceSchema, targetSchema);
+        await this.cacheAllDefinitions(sourceSchema, targetSchema, safeMode);
         this.outputChannel.appendLine(`[CompareSchema] Cached ${this.definitionsCache.size} object definitions`);
 
         // Compare tables (includes column, index, and constraint changes)
@@ -1030,7 +1076,7 @@ export class CompareSchemaWebview {
     }
 
     // Fetch all schema data for a single database in parallel
-    private async fetchAllSchemaData(pool: any, dbName: string): Promise<{
+    private async fetchAllSchemaData(pool: any, dbName: string, safeMode: boolean = false): Promise<{
         columns: Map<string, any[]>;
         constraints: Map<string, any[]>;
         indexes: Map<string, any[]>;
@@ -1040,26 +1086,46 @@ export class CompareSchemaWebview {
         triggers: Map<string, string>;
         users: Map<string, string>;
     }> {
-        this.outputChannel.appendLine(`[CompareSchema] Fetching all schema data for ${dbName} in parallel...`);
-        
-        // Execute all queries in parallel using Promise.all
-        const [columns, constraints, indexes, views, procedures, functions, triggers, users] = await Promise.all([
-            this.getAllTablesColumns(pool),
-            this.getAllTablesConstraints(pool),
-            this.getAllTablesIndexes(pool),
-            this.getAllViewsDefinitions(pool),
-            this.getAllProceduresDefinitions(pool),
-            this.getAllFunctionsDefinitions(pool),
-            this.getAllTriggersDefinitions(pool),
-            this.getAllUsersDefinitions(pool)
-        ]);
+        this.outputChannel.appendLine(`[CompareSchema] Fetching all schema data for ${dbName}${safeMode ? ' in safe mode (sequential)' : ' in parallel'}...`);
+
+        let columns: Map<string, any[]>;
+        let constraints: Map<string, any[]>;
+        let indexes: Map<string, any[]>;
+        let views: Map<string, string>;
+        let procedures: Map<string, string>;
+        let functions: Map<string, string>;
+        let triggers: Map<string, string>;
+        let users: Map<string, string>;
+
+        if (safeMode) {
+            // Safe mode intentionally avoids high query concurrency on a single session.
+            columns = await this.getAllTablesColumns(pool);
+            constraints = await this.getAllTablesConstraints(pool);
+            indexes = await this.getAllTablesIndexes(pool);
+            views = await this.getAllViewsDefinitions(pool);
+            procedures = await this.getAllProceduresDefinitions(pool);
+            functions = await this.getAllFunctionsDefinitions(pool);
+            triggers = await this.getAllTriggersDefinitions(pool);
+            users = await this.getAllUsersDefinitions(pool);
+        } else {
+            [columns, constraints, indexes, views, procedures, functions, triggers, users] = await Promise.all([
+                this.getAllTablesColumns(pool),
+                this.getAllTablesConstraints(pool),
+                this.getAllTablesIndexes(pool),
+                this.getAllViewsDefinitions(pool),
+                this.getAllProceduresDefinitions(pool),
+                this.getAllFunctionsDefinitions(pool),
+                this.getAllTriggersDefinitions(pool),
+                this.getAllUsersDefinitions(pool)
+            ]);
+        }
         
         this.outputChannel.appendLine(`[CompareSchema] Completed fetching all schema data for ${dbName}`);
         
         return { columns, constraints, indexes, views, procedures, functions, triggers, users };
     }
 
-    private async cacheAllDefinitions(sourceSchema: any, targetSchema: any) {
+    private async cacheAllDefinitions(sourceSchema: any, targetSchema: any, safeMode: boolean = false) {
         // Use ensureConnectionAndGetDbPool to reuse existing connections
         const sourcePool = await this.connectionProvider.ensureConnectionAndGetDbPool(this.sourceConnectionId, this.sourceDatabase);
         const targetPool = await this.connectionProvider.ensureConnectionAndGetDbPool(this.targetConnectionId, this.targetDatabase);
@@ -1067,13 +1133,20 @@ export class CompareSchemaWebview {
         // Note: We don't close these pools as they are managed by ConnectionProvider and may be reused
         try {
             // Fetch all schema data for BOTH databases in parallel
-            this.outputChannel.appendLine(`[CompareSchema] Fetching schema data for both databases in parallel...`);
+            this.outputChannel.appendLine(`[CompareSchema] Fetching schema data for both databases${safeMode ? ' in safe mode (sequential)' : ' in parallel'}...`);
             const startTime = Date.now();
-            
-            const [sourceData, targetData] = await Promise.all([
-                this.fetchAllSchemaData(sourcePool, this.sourceDatabase),
-                this.fetchAllSchemaData(targetPool, this.targetDatabase)
-            ]);
+
+            let sourceData;
+            let targetData;
+            if (safeMode) {
+                sourceData = await this.fetchAllSchemaData(sourcePool, this.sourceDatabase, true);
+                targetData = await this.fetchAllSchemaData(targetPool, this.targetDatabase, true);
+            } else {
+                [sourceData, targetData] = await Promise.all([
+                    this.fetchAllSchemaData(sourcePool, this.sourceDatabase, false),
+                    this.fetchAllSchemaData(targetPool, this.targetDatabase, false)
+                ]);
+            }
             
             const fetchTime = Date.now() - startTime;
             this.outputChannel.appendLine(`[CompareSchema] Fetched all data in ${fetchTime}ms`);
