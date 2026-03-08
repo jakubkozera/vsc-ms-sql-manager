@@ -225,7 +225,7 @@ export class SettingsWebview {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; 
         style-src ${webview.cspSource} 'unsafe-inline'; 
         font-src ${webview.cspSource} data:; 
-        script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval'; 
+        script-src ${webview.cspSource} https://cdn.jsdelivr.net https://*.jsdelivr.net 'unsafe-inline' 'unsafe-eval'; 
         img-src ${webview.cspSource} data:;">
     <title>MS SQL Manager Settings</title>
     <link rel="stylesheet" href="${globalStyleUri}">

@@ -287,6 +287,113 @@
   outline: none;
 }
 
+.formatting-layout {
+  display: grid;
+  grid-template-columns: minmax(380px, 1fr);
+  gap: 18px;
+}
+
+.formatting-controls {
+  min-width: 0;
+}
+
+.formatting-preview-column {
+  min-width: 0;
+}
+
+@media (min-width: 1280px) {
+  .formatting-layout {
+    grid-template-columns: minmax(420px, 1fr) minmax(420px, 0.95fr);
+    align-items: start;
+  }
+
+  .formatting-preview-column {
+    position: sticky;
+    top: 8px;
+  }
+}
+
+/* ========================================= */
+/* Formatting Preview                         */
+/* ========================================= */
+
+.format-preview {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+}
+
+.format-preview-header {
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.format-preview-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.format-preview-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.format-preview-samples {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-focusBorder) 8%);
+  flex-wrap: wrap;
+}
+
+.format-preview-sample {
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-button-secondaryBackground, var(--vscode-input-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.format-preview-sample:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.format-preview-sample.active {
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.format-preview-editor {
+  padding: 10px;
+}
+
+.format-preview-editor .monaco-editor,
+.format-preview-editor .overflow-guard {
+  border-radius: 6px;
+}
+
+.format-preview-editor .monaco-editor textarea.inputarea {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.format-preview-editor .monaco-editor textarea.ime-text-area {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ========================================= */
 /* Animations                                 */
 /* ========================================= */

@@ -3,6 +3,7 @@ import './settings.css';
 import { BooleanSetting } from './components/BooleanSetting';
 import { NumberSetting } from './components/NumberSetting';
 import { SelectSetting } from './components/SelectSetting';
+import { FormattingPreview } from './components/FormattingPreview';
 import { type ExtensionSettings, type IncomingMessage, defaultSettings } from './types';
 
 // ============================================
@@ -175,86 +176,104 @@ export function SettingsApp() {
 
           {/* Formatting Options */}
           <div className={`settings-tab-panel${activeTab === 'formatting' ? ' active' : ''}`}>
-            <NumberSetting
-              id="tabWidth"
-              label="Indent Width"
-              description="Number of spaces used for indentation when formatting SQL."
-              value={settings.tabWidth}
-              onChange={(v) => updateSetting('tabWidth', v)}
-              min={1}
-              max={8}
-              isModified={isSettingModified('tabWidth')}
-            />
-            <NumberSetting
-              id="linesBetweenQueries"
-              label="Lines Between Queries"
-              description="Number of blank lines inserted between separate SQL statements."
-              value={settings.linesBetweenQueries}
-              onChange={(v) => updateSetting('linesBetweenQueries', v)}
-              min={0}
-              max={5}
-              isModified={isSettingModified('linesBetweenQueries')}
-            />
-            <SelectSetting
-              id="keywordCase"
-              label="Keyword Case"
-              description="Transform SQL keywords to the selected case when formatting."
-              value={settings.keywordCase}
-              onChange={(v) => updateSetting('keywordCase', v as ExtensionSettings['keywordCase'])}
-              options={caseOptions}
-              isModified={isSettingModified('keywordCase')}
-            />
-            <SelectSetting
-              id="dataTypeCase"
-              label="Data Type Case"
-              description="Transform SQL data type names to the selected case when formatting."
-              value={settings.dataTypeCase}
-              onChange={(v) => updateSetting('dataTypeCase', v as ExtensionSettings['dataTypeCase'])}
-              options={caseOptions}
-              isModified={isSettingModified('dataTypeCase')}
-            />
-            <SelectSetting
-              id="functionCase"
-              label="Function Case"
-              description="Transform SQL function names to the selected case when formatting."
-              value={settings.functionCase}
-              onChange={(v) => updateSetting('functionCase', v as ExtensionSettings['functionCase'])}
-              options={caseOptions}
-              isModified={isSettingModified('functionCase')}
-            />
-            <SelectSetting
-              id="indentStyle"
-              label="Indentation Style"
-              description="Controls the indentation style used when formatting SQL."
-              value={settings.indentStyle}
-              onChange={(v) => updateSetting('indentStyle', v as ExtensionSettings['indentStyle'])}
-              options={[
-                { value: 'standard', label: 'Standard' },
-                { value: 'tabularLeft', label: 'Tabular, Left' },
-                { value: 'tabularRight', label: 'Tabular, Right' },
-              ]}
-              isModified={isSettingModified('indentStyle')}
-            />
-            <SelectSetting
-              id="logicalOperatorNewline"
-              label="AND/OR Newlines"
-              description="Place AND/OR logical operators before or after the line break."
-              value={settings.logicalOperatorNewline}
-              onChange={(v) => updateSetting('logicalOperatorNewline', v as ExtensionSettings['logicalOperatorNewline'])}
-              options={[
-                { value: 'before', label: 'Before' },
-                { value: 'after', label: 'After' },
-              ]}
-              isModified={isSettingModified('logicalOperatorNewline')}
-            />
-            <BooleanSetting
-              id="formatBeforeRun"
-              label="Format Before Run"
-              description="Automatically format SQL code before executing a query."
-              value={settings.formatBeforeRun}
-              onChange={(v) => updateSetting('formatBeforeRun', v)}
-              isModified={isSettingModified('formatBeforeRun')}
-            />
+            <div className="formatting-layout">
+              <div className="formatting-controls">
+                <NumberSetting
+                  id="tabWidth"
+                  label="Indent Width"
+                  description="Number of spaces used for indentation when formatting SQL."
+                  value={settings.tabWidth}
+                  onChange={(v) => updateSetting('tabWidth', v)}
+                  min={1}
+                  max={8}
+                  isModified={isSettingModified('tabWidth')}
+                />
+                <NumberSetting
+                  id="linesBetweenQueries"
+                  label="Lines Between Queries"
+                  description="Number of blank lines inserted between separate SQL statements."
+                  value={settings.linesBetweenQueries}
+                  onChange={(v) => updateSetting('linesBetweenQueries', v)}
+                  min={0}
+                  max={5}
+                  isModified={isSettingModified('linesBetweenQueries')}
+                />
+                <SelectSetting
+                  id="keywordCase"
+                  label="Keyword Case"
+                  description="Transform SQL keywords to the selected case when formatting."
+                  value={settings.keywordCase}
+                  onChange={(v) => updateSetting('keywordCase', v as ExtensionSettings['keywordCase'])}
+                  options={caseOptions}
+                  isModified={isSettingModified('keywordCase')}
+                />
+                <SelectSetting
+                  id="dataTypeCase"
+                  label="Data Type Case"
+                  description="Transform SQL data type names to the selected case when formatting."
+                  value={settings.dataTypeCase}
+                  onChange={(v) => updateSetting('dataTypeCase', v as ExtensionSettings['dataTypeCase'])}
+                  options={caseOptions}
+                  isModified={isSettingModified('dataTypeCase')}
+                />
+                <SelectSetting
+                  id="functionCase"
+                  label="Function Case"
+                  description="Transform SQL function names to the selected case when formatting."
+                  value={settings.functionCase}
+                  onChange={(v) => updateSetting('functionCase', v as ExtensionSettings['functionCase'])}
+                  options={caseOptions}
+                  isModified={isSettingModified('functionCase')}
+                />
+                <SelectSetting
+                  id="indentStyle"
+                  label="Indentation Style"
+                  description="Controls the indentation style used when formatting SQL."
+                  value={settings.indentStyle}
+                  onChange={(v) => updateSetting('indentStyle', v as ExtensionSettings['indentStyle'])}
+                  options={[
+                    { value: 'standard', label: 'Standard' },
+                    { value: 'tabularLeft', label: 'Tabular, Left' },
+                    { value: 'tabularRight', label: 'Tabular, Right' },
+                  ]}
+                  isModified={isSettingModified('indentStyle')}
+                />
+                <SelectSetting
+                  id="logicalOperatorNewline"
+                  label="AND/OR Newlines"
+                  description="Place AND/OR logical operators before or after the line break."
+                  value={settings.logicalOperatorNewline}
+                  onChange={(v) => updateSetting('logicalOperatorNewline', v as ExtensionSettings['logicalOperatorNewline'])}
+                  options={[
+                    { value: 'before', label: 'Before' },
+                    { value: 'after', label: 'After' },
+                  ]}
+                  isModified={isSettingModified('logicalOperatorNewline')}
+                />
+                <BooleanSetting
+                  id="formatBeforeRun"
+                  label="Format Before Run"
+                  description="Automatically format SQL code before executing a query."
+                  value={settings.formatBeforeRun}
+                  onChange={(v) => updateSetting('formatBeforeRun', v)}
+                  isModified={isSettingModified('formatBeforeRun')}
+                />
+              </div>
+
+              <div className="formatting-preview-column">
+                <FormattingPreview
+                  settings={{
+                    tabWidth: settings.tabWidth,
+                    keywordCase: settings.keywordCase,
+                    dataTypeCase: settings.dataTypeCase,
+                    functionCase: settings.functionCase,
+                    linesBetweenQueries: settings.linesBetweenQueries,
+                    indentStyle: settings.indentStyle,
+                    logicalOperatorNewline: settings.logicalOperatorNewline,
+                  }}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>

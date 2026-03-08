@@ -16,6 +16,7 @@ import { NotebookEditorProvider } from './notebookEditorProvider';
 import { SettingsWebview } from './settingsWebview';
 
 let outputChannel: vscode.OutputChannel;
+let settingsWebview: SettingsWebview | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
     // Create output channel for logging
@@ -23,6 +24,14 @@ export async function activate(context: vscode.ExtensionContext) {
     
     // Initialize dbClient with context for persistent storage
     initializeDbClient(context);
+
+    // Register settings command immediately, even when full extension initialization is deferred.
+    settingsWebview = new SettingsWebview(context, outputChannel);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mssqlManager.openSettings', () => {
+            settingsWebview?.show();
+        })
+    );
     
     // Load cached ODBC driver from storage
     const cachedDriver = context.globalState.get<string>('mssqlManager.cachedOdbcDriver');
@@ -31,36 +40,21 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`[Extension] Loaded cached ODBC driver: ${cachedDriver}`);
     }
     
-    // Check if extension should activate immediately or wait for SQL files
+    // Check if extension should run startup discovery immediately or defer it.
     const config = vscode.workspace.getConfiguration('mssqlManager');
     const immediateActive = config.get<boolean>('immediateActive', true);
-    
-    // If immediateActive is false, check if we have any SQL files open
-    if (!immediateActive) {
-        const hasSqlFiles = vscode.window.tabGroups.all
-            .flatMap(group => group.tabs)
-            .some(tab => tab.input instanceof vscode.TabInputText && 
-                        tab.input.uri.fsPath.toLowerCase().endsWith('.sql'));
-        
-        if (!hasSqlFiles) {
-            outputChannel.appendLine('MS SQL Manager: Waiting for SQL files to be opened (immediateActive = false)');
-            
-            // Register a listener for when SQL files are opened
-            const disposable = vscode.workspace.onDidOpenTextDocument((document) => {
-                if (document.languageId === 'sql') {
-                    outputChannel.appendLine('SQL file opened, activating MS SQL Manager');
-                    disposable.dispose();
-                    initializeExtension(context);
-                }
-            });
-            
-            context.subscriptions.push(disposable);
-            return;
-        }
+    const hasSqlFiles = vscode.window.tabGroups.all
+        .flatMap(group => group.tabs)
+        .some(tab => tab.input instanceof vscode.TabInputText &&
+                    tab.input.uri.fsPath.toLowerCase().endsWith('.sql'));
+
+    const deferStartupDiscovery = !immediateActive && !hasSqlFiles;
+    if (deferStartupDiscovery) {
+        outputChannel.appendLine('MS SQL Manager: Deferring startup server discovery until a SQL file is opened (immediateActive = false)');
     }
     
     outputChannel.appendLine('MS SQL Manager extension activated');
-    await initializeExtension(context);
+    await initializeExtension(context, deferStartupDiscovery);
 }
 
 /**
@@ -83,7 +77,7 @@ async function checkDockerStatus(context: vscode.ExtensionContext): Promise<void
     }
 }
 
-async function initializeExtension(context: vscode.ExtensionContext) {
+async function initializeExtension(context: vscode.ExtensionContext, deferStartupDiscovery = false) {
     // Initialize Azure firewall helper with extension context
     initializeAzureFirewallHelper(context);
 
@@ -94,25 +88,40 @@ async function initializeExtension(context: vscode.ExtensionContext) {
     const connectionProvider = new ConnectionProvider(context, outputChannel);
     const unifiedTreeProvider = new UnifiedTreeProvider(connectionProvider, outputChannel, context);
 
-    // Run one-time local server discovery for Windows users
-    try {
-        await connectionProvider.discoverLocalServersOnce();
-    } catch (err) {
-        outputChannel.appendLine(`[Extension] Local discovery error: ${err}`);
-    }
-    
-    // Run one-time Azure SQL server discovery
-    try {
-        await connectionProvider.discoverAzureServersOnce();
-    } catch (err) {
-        outputChannel.appendLine(`[Extension] Azure discovery error: ${err}`);
-    }
-    
-    // Run one-time Docker SQL Server discovery
-    try {
-        await connectionProvider.discoverDockerServersOnce();
-    } catch (err) {
-        outputChannel.appendLine(`[Extension] Docker discovery error: ${err}`);
+    const runStartupDiscovery = async () => {
+        // Run one-time local server discovery for Windows users
+        try {
+            await connectionProvider.discoverLocalServersOnce();
+        } catch (err) {
+            outputChannel.appendLine(`[Extension] Local discovery error: ${err}`);
+        }
+
+        // Run one-time Azure SQL server discovery
+        try {
+            await connectionProvider.discoverAzureServersOnce();
+        } catch (err) {
+            outputChannel.appendLine(`[Extension] Azure discovery error: ${err}`);
+        }
+
+        // Run one-time Docker SQL Server discovery
+        try {
+            await connectionProvider.discoverDockerServersOnce();
+        } catch (err) {
+            outputChannel.appendLine(`[Extension] Docker discovery error: ${err}`);
+        }
+    };
+
+    if (!deferStartupDiscovery) {
+        await runStartupDiscovery();
+    } else {
+        const deferredDiscoveryListener = vscode.workspace.onDidOpenTextDocument(async (document) => {
+            if (document.languageId === 'sql' || document.fileName.toLowerCase().endsWith('.sql')) {
+                outputChannel.appendLine('[Extension] SQL file opened, running deferred startup server discovery');
+                deferredDiscoveryListener.dispose();
+                await runStartupDiscovery();
+            }
+        });
+        context.subscriptions.push(deferredDiscoveryListener);
     }
     
     // Initialize query history
@@ -248,14 +257,6 @@ async function initializeExtension(context: vscode.ExtensionContext) {
             outputChannel.appendLine('[Extension] Refreshing SQL snippets manually...');
             sqlEditorProvider.refreshSnippets();
             vscode.window.showInformationMessage('SQL snippets refreshed successfully!');
-        })
-    );
-
-    // Register Settings webview
-    const settingsWebview = new SettingsWebview(context, outputChannel);
-    context.subscriptions.push(
-        vscode.commands.registerCommand('mssqlManager.openSettings', () => {
-            settingsWebview.show();
         })
     );
 
