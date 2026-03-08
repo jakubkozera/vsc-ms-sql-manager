@@ -223,10 +223,12 @@ export class SettingsWebview {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; 
-        style-src ${webview.cspSource} 'unsafe-inline'; 
-        font-src ${webview.cspSource} data:; 
-        script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval'; 
-        img-src ${webview.cspSource} data:;">
+        style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; 
+        font-src ${webview.cspSource} https://cdn.jsdelivr.net data:; 
+        script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net blob:; 
+        img-src ${webview.cspSource} data:;
+        worker-src blob:;
+        connect-src ${webview.cspSource} https://cdn.jsdelivr.net;">
     <title>MS SQL Manager Settings</title>
     <link rel="stylesheet" href="${globalStyleUri}">
     <link rel="stylesheet" href="${styleUri}">

@@ -31,34 +31,6 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`[Extension] Loaded cached ODBC driver: ${cachedDriver}`);
     }
     
-    // Check if extension should activate immediately or wait for SQL files
-    const config = vscode.workspace.getConfiguration('mssqlManager');
-    const immediateActive = config.get<boolean>('immediateActive', true);
-    
-    // If immediateActive is false, check if we have any SQL files open
-    if (!immediateActive) {
-        const hasSqlFiles = vscode.window.tabGroups.all
-            .flatMap(group => group.tabs)
-            .some(tab => tab.input instanceof vscode.TabInputText && 
-                        tab.input.uri.fsPath.toLowerCase().endsWith('.sql'));
-        
-        if (!hasSqlFiles) {
-            outputChannel.appendLine('MS SQL Manager: Waiting for SQL files to be opened (immediateActive = false)');
-            
-            // Register a listener for when SQL files are opened
-            const disposable = vscode.workspace.onDidOpenTextDocument((document) => {
-                if (document.languageId === 'sql') {
-                    outputChannel.appendLine('SQL file opened, activating MS SQL Manager');
-                    disposable.dispose();
-                    initializeExtension(context);
-                }
-            });
-            
-            context.subscriptions.push(disposable);
-            return;
-        }
-    }
-    
     outputChannel.appendLine('MS SQL Manager extension activated');
     await initializeExtension(context);
 }
@@ -94,25 +66,45 @@ async function initializeExtension(context: vscode.ExtensionContext) {
     const connectionProvider = new ConnectionProvider(context, outputChannel);
     const unifiedTreeProvider = new UnifiedTreeProvider(connectionProvider, outputChannel, context);
 
-    // Run one-time local server discovery for Windows users
-    try {
-        await connectionProvider.discoverLocalServersOnce();
-    } catch (err) {
-        outputChannel.appendLine(`[Extension] Local discovery error: ${err}`);
-    }
-    
-    // Run one-time Azure SQL server discovery
-    try {
-        await connectionProvider.discoverAzureServersOnce();
-    } catch (err) {
-        outputChannel.appendLine(`[Extension] Azure discovery error: ${err}`);
-    }
-    
-    // Run one-time Docker SQL Server discovery
-    try {
-        await connectionProvider.discoverDockerServersOnce();
-    } catch (err) {
-        outputChannel.appendLine(`[Extension] Docker discovery error: ${err}`);
+    // Check if extension should run server discovery immediately or wait for SQL files
+    const config = vscode.workspace.getConfiguration('mssqlManager');
+    const immediateActive = config.get<boolean>('immediateActive', true);
+
+    if (immediateActive) {
+        // Run one-time local server discovery for Windows users
+        try {
+            await connectionProvider.discoverLocalServersOnce();
+        } catch (err) {
+            outputChannel.appendLine(`[Extension] Local discovery error: ${err}`);
+        }
+        
+        // Run one-time Azure SQL server discovery
+        try {
+            await connectionProvider.discoverAzureServersOnce();
+        } catch (err) {
+            outputChannel.appendLine(`[Extension] Azure discovery error: ${err}`);
+        }
+        
+        // Run one-time Docker SQL Server discovery
+        try {
+            await connectionProvider.discoverDockerServersOnce();
+        } catch (err) {
+            outputChannel.appendLine(`[Extension] Docker discovery error: ${err}`);
+        }
+    } else {
+        outputChannel.appendLine('[Extension] immediateActive=false: skipping auto-discovery. Connect manually or open a SQL file.');
+        // Trigger discovery when the first SQL file is opened
+        const disposable = vscode.workspace.onDidOpenTextDocument(async (document) => {
+            if (document.languageId === 'sql') {
+                outputChannel.appendLine('[Extension] SQL file opened — running server discovery');
+                disposable.dispose();
+                try { await connectionProvider.discoverLocalServersOnce(); } catch { /* ignored */ }
+                try { await connectionProvider.discoverAzureServersOnce(); } catch { /* ignored */ }
+                try { await connectionProvider.discoverDockerServersOnce(); } catch { /* ignored */ }
+                unifiedTreeProvider.refresh();
+            }
+        });
+        context.subscriptions.push(disposable);
     }
     
     // Initialize query history
