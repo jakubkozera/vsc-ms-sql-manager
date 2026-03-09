@@ -5,6 +5,34 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-03-09
+
+### Added
+
+- **SQL Notebook — Clear Results**
+  - Added per-cell "Clear results" icon button (✕) on the right side of result sets, visible on hover over the output area.
+  - Added "Clear All Results" button in the main notebook toolbar, visible only when at least one cell has results.
+  - Clearing results removes both successful result sets and error messages.
+
+- **SQL Notebook — Delayed Markdown Toolbar**
+  - Markdown cell edit/preview toolbar now appears with a 500ms hover delay instead of instantly, reducing visual noise when scrolling.
+
+- **Notebooks Tree — Section Management**
+  - Added "New Section..." context action on notebook root folders to create subfolders for organizing notebooks.
+  - Empty sections (folders) are now shown in the Notebooks tree view, enabling folder-first organization workflows.
+  - "Add notebook" (➕) inline action available on both root folders and sections.
+  - Hidden directories (dot-prefixed) remain filtered out.
+
+- **Notebooks Tree — Root Notebook Creation**
+  - The "+" button in the Notebooks view title now creates a root notebook as a folder with a `_config.yml` file defining the notebook name.
+  - The created folder is automatically registered and displayed in the Notebooks tree view.
+  - Inline "+" on folders/sections still creates `.ipynb` files as before.
+
+### Changed
+
+- **Notebooks Tree — Subfolder Visibility**
+  - All non-hidden subfolders are now displayed in the tree view regardless of whether they contain notebooks, supporting the new section-based organization.
+
 ## [0.14.3] - 2026-03-08
 
 ### Added

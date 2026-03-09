@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.14.3",
+  "version": "0.15.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -451,6 +451,16 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "mssqlManager.createNotebook",
+        "title": "New Notebook...",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mssqlManager.createNotebookSection",
+        "title": "New Section...",
+        "icon": "$(new-folder)"
+      },
+      {
         "command": "mssqlManager.openSettings",
         "title": "MS SQL Manager: Settings",
         "icon": "$(gear)"
@@ -737,6 +747,11 @@
           "command": "mssqlManager.refreshNotebooks",
           "when": "view == mssqlManager.notebooks",
           "group": "navigation@2"
+        },
+        {
+          "command": "mssqlManager.createNotebook",
+          "when": "view == mssqlManager.notebooks",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -1199,6 +1214,16 @@
           "command": "mssqlManager.removeNotebook",
           "when": "view == mssqlManager.notebooks && viewItem == notebookFolder",
           "group": "inline@1"
+        },
+        {
+          "command": "mssqlManager.createNotebook",
+          "when": "view == mssqlManager.notebooks && viewItem =~ /notebookFolder|notebookSubfolder/",
+          "group": "inline@2"
+        },
+        {
+          "command": "mssqlManager.createNotebookSection",
+          "when": "view == mssqlManager.notebooks && viewItem == notebookFolder",
+          "group": "inline@3"
         }
       ],
       "commandPalette": [
@@ -1388,6 +1413,14 @@
         },
         {
           "command": "mssqlManager.refreshNotebooks",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.createNotebook",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.createNotebookSection",
           "when": "false"
         },
         {

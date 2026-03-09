@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Connection } from '../types';
 
 interface ToolbarProps {
@@ -12,6 +12,9 @@ interface ToolbarProps {
   onRunAll: () => void;
   onRefreshConnections: () => void;
   onManageConnections: () => void;
+  onAddCell: (type: 'code' | 'markdown') => void;
+  onClearAllResults: () => void;
+  hasResults: boolean;
   kernelName?: string;
 }
 
@@ -36,6 +39,36 @@ const ConnectIcon = () => (
     <path d="M18.5 5.5l2.5 -2.5" />
     <path d="M10 11l-2 2" />
     <path d="M13 14l-2 2" />
+  </svg>
+);
+
+const AddCellIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5v14" />
+    <path d="M5 12h14" />
+  </svg>
+);
+
+const CodeIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 8l-4 4l4 4" />
+    <path d="M17 8l4 4l-4 4" />
+    <path d="M14 4l-4 16" />
+  </svg>
+);
+
+const TextIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 6h16" />
+    <path d="M4 12h16" />
+    <path d="M4 18h12" />
+  </svg>
+);
+
+const ClearAllIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6l-12 12" />
+    <path d="M6 6l12 12" />
   </svg>
 );
 
@@ -67,13 +100,55 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onRunAll,
   onRefreshConnections,
   onManageConnections,
+  onAddCell,
+  onClearAllResults,
+  hasResults,
   kernelName,
 }) => {
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleAddCell = useCallback((type: 'code' | 'markdown') => {
+    onAddCell(type);
+    setShowAddMenu(false);
+  }, [onAddCell]);
+
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setShowAddMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showAddMenu]);
+
   return (
     <div className="notebook-toolbar">
       <button className="toolbar-icon-btn primary" onClick={onRunAll} title="Run All Cells">
         <RunAllIcon />
       </button>
+
+      <div className="add-cell-menu-wrapper" ref={addMenuRef}>
+        <button
+          className="toolbar-icon-btn"
+          onClick={() => setShowAddMenu(!showAddMenu)}
+          title="Add Cell"
+        >
+          <AddCellIcon />
+        </button>
+        {showAddMenu && (
+          <div className="add-cell-dropdown">
+            <button className="add-cell-option" onClick={() => handleAddCell('code')}>
+              <CodeIcon /> Code Cell
+            </button>
+            <button className="add-cell-option" onClick={() => handleAddCell('markdown')}>
+              <TextIcon /> Text Cell
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="toolbar-separator" />
 
@@ -120,6 +195,15 @@ const Toolbar: React.FC<ToolbarProps> = ({
       <button className="toolbar-icon-btn" onClick={onRefreshConnections} title="Refresh Connections">
         <RefreshIcon />
       </button>
+
+      {hasResults && (
+        <>
+          <div className="toolbar-separator" />
+          <button className="toolbar-icon-btn" onClick={onClearAllResults} title="Clear All Results">
+            <ClearAllIcon />
+          </button>
+        </>
+      )}
 
       {kernelName && (
         <span className="toolbar-kernel" >

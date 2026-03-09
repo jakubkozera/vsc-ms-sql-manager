@@ -90,6 +90,45 @@ body {
   opacity: 0.7;
 }
 
+/* ── Add Cell Dropdown (Toolbar) ── */
+.add-cell-menu-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.add-cell-dropdown,
+.insert-cell-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 200;
+  min-width: 140px;
+  background: var(--vscode-dropdown-background, #252526);
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 4px;
+  padding: 4px 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.add-cell-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.add-cell-option:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+}
+
 /* ── Notebook Container ── */
 .notebook-container {
   padding: 16px;
@@ -220,6 +259,92 @@ body {
   font-family: var(--vscode-editor-font-family, monospace);
 }
 
+/* ── Cell Actions (shared between Code & Markdown cells) ── */
+.cell-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.cell-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #888);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cell-action-btn:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+  color: var(--vscode-foreground);
+}
+
+.cell-action-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.cell-action-btn.delete-cell-btn:hover:not(:disabled) {
+  color: var(--vscode-errorForeground, #f44747);
+  background: rgba(244, 71, 71, 0.12);
+}
+
+.insert-cell-menu-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ── Markdown Cell Edit/Preview Toolbar ── */
+.markdown-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--vscode-editorWidget-background, rgba(255, 255, 255, 0.03));
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+}
+
+.markdown-cell-editing {
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.markdown-cell .markdown-toolbar {
+  opacity: 0;
+  transition: opacity 0.15s ease 0s;
+  pointer-events: none;
+}
+
+.markdown-cell:hover .markdown-toolbar {
+  opacity: 1;
+  transition: opacity 0.15s ease 500ms;
+  pointer-events: auto;
+}
+
+.markdown-cell-editing .markdown-toolbar {
+  opacity: 1;
+  transition: none;
+  pointer-events: auto;
+}
+
+.edit-btn,
+.preview-btn {
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+.preview-btn:hover {
+  color: var(--vscode-terminal-ansiGreen, #89d185) !important;
+}
+
 /* ── Cell Source ── */
 .cell-source {
   background: var(--vscode-editor-background);
@@ -234,6 +359,36 @@ body {
 .cell-output {
   border-top: 1px solid var(--vscode-panel-border, #333);
   background: var(--vscode-editor-background);
+  position: relative;
+}
+
+.clear-result-btn {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #888);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.cell-output:hover .clear-result-btn {
+  opacity: 1;
+}
+
+.clear-result-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+  color: var(--vscode-errorForeground, #f44747);
 }
 
 .cell-output-empty {

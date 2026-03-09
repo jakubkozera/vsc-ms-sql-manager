@@ -50,3 +50,9 @@ export interface CellState {
   error?: string;
   executionCount?: number;
 }
+
+/** Internal cell with stable ID for tracking across add/delete/move */
+export interface TrackedCell {
+  id: string;
+  cell: NotebookCell;
+}

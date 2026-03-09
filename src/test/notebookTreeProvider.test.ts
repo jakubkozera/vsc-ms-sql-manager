@@ -76,7 +76,36 @@ suite('NotebookTreeProvider Test Suite', () => {
         const children = provider.getChildren(rootItems[0]);
         const subfolders = children.filter((item: NotebookTreeItem) => item.itemType === 'notebookSubfolder');
 
-        assert.strictEqual(subfolders.length, 1, 'Only subfolders with at least one valid notebook should be shown');
-        assert.strictEqual(subfolders[0].label, 'valid-subfolder');
+        assert.strictEqual(subfolders.length, 2, 'All non-hidden subfolders should be shown');
+        const labels = subfolders.map(s => s.label).sort();
+        assert.deepStrictEqual(labels, ['broken-subfolder', 'valid-subfolder']);
+    });
+
+    test('shows empty subfolders (sections) in tree view', () => {
+        const emptySection = path.join(notebookFolder, 'my-section');
+        fs.mkdirSync(emptySection, { recursive: true });
+
+        const provider = new NotebookTreeProvider(context);
+        const rootItems = provider.getChildren();
+        const children = provider.getChildren(rootItems[0]);
+        const subfolders = children.filter((item: NotebookTreeItem) => item.itemType === 'notebookSubfolder');
+
+        assert.strictEqual(subfolders.length, 1, 'Empty subfolder (section) should be shown');
+        assert.strictEqual(subfolders[0].label, 'my-section');
+    });
+
+    test('hides dot-prefixed directories', () => {
+        const hiddenDir = path.join(notebookFolder, '.hidden');
+        const visibleDir = path.join(notebookFolder, 'visible');
+        fs.mkdirSync(hiddenDir, { recursive: true });
+        fs.mkdirSync(visibleDir, { recursive: true });
+
+        const provider = new NotebookTreeProvider(context);
+        const rootItems = provider.getChildren();
+        const children = provider.getChildren(rootItems[0]);
+        const subfolders = children.filter((item: NotebookTreeItem) => item.itemType === 'notebookSubfolder');
+
+        assert.strictEqual(subfolders.length, 1, 'Only non-hidden folders should be shown');
+        assert.strictEqual(subfolders[0].label, 'visible');
     });
 });

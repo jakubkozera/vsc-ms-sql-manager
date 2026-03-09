@@ -9,6 +9,8 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
 
     /** Track selected connection per webview (may be composite "connId::database") */
     private readonly webviewConnections = new Map<vscode.Webview, string>();
+    /** Suppress reload while we're applying our own edits */
+    private suppressReload = false;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -72,6 +74,10 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'navigateNotebook':
                     await this.navigateToSibling(document, msg.direction);
                     break;
+
+                case 'updateNotebook':
+                    await this.handleUpdateNotebook(document, msg.notebook);
+                    break;
             }
         });
 
@@ -83,9 +89,17 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
             }
         });
 
+        // Reload notebook in webview when the document is changed externally
+        const docChangeDisposable = vscode.workspace.onDidChangeTextDocument((e) => {
+            if (e.document.uri.toString() === document.uri.toString() && !this.suppressReload) {
+                this.sendNotebook(webview, e.document);
+            }
+        });
+
         webviewPanel.onDidDispose(() => {
             disposed = true;
             messageDisposable.dispose();
+            docChangeDisposable.dispose();
             this.webviewConnections.delete(webview);
         });
     }
@@ -227,6 +241,25 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
             const errorMsg = e instanceof Error ? e.message : String(e);
             this.outputChannel.appendLine(`[NotebookEditor] Cell ${cellIndex} error: ${errorMsg}`);
             webview.postMessage({ type: 'cellResult', cellIndex, error: errorMsg });
+        }
+    }
+
+    private async handleUpdateNotebook(document: vscode.TextDocument, notebook: any): Promise<void> {
+        try {
+            const content = JSON.stringify(notebook, null, 1);
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(
+                document.uri,
+                new vscode.Range(0, 0, document.lineCount, 0),
+                content
+            );
+            this.suppressReload = true;
+            await vscode.workspace.applyEdit(edit);
+            this.suppressReload = false;
+        } catch (e) {
+            this.suppressReload = false;
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            this.outputChannel.appendLine(`[NotebookEditor] Failed to save notebook: ${errorMsg}`);
         }
     }
 

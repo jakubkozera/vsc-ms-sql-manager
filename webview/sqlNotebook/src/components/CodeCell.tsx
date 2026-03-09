@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { NotebookCell, CellResult } from '../types';
 import CellOutputArea from './CellOutputArea';
+import CellActions from './CellActions';
 
 interface CodeCellProps {
   cell: NotebookCell;
@@ -12,6 +13,13 @@ interface CodeCellProps {
   executionCount?: number;
   onExecute: (index: number, source: string) => void;
   hasConnection: boolean;
+  onSourceChange: (index: number, source: string) => void;
+  onDeleteCell: (index: number) => void;
+  onMoveCell: (index: number, direction: 'up' | 'down') => void;
+  onInsertCellBelow: (index: number, type: 'code' | 'markdown') => void;
+  onClearResult: (index: number) => void;
+  isFirst: boolean;
+  isLast: boolean;
 }
 
 const RunCellIcon = () => (
@@ -66,18 +74,48 @@ const CodeCell: React.FC<CodeCellProps> = ({
   executionCount,
   onExecute,
   hasConnection,
+  onSourceChange,
+  onDeleteCell,
+  onMoveCell,
+  onInsertCellBelow,
+  onClearResult,
+  isFirst,
+  isLast,
 }) => {
-  const source = Array.isArray(cell.source)
+  const initialSource = Array.isArray(cell.source)
     ? cell.source.join('')
     : cell.source;
 
-  const trimmed = source.trimStart();
+  const [editedSource, setEditedSource] = useState(initialSource);
+  const sourceRef = useRef(initialSource);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync when cell source changes externally (e.g. after move/reorder)
+  useEffect(() => {
+    const newSource = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+    if (newSource !== sourceRef.current) {
+      sourceRef.current = newSource;
+      setEditedSource(newSource);
+    }
+  }, [cell.source]);
+
+  const handleSourceChange = useCallback((value: string | undefined) => {
+    const newVal = value ?? '';
+    setEditedSource(newVal);
+    sourceRef.current = newVal;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      onSourceChange(index, newVal);
+    }, 500);
+  }, [index, onSourceChange]);
+
+  const trimmed = editedSource.trimStart();
   const startsWithComment = trimmed.startsWith('--');
   const [collapsed, setCollapsed] = useState(startsWithComment);
 
-  const lines = source.split('\n');
+  const lines = editedSource.split('\n');
   const previewLines = lines.slice(0, 2).join('\n');
-  const displaySource = collapsed ? previewLines : source;
+  const displaySource = collapsed ? previewLines : editedSource;
   const displayLineCount = collapsed ? Math.min(2, lines.length) : lines.length;
   const editorHeight = Math.max(40, Math.min(displayLineCount * 19 + 12, 400));
   const canCollapse = lines.length > 2;
@@ -85,7 +123,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
   const copySourceToClipboard = async () => {
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(source);
+        await navigator.clipboard.writeText(editedSource);
         return;
       }
     } catch {
@@ -93,7 +131,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
     }
 
     const textArea = document.createElement('textarea');
-    textArea.value = source;
+    textArea.value = editedSource;
     textArea.style.position = 'fixed';
     textArea.style.left = '-9999px';
     textArea.style.top = '0';
@@ -106,7 +144,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
 
   const handleEditorMount: OnMount = (editor) => {
     editor.updateOptions({
-      readOnly: true,
+      readOnly: collapsed,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       lineNumbers: 'on',
@@ -133,7 +171,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
       <div className="cell-toolbar">
         <button
           className="run-cell-btn"
-          onClick={() => onExecute(index, source)}
+          onClick={() => onExecute(index, editedSource)}
           disabled={running || !hasConnection}
           title={hasConnection ? 'Run cell' : 'Select a connection first'}
         >
@@ -159,6 +197,14 @@ const CodeCell: React.FC<CodeCellProps> = ({
             )}
           </button>
         )}
+        <CellActions
+          index={index}
+          isFirst={isFirst}
+          isLast={isLast}
+          onDeleteCell={onDeleteCell}
+          onMoveCell={onMoveCell}
+          onInsertCellBelow={onInsertCellBelow}
+        />
         <span className="cell-index">
           [{executionCount ?? cell.execution_count ?? ' '}]
         </span>
@@ -171,8 +217,9 @@ const CodeCell: React.FC<CodeCellProps> = ({
           value={displaySource}
           theme="vs-dark"
           onMount={handleEditorMount}
+          onChange={collapsed ? undefined : handleSourceChange}
           options={{
-            readOnly: true,
+            readOnly: collapsed,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             lineNumbers: 'on',
@@ -191,6 +238,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
         result={result}
         error={error}
         originalOutputs={cell.outputs}
+        onClearResult={() => onClearResult(index)}
       />
     </div>
   );

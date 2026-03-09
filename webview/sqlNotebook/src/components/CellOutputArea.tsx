@@ -24,11 +24,19 @@ const ChevronIcon: React.FC<{ collapsed: boolean }> = ({ collapsed }) => (
   </svg>
 );
 
+const ClearResultIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6l-12 12" />
+    <path d="M6 6l12 12" />
+  </svg>
+);
+
 interface CellOutputAreaProps {
   running: boolean;
   result?: CellResult;
   error?: string;
   originalOutputs?: CellOutput[];
+  onClearResult?: () => void;
 }
 
 const CollapsibleResultSet: React.FC<{
@@ -70,6 +78,7 @@ const CellOutputArea: React.FC<CellOutputAreaProps> = ({
   result,
   error,
   originalOutputs,
+  onClearResult,
 }) => {
   if (running) {
     return (
@@ -85,6 +94,15 @@ const CellOutputArea: React.FC<CellOutputAreaProps> = ({
   if (error) {
     return (
       <div className="cell-output">
+        {onClearResult && (
+          <button
+            className="clear-result-btn"
+            onClick={onClearResult}
+            title="Clear results"
+          >
+            <ClearResultIcon />
+          </button>
+        )}
         <div className="output-error">{error}</div>
       </div>
     );
@@ -93,6 +111,15 @@ const CellOutputArea: React.FC<CellOutputAreaProps> = ({
   if (result) {
     return (
       <div className="cell-output">
+        {onClearResult && (
+          <button
+            className="clear-result-btn"
+            onClick={onClearResult}
+            title="Clear results"
+          >
+            <ClearResultIcon />
+          </button>
+        )}
         {result.recordsets.map((rs, i) => (
           <CollapsibleResultSet
             key={i}

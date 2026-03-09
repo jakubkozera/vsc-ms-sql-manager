@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ConnectionProvider } from './connectionProvider';
 import { UnifiedTreeProvider } from './unifiedTreeProvider';
 import { QueryExecutor } from './queryExecutor';
@@ -210,6 +212,123 @@ async function initializeExtension(context: vscode.ExtensionContext) {
             notebookTreeProvider.removeEntry(item);
         }),
         vscode.commands.registerCommand('mssqlManager.refreshNotebooks', () => {
+            notebookTreeProvider.refresh();
+        }),
+        vscode.commands.registerCommand('mssqlManager.createNotebook', async (item?: any) => {
+            // If invoked from a tree item (folder/subfolder context), create a .ipynb file inside
+            if (item && item.fsPath) {
+                const stat = fs.statSync(item.fsPath);
+                const targetDir = stat.isDirectory() ? item.fsPath : path.dirname(item.fsPath);
+
+                const name = await vscode.window.showInputBox({
+                    prompt: 'Enter notebook file name',
+                    placeHolder: 'my-notebook',
+                    validateInput: (value) => {
+                        if (!value || !value.trim()) { return 'Name cannot be empty'; }
+                        if (/[<>:"/\\|?*]/.test(value)) { return 'Name contains invalid characters'; }
+                        return undefined;
+                    }
+                });
+                if (!name) { return; }
+
+                const fileName = name.endsWith('.ipynb') ? name : `${name}.ipynb`;
+                const filePath = path.join(targetDir, fileName);
+
+                if (fs.existsSync(filePath)) {
+                    vscode.window.showErrorMessage(`File "${fileName}" already exists.`);
+                    return;
+                }
+
+                const emptyNotebook = {
+                    cells: [],
+                    metadata: {
+                        kernelspec: {
+                            display_name: 'SQL',
+                            language: 'sql',
+                            name: 'sql'
+                        }
+                    },
+                    nbformat: 4,
+                    nbformat_minor: 2
+                };
+
+                fs.writeFileSync(filePath, JSON.stringify(emptyNotebook, null, 1), 'utf8');
+                notebookTreeProvider.refresh();
+
+                await vscode.commands.executeCommand('vscode.openWith',
+                    vscode.Uri.file(filePath),
+                    'mssqlManager.notebookEditor'
+                );
+                return;
+            }
+
+            // Invoked from view title (no tree item) — create a root notebook folder with _config.yml
+            const folderUri = await vscode.window.showOpenDialog({
+                canSelectFolders: true,
+                canSelectFiles: false,
+                canSelectMany: false,
+                openLabel: 'Select Parent Location for New Notebook'
+            });
+            if (!folderUri || folderUri.length === 0) { return; }
+
+            const parentDir = folderUri[0].fsPath;
+
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter notebook name',
+                placeHolder: 'my-notebook',
+                validateInput: (value) => {
+                    if (!value || !value.trim()) { return 'Name cannot be empty'; }
+                    if (/[<>:"/\\|?*]/.test(value)) { return 'Name contains invalid characters'; }
+                    return undefined;
+                }
+            });
+            if (!name) { return; }
+
+            const notebookDir = path.join(parentDir, name);
+
+            if (fs.existsSync(notebookDir)) {
+                vscode.window.showErrorMessage(`Folder "${name}" already exists.`);
+                return;
+            }
+
+            fs.mkdirSync(notebookDir, { recursive: true });
+            fs.writeFileSync(
+                path.join(notebookDir, '_config.yml'),
+                `name: "${name}"\n`,
+                'utf8'
+            );
+
+            await notebookTreeProvider.addFolder(vscode.Uri.file(notebookDir));
+        }),
+        vscode.commands.registerCommand('mssqlManager.createNotebookSection', async (item?: any) => {
+            let targetDir: string | undefined;
+
+            if (item && item.fsPath) {
+                const stat = fs.statSync(item.fsPath);
+                targetDir = stat.isDirectory() ? item.fsPath : path.dirname(item.fsPath);
+            }
+
+            if (!targetDir) { return; }
+
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter section name',
+                placeHolder: 'new-section',
+                validateInput: (value) => {
+                    if (!value || !value.trim()) { return 'Name cannot be empty'; }
+                    if (/[<>:"/\\|?*]/.test(value)) { return 'Name contains invalid characters'; }
+                    return undefined;
+                }
+            });
+            if (!name) { return; }
+
+            const sectionPath = path.join(targetDir, name);
+
+            if (fs.existsSync(sectionPath)) {
+                vscode.window.showErrorMessage(`Folder "${name}" already exists.`);
+                return;
+            }
+
+            fs.mkdirSync(sectionPath, { recursive: true });
             notebookTreeProvider.refresh();
         })
     );
