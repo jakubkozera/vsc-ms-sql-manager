@@ -101,19 +101,17 @@ export class NotebookTreeProvider implements vscode.TreeDataProvider<NotebookTre
         const rootFolder = element.rootFolderPath || element.fsPath;
         const items: NotebookTreeItem[] = [];
 
-        // Subfolders first (only if they contain .ipynb files somewhere)
+        // Subfolders first
         for (const entry of entries) {
             if (entry.isDirectory() && !entry.name.startsWith('.')) {
                 const subPath = path.join(dirPath, entry.name);
-                if (this.containsNotebooks(subPath)) {
-                    items.push(new NotebookTreeItem(
-                        entry.name,
-                        'notebookSubfolder',
-                        subPath,
-                        vscode.TreeItemCollapsibleState.Collapsed,
-                        rootFolder
-                    ));
-                }
+                items.push(new NotebookTreeItem(
+                    entry.name,
+                    'notebookSubfolder',
+                    subPath,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    rootFolder
+                ));
             }
         }
 
