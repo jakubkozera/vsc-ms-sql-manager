@@ -5,6 +5,16 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] - 2026-03-11
+
+### Fixed
+
+- **SQL Editor React — Monaco Theme Color Format (Cursor Compatibility)**
+  - Fixed "Illegal value for token color: rgba(...)" error when opening SQL Editor in Cursor and other VS Code forks.
+  - Root cause: Cursor's VS Code CSS variables like `--vscode-editor-foreground` return `rgba()` format instead of hex. Monaco's `defineTheme` `colors` map only accepts hex format (`#RRGGBB` / `#RRGGBBAA`).
+  - Solution: Added `cssColorToHex()` utility that converts any CSS color format (hex, rgb, rgba, named colors) to Monaco-compatible hex using browser-native color parsing.
+  - All 4 SQL theme definitions now use `cssVarHex()` for reading editor colors, ensuring compatibility across VS Code, VS Code Insiders, and Cursor.
+
 ## [0.15.1] - 2026-03-11
 
 ### Fixed

@@ -28,6 +28,46 @@ function cssVar(name: string, fallback: string): string {
 }
 
 /**
+ * Converts any CSS color (hex, rgb(), rgba()) to a #RRGGBB or #RRGGBBAA hex string.
+ * Monaco's defineTheme colors map only accepts hex format — rgba() values from Cursor/VS Code
+ * CSS variables must be normalized before passing to defineTheme.
+ */
+function cssColorToHex(color: string): string {
+  if (!color) return color;
+  // Already a valid hex color
+  if (/^#[0-9a-fA-F]{3,8}$/.test(color)) return color;
+
+  // Use an off-screen element to parse any CSS color via the browser engine
+  const el = document.createElement('div');
+  el.style.color = color;
+  // Ensure element is in the DOM so getComputedStyle resolves correctly
+  el.style.position = 'absolute';
+  el.style.visibility = 'hidden';
+  document.body.appendChild(el);
+  const computed = getComputedStyle(el).color;
+  document.body.removeChild(el);
+
+  const match = computed.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
+  if (!match) return color; // fallback to original value
+
+  const r = parseInt(match[1]).toString(16).padStart(2, '0');
+  const g = parseInt(match[2]).toString(16).padStart(2, '0');
+  const b = parseInt(match[3]).toString(16).padStart(2, '0');
+  const alpha = match[4] !== undefined ? parseFloat(match[4]) : 1;
+
+  if (alpha < 1) {
+    const a = Math.round(alpha * 255).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}${a}`;
+  }
+  return `#${r}${g}${b}`;
+}
+
+/** Reads a CSS variable and returns it as a Monaco-compatible hex color. */
+function cssVarHex(name: string, fallback: string): string {
+  return cssColorToHex(cssVar(name, fallback));
+}
+
+/**
  * (Re-)defines all 4 SQL Monaco themes with the current VS Code CSS variables.
  * Safe to call repeatedly — Monaco updates the theme in-place.
  * Must be called before setTheme() so background/foreground reflect the new theme.
@@ -40,8 +80,8 @@ function defineMonacoThemes(monaco: MonacoType): void {
     base: 'vs-dark',
     inherit: true,
     colors: {
-      'editor.background': cssVar('--vscode-editor-background', '#1E1E1E'),
-      'editor.foreground': cssVar('--vscode-editor-foreground', '#D4D4D4'),
+      'editor.background': cssVarHex('--vscode-editor-background', '#1E1E1E'),
+      'editor.foreground': cssVarHex('--vscode-editor-foreground', '#D4D4D4'),
     },
     rules: [
       { token: 'keyword', foreground: '569CD6' },
@@ -71,8 +111,8 @@ function defineMonacoThemes(monaco: MonacoType): void {
     base: 'vs',
     inherit: true,
     colors: {
-      'editor.background': cssVar('--vscode-editor-background', '#FFFFFF'),
-      'editor.foreground': cssVar('--vscode-editor-foreground', '#000000'),
+      'editor.background': cssVarHex('--vscode-editor-background', '#FFFFFF'),
+      'editor.foreground': cssVarHex('--vscode-editor-foreground', '#000000'),
     },
     rules: [
       { token: 'keyword', foreground: '0000FF' },
@@ -102,8 +142,8 @@ function defineMonacoThemes(monaco: MonacoType): void {
     base: 'hc-black',
     inherit: true,
     colors: {
-      'editor.background': cssVar('--vscode-editor-background', '#000000'),
-      'editor.foreground': cssVar('--vscode-editor-foreground', '#FFFFFF'),
+      'editor.background': cssVarHex('--vscode-editor-background', '#000000'),
+      'editor.foreground': cssVarHex('--vscode-editor-foreground', '#FFFFFF'),
     },
     rules: [
       { token: 'keyword', foreground: '569CD6', fontStyle: 'bold' },
@@ -130,8 +170,8 @@ function defineMonacoThemes(monaco: MonacoType): void {
     base: 'hc-light',
     inherit: true,
     colors: {
-      'editor.background': cssVar('--vscode-editor-background', '#FFFFFF'),
-      'editor.foreground': cssVar('--vscode-editor-foreground', '#000000'),
+      'editor.background': cssVarHex('--vscode-editor-background', '#FFFFFF'),
+      'editor.foreground': cssVarHex('--vscode-editor-foreground', '#000000'),
     },
     rules: [
       { token: 'keyword', foreground: '0000FF', fontStyle: 'bold' },
