@@ -825,6 +825,11 @@ export class ConnectionWebview {
 
             try {
                 const parsed = parseConnectionString(connectionString);
+
+                // If no auth type was determined and no username is present, assume Windows auth
+                if (!parsed.authType && !parsed.username) {
+                    parsed.authType = 'windows';
+                }
                 
                 // Fill form fields with parsed values
                 if (parsed.server) document.getElementById('server').value = parsed.server;
@@ -1020,6 +1025,11 @@ export class ConnectionWebview {
                         break;
                     case 'integrated security':
                         if (value.toLowerCase() === 'true' || value.toLowerCase() === 'sspi') {
+                            config.authType = 'windows';
+                        }
+                        break;
+                    case 'trusted_connection':
+                        if (value.toLowerCase() === 'true' || value.toLowerCase() === 'yes') {
                             config.authType = 'windows';
                         }
                         break;

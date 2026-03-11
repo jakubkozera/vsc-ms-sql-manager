@@ -5,6 +5,15 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-03-11
+
+### Fixed
+
+- **New Connection — Parse Connection String: Auto-detect Windows Authentication**
+  - When parsing a connection string that contains no username (e.g. `Server=(localdb)\MSSQLLocalDB;Database=master;Trusted_Connection=Yes;`), the Authentication Type field is now automatically set to **Windows Authentication** instead of remaining on the SQL Server Authentication default.
+  - Added support for the `Trusted_Connection=Yes/True` key in the connection string parser (previously only `Integrated Security=True/SSPI` was recognised).
+  - Fallback rule: if the parsed connection string contains neither a `User ID` nor an explicit auth-type flag, the form now defaults to Windows Authentication.
+
 ## [0.15.0] - 2026-03-09
 
 ### Added

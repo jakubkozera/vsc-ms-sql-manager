@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1478,7 +1478,7 @@
         },
         "mssqlManager.useReactWebview": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Use the new React-based SQL Editor UI. Disable to use the legacy JavaScript UI."
         },
         "mssqlManager.formatting.tabWidth": {
