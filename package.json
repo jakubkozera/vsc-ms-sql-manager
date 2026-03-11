@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1468,6 +1468,18 @@
           "type": "boolean",
           "default": true,
           "description": "Color primary key columns (gold) and foreign key columns (blue) in query results."
+        },
+        "mssqlManager.numberFormat": {
+          "type": "string",
+          "default": "plain",
+          "enum": ["plain", "locale", "fixed-2", "fixed-4"],
+          "enumDescriptions": [
+            "Plain — no formatting, values displayed as-is (e.g. 1234567.89)",
+            "Locale — locale-aware thousand separators (e.g. 1,234,567.89)",
+            "2 decimal places — locale separators, always 2 decimal digits (e.g. 1,234,567.89)",
+            "4 decimal places — locale separators, always 4 decimal digits (e.g. 1,234,567.8900)"
+          ],
+          "description": "Controls how numeric values are displayed in query results."
         },
         "mssqlManager.schemaCacheValiditySeconds": {
           "type": "number",

@@ -1,3 +1,5 @@
+export type NumberFormat = 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
+
 export interface ExtensionSettings {
   // Database Explorer
   showTableStatistics: boolean;
@@ -6,6 +8,7 @@ export interface ExtensionSettings {
   // Query Editor
   queryTimeout: number;
   colorPrimaryForeignKeys: boolean;
+  numberFormat: NumberFormat;
   useReactWebview: boolean;
   // Formatting Options
   tabWidth: number;
@@ -35,6 +38,7 @@ export const defaultSettings: ExtensionSettings = {
   schemaCacheValiditySeconds: 120,
   queryTimeout: 0,
   colorPrimaryForeignKeys: true,
+  numberFormat: 'plain',
   useReactWebview: false,
   tabWidth: 2,
   keywordCase: 'upper',

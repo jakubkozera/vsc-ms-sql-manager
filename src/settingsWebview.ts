@@ -18,6 +18,7 @@ interface AllSettings {
     schemaCacheValiditySeconds: number;
     queryTimeout: number;
     colorPrimaryForeignKeys: boolean;
+    numberFormat: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
     useReactWebview: boolean;
     // Formatting options (stored in globalState)
     tabWidth: number;
@@ -115,6 +116,7 @@ export class SettingsWebview {
             schemaCacheValiditySeconds: config.get<number>('schemaCacheValiditySeconds', 120),
             queryTimeout: config.get<number>('queryTimeout', 0),
             colorPrimaryForeignKeys: config.get<boolean>('colorPrimaryForeignKeys', true),
+            numberFormat: config.get<'plain' | 'locale' | 'fixed-2' | 'fixed-4'>('numberFormat', 'plain'),
             useReactWebview: config.get<boolean>('useReactWebview', false),
             tabWidth: config.get<number>('formatting.tabWidth', formatOptions.tabWidth),
             keywordCase: config.get<'upper' | 'lower' | 'preserve'>('formatting.keywordCase', formatOptions.keywordCase),
@@ -137,6 +139,7 @@ export class SettingsWebview {
             await config.update('schemaCacheValiditySeconds', settings.schemaCacheValiditySeconds, vscode.ConfigurationTarget.Global);
             await config.update('queryTimeout', settings.queryTimeout, vscode.ConfigurationTarget.Global);
             await config.update('colorPrimaryForeignKeys', settings.colorPrimaryForeignKeys, vscode.ConfigurationTarget.Global);
+            await config.update('numberFormat', settings.numberFormat, vscode.ConfigurationTarget.Global);
             await config.update('useReactWebview', settings.useReactWebview, vscode.ConfigurationTarget.Global);
             await config.update('formatting.tabWidth', settings.tabWidth, vscode.ConfigurationTarget.Global);
             await config.update('formatting.keywordCase', settings.keywordCase, vscode.ConfigurationTarget.Global);
@@ -180,6 +183,7 @@ export class SettingsWebview {
             await config.update('schemaCacheValiditySeconds', undefined, vscode.ConfigurationTarget.Global);
             await config.update('queryTimeout', undefined, vscode.ConfigurationTarget.Global);
             await config.update('colorPrimaryForeignKeys', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('numberFormat', undefined, vscode.ConfigurationTarget.Global);
             await config.update('useReactWebview', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.tabWidth', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.keywordCase', undefined, vscode.ConfigurationTarget.Global);

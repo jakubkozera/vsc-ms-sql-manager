@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, memo } from 'react';
 import { ColumnDef } from '../../../types/grid';
 import { InlineCellEditor } from './InlineCellEditor';
+import { useVSCode } from '../../../context/VSCodeContext';
 import './GridCell.css';
 
 interface GridCellProps {
@@ -44,6 +45,7 @@ function GridCellComponent({
   onFKExpand,
   onCellEdit,
 }: GridCellProps) {
+  const { config } = useVSCode();
   const [isEditing, setIsEditing] = useState(false);
 
   // Handle forceEdit from context menu
@@ -72,7 +74,21 @@ function GridCellComponent({
     }
 
     if (typeof value === 'number') {
-      return { displayValue: String(value), cellType: 'number', isLongText: false };
+      let displayValue: string;
+      switch (config.numberFormat) {
+        case 'locale':
+          displayValue = value.toLocaleString();
+          break;
+        case 'fixed-2':
+          displayValue = value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          break;
+        case 'fixed-4':
+          displayValue = value.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+          break;
+        default:
+          displayValue = String(value);
+      }
+      return { displayValue, cellType: 'number', isLongText: false };
     }
 
     if (value instanceof Date) {
@@ -104,7 +120,7 @@ function GridCellComponent({
       cellType: 'string', 
       isLongText: strValue.length > 100 
     };
-  }, [value]);
+  }, [value, config.numberFormat]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     onClick?.(e);
@@ -149,8 +165,8 @@ function GridCellComponent({
     isModified && 'modified',
     isDeleted && 'deleted',
     isEditing && 'editing',
-    column.isPrimaryKey && 'pk-cell',
-    column.isForeignKey && 'fk-cell',
+    config.colorPrimaryForeignKeys && column.isPrimaryKey && 'pk-cell',
+    config.colorPrimaryForeignKeys && column.isForeignKey && 'fk-cell',
     column.pinned && 'pinned',
   ].filter(Boolean).join(' ');
 
@@ -194,7 +210,7 @@ function GridCellComponent({
     >
       <span className="cell-content">{displayValue}</span>
       {isModified && <span className="cell-modified-indicator" title="Modified">●</span>}
-      {(column.isForeignKey || column.isPrimaryKey) && value !== null && value !== undefined && (
+      {(column.isForeignKey || column.isPrimaryKey) && config.colorPrimaryForeignKeys && value !== null && value !== undefined && (
         <span 
           className={`cell-expand-chevron ${isExpanded ? 'expanded' : ''}`}
           onClick={handleFKClick}

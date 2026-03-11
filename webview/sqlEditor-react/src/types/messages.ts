@@ -9,7 +9,8 @@ import type { DatabaseSchema } from './schema';
 export interface ConfigMessage {
   type: 'config';
   config: {
-    colorPrimaryForeignKeys?: string;
+    colorPrimaryForeignKeys?: boolean;
+    numberFormat?: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
   };
 }
 
@@ -364,9 +365,11 @@ export interface Snippet {
 }
 
 export interface EditorConfig {
-  colorPrimaryForeignKeys: string;
+  colorPrimaryForeignKeys: boolean;
+  numberFormat: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
 }
 
 export const defaultEditorConfig: EditorConfig = {
-  colorPrimaryForeignKeys: '#007acc',
+  colorPrimaryForeignKeys: true,
+  numberFormat: 'plain',
 };

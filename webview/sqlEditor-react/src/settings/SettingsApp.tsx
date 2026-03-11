@@ -164,6 +164,20 @@ export function SettingsApp() {
               onChange={(v) => updateSetting('colorPrimaryForeignKeys', v)}
               isModified={isSettingModified('colorPrimaryForeignKeys')}
             />
+            <SelectSetting
+              id="numberFormat"
+              label="Number Format"
+              description="Controls how numeric values are displayed in query results."
+              value={settings.numberFormat}
+              onChange={(v) => updateSetting('numberFormat', v as import('./types').NumberFormat)}
+              isModified={isSettingModified('numberFormat')}
+              options={[
+                { value: 'plain', label: 'Plain (1234567.89)' },
+                { value: 'locale', label: 'Locale (1,234,567.89)' },
+                { value: 'fixed-2', label: '2 decimal places (1,234,567.89)' },
+                { value: 'fixed-4', label: '4 decimal places (1,234,567.8900)' },
+              ]}
+            />
             <BooleanSetting
               id="useReactWebview"
               label="Use React Editor UI"

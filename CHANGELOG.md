@@ -5,6 +5,25 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.3] - 2026-03-11
+
+### Added
+
+- **Result Grid — Color Primary / Foreign Keys setting now working in React editor**
+  - Fixed: the "Color Primary / Foreign Keys" toggle in Settings was saved but had no effect on the React-based SQL Editor result grid.
+  - `GridCell` now reads `colorPrimaryForeignKeys` from the editor config and conditionally applies `pk-cell` (gold) / `fk-cell` (blue) CSS classes and the expand chevron.
+
+- **Result Grid — Number Format setting**
+  - New `mssqlManager.numberFormat` VS Code setting and corresponding **Number Format** dropdown in the Query Editor tab of the Settings webview.
+  - Options: **Plain** (default, raw `toString()`), **Locale** (locale-aware thousand separators), **2 decimal places**, **4 decimal places**.
+  - Setting is applied live to all numeric cells in query results without reloading the editor.
+
+### Tests
+
+- Added 16 unit tests in `GridCell.config.test.tsx` covering:
+  - `colorPrimaryForeignKeys: true/false` — pk-cell / fk-cell class presence and expand chevron visibility for both PK and FK columns.
+  - All four `numberFormat` values — plain, locale, fixed-2, fixed-4 — including integer padding and decimal rounding.
+
 ## [0.15.2] - 2026-03-11
 
 ### Fixed
