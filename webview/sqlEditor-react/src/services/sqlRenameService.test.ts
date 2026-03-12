@@ -59,6 +59,13 @@ describe('sqlRenameService', () => {
       expect(result).not.toBeNull();
       expect(result!.text).toBe('tbl');
     });
+
+    it('should resolve CTE name inside a multi-statement script', () => {
+      const sql = "PRINT 'header';\nWITH TargetProject AS (SELECT 1), TargetMembers AS (SELECT Id FROM TargetProject)\nSELECT * FROM TargetMembers";
+      const result = resolveRenameLocation(sql, 2, 41);
+      expect(result).not.toBeNull();
+      expect(result!.text).toBe('TargetMembers');
+    });
   });
 
   describe('provideRenameEdits', () => {
@@ -127,6 +134,14 @@ describe('sqlRenameService', () => {
       expect(prefixEdit!.range.startLineNumber).toBe(1);
       expect(prefixEdit!.range.endColumn).toBe(9);
     });
+
+    it('should rename only the current statement CTE occurrences in multi-statement scripts', () => {
+      const sql = "PRINT 'header';\nWITH TargetProject AS (SELECT 1), TargetMembers AS (SELECT Id FROM TargetProject)\nSELECT * FROM TargetMembers";
+      const edits = provideRenameEdits(sql, 2, 41, 'MembersScope');
+      expect(edits).toHaveLength(2);
+      expect(edits.every(e => e.newText === 'MembersScope')).toBe(true);
+      expect(new Set(edits.map(e => e.range.startLineNumber))).toEqual(new Set([2, 3]));
+    });
   });
 
   describe('@variable rename', () => {
@@ -191,6 +206,19 @@ describe('sqlRenameService', () => {
       const sql = 'SELECT @@ROWCOUNT, @Test;\nDECLARE @Test INT = 1;';
       const result = provideDefinitionLocation(sql, 1, 10);
       expect(result).toBeNull();
+    });
+
+    it('should resolve go-to-definition for CTE usage in multi-statement scripts', () => {
+      const sql = "PRINT 'header';\nWITH TargetProject AS (SELECT 1), TargetMembers AS (SELECT Id FROM TargetProject)\nSELECT * FROM TargetProject JOIN TargetMembers ON 1 = 1";
+      const result = provideDefinitionLocation(sql, 3, 15);
+      expect(result).toEqual({
+        range: {
+          startLineNumber: 2,
+          startColumn: 6,
+          endLineNumber: 2,
+          endColumn: 19,
+        },
+      });
     });
   });
 

@@ -12,6 +12,7 @@ export interface ConfigMessage {
     colorPrimaryForeignKeys?: boolean;
     numberFormat?: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
     variableHighlightColor?: string;
+    cteHighlightColor?: string;
     multipleResultSetsDisplay?: 'single-view' | 'separately';
   };
 }
@@ -371,6 +372,8 @@ export interface EditorConfig {
   numberFormat: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
   /** CSS color string (e.g. '#90EE90'). Empty string disables variable highlighting. */
   variableHighlightColor: string;
+  /** CSS color string (e.g. '#90EE90'). Empty string disables CTE highlighting. */
+  cteHighlightColor: string;
   /** How multiple result sets are displayed: stacked or as separate tabs. */
   multipleResultSetsDisplay: 'single-view' | 'separately';
 }
@@ -379,5 +382,6 @@ export const defaultEditorConfig: EditorConfig = {
   colorPrimaryForeignKeys: true,
   numberFormat: 'plain',
   variableHighlightColor: '#6adc7a',
+  cteHighlightColor: '#6adc7a',
   multipleResultSetsDisplay: 'single-view',
 };

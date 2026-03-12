@@ -1474,6 +1474,11 @@
           "default": "#6adc7a",
           "description": "Color used to highlight SQL variables (e.g. @MyVar) in the SQL editor. Set to empty string to disable."
         },
+        "mssqlManager.cteHighlightColor": {
+          "type": "string",
+          "default": "#6adc7a",
+          "description": "Color used to highlight CTE names in the SQL editor. Set to empty string to disable."
+        },
         "mssqlManager.multipleResultSetsDisplay": {
           "type": "string",
           "default": "single-view",

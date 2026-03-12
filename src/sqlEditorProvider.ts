@@ -85,6 +85,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     const colorPrimaryForeignKeys = config.get<boolean>('colorPrimaryForeignKeys', true);
                     const numberFormat = config.get<string>('numberFormat', 'plain');
                     const variableHighlightColor = config.get<string>('variableHighlightColor', '#6adc7a');
+                    const cteHighlightColor = config.get<string>('cteHighlightColor', '#6adc7a');
                     const multipleResultSetsDisplay = config.get<string>('multipleResultSetsDisplay', 'single-view');
                     webviewPanel.webview.postMessage({
                         type: 'config',
@@ -92,6 +93,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                             colorPrimaryForeignKeys,
                             numberFormat,
                             variableHighlightColor,
+                            cteHighlightColor,
                             multipleResultSetsDisplay
                         }
                     });
@@ -2136,10 +2138,11 @@ COMMIT TRANSACTION;
                         const colorPrimaryForeignKeys = config.get<boolean>('colorPrimaryForeignKeys', true);
                         const numberFormat = config.get<string>('numberFormat', 'plain');
                         const variableHighlightColor = config.get<string>('variableHighlightColor', '#6adc7a');
+                        const cteHighlightColor = config.get<string>('cteHighlightColor', '#6adc7a');
                         const multipleResultSetsDisplay = config.get<string>('multipleResultSetsDisplay', 'single-view');
                         panel.webview.postMessage({
                             type: 'config',
-                            config: { colorPrimaryForeignKeys, numberFormat, variableHighlightColor, multipleResultSetsDisplay }
+                            config: { colorPrimaryForeignKeys, numberFormat, variableHighlightColor, cteHighlightColor, multipleResultSetsDisplay }
                         });
                     }
 

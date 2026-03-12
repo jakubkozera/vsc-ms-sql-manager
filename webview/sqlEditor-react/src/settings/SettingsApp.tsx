@@ -195,6 +195,14 @@ export function SettingsApp() {
               onChange={(v) => updateSetting('variableHighlightColor', v)}
               isModified={isSettingModified('variableHighlightColor')}
             />
+            <ColorSetting
+              id="cteHighlightColor"
+              label="Highlight CTE Color"
+              description="Highlight CTE names in the editor with the chosen color. Clear the color to disable highlighting."
+              value={settings.cteHighlightColor}
+              onChange={(v) => updateSetting('cteHighlightColor', v)}
+              isModified={isSettingModified('cteHighlightColor')}
+            />
             <SelectSetting
               id="multipleResultSetsDisplay"
               label="Show Multiple Result Sets"

@@ -12,6 +12,8 @@ export interface ExtensionSettings {
   useReactWebview: boolean;
   /** CSS hex color for SQL variable highlights (e.g. '#6adc7a'). Empty = disabled. */
   variableHighlightColor: string;
+  /** CSS hex color for CTE highlights (e.g. '#6adc7a'). Empty = disabled. */
+  cteHighlightColor: string;
   /** How multiple result sets are displayed: stacked (single-view) or as separate tabs. */
   multipleResultSetsDisplay: 'single-view' | 'separately';
   // Formatting Options
@@ -45,6 +47,7 @@ export const defaultSettings: ExtensionSettings = {
   numberFormat: 'plain',
   useReactWebview: false,
   variableHighlightColor: '#6adc7a',
+  cteHighlightColor: '#6adc7a',
   multipleResultSetsDisplay: 'single-view' as const,
   tabWidth: 2,
   keywordCase: 'upper',

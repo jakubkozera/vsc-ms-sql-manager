@@ -131,6 +131,14 @@ describe('sqlValidator', () => {
       const ctes = extractCTEs(sql);
       expect(ctes.has('mycte')).toBe(true);
     });
+
+    it('should extract CTEs from a later statement in a multi-statement script', () => {
+      const sql = "PRINT 'header';\nWITH TargetProject AS (SELECT 1), TargetMembers AS (SELECT Id FROM TargetProject) SELECT * FROM TargetMembers";
+      const ctes = extractCTEs(sql);
+      expect(ctes.has('targetproject')).toBe(true);
+      expect(ctes.has('targetmembers')).toBe(true);
+      expect(ctes.size).toBe(2);
+    });
   });
 
   describe('findTableReferences', () => {
@@ -400,6 +408,14 @@ describe('sqlValidator', () => {
       const sql = `WITH MyCte AS (SELECT CONCAT(Name, '_suffix') AS FullName FROM dbo.Users) SELECT * FROM MyCte`;
       const ctes = extractCTEsWithColumns(sql, mockSchema);
       expect(ctes[0].columns[0]).toEqual({ name: 'FullName', type: 'nvarchar', nullable: false });
+    });
+
+    it('extracts CTE definitions from a later statement in a multi-statement script', () => {
+      const sql = "PRINT 'header';\nWITH TargetProject AS (SELECT Id, Name FROM dbo.Users), TargetMembers AS (SELECT Id FROM TargetProject)\nSELECT * FROM TargetMembers";
+      const ctes = extractCTEsWithColumns(sql, mockSchema);
+      expect(ctes).toHaveLength(2);
+      expect(ctes[0].name).toBe('TargetProject');
+      expect(ctes[1].name).toBe('TargetMembers');
     });
   });
 

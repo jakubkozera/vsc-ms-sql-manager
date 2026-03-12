@@ -98,7 +98,7 @@ export function splitSqlStatements(sql: string): SqlStatement[] {
 /**
  * Extract CTE (Common Table Expression) names from a statement
  */
-export function extractCTEs(statementText: string): Set<string> {
+function extractCTEsFromSingleStatement(statementText: string): Set<string> {
   const ctes = new Set<string>();
   
   // Find start of WITH clause
@@ -143,6 +143,23 @@ export function extractCTEs(statementText: string): Set<string> {
   return ctes;
 }
 
+export function extractCTEs(statementText: string): Set<string> {
+  const statements = splitSqlStatements(statementText);
+  if (statements.length === 0) {
+    return extractCTEsFromSingleStatement(statementText);
+  }
+
+  const ctes = new Set<string>();
+  for (const statement of statements) {
+    const statementCtes = extractCTEsFromSingleStatement(statement.text);
+    for (const cte of statementCtes) {
+      ctes.add(cte);
+    }
+  }
+
+  return ctes;
+}
+
 export interface CteColumnInfo {
   name: string;
   type: string;
@@ -160,7 +177,7 @@ export interface CteDefinition {
  * Columns are inferred from the outermost SELECT clause aliases/names.
  * Types are resolved from the database schema when possible.
  */
-export function extractCTEsWithColumns(statementText: string, dbSchema?: DatabaseSchema): CteDefinition[] {
+function extractCTEsWithColumnsFromSingleStatement(statementText: string, dbSchema?: DatabaseSchema): CteDefinition[] {
   const ctes: CteDefinition[] = [];
 
   const withMatch = statementText.match(/^\s*WITH\s+/i);
@@ -204,6 +221,15 @@ export function extractCTEsWithColumns(statementText: string, dbSchema?: Databas
   }
 
   return ctes;
+}
+
+export function extractCTEsWithColumns(statementText: string, dbSchema?: DatabaseSchema): CteDefinition[] {
+  const statements = splitSqlStatements(statementText);
+  if (statements.length === 0) {
+    return extractCTEsWithColumnsFromSingleStatement(statementText, dbSchema);
+  }
+
+  return statements.flatMap(statement => extractCTEsWithColumnsFromSingleStatement(statement.text, dbSchema));
 }
 
 /**

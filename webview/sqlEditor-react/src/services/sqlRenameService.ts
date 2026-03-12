@@ -3,7 +3,7 @@
  * Provides rename functionality for CTE names, table aliases, and SQL variables in SQL queries.
  */
 
-import { extractCTEs } from './sqlValidator';
+import { extractCTEs, splitSqlStatements } from './sqlValidator';
 
 export interface SqlRenameLocation {
   range: {
@@ -230,6 +230,32 @@ function offsetsToRange(text: string, startOffset: number, endOffset: number): S
   };
 }
 
+function positionToOffset(text: string, lineNumber: number, column: number): number {
+  const lines = text.split('\n');
+  let offset = 0;
+  for (let i = 0; i < lineNumber - 1 && i < lines.length; i++) {
+    offset += lines[i].length + 1;
+  }
+  return offset + Math.max(column - 1, 0);
+}
+
+function getStatementAtPosition(
+  sql: string,
+  lineNumber: number,
+  column: number
+): { text: string; startOffset: number; endOffset: number } | null {
+  const offset = positionToOffset(sql, lineNumber, column);
+  const statements = splitSqlStatements(sql);
+
+  for (const statement of statements) {
+    if (offset >= statement.startOffset && offset <= statement.endOffset) {
+      return statement;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Check if a word is used as a table alias in the SQL — appears before a dot
  * or is assigned as an alias in FROM/JOIN clauses.
@@ -283,6 +309,53 @@ function findVariableDefinitionRange(sql: string, variableName: string): SqlDefi
   return offsetsToRange(sql, occurrences[0].startOffset, occurrences[0].endOffset);
 }
 
+function findCteDefinitionRange(
+  statementText: string,
+  statementStartOffset: number,
+  cteName: string,
+  fullText: string
+): SqlDefinitionLocation['range'] | null {
+  const escaped = cteName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(?:\\bWITH\\s+|,\\s*)(\\[${escaped}\\]|${escaped})\\s+AS\\s*\\(`, 'gi');
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(statementText)) !== null) {
+    if (isInsideStringOrComment(statementText, match.index)) {
+      continue;
+    }
+
+    const token = match[1];
+    const tokenStart = match.index + match[0].indexOf(token);
+    const isBracketed = token.startsWith('[') && token.endsWith(']');
+    const startOffset = statementStartOffset + tokenStart + (isBracketed ? 1 : 0);
+    const endOffset = startOffset + cteName.length;
+    return offsetsToRange(fullText, startOffset, endOffset);
+  }
+
+  return null;
+}
+
+function mapOccurrencesToEdits(
+  fullText: string,
+  baseOffset: number,
+  occurrences: { startOffset: number; endOffset: number }[],
+  newText: string
+): SqlRenameEdit[] {
+  return occurrences.map(occ => {
+    const start = offsetToPosition(fullText, baseOffset + occ.startOffset);
+    const end = offsetToPosition(fullText, baseOffset + occ.endOffset);
+    return {
+      range: {
+        startLineNumber: start.lineNumber,
+        startColumn: start.column,
+        endLineNumber: end.lineNumber,
+        endColumn: end.column,
+      },
+      newText,
+    };
+  });
+}
+
 export function provideDefinitionLocation(
   sql: string,
   lineNumber: number,
@@ -291,16 +364,21 @@ export function provideDefinitionLocation(
   const wordInfo = getWordAtPosition(sql, lineNumber, column);
   if (!wordInfo) return null;
 
-  if (!isSqlVariable(sql, wordInfo.word)) {
+  if (isSqlVariable(sql, wordInfo.word)) {
+    const range = findVariableDefinitionRange(sql, wordInfo.word);
+    return range ? { range } : null;
+  }
+
+  const statement = getStatementAtPosition(sql, lineNumber, column);
+  if (!statement) return null;
+
+  const ctes = extractCTEs(statement.text);
+  if (!ctes.has(wordInfo.word.toLowerCase())) {
     return null;
   }
 
-  const range = findVariableDefinitionRange(sql, wordInfo.word);
-  if (!range) {
-    return null;
-  }
-
-  return { range };
+  const range = findCteDefinitionRange(statement.text, statement.startOffset, wordInfo.word, sql);
+  return range ? { range } : null;
 }
 
 /**
@@ -345,8 +423,9 @@ export function resolveRenameLocation(
     };
   }
 
-  // Check if it's a CTE name
-  const ctes = extractCTEs(sql);
+  // Check if it's a CTE name in the current statement
+  const statement = getStatementAtPosition(sql, lineNumber, column);
+  const ctes = statement ? extractCTEs(statement.text) : new Set<string>();
   if (ctes.has(word.toLowerCase())) {
     return makeResult();
   }
@@ -380,25 +459,21 @@ export function provideRenameEdits(
 
   const isVariable = isSqlVariable(sql, word);
   if (!isVariable) {
-    const ctes = extractCTEs(sql);
-    if (!ctes.has(word.toLowerCase()) && !isTableAlias(sql, word)) return [];
+    const statement = getStatementAtPosition(sql, lineNumber, column);
+    const statementText = statement?.text ?? sql;
+    const statementOffset = statement?.startOffset ?? 0;
+    const ctes = extractCTEs(statementText);
+    const isCte = ctes.has(word.toLowerCase());
+    const isAlias = isTableAlias(statementText, word);
+    if (!isCte && !isAlias) return [];
+
+    const occurrences = findAllOccurrences(statementText, word);
+    return mapOccurrencesToEdits(sql, statementOffset, occurrences, newName);
   }
 
   // For @variables, user typed name without @, so prepend it
   const effectiveNewName = isVariable ? '@' + newName.replace(/^@/, '') : newName;
   const occurrences = findAllOccurrences(sql, word);
 
-  return occurrences.map(occ => {
-    const start = offsetToPosition(sql, occ.startOffset);
-    const end = offsetToPosition(sql, occ.endOffset);
-    return {
-      range: {
-        startLineNumber: start.lineNumber,
-        startColumn: start.column,
-        endLineNumber: end.lineNumber,
-        endColumn: end.column,
-      },
-      newText: effectiveNewName,
-    };
-  });
+  return mapOccurrencesToEdits(sql, 0, occurrences, effectiveNewName);
 }

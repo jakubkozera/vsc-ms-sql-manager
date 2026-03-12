@@ -67,6 +67,7 @@ function makeVSCodeMock(lastErrorId: number) {
       colorPrimaryForeignKeys: false,
       numberFormat: 'plain',
       variableHighlightColor: '',
+      cteHighlightColor: '',
       multipleResultSetsDisplay: 'single-view',
     },
   };
@@ -326,6 +327,7 @@ function makeMultiResultsMock(
       colorPrimaryForeignKeys: false,
       numberFormat: 'plain',
       variableHighlightColor: '',
+      cteHighlightColor: '',
       multipleResultSetsDisplay: displayMode,
     },
   };
