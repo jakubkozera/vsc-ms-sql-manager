@@ -38,9 +38,12 @@ export function ResultsPanel() {
     currentConnectionId,
     currentDatabase,
     originalQuery,
+    config,
   } = useVSCode();
 
   const [activeTab, setActiveTab] = useState<TabId>('results');
+  // Active result set index for "separately" display mode
+  const [activeResultSetIndex, setActiveResultSetIndex] = useState(0);
 
   // Pending changes
   const pendingChanges = usePendingChanges();
@@ -69,6 +72,13 @@ export function ResultsPanel() {
     }
   }, [lastErrorId]);
 
+  // Auto-switch to the plan tab when a query plan is received
+  useEffect(() => {
+    if (lastPlanXml) {
+      setActiveTab('plan');
+    }
+  }, [lastPlanXml]);
+
   // Selection aggregation state
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo>({ values: [], rowCount: 0 });
   const handleSelectionChange = useCallback((info: SelectionInfo) => {
@@ -83,6 +93,7 @@ export function ResultsPanel() {
   useEffect(() => {
     if (isExecuting) {
       pendingChanges.revertAll();
+      setActiveResultSetIndex(0);
     }
   }, [isExecuting]);
 
@@ -322,8 +333,16 @@ export function ResultsPanel() {
     setActiveTab(tabId);
   }, []);
 
-  // Compute total row count from first result set
-  const totalRowCount = hasResults ? lastResults![0].length : 0;
+  // Compute total row count for the currently visible result set.
+  // In "separately" mode the user can switch between Set tabs, so we must
+  // use the active set's row count rather than always Set 1.
+  const activeSetForStats =
+    config.multipleResultSetsDisplay === 'separately' &&
+    hasResults &&
+    lastResults!.length > 1
+      ? Math.min(activeResultSetIndex, lastResults!.length - 1)
+      : 0;
+  const totalRowCount = hasResults ? lastResults![activeSetForStats].length : 0;
 
   const DATETIME_TYPES = ['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'];
   const isDatetimeSelection = !!selectionInfo.sqlType && DATETIME_TYPES.includes(selectionInfo.sqlType.toLowerCase());
@@ -332,7 +351,7 @@ export function ResultsPanel() {
   // Helper to get the first editable result set index for pending changes tab
   const firstEditableIndex = useMemo(() => {
     if (!lastMetadata) return 0;
-    return lastMetadata.findIndex(m => m.isEditable) ?? 0;
+    return lastMetadata.findIndex(m => m?.isEditable) ?? 0;
   }, [lastMetadata]);
 
   const pendingChangesCount = pendingChanges.state.totalChangedRows + pendingChanges.state.totalDeletedRows;
@@ -371,44 +390,99 @@ export function ResultsPanel() {
           </div>
         )}
 
-        {activeTab === 'results' && hasResults && (
-          <div className={`results-grids-container ${lastResults.length === 1 ? 'single-result' : ''}`}>
-            {lastResults.map((data, index) => (
-              <div key={index} className={`result-set-wrapper ${lastResults.length === 1 ? 'single-result' : ''}`}>
-                <DataGrid
-                  data={data}
-                  columns={lastColumnNames?.[index] || []}
-                  metadata={lastMetadata?.[index]}
-                  resultSetIndex={index}
-                  isSingleResultSet={lastResults.length === 1}
-                  onSelectionChange={handleSelectionChange}
-                  onCellEdit={(rowIndex, columnName, newValue) => {
-                    const colIdx = (lastColumnNames?.[index] || []).indexOf(columnName);
-                    const row = data[rowIndex];
-                    const originalValue = row?.[colIdx];
-                    handleCellEdit(index, rowIndex, columnName, colIdx, row, originalValue, newValue);
-                    // Update data in place so the grid shows the new value
-                    if (colIdx >= 0 && row) {
-                      row[colIdx] = newValue;
-                    }
-                  }}
-                  onDeleteRow={(rowIndex) => {
-                    const row = data[rowIndex];
-                    handleDeleteRow(index, rowIndex, row);
-                  }}
-                  onRestoreRow={(rowIndex) => {
-                    handleRestoreRow(index, rowIndex);
-                  }}
-                  isRowDeleted={(rowIndex) => pendingChanges.isRowDeleted(index, rowIndex)}
-                  isCellModified={(rowIndex, colIndex) => {
-                    const colName = lastColumnNames?.[index]?.[colIndex];
-                    return colName ? pendingChanges.isCellModified(index, rowIndex, colName) : false;
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        )}
+        {activeTab === 'results' && hasResults && (() => {
+          // "Separately" mode: show Set-N tabs when there are 2+ result sets
+          const useSeparately = config.multipleResultSetsDisplay === 'separately' && lastResults.length > 1;
+
+          if (useSeparately) {
+            const idx = Math.min(activeResultSetIndex, lastResults.length - 1);
+            const data = lastResults[idx];
+            return (
+              <>
+                <div className="result-set-tabs">
+                  {lastResults.map((_, i) => (
+                    <button
+                      key={i}
+                      className={`result-set-tab${i === idx ? ' active' : ''}`}
+                      onClick={() => {
+                        setActiveResultSetIndex(i);
+                        setSelectionInfo({ values: [], rowCount: 0 });
+                      }}
+                    >
+                      Set {i + 1}
+                    </button>
+                  ))}
+                </div>
+                <div className="results-grids-container single-result">
+                  <div className="result-set-wrapper single-result">
+                    <DataGrid
+                      data={data}
+                      columns={lastColumnNames?.[idx] || []}
+                      metadata={lastMetadata?.[idx]}
+                      resultSetIndex={idx}
+                      isSingleResultSet={true}
+                      onSelectionChange={handleSelectionChange}
+                      onCellEdit={(rowIndex, columnName, newValue) => {
+                        const colIdx = (lastColumnNames?.[idx] || []).indexOf(columnName);
+                        const row = data[rowIndex];
+                        const originalValue = row?.[colIdx];
+                        handleCellEdit(idx, rowIndex, columnName, colIdx, row, originalValue, newValue);
+                        if (colIdx >= 0 && row) { row[colIdx] = newValue; }
+                      }}
+                      onDeleteRow={(rowIndex) => { handleDeleteRow(idx, rowIndex, data[rowIndex]); }}
+                      onRestoreRow={(rowIndex) => { handleRestoreRow(idx, rowIndex); }}
+                      isRowDeleted={(rowIndex) => pendingChanges.isRowDeleted(idx, rowIndex)}
+                      isCellModified={(rowIndex, colIndex) => {
+                        const colName = lastColumnNames?.[idx]?.[colIndex];
+                        return colName ? pendingChanges.isCellModified(idx, rowIndex, colName) : false;
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
+            );
+          }
+
+          // Default "single-view": all result sets stacked
+          return (
+            <div className={`results-grids-container ${lastResults.length === 1 ? 'single-result' : ''}`}>
+              {lastResults.map((data, index) => (
+                <div key={index} className={`result-set-wrapper ${lastResults.length === 1 ? 'single-result' : ''}`}>
+                  <DataGrid
+                    data={data}
+                    columns={lastColumnNames?.[index] || []}
+                    metadata={lastMetadata?.[index]}
+                    resultSetIndex={index}
+                    isSingleResultSet={lastResults.length === 1}
+                    onSelectionChange={handleSelectionChange}
+                    onCellEdit={(rowIndex, columnName, newValue) => {
+                      const colIdx = (lastColumnNames?.[index] || []).indexOf(columnName);
+                      const row = data[rowIndex];
+                      const originalValue = row?.[colIdx];
+                      handleCellEdit(index, rowIndex, columnName, colIdx, row, originalValue, newValue);
+                      // Update data in place so the grid shows the new value
+                      if (colIdx >= 0 && row) {
+                        row[colIdx] = newValue;
+                      }
+                    }}
+                    onDeleteRow={(rowIndex) => {
+                      const row = data[rowIndex];
+                      handleDeleteRow(index, rowIndex, row);
+                    }}
+                    onRestoreRow={(rowIndex) => {
+                      handleRestoreRow(index, rowIndex);
+                    }}
+                    isRowDeleted={(rowIndex) => pendingChanges.isRowDeleted(index, rowIndex)}
+                    isCellModified={(rowIndex, colIndex) => {
+                      const colName = lastColumnNames?.[index]?.[colIndex];
+                      return colName ? pendingChanges.isCellModified(index, rowIndex, colName) : false;
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {activeTab === 'results' && !hasResults && !isExecuting && (
           <div className="results-empty">

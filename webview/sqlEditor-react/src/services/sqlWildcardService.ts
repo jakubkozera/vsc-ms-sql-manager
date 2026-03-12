@@ -121,6 +121,18 @@ export function findWildcardAtPosition(
   });
   if (charBefore !== '*') return null;
 
+  // Skip `*` that is a function argument like COUNT(*) — char before `*` would be `(`  
+  // (allowing optional whitespace). Check column - 2 for immediate predecessor.
+  if (column >= 3) {
+    const charBeforeStar = model.getValueInRange({
+      startLineNumber: lineNumber,
+      startColumn: column - 2,
+      endLineNumber: lineNumber,
+      endColumn: column - 1,
+    });
+    if (charBeforeStar === '(') return null;
+  }
+
   // Check for alias.* pattern (column - 2 must be '.')
   if (column >= 3) {
     const charBeforeStar = model.getValueInRange({
@@ -289,6 +301,10 @@ export function findWildcardCandidatesInLine(
     // Heuristic: skip when immediately preceded by a word char, `)` or `]`
     // (handles `val*2`, `func()*n` with no spaces)
     if (idx > 0 && /[\w\)\]]/.test(scanLine[idx - 1])) continue;
+
+    // Skip `*` immediately preceded by `(` — this is a function argument wildcard
+    // like COUNT(*), SUM(*), etc., which cannot be expanded to columns.
+    if (idx > 0 && scanLine[idx - 1] === '(') continue;
 
     // Skip when the non-whitespace char after `*` is a digit — handles `2 * 3`.
     // We intentionally do NOT check the char before `*` because patterns like

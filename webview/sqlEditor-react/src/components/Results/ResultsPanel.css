@@ -24,6 +24,45 @@
   overflow: hidden;
 }
 
+/* Multi-result-set mode: the container must be scrollable so the user can
+   reach result sets beyond the first visible ones. Individual grids cap their
+   own height via DataGrid's max-height rule; the container scrolls through all. */
+.results-grids-container:not(.single-result) {
+  overflow-y: auto;
+}
+
+/* ── "Separately" result-set tab bar ────────────────────────────────────── */
+.result-set-tabs {
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+.result-set-tab {
+  padding: 3px 12px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-tab-inactiveForeground, var(--vscode-foreground));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.result-set-tab:hover {
+  background: var(--vscode-tab-hoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+.result-set-tab.active {
+  background: var(--vscode-tab-activeBackground, var(--vscode-editor-background));
+  color: var(--vscode-tab-activeForeground, var(--vscode-editor-foreground));
+  border-color: var(--vscode-focusBorder, var(--vscode-tab-activeBorderTop));
+  font-weight: 600;
+}
+
 .result-set-wrapper {
   display: flex;
   flex-direction: column;

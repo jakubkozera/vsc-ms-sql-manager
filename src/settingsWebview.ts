@@ -20,6 +20,8 @@ interface AllSettings {
     colorPrimaryForeignKeys: boolean;
     numberFormat: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
     useReactWebview: boolean;
+    variableHighlightColor: string;
+    multipleResultSetsDisplay: 'single-view' | 'separately';
     // Formatting options (stored in globalState)
     tabWidth: number;
     keywordCase: 'upper' | 'lower' | 'preserve';
@@ -118,6 +120,8 @@ export class SettingsWebview {
             colorPrimaryForeignKeys: config.get<boolean>('colorPrimaryForeignKeys', true),
             numberFormat: config.get<'plain' | 'locale' | 'fixed-2' | 'fixed-4'>('numberFormat', 'plain'),
             useReactWebview: config.get<boolean>('useReactWebview', false),
+            variableHighlightColor: config.get<string>('variableHighlightColor', '#6adc7a'),
+            multipleResultSetsDisplay: config.get<'single-view' | 'separately'>('multipleResultSetsDisplay', 'single-view'),
             tabWidth: config.get<number>('formatting.tabWidth', formatOptions.tabWidth),
             keywordCase: config.get<'upper' | 'lower' | 'preserve'>('formatting.keywordCase', formatOptions.keywordCase),
             dataTypeCase: config.get<'upper' | 'lower' | 'preserve'>('formatting.dataTypeCase', formatOptions.dataTypeCase),
@@ -141,6 +145,8 @@ export class SettingsWebview {
             await config.update('colorPrimaryForeignKeys', settings.colorPrimaryForeignKeys, vscode.ConfigurationTarget.Global);
             await config.update('numberFormat', settings.numberFormat, vscode.ConfigurationTarget.Global);
             await config.update('useReactWebview', settings.useReactWebview, vscode.ConfigurationTarget.Global);
+            await config.update('variableHighlightColor', settings.variableHighlightColor, vscode.ConfigurationTarget.Global);
+            await config.update('multipleResultSetsDisplay', settings.multipleResultSetsDisplay, vscode.ConfigurationTarget.Global);
             await config.update('formatting.tabWidth', settings.tabWidth, vscode.ConfigurationTarget.Global);
             await config.update('formatting.keywordCase', settings.keywordCase, vscode.ConfigurationTarget.Global);
             await config.update('formatting.dataTypeCase', settings.dataTypeCase, vscode.ConfigurationTarget.Global);
@@ -185,6 +191,8 @@ export class SettingsWebview {
             await config.update('colorPrimaryForeignKeys', undefined, vscode.ConfigurationTarget.Global);
             await config.update('numberFormat', undefined, vscode.ConfigurationTarget.Global);
             await config.update('useReactWebview', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('variableHighlightColor', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('multipleResultSetsDisplay', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.tabWidth', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.keywordCase', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.dataTypeCase', undefined, vscode.ConfigurationTarget.Global);

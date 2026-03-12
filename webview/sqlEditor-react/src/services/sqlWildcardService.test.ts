@@ -348,4 +348,60 @@ describe('findWildcardCandidatesInLine', () => {
     expect(candidates[0].wildcardRange.startLineNumber).toBe(5);
     expect(candidates[0].wildcardRange.endLineNumber).toBe(5);
   });
+
+  // ── COUNT(*) / function-argument wildcard suppression ─────────────────────
+
+  it('does NOT return a candidate for COUNT(*)', () => {
+    const candidates = findWildcardCandidatesInLine('SELECT COUNT(*) FROM Orders', 1);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('does NOT return a candidate for SUM(*)', () => {
+    const candidates = findWildcardCandidatesInLine('SELECT SUM(*) FROM t', 1);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('does NOT return a candidate for func(*) in complex query', () => {
+    const line = 'SELECT COUNT(*), MAX(Price) FROM Products';
+    const candidates = findWildcardCandidatesInLine(line, 1);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('still returns candidate for bare * alongside COUNT(*)', () => {
+    // "SELECT *, COUNT(*)" — bare * is an expandable wildcard; COUNT(*) is not
+    const candidates = findWildcardCandidatesInLine('SELECT *, COUNT(*) FROM Orders', 1);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].alias).toBeNull();
+    // bare * is at column 8 (1-based), so startColumn=8
+    expect(candidates[0].wildcardRange.startColumn).toBe(8);
+  });
+});
+
+// ── findWildcardAtPosition — COUNT(*) suppression ────────────────────────────
+
+describe('findWildcardAtPosition — COUNT(*) suppression', () => {
+  it('returns null when cursor is immediately after * preceded by (', () => {
+    // COUNT(*) — cursor at column 14 (after *)
+    // "SELECT COUNT(*)" 
+    //  1234567890123456
+    //  cursor at 14: char before = '*', char before that = '('
+    const model = makeModel('SELECT COUNT(*)');
+    // column 14 = cursor right after *
+    const result = findWildcardAtPosition(model, { lineNumber: 1, column: 15 });
+    expect(result).toBeNull();
+  });
+
+  it('returns null for any (*)  pattern', () => {
+    const model = makeModel('SUM(*)');
+    // * is at column 5, cursor at column 6
+    const result = findWildcardAtPosition(model, { lineNumber: 1, column: 6 });
+    expect(result).toBeNull();
+  });
+
+  it('still returns non-null for bare * not preceded by (', () => {
+    // "SELECT *" — cursor at col 9
+    const model = makeModel('SELECT *');
+    const result = findWildcardAtPosition(model, { lineNumber: 1, column: 9 });
+    expect(result).not.toBeNull();
+  });
 });

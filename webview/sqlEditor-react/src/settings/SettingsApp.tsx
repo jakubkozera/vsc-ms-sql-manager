@@ -3,6 +3,7 @@ import './settings.css';
 import { BooleanSetting } from './components/BooleanSetting';
 import { NumberSetting } from './components/NumberSetting';
 import { SelectSetting } from './components/SelectSetting';
+import { ColorSetting } from './components/ColorSetting';
 import { FormatPreview } from './components/FormatPreview';
 import { type ExtensionSettings, type IncomingMessage, defaultSettings } from './types';
 
@@ -185,6 +186,26 @@ export function SettingsApp() {
               value={settings.useReactWebview}
               onChange={(v) => updateSetting('useReactWebview', v)}
               isModified={isSettingModified('useReactWebview')}
+            />
+            <ColorSetting
+              id="variableHighlightColor"
+              label="Highlight Variables Color"
+              description="Highlight SQL variables (e.g. @MyVar) in the editor with the chosen color. Clear the color to disable highlighting."
+              value={settings.variableHighlightColor}
+              onChange={(v) => updateSetting('variableHighlightColor', v)}
+              isModified={isSettingModified('variableHighlightColor')}
+            />
+            <SelectSetting
+              id="multipleResultSetsDisplay"
+              label="Show Multiple Result Sets"
+              description="Controls how multiple result sets are displayed: all stacked (Single view) or as separate switchable tabs (Separately)."
+              value={settings.multipleResultSetsDisplay}
+              onChange={(v) => updateSetting('multipleResultSetsDisplay', v as ExtensionSettings['multipleResultSetsDisplay'])}
+              isModified={isSettingModified('multipleResultSetsDisplay')}
+              options={[
+                { value: 'single-view', label: 'Single view (all stacked)' },
+                { value: 'separately', label: 'Separately (Set 1, Set 2, ...)' },
+              ]}
             />
           </div>
 

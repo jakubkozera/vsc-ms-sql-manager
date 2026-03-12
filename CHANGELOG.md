@@ -5,6 +5,58 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.5] - 2026-03-12
+
+### Added
+
+- **SQL Editor — "Show Multiple Result Sets" setting**
+  - New `mssqlManager.multipleResultSetsDisplay` VS Code setting and corresponding **Show Multiple Result Sets** dropdown in the Query Editor tab of the Settings webview.
+  - **Single view** (default): all result sets are rendered stacked, exactly as before.
+  - **Separately**: when a query returns 2 or more result sets, a compact tab bar (_Set 1_, _Set 2_, …) appears above the grid. Only the selected result set is shown. If there is only one result set, the tab bar is hidden automatically.
+
+### Fixed
+
+- **SQL Editor — `@variable` highlight now uses foreground (text) color**
+  - Previously, enabling the _Highlight Variables Color_ setting applied a semi-transparent background to `@variable` tokens. It now sets the **text color**, making variables readable against any editor background.
+
+- **SQL Editor — T-SQL type keywords correctly colorized**
+  - `NVARCHAR`, `NCHAR`, `NTEXT`, `DATETIME`, `DATETIME2`, `DATETIMEOFFSET`, `SMALLDATETIME`, `UNIQUEIDENTIFIER`, `ROWVERSION`, `TINYINT`, `BIGINT`, `VARBINARY`, `IMAGE`, `XML`, `SQL_VARIANT`, `HIERARCHYID`, `GEOGRAPHY`, `GEOMETRY`, `MONEY`, `SMALLMONEY` now receive the same blue keyword color as `INT` and `VARCHAR`.
+  - Root cause: Monaco's SQL language has no `typeKeywords` array — all data-type identifiers live in the flat `keywords` list. Our previous extension was targeting a non-existent property.
+
+### Tests
+
+- Added 5 unit tests for the _separately_ result-sets display mode in `ResultsPanel.test.tsx`.
+- Updated 2 `useVariableHighlight` tests to check `color:` (foreground) instead of `background:`.
+
+## [0.15.4] - 2026-03-12
+
+### Added
+
+- **SQL Editor — "Highlight Variables Color" setting**
+  - New `mssqlManager.variableHighlightColor` VS Code setting and corresponding **Highlight Variables Color** control in the Query Editor tab of the Settings webview.
+  - When enabled, all `@variable` tokens in the SQL editor are highlighted with a configurable background color (default `#6adc7a`).
+  - Color picker includes a native color input, hex text field, and live preview swatch.
+
+### Fixed
+
+- **SQL Editor — T-SQL type keywords colorization**
+  - `NVARCHAR`, `NCHAR`, `NTEXT`, `DATETIME2`, `DATETIMEOFFSET`, `SMALLDATETIME`, `UNIQUEIDENTIFIER`, `HIERARCHYID`, `GEOGRAPHY`, `GEOMETRY`, `ROWVERSION`, `TIMESTAMP`, `SQL_VARIANT`, `XML`, `TINYINT`, `SMALLINT`, `BIGINT`, `MONEY`, `SMALLMONEY`, `REAL`, `IMAGE`, `BINARY`, `VARBINARY` and others now receive the correct `type` token color in the Monaco SQL editor, matching the behavior of `INT` and `VARCHAR`.
+
+- **SQL Editor — `COUNT(*)` no longer triggers wildcard expansion**
+  - `COUNT(*)`, `SUM(*)`, and any `func(*)` pattern no longer show the "Expand `*` → N columns" CodeLens action, and pressing TAB after `*` inside parentheses no longer attempts a column expansion.
+
+- **Results panel — auto-navigate to Query Plan tab after "Get Estimated Execution Plan"**
+  - After running "Get Estimated Execution Plan," the Results panel now automatically switches to the **Query Plan** tab so the plan is immediately visible without a manual click.
+
+- **Results panel — scrolling with 5+ result sets**
+  - When a query returns more than ~3 result sets, the outer results container now scrolls vertically, making all result grids accessible.
+
+### Tests
+
+- Added 6 unit tests for `COUNT(*)`/function-wildcard suppression in `sqlWildcardService.test.ts`.
+- Added 3 unit tests for Query Plan tab auto-navigation in `ResultsPanel.test.tsx`.
+- Added 9 unit tests for `useVariableHighlight` hook in `useVariableHighlight.test.ts`.
+
 ## [0.15.3] - 2026-03-11
 
 ### Added

@@ -10,6 +10,10 @@ export interface ExtensionSettings {
   colorPrimaryForeignKeys: boolean;
   numberFormat: NumberFormat;
   useReactWebview: boolean;
+  /** CSS hex color for SQL variable highlights (e.g. '#6adc7a'). Empty = disabled. */
+  variableHighlightColor: string;
+  /** How multiple result sets are displayed: stacked (single-view) or as separate tabs. */
+  multipleResultSetsDisplay: 'single-view' | 'separately';
   // Formatting Options
   tabWidth: number;
   keywordCase: 'upper' | 'lower' | 'preserve';
@@ -40,6 +44,8 @@ export const defaultSettings: ExtensionSettings = {
   colorPrimaryForeignKeys: true,
   numberFormat: 'plain',
   useReactWebview: false,
+  variableHighlightColor: '#6adc7a',
+  multipleResultSetsDisplay: 'single-view' as const,
   tabWidth: 2,
   keywordCase: 'upper',
   dataTypeCase: 'upper',

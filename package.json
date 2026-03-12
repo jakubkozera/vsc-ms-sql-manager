@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.15.3",
+  "version": "0.15.5",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1468,6 +1468,21 @@
           "type": "boolean",
           "default": true,
           "description": "Color primary key columns (gold) and foreign key columns (blue) in query results."
+        },
+        "mssqlManager.variableHighlightColor": {
+          "type": "string",
+          "default": "#6adc7a",
+          "description": "Color used to highlight SQL variables (e.g. @MyVar) in the SQL editor. Set to empty string to disable."
+        },
+        "mssqlManager.multipleResultSetsDisplay": {
+          "type": "string",
+          "default": "single-view",
+          "enum": ["single-view", "separately"],
+          "enumDescriptions": [
+            "Single view — all result sets displayed stacked in the results tab.",
+            "Separately — each result set shown on its own tab (Set 1, Set 2, ...)."
+          ],
+          "description": "Controls how multiple result sets are displayed in the query results panel."
         },
         "mssqlManager.numberFormat": {
           "type": "string",

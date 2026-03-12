@@ -4,7 +4,7 @@ import type { editor } from 'monaco-editor';
 import { format } from 'sql-formatter';
 import { useVSCode } from '../../context/VSCodeContext';
 import { useFormatOptions } from '../Toolbar/FormatButton';
-import { useEditorSetup, useEditorActions, useCompletionProvider, useSchemaProviders, useWildcardExpansion } from './hooks';
+  import { useEditorSetup, useEditorActions, useCompletionProvider, useSchemaProviders, useWildcardExpansion, useVariableHighlight } from './hooks';
 import './SqlEditor.css';
 
 export interface SqlEditorHandle {
@@ -201,7 +201,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     const [editorReady, setEditorReady] = useState(false);
     const lastContextPositionRef = useRef<{ lineNumber: number; column: number } | null>(null);
     const tableAtCursorContextKeyRef = useRef<any>(null);
-    const { dbSchema, requestPaste, pasteContent, clearPasteContent, postMessage, currentConnectionId, currentDatabase } = useVSCode();
+    const { dbSchema, requestPaste, pasteContent, clearPasteContent, postMessage, currentConnectionId, currentDatabase, config } = useVSCode();
     const dbSchemaRef = useRef(dbSchema);
     const currentConnectionIdRef = useRef(currentConnectionId);
     const currentDatabaseRef = useRef(currentDatabase);
@@ -224,6 +224,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     useCompletionProvider(monacoRef, dbSchema, editorReady);
     useSchemaProviders(monacoRef, editorRef, dbSchema, editorReady, currentConnectionId);
     useWildcardExpansion(monacoRef, editorRef, dbSchema, editorReady);
+    useVariableHighlight(monacoRef, editorRef, config.variableHighlightColor, editorReady);
 
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
@@ -289,6 +290,26 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     ];
 
     /**
+     * T-SQL data types and keywords missing from Monaco's built-in SQL monarch tokenizer.
+     * Monaco's SQL language has no 'typeKeywords' — types like INT and VARCHAR are just
+     * regular keywords. We add the T-SQL-specific ones here so they receive the same
+     * blue 'keyword' color as INT, SELECT, FROM, etc.
+     */
+    const EXTRA_TSQL_KEYWORDS = [
+      // T-SQL data types not in Monaco's default SQL keyword list
+      'NVARCHAR', 'NCHAR', 'NTEXT',
+      'DATETIME', 'DATETIME2', 'DATETIMEOFFSET', 'SMALLDATETIME',
+      'UNIQUEIDENTIFIER', 'ROWVERSION',
+      'TINYINT', 'BIGINT',
+      'VARBINARY', 'IMAGE',
+      'XML', 'SQL_VARIANT', 'HIERARCHYID',
+      'GEOGRAPHY', 'GEOMETRY',
+      'MONEY', 'SMALLMONEY',
+      // T-SQL keywords not in Monaco's default SQL keyword list
+      'APPLY', 'MATCHED',
+    ];
+
+    /**
      * Detect VS Code theme kind from document.body class.
      * VS Code adds vscode-dark / vscode-light / vscode-high-contrast / vscode-high-contrast-light.
      */
@@ -323,15 +344,19 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       // Define all 4 SQL themes with current VS Code CSS variables
       defineMonacoThemes(monacoInstance);
 
-      // Extend the SQL Monarch tokenizer with extra built-in functions
-      // and add APPLY, MATCHED to keywords (they're only in operators by default)
+      // Extend the SQL Monarch tokenizer with extra built-in functions and T-SQL keywords.
+      // NOTE: Monaco's SQL language has NO typeKeywords array — all typed keywords (INT, VARCHAR,
+      // NVARCHAR, etc.) live in the flat `keywords` array and get the 'keyword' token (blue).
       // @ts-expect-error — no type declarations for internal Monaco SQL module
       import('monaco-editor/esm/vs/basic-languages/sql/sql').then(({ language }: { language: any }) => {
         const extended = { ...language };
+
+        // Add missing built-in functions (yellow / predefined token)
         extended.builtinFunctions = [...(language.builtinFunctions || []), ...EXTRA_BUILTIN_FUNCTIONS];
-        // Add APPLY and MATCHED to keywords so they also match @keywords
+
+        // Add T-SQL data types + extra keywords that Monaco's SQL language omits (blue keyword token)
         const existingKeywords: string[] = language.keywords || [];
-        const missingKeywords = ['APPLY', 'MATCHED'].filter(
+        const missingKeywords = EXTRA_TSQL_KEYWORDS.filter(
           k => !existingKeywords.some((ek: string) => ek.toUpperCase() === k)
         );
         if (missingKeywords.length > 0) {

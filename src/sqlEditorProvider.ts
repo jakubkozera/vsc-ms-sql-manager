@@ -84,11 +84,15 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     const config = vscode.workspace.getConfiguration('mssqlManager');
                     const colorPrimaryForeignKeys = config.get<boolean>('colorPrimaryForeignKeys', true);
                     const numberFormat = config.get<string>('numberFormat', 'plain');
+                    const variableHighlightColor = config.get<string>('variableHighlightColor', '#6adc7a');
+                    const multipleResultSetsDisplay = config.get<string>('multipleResultSetsDisplay', 'single-view');
                     webviewPanel.webview.postMessage({
                         type: 'config',
                         config: {
                             colorPrimaryForeignKeys,
-                            numberFormat
+                            numberFormat,
+                            variableHighlightColor,
+                            multipleResultSetsDisplay
                         }
                     });
 
@@ -2131,9 +2135,11 @@ COMMIT TRANSACTION;
                         const config = vscode.workspace.getConfiguration('mssqlManager');
                         const colorPrimaryForeignKeys = config.get<boolean>('colorPrimaryForeignKeys', true);
                         const numberFormat = config.get<string>('numberFormat', 'plain');
+                        const variableHighlightColor = config.get<string>('variableHighlightColor', '#6adc7a');
+                        const multipleResultSetsDisplay = config.get<string>('multipleResultSetsDisplay', 'single-view');
                         panel.webview.postMessage({
                             type: 'config',
-                            config: { colorPrimaryForeignKeys, numberFormat }
+                            config: { colorPrimaryForeignKeys, numberFormat, variableHighlightColor, multipleResultSetsDisplay }
                         });
                     }
 

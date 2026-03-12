@@ -385,6 +385,100 @@
 }
 
 /* ========================================= */
+/* Color Setting                              */
+/* ========================================= */
+
+.setting-color-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+}
+
+.setting-color-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.setting-color-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-color-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.setting-color-enable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+
+.setting-color-enable input[type='checkbox'] {
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--vscode-button-background);
+}
+
+.setting-color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-color-picker {
+  width: 36px;
+  height: 28px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.setting-color-picker:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: none;
+}
+
+.setting-color-hex {
+  width: 82px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  color: var(--vscode-input-foreground);
+  text-transform: uppercase;
+}
+
+.setting-color-hex:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: none;
+}
+
+.setting-color-preview {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+/* ========================================= */
 /* Animations                                 */
 /* ========================================= */
 
