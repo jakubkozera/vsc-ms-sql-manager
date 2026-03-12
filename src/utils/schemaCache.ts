@@ -849,6 +849,10 @@ export class SchemaCache {
             console.log(`[SchemaCache] getSchema() - Cache invalid or missing, fetching from database...`);
             const loadPromise = this.fetchCompleteSchema(cacheKey, pool).then(async (newSchema) => {
                 this.caches.set(cacheKey, newSchema);
+                this.lastValidationCheck.set(cacheKey, {
+                    timestamp: new Date(),
+                    wasValid: true
+                });
                 await this.saveToDisk(cacheKey, newSchema);
                 console.log(`[SchemaCache] getSchema() - Schema fetched and cached`);
                 return newSchema;

@@ -778,10 +778,10 @@ Guidelines:
             explanation.push('• Applies filtering conditions with WHERE clause');
         }
         if (upperSql.includes('GROUP BY')) {
-            explanation.push('• Groups results by specified columns');
+            explanation.push('• Uses GROUP BY to aggregate rows by specified columns');
         }
         if (upperSql.includes('ORDER BY')) {
-            explanation.push('• Sorts results by specified columns');
+            explanation.push('• Uses ORDER BY to sort results by specified columns');
         }
         if (upperSql.includes('INSERT')) {
             explanation.push('• This is an INSERT query that adds new data to the database');
@@ -829,11 +829,15 @@ Guidelines:
         const matchingTables = [];
         let currentTable = '';
         let inTable = false;
+        const normalizedQuery = query.toLowerCase();
 
         for (const line of lines) {
             if (line.trim().startsWith('CREATE TABLE')) {
-                const tableName = line.match(/CREATE TABLE \[?(\w+)\]?/i);
-                if (tableName && tableName[1].toLowerCase().includes(query.toLowerCase())) {
+                const tableName = line.match(/CREATE TABLE\s+(?:\[[^\]]+\]|\w+)\.(\[[^\]]+\]|\w+)/i)
+                    || line.match(/CREATE TABLE\s+(\[[^\]]+\]|\w+)/i);
+                const normalizedTableName = tableName?.[1]?.replace(/[\[\]]/g, '').toLowerCase();
+
+                if (normalizedTableName?.includes(normalizedQuery)) {
                     inTable = true;
                     currentTable = line;
                 } else {
