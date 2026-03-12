@@ -25,12 +25,17 @@ export interface SqlChatResult extends vscode.ChatResult {
     };
 }
 
+interface BatchSqlToolQuery {
+    label?: string;
+    sql: string;
+}
+
 export class SqlChatHandler {
     private conversationStates = new Map<string, ChatConversationState>();
     private schemaContextBuilder: SchemaContextBuilder;
     private sqlExecutionService: SqlExecutionService;
     private databaseInstructionsManager: DatabaseInstructionsManager;
-    
+
     constructor(
         private context: vscode.ExtensionContext,
         private connectionProvider: ConnectionProvider,
@@ -42,7 +47,7 @@ export class SqlChatHandler {
         this.schemaContextBuilder = new SchemaContextBuilder(connectionProvider, outputChannel, context);
         this.sqlExecutionService = new SqlExecutionService(connectionProvider, outputChannel, historyManager, context);
         this.databaseInstructionsManager = databaseInstructionsManager;
-        
+
         // Load persisted conversation states
         this.loadConversationStates();
     }
@@ -57,7 +62,7 @@ export class SqlChatHandler {
         token: vscode.CancellationToken
     ): Promise<SqlChatResult> {
         const conversationId = this.getConversationId(context);
-        
+
         try {
             // Get or create conversation state
             let conversationState = this.conversationStates.get(conversationId);
@@ -76,16 +81,16 @@ export class SqlChatHandler {
                 const connectionContext = await this.resolveConnectionContext();
                 if (!connectionContext) {
                     stream.markdown('❌ No active database connections found.\n\n');
-                    
+
                     // Offer to open connection manager
                     stream.button({
                         command: 'mssqlManager.manageConnections',
                         title: vscode.l10n.t('Manage Connections'),
                         arguments: []
                     });
-                    
+
                     stream.markdown('\nPlease connect to a database using the button above or the MS SQL Manager extension.');
-                    
+
                     return {
                         metadata: {
                             command: request.command
@@ -109,7 +114,7 @@ export class SqlChatHandler {
 
             // Process the user's query based on command
             await this.processUserQuery(request, context, conversationState, stream, token);
-            
+
             return {
                 metadata: {
                     command: request.command,
@@ -121,7 +126,7 @@ export class SqlChatHandler {
         } catch (error) {
             this.outputChannel.appendLine(`[SqlChatHandler] Error handling chat request: ${error}`);
             stream.markdown(`❌ An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            
+
             return {
                 metadata: {
                     command: request.command
@@ -142,7 +147,7 @@ export class SqlChatHandler {
     ): Promise<void> {
         this.outputChannel.appendLine(`[SqlChatHandler] processUserQuery called with prompt: ${request.prompt}`);
         const prompt = request.prompt;
-        
+
         // Add database context at the beginning of conversation
         if (!request.command && conversationState.schemaContext) {
             // Show schema summary to help Copilot understand the database structure
@@ -150,10 +155,10 @@ export class SqlChatHandler {
             const tableCount = (schema.match(/CREATE TABLE/g) || []).length;
             const viewCount = (schema.match(/-- VIEWS \((\d+)\)/)?.[1]) || '0';
             const procCount = (schema.match(/-- STORED PROCEDURES \((\d+)\)/)?.[1]) || '0';
-            
+
             stream.markdown(`📊 **Database:** ${conversationState.connectionContext?.database || 'Unknown'}\n`);
         }
-        
+
         // Handle specific commands
         if (request.command) {
             switch (request.command) {
@@ -165,107 +170,320 @@ export class SqlChatHandler {
                     return this.handleSchemaCommand(prompt, conversationState, stream);
             }
         }
-        
-        // Prepare context for the language model
+
+        // Use agentic tool-calling approach for all general queries
+        await this.handleAgenticRequest(request, context, conversationState, stream, token);
+    }
+
+    /**
+     * Handle a request using the agentic tool-calling loop.
+     * The LLM can execute SQL queries via tools, analyze results, and iterate.
+     */
+    private async handleAgenticRequest(
+        request: vscode.ChatRequest,
+        chatContext: vscode.ChatContext,
+        conversationState: ChatConversationState,
+        stream: vscode.ChatResponseStream,
+        token: vscode.CancellationToken
+    ): Promise<void> {
         const systemPrompt = await this.buildSystemPrompt(conversationState);
-        
-        // Check if this looks like a request for SQL generation
-        const lowerPrompt = prompt.toLowerCase();
-        this.outputChannel.appendLine(`[SqlChatHandler] Checking if SQL request, lowerPrompt: ${lowerPrompt}`);
-        const isSqlRequest = this.isSqlGenerationRequest(lowerPrompt);
-        this.outputChannel.appendLine(`[SqlChatHandler] isSqlRequest result: ${isSqlRequest}`);
-        
-        if (isSqlRequest) {
-            this.outputChannel.appendLine(`[SqlChatHandler] Detected SQL request, generating response`);
-            stream.progress('Processing...');
-            
-            // Use VS Code's language model API to generate SQL
-            this.outputChannel.appendLine(`[SqlChatHandler] Calling generateSqlWithLanguageModel`);
-            const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
-            this.outputChannel.appendLine(`[SqlChatHandler] Language model response length: ${response?.length || 0}`);
-            
-            if (response) {
-                // Extract SQL from response
-                const sqlQueries = this.extractSqlQueries(response);
-            
-                if (sqlQueries.length > 0) {
-                    stream.markdown(`Here's the SQL query for your request:\n\n`);
-                    
-                    for (const sql of sqlQueries) {
-                        // Show the SQL with syntax highlighting
-                        stream.markdown('```sql\n' + sql + '\n```\n');
-                        
-                        // Check if this is a SELECT query
-                        const queryType = sql.trim().toUpperCase();
-                        const isSelect = queryType.startsWith('SELECT') || queryType.startsWith('WITH');
-                        
-                        // Analyze user intent - do they want to see the results?
-                        const wantsResults = await this.userWantsQueryResults(prompt, sql);
-                        
-                        if (wantsResults && conversationState.connectionContext) {
-                            // User wants to see results - execute in editor and show in chat
-                            stream.progress('Opening query in SQL editor and executing...');
-                            try {
-                                // Execute in editor (opens SQL editor with query and runs it)
-                                await this.executeQueryInEditorFromChat(sql, conversationState.connectionContext);
-                                
-                                // Also get results to display in chat for analysis
-                                stream.progress('Retrieving results...');
-                                const results = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
-                                
-                                stream.markdown('\n✅ Query opened and executed in SQL editor\n');
-                                stream.markdown('\n---\n\n');
-                                stream.markdown(results);
-                            } catch (error) {
-                                stream.markdown(`\n\n❌ Failed to execute query: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                            }
-                        } else if (isSelect && conversationState.connectionContext) {
-                            // Auto-execute SELECT queries in chat (without opening editor)
-                            stream.progress('Executing query...');
-                            
-                            try {
-                                // Execute the query automatically and show results in chat
-                                const result = await this.executeChatGeneratedQuery(sql, conversationState.connectionContext);
-                                
-                                // Show results in chat
-                                stream.markdown('\n---\n\n');
-                                stream.markdown(result);
-                            } catch (error) {
-                                stream.markdown(`\n\n❌ Execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+        // Define available tools for the LLM
+        const tools: vscode.LanguageModelChatTool[] = [
+            {
+                name: 'run_sql_batch',
+                description: 'Execute multiple T-SQL queries in one batch against the connected Microsoft SQL Server database and return structured results for each query. Prefer this tool over single-query execution whenever you can prepare several independent exploratory, counting, validation, or summary queries up front. Use it to reduce agent iterations and gather all required facts before drawing conclusions.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        queries: {
+                            type: 'array',
+                            description: 'A list of queries to execute in one batch. Each item should contain a SQL statement and optionally a short label describing what the query is checking.',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    label: {
+                                        type: 'string',
+                                        description: 'Short label describing the purpose of this query'
+                                    },
+                                    sql: {
+                                        type: 'string',
+                                        description: 'The T-SQL query to execute'
+                                    }
+                                },
+                                required: ['sql']
                             }
                         }
-                        
-                        // Add action buttons
-                        stream.button({
-                            command: 'mssqlManager.executeChatGeneratedQuery',
-                            title: isSelect ? 'Re-execute Query' : 'Execute Query',
-                            arguments: [sql, conversationState.connectionContext, request, stream]
-                        });
-                        
-                        stream.button({
-                            command: 'mssqlManager.insertChatGeneratedQuery',
-                            title: 'Insert to Editor',
-                            arguments: [sql, conversationState.connectionContext]
-                        });
-                    }
-                } else {
-                    stream.markdown(response);
+                    },
+                    required: ['queries']
+                }
+            },
+            {
+                name: 'run_sql_query',
+                description: 'Execute one T-SQL query against the connected Microsoft SQL Server database and return results. Use this only when a single follow-up query is truly needed after you already gathered most facts, or when the next query depends on previous results and cannot be planned up front. For independent exploratory work, prefer run_sql_batch.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        sql: {
+                            type: 'string',
+                            description: 'The T-SQL query to execute against the connected database'
+                        }
+                    },
+                    required: ['sql']
                 }
             }
-        } else {
-            // Not a SQL generation request - general chat
-            this.outputChannel.appendLine(`[SqlChatHandler] Not SQL request, generating general response`);
-            stream.progress('Processing...');
-            
-            const response = await this.generateSqlWithLanguageModel(systemPrompt, prompt, context, token);
-            this.outputChannel.appendLine(`[SqlChatHandler] General response length: ${response?.length || 0}`);
-            
-            if (response) {
-                stream.markdown(response);
-            } else {
-                stream.markdown('I apologize, but I was unable to generate a response. Please try rephrasing your question.');
+        ];
+
+        // Build initial messages
+        const messages: vscode.LanguageModelChatMessage[] = [
+            vscode.LanguageModelChatMessage.User(systemPrompt)
+        ];
+
+        // Add conversation history
+        for (const turn of chatContext.history) {
+            if (turn instanceof vscode.ChatRequestTurn) {
+                messages.push(vscode.LanguageModelChatMessage.User(turn.prompt));
+            } else if (turn instanceof vscode.ChatResponseTurn) {
+                const responseText = turn.response.map(part => {
+                    if (part instanceof vscode.ChatResponseMarkdownPart) {
+                        return typeof part.value === 'string' ? part.value : part.value.value;
+                    }
+                    return '';
+                }).join('');
+                if (responseText.trim()) {
+                    messages.push(vscode.LanguageModelChatMessage.Assistant(responseText));
+                }
             }
         }
+
+        // Add current user prompt
+        messages.push(vscode.LanguageModelChatMessage.User(request.prompt));
+
+        const model = request.model;
+        const maxRounds = 15;
+        let rounds = 0;
+
+        const runWithTools = async (): Promise<void> => {
+            if (rounds >= maxRounds) {
+                stream.markdown('\n\n⚠️ Reached the maximum number of agent rounds. Try asking the next step as a follow-up if more analysis is needed.\n');
+                return;
+            }
+
+            rounds++;
+
+            const options: vscode.LanguageModelChatRequestOptions = {
+                tools,
+                justification: 'Analyzing database and executing SQL queries to answer your question'
+            };
+
+            const response = await model.sendRequest(messages, options, token);
+
+            const toolCalls: vscode.LanguageModelToolCallPart[] = [];
+            let responseText = '';
+
+            for await (const part of response.stream) {
+                if (token.isCancellationRequested) { break; }
+
+                if (part instanceof vscode.LanguageModelTextPart) {
+                    stream.markdown(part.value);
+                    responseText += part.value;
+                } else if (part instanceof vscode.LanguageModelToolCallPart) {
+                    toolCalls.push(part);
+                }
+            }
+
+            if (toolCalls.length && !token.isCancellationRequested) {
+                // Add assistant message with tool calls to message history
+                const assistantParts: (vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart)[] = [];
+                if (responseText) {
+                    assistantParts.push(new vscode.LanguageModelTextPart(responseText));
+                }
+                assistantParts.push(...toolCalls);
+                messages.push(vscode.LanguageModelChatMessage.Assistant(assistantParts));
+
+                // Process each tool call
+                for (const call of toolCalls) {
+                    if (call.name === 'run_sql_batch') {
+                        const input = call.input as { queries: BatchSqlToolQuery[] };
+
+                        for (const [index, query] of (input.queries ?? []).entries()) {
+                            const title = query.label?.trim() || `Query ${index + 1}`;
+                            stream.markdown(`\n**${title}**\n\n`);
+                            stream.markdown('```sql\n' + query.sql + '\n```\n');
+                        }
+                        stream.progress('Executing query batch...');
+
+                        let resultText: string;
+                        try {
+                            resultText = await this.executeQueryBatchForTool(input.queries ?? [], conversationState);
+                            const summaryLine = resultText.split('\n')[0];
+                            stream.markdown(summaryLine + '\n\n');
+                        } catch (error) {
+                            resultText = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                            stream.markdown('❌ ' + resultText + '\n\n');
+                        }
+
+                        messages.push(vscode.LanguageModelChatMessage.User([
+                            new vscode.LanguageModelToolResultPart(call.callId, [
+                                new vscode.LanguageModelTextPart(resultText)
+                            ])
+                        ]));
+                    } else if (call.name === 'run_sql_query') {
+                        const input = call.input as { sql: string };
+
+                        // Display SQL to user
+                        stream.markdown('\n```sql\n' + input.sql + '\n```\n');
+                        stream.progress('Executing query...');
+
+                        let resultText: string;
+                        try {
+                            resultText = await this.executeQueryForTool(input.sql, conversationState);
+                            // Show brief result summary to user
+                            const summaryLine = resultText.split('\n')[0];
+                            stream.markdown(summaryLine + '\n\n');
+
+                            // Add execute/insert buttons
+                            if (conversationState.connectionContext) {
+                                stream.button({
+                                    command: 'mssqlManager.executeChatGeneratedQuery',
+                                    title: '▶️ Open in SQL Editor',
+                                    arguments: [input.sql, conversationState.connectionContext]
+                                });
+                            }
+                        } catch (error) {
+                            resultText = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                            stream.markdown('❌ ' + resultText + '\n\n');
+                        }
+
+                        // Add tool result to messages for LLM analysis
+                        messages.push(vscode.LanguageModelChatMessage.User([
+                            new vscode.LanguageModelToolResultPart(call.callId, [
+                                new vscode.LanguageModelTextPart(resultText)
+                            ])
+                        ]));
+                    } else {
+                        // Unknown tool
+                        messages.push(vscode.LanguageModelChatMessage.User([
+                            new vscode.LanguageModelToolResultPart(call.callId, [
+                                new vscode.LanguageModelTextPart(`Unknown tool: ${call.name}`)
+                            ])
+                        ]));
+                    }
+                }
+
+                // Continue the agentic loop
+                return runWithTools();
+            }
+        };
+
+        await runWithTools();
+    }
+
+    /**
+     * Execute multiple SQL queries for the tool and return aggregated results for LLM analysis.
+     */
+    private async executeQueryBatchForTool(
+        queries: BatchSqlToolQuery[],
+        conversationState: ChatConversationState
+    ): Promise<string> {
+        if (queries.length === 0) {
+            throw new Error('Batch query list is empty. Provide at least one SQL query.');
+        }
+
+        const normalizedQueries = queries
+            .map(query => ({
+                label: query.label?.trim(),
+                sql: query.sql?.trim()
+            }))
+            .filter(query => !!query.sql);
+
+        if (normalizedQueries.length === 0) {
+            throw new Error('Batch query list is empty after validation. Provide valid SQL queries.');
+        }
+
+        const startTime = Date.now();
+        const results: string[] = [];
+
+        for (let index = 0; index < normalizedQueries.length; index++) {
+            const query = normalizedQueries[index];
+            const result = await this.executeQueryForTool(query.sql!, conversationState, false);
+            const title = query.label || `Query ${index + 1}`;
+            results.push(`### ${title}\n${result}`);
+        }
+
+        const elapsed = Date.now() - startTime;
+        return `✅ Batch executed successfully. ${normalizedQueries.length} query(s) finished in ${elapsed}ms\n\n${results.join('\n\n')}`;
+    }
+
+    /**
+     * Execute a SQL query for the tool and return formatted results for LLM analysis
+     */
+    private async executeQueryForTool(
+        sql: string,
+        conversationState: ChatConversationState,
+        includeExecutionHeader = true
+    ): Promise<string> {
+        const connectionContext = conversationState.connectionContext;
+
+        if (!connectionContext) {
+            throw new Error('No active database connection. Please reconnect.');
+        }
+
+        const pool = this.connectionProvider.getConnection(connectionContext.connectionId);
+
+        if (!pool) {
+            throw new Error('No active database connection. Please reconnect.');
+        }
+
+        const startTime = Date.now();
+
+        // Add database context if needed
+        let fullSql = sql;
+        if (connectionContext.database) {
+            fullSql = `USE [${connectionContext.database}];\n${sql}`;
+        }
+
+        const result = await pool.request().query(fullSql);
+        const elapsed = Date.now() - startTime;
+
+        let output = '';
+
+        // Find the meaningful recordset (skip USE result if present)
+        const recordsets = result.recordsets || [];
+        const recordset = connectionContext.database && recordsets.length > 1
+            ? recordsets[recordsets.length - 1]
+            : recordsets[0];
+
+        if (recordset && recordset.length > 0) {
+            const rowCount = recordset.length;
+            if (includeExecutionHeader) {
+                output += `✅ ${rowCount} row(s) returned (${elapsed}ms)\n`;
+            } else {
+                output += `Rows: ${rowCount} (${elapsed}ms)\n`;
+            }
+
+            // Format as JSON for LLM analysis (limit rows)
+            const maxRows = Math.min(100, rowCount);
+            const data = recordset.slice(0, maxRows);
+            const columns = Object.keys(data[0]);
+            output += `Columns: ${columns.join(', ')}\n`;
+            output += `Data (JSON):\n${JSON.stringify(data, null, 2)}`;
+
+            if (rowCount > maxRows) {
+                output += `\n\n(Showing first ${maxRows} of ${rowCount} total rows)`;
+            }
+        } else if (recordset && recordset.length === 0) {
+            output += includeExecutionHeader
+                ? `✅ Query executed successfully. 0 rows returned (${elapsed}ms)`
+                : `Rows: 0 (${elapsed}ms)`;
+        } else {
+            const affected = result.rowsAffected?.reduce((a: number, b: number) => a + b, 0) || 0;
+            output += includeExecutionHeader
+                ? `✅ Query executed successfully. Rows affected: ${affected} (${elapsed}ms)`
+                : `Rows affected: ${affected} (${elapsed}ms)`;
+        }
+
+        return output;
     }
 
     /**
@@ -273,7 +491,7 @@ export class SqlChatHandler {
      */
     private async resolveConnectionContext(): Promise<ChatConnectionContext | null> {
         const activeConnections = this.connectionProvider.getActiveConnections();
-        
+
         if (activeConnections.length === 0) {
             return null;
         }
@@ -281,7 +499,7 @@ export class SqlChatHandler {
         if (activeConnections.length === 1) {
             const connection = activeConnections[0];
             const config = this.connectionProvider.getConnectionConfig(connection.id);
-            
+
             if (config?.connectionType === 'server') {
                 // Server connection - need to ask for database
                 const databases = await this.getDatabasesForConnection(connection.id);
@@ -291,7 +509,7 @@ export class SqlChatHandler {
 
                 const selectedDb = await vscode.window.showQuickPick(
                     databases.map(db => ({ label: db, description: 'Database' })),
-                    { 
+                    {
                         placeHolder: 'Select a database for the chat session',
                         title: 'Database Selection for @sql Chat'
                     }
@@ -320,8 +538,8 @@ export class SqlChatHandler {
                 const config = this.connectionProvider.getConnectionConfig(conn.id);
                 return {
                     label: config?.name || conn.name,
-                    description: config?.connectionType === 'server' ? 
-                        `Server: ${config?.server || 'Unknown'}` : 
+                    description: config?.connectionType === 'server' ?
+                        `Server: ${config?.server || 'Unknown'}` :
                         `Database: ${config?.database || 'Unknown'} on ${config?.server || 'Unknown'}`,
                     connectionId: conn.id,
                     config
@@ -341,15 +559,15 @@ export class SqlChatHandler {
             if (selectedConnection.config?.connectionType === 'server') {
                 const databases = await this.getDatabasesForConnection(selectedConnection.connectionId);
                 if (databases.length === 0) {
-                    return { 
-                        connectionId: selectedConnection.connectionId, 
-                        timestamp: Date.now() 
+                    return {
+                        connectionId: selectedConnection.connectionId,
+                        timestamp: Date.now()
                     };
                 }
 
                 const selectedDb = await vscode.window.showQuickPick(
                     databases.map(db => ({ label: db, description: 'Database' })),
-                    { 
+                    {
                         placeHolder: 'Select a database for the chat session',
                         title: 'Database Selection for @sql Chat'
                     }
@@ -398,9 +616,9 @@ export class SqlChatHandler {
     private async buildSystemPrompt(conversationState: ChatConversationState): Promise<string> {
         const connection = conversationState.connectionContext;
         const config = connection ? this.connectionProvider.getConnectionConfig(connection.connectionId) : null;
-        
+
         this.outputChannel.appendLine(`[SqlChatHandler] Building system prompt for connection: ${connection?.connectionId}, database: ${connection?.database}`);
-        
+
         let prompt = `You are a SQL expert assistant for Microsoft SQL Server. You help users write SQL queries and understand database schemas.
 
 Current Connection Context:
@@ -418,13 +636,13 @@ ${conversationState.schemaContext || 'Schema information not available'}
                 // For server connections, database name is separate
                 // For database connections, connectionId already includes the database
                 const databaseParam = config?.connectionType === 'server' ? connection.database : undefined;
-                
+
                 this.outputChannel.appendLine(`[SqlChatHandler] Loading instructions for connection: ${connection.connectionId}, database: ${databaseParam}, connectionType: ${config?.connectionType}`);
                 const instructions = await this.databaseInstructionsManager.loadInstructions(
                     connection.connectionId,
                     databaseParam
                 );
-                
+
                 if (instructions) {
                     this.outputChannel.appendLine(`[SqlChatHandler] Loaded instructions (${instructions.length} chars)`);
                     prompt += `\nDatabase-Specific Instructions:
@@ -439,11 +657,18 @@ ${instructions}
         }
 
         prompt += `
-IMPORTANT - Query Execution:
-- You HAVE direct access to execute SQL queries in the connected database
-- When user asks to "execute", "run", "show results", or "get data" - ALWAYS generate the SQL query
-- Users can click "Execute Query" button to run the query and see results
-- ALWAYS wrap SQL queries in \`\`\`sql code blocks
+IMPORTANT - Agentic SQL Execution:
+- You have access to the 'run_sql_query' tool that executes T-SQL queries against the connected database
+- You also have access to the 'run_sql_batch' tool that executes multiple queries in one invocation
+- USE the tool proactively to gather data, verify assumptions, and analyze results
+- You can call the tool MULTIPLE TIMES in a single conversation to iteratively investigate data
+- Preferred strategy: first think through everything you need, then send one batched set of exploratory queries (counts, summaries, validations, breakdowns)
+- Prefer 'run_sql_batch' whenever queries are independent and can be planned up front
+- Only use 'run_sql_query' for a truly dependent follow-up that could not be known before the previous results
+- Always analyze results thoroughly before providing your final answer
+- For complex tasks, break them into multiple queries and analyze step by step
+- When the user asks for data or analysis - EXECUTE queries with the tool, don't just show SQL
+- For INSERT/UPDATE/DELETE/DDL operations, explain what will change and ask for confirmation before executing
 
 Guidelines:
 1. Generate valid T-SQL (Microsoft SQL Server) syntax
@@ -451,16 +676,9 @@ Guidelines:
 3. Prefer explicit column names over SELECT *
 4. Add appropriate WHERE clauses for better performance
 5. Use proper JOIN syntax when working with multiple tables
-6. Consider adding appropriate indexes suggestions when relevant
-7. For SELECT queries, provide them so user can execute with the button
-8. For INSERT/UPDATE/DELETE/DDL operations, ask for user confirmation first
-
-When generating SQL:
-- Always use the exact table and column names from the schema
-- Use proper schema prefixes (e.g., dbo.TableName)
-- Consider query performance and add appropriate filters
-- Explain complex queries and suggest optimizations when appropriate
-- ALWAYS wrap SQL in \`\`\`sql code blocks so Execute Query button appears
+6. Use TOP clauses for initial data exploration to avoid overwhelming result sets
+7. Use schema prefixes (e.g., dbo.TableName)
+8. Avoid using STRING_AGG() - use STUFF(... FOR XML PATH('')) instead for SQL Server 2008+ compatibility
 `;
 
         return prompt;
@@ -475,14 +693,14 @@ When generating SQL:
         stream: vscode.ChatResponseStream
     ): Promise<void> {
         stream.markdown(`🔍 **Explaining SQL Query**\n\n`);
-        
+
         const queries = this.extractSqlQueries(prompt);
         const sqlQuery = queries.length > 0 ? queries[0] : prompt;
-        
+
         if (sqlQuery) {
             stream.markdown('```sql\n' + sqlQuery + '\n```\n');
             stream.markdown('**Query Explanation:**\n');
-            
+
             // Basic SQL analysis
             const explanation = this.analyzeSqlQuery(sqlQuery);
             stream.markdown(explanation);
@@ -500,14 +718,14 @@ When generating SQL:
         stream: vscode.ChatResponseStream
     ): Promise<void> {
         stream.markdown(`⚡ **Optimizing SQL Query**\n\n`);
-        
+
         const queries = this.extractSqlQueries(prompt);
         const sqlQuery = queries.length > 0 ? queries[0] : prompt;
-        
+
         if (sqlQuery) {
             stream.markdown('**Original Query:**\n');
             stream.markdown('```sql\n' + sqlQuery + '\n```\n');
-            
+
             stream.markdown('**Optimization Suggestions:**\n');
             const suggestions = this.getOptimizationSuggestions(sqlQuery);
             stream.markdown(suggestions);
@@ -526,7 +744,7 @@ When generating SQL:
     ): Promise<void> {
         stream.markdown(`📋 **Database Schema Information**\n\n`);
         stream.markdown(`**Database:** ${conversationState.connectionContext!.database}\n\n`);
-        
+
         if (prompt.trim()) {
             // User is asking about specific tables/objects
             const tables = this.findTablesInSchema(prompt, conversationState.schemaContext!);
@@ -549,7 +767,7 @@ When generating SQL:
     private analyzeSqlQuery(sql: string): string {
         const explanation = [];
         const upperSql = sql.toUpperCase();
-        
+
         if (upperSql.includes('SELECT')) {
             explanation.push('• This is a SELECT query that retrieves data from the database');
         }
@@ -574,7 +792,7 @@ When generating SQL:
         if (upperSql.includes('DELETE')) {
             explanation.push('• This is a DELETE query that removes data from the database');
         }
-        
+
         return explanation.length > 0 ? explanation.join('\n') : 'This appears to be a basic SQL query.';
     }
 
@@ -584,7 +802,7 @@ When generating SQL:
     private getOptimizationSuggestions(sql: string): string {
         const suggestions = [];
         const upperSql = sql.toUpperCase();
-        
+
         if (upperSql.includes('SELECT *')) {
             suggestions.push('• Consider specifying explicit column names instead of SELECT *');
         }
@@ -597,9 +815,9 @@ When generating SQL:
         if (!upperSql.includes('INDEX') && upperSql.includes('WHERE')) {
             suggestions.push('• Consider adding indexes on columns used in WHERE clauses');
         }
-        
-        return suggestions.length > 0 ? 
-            suggestions.join('\n') : 
+
+        return suggestions.length > 0 ?
+            suggestions.join('\n') :
             'This query looks well-structured. Consider adding indexes on frequently queried columns for better performance.';
     }
 
@@ -611,7 +829,7 @@ When generating SQL:
         const matchingTables = [];
         let currentTable = '';
         let inTable = false;
-        
+
         for (const line of lines) {
             if (line.trim().startsWith('CREATE TABLE')) {
                 const tableName = line.match(/CREATE TABLE \[?(\w+)\]?/i);
@@ -630,7 +848,7 @@ When generating SQL:
                 }
             }
         }
-        
+
         return matchingTables;
     }
 
@@ -653,7 +871,7 @@ When generating SQL:
         ];
 
         return sqlKeywords.some(keyword => prompt.includes(keyword)) ||
-               sqlPhrases.some(phrase => prompt.includes(phrase));
+            sqlPhrases.some(phrase => prompt.includes(phrase));
     }
 
     /**
@@ -664,21 +882,21 @@ When generating SQL:
         try {
             // Quick heuristic checks first (performance optimization)
             const lowerPrompt = userPrompt.toLowerCase();
-            
+
             // If user just wants to see/generate the query structure, don't execute
             const queryDesignKeywords = ['how to', 'syntax', 'example', 'structure', 'template', 'format'];
             if (queryDesignKeywords.some(keyword => lowerPrompt.includes(keyword))) {
                 return false;
             }
-            
+
             // If it's clearly a data modification query (not SELECT), user likely wants to review first
             const sqlUpper = generatedSql.trim().toUpperCase();
-            if (sqlUpper.startsWith('INSERT') || sqlUpper.startsWith('UPDATE') || 
-                sqlUpper.startsWith('DELETE') || sqlUpper.startsWith('DROP') || 
+            if (sqlUpper.startsWith('INSERT') || sqlUpper.startsWith('UPDATE') ||
+                sqlUpper.startsWith('DELETE') || sqlUpper.startsWith('DROP') ||
                 sqlUpper.startsWith('ALTER') || sqlUpper.startsWith('CREATE')) {
                 return false;
             }
-            
+
             // Use AI to analyze intent for SELECT queries
             const models = await vscode.lm.selectChatModels();
             if (models.length === 0) {
@@ -767,7 +985,7 @@ Answer:`;
                         }
                         return '';
                     }).join('\n');
-                    
+
                     if (responseText.trim()) {
                         messages.push(vscode.LanguageModelChatMessage.Assistant(responseText));
                     }
@@ -778,7 +996,7 @@ Answer:`;
             messages.push(vscode.LanguageModelChatMessage.User('User Request: ' + userPrompt));
 
             const chatResponse = await model.sendRequest(messages, {}, token);
-            
+
             let response = '';
             for await (const fragment of chatResponse.text) {
                 if (token.isCancellationRequested) {
@@ -799,11 +1017,11 @@ Answer:`;
      */
     private extractSqlQueries(response: string): string[] {
         const sqlQueries: string[] = [];
-        
+
         // Look for SQL code blocks
         const codeBlockRegex = /```sql\s*\n([\s\S]*?)\n```/gi;
         let match;
-        
+
         while ((match = codeBlockRegex.exec(response)) !== null) {
             const sql = match[1].trim();
             if (sql) {
@@ -825,7 +1043,7 @@ Answer:`;
 
                 // Check if this line starts a SQL statement
                 const startsWithSql = /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH|DECLARE|SET)\s/i.test(trimmedLine);
-                
+
                 if (startsWithSql) {
                     if (currentQuery) {
                         sqlQueries.push(currentQuery.trim());
@@ -859,7 +1077,7 @@ Answer:`;
         if (!conversationState.connectionContext) {
             return false;
         }
-        
+
         // Refresh schema if it's older than 30 minutes
         const schemaAge = Date.now() - conversationState.connectionContext.timestamp;
         return schemaAge > 30 * 60 * 1000; // 30 minutes
@@ -870,7 +1088,7 @@ Answer:`;
      */
     private getConversationId(context: vscode.ChatContext): string {
         // Use the conversation history to generate a unique ID
-        return context.history.length > 0 ? 
+        return context.history.length > 0 ?
             `conv_${Math.abs(JSON.stringify(context.history).split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0))}` :
             `conv_${Date.now()}`;
     }
@@ -880,10 +1098,10 @@ Answer:`;
      */
     private loadConversationStates(): void {
         const saved = this.context.globalState.get<Record<string, ChatConversationState>>('mssqlManager.chatConversations', {});
-        
+
         // Clean up old conversations (older than 7 days)
         const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-        
+
         for (const [id, state] of Object.entries(saved)) {
             if (state.lastActivity > weekAgo) {
                 this.conversationStates.set(id, state);
@@ -896,11 +1114,11 @@ Answer:`;
      */
     private async saveConversationStates(): Promise<void> {
         const toSave: Record<string, ChatConversationState> = {};
-        
+
         for (const [id, state] of this.conversationStates.entries()) {
             toSave[id] = state;
         }
-        
+
         await this.context.globalState.update('mssqlManager.chatConversations', toSave);
     }
 
@@ -983,24 +1201,24 @@ Answer:`;
      */
     private formatQueryResultsForChat(result: any): string {
         let summary = '✅ **Query executed successfully!**\n\n';
-        
+
         // Add execution time
         if (result.executionTime) {
             summary += `⏱️ Execution time: ${result.executionTime}ms\n\n`;
         }
-        
+
         // Check for returned rows
         if (result.recordsets && result.recordsets.length > 0) {
             const recordset = result.recordsets[0];
             const rowCount = recordset.length;
-            
+
             summary += `📊 **Results:** ${rowCount} row(s) returned\n\n`;
-            
+
             if (rowCount > 0) {
                 // Show column names
                 const columns = Object.keys(recordset[0]);
                 summary += `**Columns:** ${columns.join(', ')}\n\n`;
-                
+
                 // Show sample of first few rows
                 const sampleSize = Math.min(5, rowCount);
                 if (rowCount <= 5) {
@@ -1008,20 +1226,20 @@ Answer:`;
                 } else {
                     summary += `**First ${sampleSize} rows (of ${rowCount} total):**\n`;
                 }
-                
+
                 for (let i = 0; i < sampleSize; i++) {
                     const row = recordset[i];
                     summary += `\nRow ${i + 1}:\n`;
                     for (const col of columns) {
                         const value = row[col];
-                        const displayValue = value === null ? 'NULL' : 
-                                           value === undefined ? 'undefined' :
-                                           typeof value === 'object' ? JSON.stringify(value) :
-                                           String(value);
+                        const displayValue = value === null ? 'NULL' :
+                            value === undefined ? 'undefined' :
+                                typeof value === 'object' ? JSON.stringify(value) :
+                                    String(value);
                         summary += `  • ${col}: ${displayValue}\n`;
                     }
                 }
-                
+
                 if (rowCount > 5) {
                     summary += `\n... and ${rowCount - 5} more row(s)\n`;
                 }
@@ -1033,7 +1251,7 @@ Answer:`;
         } else {
             summary += '✅ Query completed successfully (no rows returned)\n';
         }
-        
+
         return summary;
     }
 
