@@ -315,7 +315,7 @@ export class SqlChatHandler {
 
                         let resultText: string;
                         try {
-                            resultText = await this.executeQueryBatchForTool(input.queries ?? [], conversationState);
+                            resultText = await this.executeQueryBatchForTool(input.queries ?? [], conversationState, stream);
                             const summaryLine = resultText.split('\n')[0];
                             stream.markdown(summaryLine + '\n\n');
                         } catch (error) {
@@ -384,7 +384,8 @@ export class SqlChatHandler {
      */
     private async executeQueryBatchForTool(
         queries: BatchSqlToolQuery[],
-        conversationState: ChatConversationState
+        conversationState: ChatConversationState,
+        stream: vscode.ChatResponseStream
     ): Promise<string> {
         if (queries.length === 0) {
             throw new Error('Batch query list is empty. Provide at least one SQL query.');
@@ -406,6 +407,7 @@ export class SqlChatHandler {
 
         for (let index = 0; index < normalizedQueries.length; index++) {
             const query = normalizedQueries[index];
+            stream.progress(`Executing query ${index + 1} of ${normalizedQueries.length}...`);
             const result = await this.executeQueryForTool(query.sql!, conversationState, false);
             const title = query.label || `Query ${index + 1}`;
             results.push(`### ${title}\n${result}`);
