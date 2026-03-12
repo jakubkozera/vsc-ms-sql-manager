@@ -65,10 +65,13 @@ export function useVariableHighlight(
 
       const text = model.getValue();
       const decorations: editor.IModelDeltaDecoration[] = [];
-      // Match @variableName (SQL identifier: letter/digit/underscore after @)
+      // Match @variableName but skip T-SQL system variables like @@ROWCOUNT.
       const re = /@[a-zA-Z_]\w*/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(text)) !== null) {
+        if (m.index > 0 && text[m.index - 1] === '@') {
+          continue;
+        }
         const startPos = model.getPositionAt(m.index);
         const endPos = model.getPositionAt(m.index + m[0].length);
         decorations.push({

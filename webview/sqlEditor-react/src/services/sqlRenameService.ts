@@ -25,6 +25,15 @@ export interface SqlRenameEdit {
   newText: string;
 }
 
+export interface SqlDefinitionLocation {
+  range: {
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
+  };
+}
+
 /**
  * Find the word at a given position in the text.
  * Handles plain identifiers, bracketed identifiers [name], and @variables.
@@ -210,6 +219,17 @@ function offsetToPosition(text: string, offset: number): { lineNumber: number; c
   };
 }
 
+function offsetsToRange(text: string, startOffset: number, endOffset: number): SqlDefinitionLocation['range'] {
+  const start = offsetToPosition(text, startOffset);
+  const end = offsetToPosition(text, endOffset);
+  return {
+    startLineNumber: start.lineNumber,
+    startColumn: start.column,
+    endLineNumber: end.lineNumber,
+    endColumn: end.column,
+  };
+}
+
 /**
  * Check if a word is used as a table alias in the SQL — appears before a dot
  * or is assigned as an alias in FROM/JOIN clauses.
@@ -239,6 +259,48 @@ function isSqlVariable(sql: string, word: string): boolean {
   // Verify it appears somewhere in the SQL
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(escaped + '\\b', 'i').test(sql);
+}
+
+function findVariableDefinitionRange(sql: string, variableName: string): SqlDefinitionLocation['range'] | null {
+  const escaped = variableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const declarationRegex = new RegExp(`\\bdeclare\\b[\\s\\S]*?${escaped}\\b`, 'gi');
+  let declarationMatch: RegExpExecArray | null;
+
+  while ((declarationMatch = declarationRegex.exec(sql)) !== null) {
+    const relativeIndex = declarationMatch[0].toLowerCase().indexOf(variableName.toLowerCase());
+    if (relativeIndex === -1) continue;
+
+    const startOffset = declarationMatch.index + relativeIndex;
+    const endOffset = startOffset + variableName.length;
+    return offsetsToRange(sql, startOffset, endOffset);
+  }
+
+  const occurrences = findAllOccurrences(sql, variableName);
+  if (occurrences.length === 0) {
+    return null;
+  }
+
+  return offsetsToRange(sql, occurrences[0].startOffset, occurrences[0].endOffset);
+}
+
+export function provideDefinitionLocation(
+  sql: string,
+  lineNumber: number,
+  column: number
+): SqlDefinitionLocation | null {
+  const wordInfo = getWordAtPosition(sql, lineNumber, column);
+  if (!wordInfo) return null;
+
+  if (!isSqlVariable(sql, wordInfo.word)) {
+    return null;
+  }
+
+  const range = findVariableDefinitionRange(sql, wordInfo.word);
+  if (!range) {
+    return null;
+  }
+
+  return { range };
 }
 
 /**

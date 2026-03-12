@@ -1,12 +1,12 @@
 import { useEffect, type MutableRefObject } from 'react';
 import type { editor } from 'monaco-editor';
 import type { DatabaseSchema } from '../../../types/schema';
-import { validateSql, provideHoverContent, resolveRenameLocation, provideRenameEdits } from '../../../services';
+import { validateSql, provideHoverContent, resolveRenameLocation, provideRenameEdits, provideDefinitionLocation } from '../../../services';
 
 type MonacoType = typeof import('monaco-editor');
 
 /**
- * Registers the SQL hover provider and content-change validation.
+ * Registers SQL hover/definition/rename providers and content-change validation.
  * Re-registers whenever dbSchema, editorReady, or currentConnectionId changes.
  */
 export function useSchemaProviders(
@@ -46,6 +46,22 @@ export function useSchemaProviders(
       },
     });
     disposables.push(hoverProvider);
+
+    const definitionProvider = monacoInstance.languages.registerDefinitionProvider('sql', {
+      provideDefinition: (model: editor.ITextModel, position: { lineNumber: number; column: number }) => {
+        const sql = model.getValue();
+        const location = provideDefinitionLocation(sql, position.lineNumber, position.column);
+        if (!location) {
+          return null;
+        }
+
+        return {
+          uri: model.uri,
+          range: location.range,
+        };
+      },
+    });
+    disposables.push(definitionProvider);
 
     // Rename provider for CTE names and table aliases (F2)
     const renameProvider = monacoInstance.languages.registerRenameProvider('sql', {

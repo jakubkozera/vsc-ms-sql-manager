@@ -5,6 +5,32 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.6] - 2026-03-12
+
+### Fixed
+
+- **SQL Editor React — `@@ROWCOUNT` / `@@TRANCOUNT` no longer highlighted as local variables**
+  - Variable decorations now ignore T-SQL system variables prefixed with `@@`, so only real local variables such as `@ProjectToolsInserted` receive the configured variable color.
+
+- **SQL Editor React — `Ctrl+V` / `Ctrl+X` only handled when text focus is in the editor**
+  - Clipboard shortcuts are now restricted to Monaco's text-focus context.
+  - This prevents the editor from intercepting paste/cut while the Find widget input is focused.
+
+- **SQL Editor React — autocomplete resets correctly after `;`**
+  - Context analysis now evaluates only the current SQL statement fragment after the last statement terminator.
+  - When the cursor is after a completed statement and there is no active clause yet, autocomplete shows the expected global suggestions again, including table quick snippets such as `Users100` / `Users*`.
+
+- **SQL Editor React — Go to Definition for SQL variables**
+  - Added Monaco definition provider support for local SQL variables.
+  - `F12` / `Ctrl+Click` on usages like `@ProjectToolsInserted` now navigates to the `DECLARE @ProjectToolsInserted ...` definition.
+
+### Tests
+
+- Added unit coverage for skipping `@@system` variable highlights.
+- Added unit coverage for clipboard shortcut focus gating in Monaco actions.
+- Added unit coverage for autocomplete suggestions after a semicolon-terminated statement.
+- Added unit coverage for SQL variable go-to-definition resolution and provider registration.
+
 ## [0.15.5] - 2026-03-12
 
 ### Added

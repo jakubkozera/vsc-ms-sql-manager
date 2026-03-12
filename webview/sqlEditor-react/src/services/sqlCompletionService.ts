@@ -51,6 +51,70 @@ export type SqlContextType =
   | 'COLUMN'
   | 'DEFAULT';
 
+function getCurrentStatementFragment(text: string): string {
+  let lastBoundary = -1;
+  let inQuote = false;
+  let quoteChar = '';
+  let inBrackets = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (inQuote) {
+      if (char === quoteChar) {
+        if (text[i + 1] === quoteChar) {
+          i++;
+        } else {
+          inQuote = false;
+        }
+      }
+      continue;
+    }
+
+    if (inBrackets) {
+      if (char === ']') {
+        inBrackets = false;
+      }
+      continue;
+    }
+
+    if (char === '\'' || char === '"') {
+      inQuote = true;
+      quoteChar = char;
+      continue;
+    }
+
+    if (char === '[') {
+      inBrackets = true;
+      continue;
+    }
+
+    if (char === '-' && text[i + 1] === '-') {
+      const newlineIndex = text.indexOf('\n', i);
+      if (newlineIndex === -1) {
+        break;
+      }
+      i = newlineIndex;
+      continue;
+    }
+
+    if (char === '/' && text[i + 1] === '*') {
+      const closeIndex = text.indexOf('*/', i + 2);
+      if (closeIndex === -1) {
+        break;
+      }
+      i = closeIndex + 1;
+      continue;
+    }
+
+    if (char === ';') {
+      lastBoundary = i;
+    }
+  }
+
+  return text.substring(lastBoundary + 1);
+}
+
 /**
  * Find a table in the schema by name
  */
@@ -464,8 +528,15 @@ export function generateSmartAlias(tableName: string): string {
  * Analyze SQL context for intelligent suggestions
  */
 export function analyzeSqlContext(textUntilPosition: string, lineUntilPosition: string): SqlContext {
-  const lowerText = textUntilPosition.toLowerCase();
-  const lowerLine = lineUntilPosition.toLowerCase();
+  const currentStatementText = getCurrentStatementFragment(textUntilPosition);
+  const currentStatementLine = getCurrentStatementFragment(lineUntilPosition);
+
+  if (!currentStatementText.trim()) {
+    return { type: 'DEFAULT', confidence: 'low' };
+  }
+
+  const lowerText = currentStatementText.toLowerCase();
+  const lowerLine = currentStatementLine.toLowerCase();
 
   // Check for alias dot notation (e.g., "u.", "[u].") — highest priority
   const aliasDotMatch = lowerLine.match(/(?:\[?(\w+)\]?)\.\s*$/);

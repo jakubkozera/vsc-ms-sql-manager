@@ -418,6 +418,18 @@ ORDER BY p.Name`;
       expect(result.type).toBe('AFTER_FROM');
     });
 
+    it('should reset context after a completed statement ending with semicolon', () => {
+      const text = 'SELECT * FROM Users; ';
+      const result = analyzeSqlContext(text, text);
+      expect(result.type).toBe('DEFAULT');
+    });
+
+    it('should reset context after semicolon even when previous statement ended in FROM scope', () => {
+      const text = 'SELECT * FROM Users;\n   ';
+      const result = analyzeSqlContext(text, '   ');
+      expect(result.type).toBe('DEFAULT');
+    });
+
     // Bracketed identifier cases (reported as broken)
 
     it('should detect AFTER_FROM for bracketed schema.table with unbracketed alias', () => {

@@ -7,6 +7,10 @@ import { copyToClipboard } from '../../../services/exportService';
 
 type MonacoType = typeof import('monaco-editor');
 
+function editorHasTextFocus(ed: Pick<editor.ICodeEditor, 'hasTextFocus'>): boolean {
+  return typeof ed.hasTextFocus === 'function' ? ed.hasTextFocus() : true;
+}
+
 export interface EditorActionsDeps {
   editorRef: MutableRefObject<editor.IStandaloneCodeEditor | null>;
   monacoRef: MutableRefObject<MonacoType | null>;
@@ -101,7 +105,11 @@ export function useEditorActions(deps: EditorActionsDeps) {
         id: 'paste',
         label: 'Paste',
         keybindings: [monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyV],
-        run: () => requestPaste(),
+        precondition: 'editorTextFocus',
+        run: (ed) => {
+          if (!editorHasTextFocus(ed)) return;
+          requestPaste();
+        },
       });
 
       // Cut (Ctrl+X)
@@ -109,7 +117,9 @@ export function useEditorActions(deps: EditorActionsDeps) {
         id: 'cut',
         label: 'Cut',
         keybindings: [monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyX],
+        precondition: 'editorTextFocus',
         run: (ed) => {
+          if (!editorHasTextFocus(ed)) return;
           const model = ed.getModel();
           const selection = ed.getSelection();
           if (!model || !selection) return;

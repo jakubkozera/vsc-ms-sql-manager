@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRenameLocation, provideRenameEdits } from './sqlRenameService';
+import { resolveRenameLocation, provideRenameEdits, provideDefinitionLocation } from './sqlRenameService';
 
 describe('sqlRenameService', () => {
   describe('resolveRenameLocation', () => {
@@ -171,6 +171,25 @@ describe('sqlRenameService', () => {
     it('should not rename @@system variables', () => {
       const sql = 'SELECT @@IDENTITY, @Test FROM t; DECLARE @Test INT = 1';
       const result = resolveRenameLocation(sql, 1, 9); // "@@" of @@IDENTITY
+      expect(result).toBeNull();
+    });
+
+    it('should resolve go-to-definition for @variable usage', () => {
+      const sql = 'DECLARE @Test INT = 1;\nSELECT @Test';
+      const result = provideDefinitionLocation(sql, 2, 9);
+      expect(result).toEqual({
+        range: {
+          startLineNumber: 1,
+          startColumn: 9,
+          endLineNumber: 1,
+          endColumn: 14,
+        },
+      });
+    });
+
+    it('should ignore @@system variables in go-to-definition', () => {
+      const sql = 'SELECT @@ROWCOUNT, @Test;\nDECLARE @Test INT = 1;';
+      const result = provideDefinitionLocation(sql, 1, 10);
       expect(result).toBeNull();
     });
   });

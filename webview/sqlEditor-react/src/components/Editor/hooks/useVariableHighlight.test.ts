@@ -207,6 +207,23 @@ describe('useVariableHighlight', () => {
     expect(decos).toHaveLength(2);
   });
 
+  it('does not highlight @@system variables', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock('SET @ProjectToolsInserted = @@ROWCOUNT; IF @@TRANCOUNT > 0 SELECT @ProjectToolsInserted;');
+
+    renderHook(() =>
+      useVariableHighlight(
+        makeRefs(monaco as never),
+        makeRefs(editor as never),
+        '#6adc7a',
+        true
+      )
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(2);
+  });
+
   it('creates zero decorations when text has no @variables', () => {
     const monaco = makeMonacoMock();
     const { editor } = makeEditorMock('SELECT col FROM dbo.Table');

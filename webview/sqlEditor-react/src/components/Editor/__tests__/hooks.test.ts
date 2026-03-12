@@ -47,6 +47,8 @@ function createMockEditor() {
     onDidChangeModelContent: vi.fn(() => ({ dispose: vi.fn() })),
     onMouseDown: vi.fn(() => ({ dispose: vi.fn() })),
     createContextKey: vi.fn(() => ({ set: vi.fn() })),
+    hasTextFocus: vi.fn(() => true),
+    uri: { toString: () => 'inmemory://model.sql' },
     _valueHolder: valueHolder,
   };
 }
@@ -58,6 +60,7 @@ function createMockMonaco() {
       registerDocumentFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerDocumentRangeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+      registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
       CompletionItemKind: {
         Class: 5,
@@ -208,6 +211,35 @@ describe('useEditorActions', () => {
     expect(actionIds).toContain('mssqlmanager.scriptRowAsDelete');
   });
 
+  it('limits clipboard shortcuts to editor text focus', () => {
+    const deps = {
+      editorRef: { current: null } as any,
+      monacoRef: { current: null } as any,
+      dbSchemaRef: { current: undefined } as any,
+      currentConnectionIdRef: { current: undefined } as any,
+      currentDatabaseRef: { current: undefined } as any,
+      lastContextPositionRef: { current: null } as any,
+      tableAtCursorContextKeyRef: { current: null } as any,
+      onExecute: vi.fn(),
+      requestPaste: vi.fn(),
+      postMessage: vi.fn(),
+    };
+
+    const { result } = renderHook(() => useEditorActions(deps));
+
+    const mockEditor = createMockEditor();
+    const mockMonaco = createMockMonaco();
+    result.current(mockEditor as any, mockMonaco as any);
+
+    const pasteCall = (mockEditor.addAction.mock.calls as any[]).find((c) => c[0].id === 'paste');
+    const cutCall = (mockEditor.addAction.mock.calls as any[]).find((c) => c[0].id === 'cut');
+    const pasteAction = pasteCall?.[0] as { precondition?: string } | undefined;
+    const cutAction = cutCall?.[0] as { precondition?: string } | undefined;
+
+    expect(pasteAction?.precondition).toBe('editorTextFocus');
+    expect(cutAction?.precondition).toBe('editorTextFocus');
+  });
+
   it('creates context key for tableAtCursor', () => {
     const deps = {
       editorRef: { current: null } as any,
@@ -306,6 +338,35 @@ describe('useCompletionProvider', () => {
 
     expect(disposeFn).toHaveBeenCalled();
   });
+
+  it('returns table snippets after a completed statement ending with semicolon', () => {
+    const mockMonaco = createMockMonaco();
+    const monacoRef = { current: mockMonaco } as any;
+
+    renderHook(() => useCompletionProvider(monacoRef, testSchema, true));
+
+    const provider = (mockMonaco.languages.registerCompletionItemProvider.mock.calls as any[])[0]?.[1] as
+      | { provideCompletionItems: (model: any, position: any) => { suggestions: Array<{ label: string }> } }
+      | undefined;
+    const sql = 'SELECT * FROM Users; ';
+    const model = {
+      getWordUntilPosition: () => ({ word: '', startColumn: sql.length + 1, endColumn: sql.length + 1 }),
+      getValueInRange: ({ startLineNumber, startColumn, endLineNumber, endColumn }: any) => {
+        if (startLineNumber !== 1 || endLineNumber !== 1) {
+          return sql;
+        }
+        return sql.slice(startColumn - 1, endColumn - 1);
+      },
+      getValue: () => sql,
+    };
+
+    expect(provider).toBeDefined();
+    const result = provider!.provideCompletionItems(model as any, { lineNumber: 1, column: sql.length + 1 });
+    const labels = result.suggestions.map((s: any) => s.label);
+
+    expect(labels).toContain('Users100');
+    expect(labels).toContain('Users*');
+  });
 });
 
 // --- useSchemaProviders ---
@@ -343,6 +404,10 @@ describe('useSchemaProviders', () => {
       'sql',
       expect.objectContaining({ provideHover: expect.any(Function) })
     );
+    expect(mockMonaco.languages.registerDefinitionProvider).toHaveBeenCalledWith(
+      'sql',
+      expect.objectContaining({ provideDefinition: expect.any(Function) })
+    );
     expect(mockMonaco.languages.registerRenameProvider).toHaveBeenCalledWith(
       'sql',
       expect.objectContaining({ provideRenameEdits: expect.any(Function), resolveRenameLocation: expect.any(Function) })
@@ -352,10 +417,12 @@ describe('useSchemaProviders', () => {
 
   it('disposes all providers on unmount', () => {
     const hoverDispose = vi.fn();
+    const definitionDispose = vi.fn();
     const renameDispose = vi.fn();
     const validationDispose = vi.fn();
     const mockMonaco = createMockMonaco();
     mockMonaco.languages.registerHoverProvider = vi.fn(() => ({ dispose: hoverDispose }));
+    mockMonaco.languages.registerDefinitionProvider = vi.fn(() => ({ dispose: definitionDispose }));
     mockMonaco.languages.registerRenameProvider = vi.fn(() => ({ dispose: renameDispose }));
     const mockEditor = createMockEditor();
     mockEditor.onDidChangeModelContent = vi.fn(() => ({ dispose: validationDispose }));
@@ -366,7 +433,39 @@ describe('useSchemaProviders', () => {
     unmount();
 
     expect(hoverDispose).toHaveBeenCalled();
+    expect(definitionDispose).toHaveBeenCalled();
     expect(renameDispose).toHaveBeenCalled();
     expect(validationDispose).toHaveBeenCalled();
+  });
+
+  it('resolves go-to-definition for SQL variables', () => {
+    const mockMonaco = createMockMonaco();
+    const mockEditor = createMockEditor();
+    const monacoRef = { current: mockMonaco } as any;
+    const editorRef = { current: mockEditor } as any;
+
+    renderHook(() => useSchemaProviders(monacoRef, editorRef, testSchema, true, 'test-connection-id'));
+
+    const provider = (mockMonaco.languages.registerDefinitionProvider.mock.calls as any[])[0]?.[1] as
+      | { provideDefinition: (model: any, position: any) => unknown }
+      | undefined;
+    const sql = 'DECLARE @ProjectToolsInserted INT;\nSET @ProjectToolsInserted = @@ROWCOUNT;';
+    const model = {
+      getValue: () => sql,
+      uri: 'inmemory://sql-model',
+    };
+
+    expect(provider).toBeDefined();
+    const result = provider!.provideDefinition(model as any, { lineNumber: 2, column: 6 });
+
+    expect(result).toEqual({
+      uri: 'inmemory://sql-model',
+      range: {
+        startLineNumber: 1,
+        startColumn: 9,
+        endLineNumber: 1,
+        endColumn: 30,
+      },
+    });
   });
 });
