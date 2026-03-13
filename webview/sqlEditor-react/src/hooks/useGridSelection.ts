@@ -113,6 +113,21 @@ function selectionReducer(state: SelectionState, action: SelectionAction): Selec
         };
       }
 
+      if (mode === 'range' && state.anchorIndex?.columnIndex !== undefined) {
+        const start = Math.min(state.anchorIndex.columnIndex, columnIndex);
+        const end = Math.max(state.anchorIndex.columnIndex, columnIndex);
+        const rangeSelections: SelectionItem[] = [];
+        for (let i = start; i <= end; i++) {
+          rangeSelections.push({ columnIndex: i });
+        }
+        return {
+          type: 'column',
+          selections: rangeSelections,
+          lastClickedIndex: { columnIndex },
+          anchorIndex: state.anchorIndex,
+        };
+      }
+
       return {
         type: 'column',
         selections: [newItem],

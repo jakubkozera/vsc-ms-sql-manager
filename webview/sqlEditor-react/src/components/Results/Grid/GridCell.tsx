@@ -108,9 +108,17 @@ function GridCellComponent({
         }
       }
 
-      // Check for XML
+      // Check for XML - validate it's actually parseable XML (not just any <…> token)
       if (trimmed.startsWith('<') && trimmed.endsWith('>')) {
-        return { displayValue: trimmed, cellType: 'xml', isLongText: trimmed.length > 100 };
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(trimmed, 'application/xml');
+          if (!doc.querySelector('parsererror')) {
+            return { displayValue: trimmed, cellType: 'xml', isLongText: trimmed.length > 100 };
+          }
+        } catch {
+          // Not valid XML
+        }
       }
     }
 

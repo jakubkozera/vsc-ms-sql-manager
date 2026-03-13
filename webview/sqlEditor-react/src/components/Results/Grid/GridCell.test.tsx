@@ -81,6 +81,39 @@ describe('GridCell', () => {
     expect(cell).toHaveClass('xml');
   });
 
+  it('does not detect <unknown> as XML', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value='<unknown>' column={defaultColumn} rowIndex={0} colIndex={0} />
+      </tr></tbody></table>
+    );
+    
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).not.toHaveClass('xml');
+  });
+
+  it('does not detect unclosed tags as XML', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value='<not valid xml>' column={defaultColumn} rowIndex={0} colIndex={0} />
+      </tr></tbody></table>
+    );
+    
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).not.toHaveClass('xml');
+  });
+
+  it('detects self-closing XML as XML', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value='<item attr="val" />' column={defaultColumn} rowIndex={0} colIndex={0} />
+      </tr></tbody></table>
+    );
+    
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).toHaveClass('xml');
+  });
+
   it('marks long text with long-text class', () => {
     const longText = 'a'.repeat(150);
     render(

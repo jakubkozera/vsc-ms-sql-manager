@@ -177,6 +177,56 @@ describe('useGridSelection', () => {
     expect(result.current.isColumnSelected(2)).toBe(false);
   });
 
+  it('selects range of columns with Shift key', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectColumn(1);
+    });
+    act(() => {
+      result.current.selectColumn(4, false, true); // Shift+click
+    });
+
+    expect(result.current.selection.type).toBe('column');
+    expect(result.current.selection.selections).toHaveLength(4);
+    expect(result.current.isColumnSelected(1)).toBe(true);
+    expect(result.current.isColumnSelected(2)).toBe(true);
+    expect(result.current.isColumnSelected(3)).toBe(true);
+    expect(result.current.isColumnSelected(4)).toBe(true);
+    expect(result.current.isColumnSelected(0)).toBe(false);
+    expect(result.current.isColumnSelected(5)).toBe(false);
+  });
+
+  it('selects range of columns with Shift key in reverse order', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectColumn(5);
+    });
+    act(() => {
+      result.current.selectColumn(2, false, true); // Shift+click to the left
+    });
+
+    expect(result.current.selection.type).toBe('column');
+    expect(result.current.selection.selections).toHaveLength(4);
+    expect(result.current.isColumnSelected(2)).toBe(true);
+    expect(result.current.isColumnSelected(3)).toBe(true);
+    expect(result.current.isColumnSelected(4)).toBe(true);
+    expect(result.current.isColumnSelected(5)).toBe(true);
+  });
+
+  it('Shift on column without anchor falls back to single selection', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectColumn(3, false, true); // Shift+click with no prior anchor
+    });
+
+    expect(result.current.selection.type).toBe('column');
+    expect(result.current.selection.selections).toHaveLength(1);
+    expect(result.current.isColumnSelected(3)).toBe(true);
+  });
+
   it('isCellSelected returns true for cells in selected column', () => {
     const { result } = renderHook(() => useGridSelection());
 
