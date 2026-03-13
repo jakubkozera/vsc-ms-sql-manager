@@ -1508,6 +1508,11 @@
           "maximum": 3600,
           "description": "Duration in seconds to cache database schema hash validation results. Longer values reduce database queries but may delay detection of schema changes. (Default: 120 seconds)"
         },
+        "mssqlManager.queryHistorySaveOnlyUnique": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, executing the same query on the same connection updates the existing history entry instead of creating a duplicate. Different connections always create separate entries."
+        },
         "mssqlManager.useReactWebview": {
           "type": "boolean",
           "default": true,

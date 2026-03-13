@@ -215,6 +215,14 @@ export function SettingsApp() {
                 { value: 'separately', label: 'Separately (Set 1, Set 2, ...)' },
               ]}
             />
+            <BooleanSetting
+              id="queryHistorySaveOnlyUnique"
+              label="Save Only Unique Queries"
+              description="When enabled, executing the same query on the same connection refreshes the existing history item instead of creating a duplicate entry."
+              value={settings.queryHistorySaveOnlyUnique}
+              onChange={(v) => updateSetting('queryHistorySaveOnlyUnique', v)}
+              isModified={isSettingModified('queryHistorySaveOnlyUnique')}
+            />
           </div>
 
           {/* Formatting Options */}

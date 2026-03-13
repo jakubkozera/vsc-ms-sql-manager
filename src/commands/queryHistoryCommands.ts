@@ -61,26 +61,34 @@ export function registerQueryHistoryCommands(
                 outputChannel.appendLine(`[QueryHistory] Opening query from history: ${entry.id}`);
                 console.log('[QueryHistory] Opening query from history:', entry.id, entry.query.substring(0, 100) + '...');
                 
-                // Create header with metadata
+                // Remove existing execution summary comments before sending
+                const cleanQuery = removeExistingExecutionComments(entry.query);
+
+                // Build metadata for the info panel (no longer appended as SQL comments)
                 const rowCountsStr = entry.rowCounts.length > 1 
                     ? `(${entry.rowCounts.join(', ')} rows)` 
                     : entry.rowCounts.length === 1 
                         ? `(${entry.rowCounts[0]} rows)` 
                         : '(0 rows)';
-                const header = `\n\n-- Query from history\n-- Executed: ${entry.executedAt.toLocaleString()}\n-- Connection: ${entry.connectionName} (${entry.server}/${entry.database})\n-- Result Sets: ${entry.resultSetCount} ${rowCountsStr}`;
-                
-                // Remove existing execution summary comments before adding new ones
-                const cleanQuery = removeExistingExecutionComments(entry.query);
-                
-                // Combine query with header at the end
-                const fullContent = cleanQuery + header;
+
+                const historyInfo = {
+                    executedAt: entry.executedAt.toLocaleString(),
+                    connectionName: entry.connectionName,
+                    server: entry.server,
+                    database: entry.database,
+                    resultSetCount: entry.resultSetCount,
+                    rowCountsStr,
+                    duration: entry.duration,
+                };
 
                 await openSqlInCustomEditor(
-                    fullContent,
+                    cleanQuery,
                     undefined,
                     context,
                     entry.connectionId,
-                    entry.database
+                    entry.database,
+                    undefined,
+                    historyInfo
                 );
 
                 if (unifiedTreeProvider) {

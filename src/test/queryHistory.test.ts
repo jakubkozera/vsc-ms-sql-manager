@@ -8,6 +8,7 @@ suite('QueryHistoryManager Test Suite', () => {
     let mockContext: vscode.ExtensionContext;
     let sandbox: sinon.SinonSandbox;
     let mockGlobalState: any;
+    let mockConfigGet: sinon.SinonStub;
 
     setup(() => {
         sandbox = sinon.createSandbox();
@@ -17,6 +18,17 @@ suite('QueryHistoryManager Test Suite', () => {
             get: sandbox.stub().returns([]),
             update: sandbox.stub().resolves()
         };
+
+        mockConfigGet = sandbox.stub();
+        mockConfigGet.callsFake((key: string, defaultValue?: unknown) => {
+            if (key === 'queryHistorySaveOnlyUnique') {
+                return true;
+            }
+            return defaultValue;
+        });
+        sandbox.stub(vscode.workspace, 'getConfiguration').returns({
+            get: mockConfigGet,
+        } as any);
 
         // Mock extension context
         mockContext = {
@@ -157,6 +169,126 @@ suite('QueryHistoryManager Test Suite', () => {
             const history = queryHistoryManager.getHistory();
             assert.strictEqual(history[0].resultSetCount, 2);
             assert.deepStrictEqual(history[0].rowCounts, [5, 10]);
+        });
+
+        test('should refresh existing entry instead of duplicating when unique setting is enabled', () => {
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn1',
+                connectionName: 'Test Connection',
+                database: 'TestDB',
+                server: 'localhost',
+                resultSetCount: 1,
+                rowCounts: [5],
+                duration: 100,
+            });
+
+            const original = queryHistoryManager.getHistory()[0];
+
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn1',
+                connectionName: 'Test Connection',
+                database: 'TestDB',
+                server: 'localhost',
+                resultSetCount: 2,
+                rowCounts: [2, 3],
+                duration: 250,
+            });
+
+            const history = queryHistoryManager.getHistory();
+            assert.strictEqual(history.length, 1);
+            assert.strictEqual(history[0].id, original.id);
+            assert.strictEqual(history[0].resultSetCount, 2);
+            assert.deepStrictEqual(history[0].rowCounts, [2, 3]);
+            assert.strictEqual(history[0].duration, 250);
+            assert.ok(history[0].executedAt.getTime() >= original.executedAt.getTime());
+        });
+
+        test('should keep separate entries for the same query on different connections', () => {
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn1',
+                connectionName: 'Connection 1',
+                database: 'TestDB',
+                server: 'localhost',
+                resultSetCount: 1,
+                rowCounts: [5],
+            });
+
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn2',
+                connectionName: 'Connection 2',
+                database: 'TestDB',
+                server: 'localhost',
+                resultSetCount: 1,
+                rowCounts: [5],
+            });
+
+            const history = queryHistoryManager.getHistory();
+            assert.strictEqual(history.length, 2);
+            assert.strictEqual(history[0].connectionId, 'conn2');
+            assert.strictEqual(history[1].connectionId, 'conn1');
+        });
+
+        test('should keep separate entries for the same query on the same connection but different databases', () => {
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn1',
+                connectionName: 'Connection 1',
+                database: 'DB1',
+                server: 'localhost',
+                resultSetCount: 1,
+                rowCounts: [5],
+            });
+
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn1',
+                connectionName: 'Connection 1',
+                database: 'DB2',
+                server: 'localhost',
+                resultSetCount: 1,
+                rowCounts: [5],
+            });
+
+            const history = queryHistoryManager.getHistory();
+            assert.strictEqual(history.length, 2);
+            assert.strictEqual(history[0].database, 'DB2');
+            assert.strictEqual(history[1].database, 'DB1');
+        });
+
+        test('should create duplicates when unique setting is disabled', () => {
+            mockConfigGet.callsFake((key: string, defaultValue?: unknown) => {
+                if (key === 'queryHistorySaveOnlyUnique') {
+                    return false;
+                }
+                return defaultValue;
+            });
+
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn1',
+                connectionName: 'Test Connection',
+                database: 'TestDB',
+                server: 'localhost',
+                resultSetCount: 1,
+                rowCounts: [5],
+            });
+
+            queryHistoryManager.addEntry({
+                query: 'SELECT * FROM Users',
+                connectionId: 'conn1',
+                connectionName: 'Test Connection',
+                database: 'TestDB',
+                server: 'localhost',
+                resultSetCount: 1,
+                rowCounts: [5],
+            });
+
+            const history = queryHistoryManager.getHistory();
+            assert.strictEqual(history.length, 2);
         });
     });
 

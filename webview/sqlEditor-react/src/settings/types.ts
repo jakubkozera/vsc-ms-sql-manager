@@ -16,6 +16,8 @@ export interface ExtensionSettings {
   cteHighlightColor: string;
   /** How multiple result sets are displayed: stacked (single-view) or as separate tabs. */
   multipleResultSetsDisplay: 'single-view' | 'separately';
+  /** Save identical query+connection executions as a single refreshed history item. */
+  queryHistorySaveOnlyUnique: boolean;
   // Formatting Options
   tabWidth: number;
   keywordCase: 'upper' | 'lower' | 'preserve';
@@ -49,6 +51,7 @@ export const defaultSettings: ExtensionSettings = {
   variableHighlightColor: '#6adc7a',
   cteHighlightColor: '#6adc7a',
   multipleResultSetsDisplay: 'single-view' as const,
+  queryHistorySaveOnlyUnique: true,
   tabWidth: 2,
   keywordCase: 'upper',
   dataTypeCase: 'upper',

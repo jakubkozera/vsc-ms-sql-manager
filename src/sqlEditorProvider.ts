@@ -1999,7 +1999,8 @@ COMMIT TRANSACTION;
         connectionId: string,
         databaseName?: string,
         initialQuery?: string,
-        autoExecute: boolean = false
+        autoExecute: boolean = false,
+        historyInfo?: Record<string, unknown>
     ): Promise<vscode.WebviewPanel> {
         // Get connection config to determine base title
         const config = this.connectionProvider.getConnectionConfig(connectionId);
@@ -2054,7 +2055,7 @@ COMMIT TRANSACTION;
             : this.getHtmlForWebview(panel.webview);
 
         // Setup state for serialization/restoration
-        this.setupUntitledPanelHandlers(panel, connectionId, databaseName, initialQuery || '', autoExecute);
+        this.setupUntitledPanelHandlers(panel, connectionId, databaseName, initialQuery || '', autoExecute, historyInfo);
         
         return panel;
     }
@@ -2116,7 +2117,8 @@ COMMIT TRANSACTION;
         connectionId: string,
         databaseName: string | undefined,
         initialContent: string,
-        autoExecute: boolean
+        autoExecute: boolean,
+        historyInfo?: Record<string, unknown>
     ): void {
         let currentContent = initialContent;
         const compositeId = databaseName ? `${connectionId}::${databaseName}` : connectionId;
@@ -2163,6 +2165,11 @@ COMMIT TRANSACTION;
                         setTimeout(() => {
                             panel.webview.postMessage({ type: 'autoExecuteQuery' });
                         }, 200);
+                    }
+
+                    // Send history metadata for info panel (if opened from query history)
+                    if (historyInfo) {
+                        panel.webview.postMessage({ type: 'historyInfo', ...historyInfo });
                     }
                     break;
 

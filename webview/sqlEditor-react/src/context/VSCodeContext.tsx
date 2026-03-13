@@ -69,6 +69,17 @@ interface VSCodeState {
   
   // Paste content
   pasteContent: string | null;
+
+  // History info (when opened from query history)
+  historyInfo: {
+    executedAt: string;
+    connectionName: string;
+    server: string;
+    database: string;
+    resultSetCount: number;
+    rowCountsStr: string;
+    duration?: number;
+  } | null;
 }
 
 type VSCodeAction =
@@ -86,7 +97,8 @@ type VSCodeAction =
   | { type: 'SET_EXPANSION_RESULT'; payload: RelationResultsMessage }
   | { type: 'CLEAR_RESULTS' }
   | { type: 'SET_AUTO_EXECUTE'; shouldAutoExecute: boolean }
-  | { type: 'SET_PASTE_CONTENT'; content: string | null };
+  | { type: 'SET_PASTE_CONTENT'; content: string | null }
+  | { type: 'SET_HISTORY_INFO'; info: VSCodeState['historyInfo'] };
 
 const initialState: VSCodeState = {
   connections: [],
@@ -111,6 +123,7 @@ const initialState: VSCodeState = {
   pendingExpansions: new Map(),
   shouldAutoExecute: false,
   pasteContent: null,
+  historyInfo: null,
 };
 
 function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
@@ -251,6 +264,14 @@ function vsCodeReducer(state: VSCodeState, action: VSCodeAction): VSCodeState {
   }
 }
 
+// Extend reducer for historyInfo (outside switch to avoid TS exhaustiveness issue)
+function vsCodeReducerWithHistory(state: VSCodeState, action: VSCodeAction): VSCodeState {
+  if (action.type === 'SET_HISTORY_INFO') {
+    return { ...state, historyInfo: action.info };
+  }
+  return vsCodeReducer(state, action);
+}
+
 // ============================================
 // Context Type
 // ============================================
@@ -289,6 +310,9 @@ interface VSCodeContextValue extends VSCodeState {
   
   // Auto-execute
   clearAutoExecute: () => void;
+  
+  // History info
+  dismissHistoryInfo: () => void;
 }
 
 const VSCodeContext = createContext<VSCodeContextValue | null>(null);
@@ -298,7 +322,7 @@ const VSCodeContext = createContext<VSCodeContextValue | null>(null);
 // ============================================
 
 export function VSCodeProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(vsCodeReducer, initialState);
+  const [state, dispatch] = useReducer(vsCodeReducerWithHistory, initialState);
   
   // Use ref to always access latest state in callbacks
   const stateRef = useRef(state);
@@ -429,6 +453,21 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
           console.log('[VSCode] Commit success:', message.message);
           // Dispatch event so pending changes hook can clear state
           window.dispatchEvent(new CustomEvent('commitSuccess', { detail: message }));
+          break;
+
+        case 'historyInfo':
+          dispatch({
+            type: 'SET_HISTORY_INFO',
+            info: {
+              executedAt: message.executedAt,
+              connectionName: message.connectionName,
+              server: message.server,
+              database: message.database,
+              resultSetCount: message.resultSetCount,
+              rowCountsStr: message.rowCountsStr,
+              duration: message.duration,
+            },
+          });
           break;
           
         default:
@@ -571,6 +610,10 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
   const clearPasteContent = useCallback(() => {
     dispatch({ type: 'SET_PASTE_CONTENT', content: null });
   }, []);
+
+  const dismissHistoryInfo = useCallback(() => {
+    dispatch({ type: 'SET_HISTORY_INFO', info: null });
+  }, []);
   
   // Derived state
   const isConnected = state.currentConnectionId !== null;
@@ -592,6 +635,7 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     clearAutoExecute,
     requestPaste,
     clearPasteContent,
+    dismissHistoryInfo,
   }), [
     state,
     isConnected,
@@ -608,6 +652,7 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
     clearAutoExecute,
     requestPaste,
     clearPasteContent,
+    dismissHistoryInfo,
   ]);
   
   return (

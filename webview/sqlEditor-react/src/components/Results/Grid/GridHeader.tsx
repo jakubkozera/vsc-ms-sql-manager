@@ -15,6 +15,7 @@ interface GridHeaderProps {
   onColumnSelect?: (column: string, e: MouseEvent) => void;
   isColumnSelected?: (colIndex: number) => boolean;
   calculatePinnedOffset?: (colIndex: number) => number;
+  onColumnContextMenu?: (colIndex: number, e: React.MouseEvent) => void;
 }
 
 function GridHeaderComponent({ 
@@ -30,6 +31,7 @@ function GridHeaderComponent({
   onColumnSelect,
   isColumnSelected,
   calculatePinnedOffset,
+  onColumnContextMenu,
 }: GridHeaderProps) {
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const startXRef = useRef(0);
@@ -108,6 +110,7 @@ function GridHeaderComponent({
                 ...(column.pinned && pinnedOffset !== undefined ? { left: `${pinnedOffset}px` } : {}),
               }}
               data-testid={`header-${column.name}`}
+              onContextMenu={onColumnContextMenu ? (e) => { e.preventDefault(); e.stopPropagation(); onColumnContextMenu(colIndex, e); } : undefined}
             >
               <div className="header-content">
                 <span 

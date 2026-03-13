@@ -5,6 +5,7 @@ import { useGlobalKeyboardShortcuts } from './hooks/useGlobalKeyboardShortcuts';
 import { Toolbar, useFormatOptions } from './components/Toolbar';
 import { SqlEditor, SqlEditorHandle } from './components/Editor';
 import { ResultsPanel } from './components/Results';
+import { HistoryInfoPanel } from './components/Results/HistoryInfoPanel';
 import { removeExecutionComments } from './services';
 import './styles/app.css';
 
@@ -18,11 +19,13 @@ function App() {
     postMessage,
     shouldAutoExecute,
     clearAutoExecute,
+    dismissHistoryInfo,
     lastResults,
     lastMessages,
     lastPlanXml,
     lastError,
     editorContent,
+    historyInfo,
   } = useVSCode();
 
   const editorRef = useRef<SqlEditorHandle>(null);
@@ -82,12 +85,13 @@ function App() {
         sql = editorRef.current.getSelectedText() || editorRef.current.getValue();
         console.log('[App] After formatting, length:', sql.length);
       }
+      dismissHistoryInfo();
       console.log('[App] Calling executeQuery');
       executeQuery(sql, { includeActualPlan });
     } else {
       console.log('[App] No SQL to execute');
     }
-  }, [executeQuery, includeActualPlan, formatOptions.formatBeforeRun]);
+  }, [dismissHistoryInfo, executeQuery, includeActualPlan, formatOptions.formatBeforeRun]);
 
   const handleEstimatedPlan = useCallback(() => {
     if (!editorRef.current) return;
@@ -97,9 +101,10 @@ function App() {
     }
     if (sql.trim()) {
       sql = removeExecutionComments(sql);
+      dismissHistoryInfo();
       executeEstimatedPlan(sql);
     }
-  }, [executeEstimatedPlan]);
+  }, [dismissHistoryInfo, executeEstimatedPlan]);
 
   // Handle auto-execute query
   useEffect(() => {
@@ -177,6 +182,7 @@ function App() {
 
   // Show results panel when executing even if there are no results yet
   const showResultsPanel = useMemo(() => hasResults || isExecuting, [hasResults, isExecuting]);
+  const showHistoryPanel = useMemo(() => historyInfo !== null, [historyInfo]);
 
   // Calculate results container height
   const resultsHeight = useMemo(() => {
@@ -185,8 +191,9 @@ function App() {
     const containerHeight = window.innerHeight;
     const toolbarHeight = 52;
     const resizerHeight = 4;
-    return containerHeight - toolbarHeight - editorHeight - resizerHeight;
-  }, [showResultsPanel, editorHeight]);
+    const historyPanelHeight = showHistoryPanel ? 33 : 0;
+    return containerHeight - toolbarHeight - editorHeight - resizerHeight - historyPanelHeight;
+  }, [showResultsPanel, showHistoryPanel, editorHeight]);
 
   return (
     <div id="container">
@@ -217,6 +224,8 @@ function App() {
           onMouseDown={handleResizerMouseDown}
         />
       )}
+
+      {showHistoryPanel && <HistoryInfoPanel />}
 
       {/* Results Panel - only visible when there are results */}
       {showResultsPanel && (

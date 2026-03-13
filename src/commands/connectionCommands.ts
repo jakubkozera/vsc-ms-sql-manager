@@ -299,7 +299,7 @@ export function registerConnectionCommands(
         vscode.window.showInformationMessage(`Found ${connections.length} saved connections. Check output channel for details.`);
     });
 
-    const newQueryCommand = vscode.commands.registerCommand('mssqlManager.newQuery', async (connectionItem?: any, initialQuery?: string, autoExecute: boolean = false) => {
+    const newQueryCommand = vscode.commands.registerCommand('mssqlManager.newQuery', async (connectionItem?: any, initialQuery?: string, autoExecute: boolean = false, historyInfo?: Record<string, unknown>) => {
         try {
             if (!connectionItem || !connectionItem.connectionId) {
                 vscode.window.showErrorMessage('Invalid connection item');
@@ -323,7 +323,7 @@ export function registerConnectionCommands(
 
             // Open an untitled query webview (no file created on disk)
             if (sqlEditorProvider) {
-                await sqlEditorProvider.openUntitledQuery(connectionId, databaseName, initialQuery, autoExecute);
+                await sqlEditorProvider.openUntitledQuery(connectionId, databaseName, initialQuery, autoExecute, historyInfo);
                 outputChannel.appendLine(`[New Query] Opened untitled query for ${connectionId}::${databaseName}`);
             } else {
                 vscode.window.showErrorMessage('SQL Editor provider not available');

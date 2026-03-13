@@ -124,6 +124,17 @@ export interface PasteContentMessage {
   content: string;
 }
 
+export interface HistoryInfoMessage {
+  type: 'historyInfo';
+  executedAt: string;
+  connectionName: string;
+  server: string;
+  database: string;
+  resultSetCount: number;
+  rowCountsStr: string;
+  duration?: number;
+}
+
 // Union of all incoming message types
 export type IncomingMessage =
   | ConfigMessage
@@ -143,7 +154,8 @@ export type IncomingMessage =
   | AutoExecuteQueryMessage
   | SnippetsUpdateMessage
   | SnippetInputReceivedMessage
-  | PasteContentMessage;
+  | PasteContentMessage
+  | HistoryInfoMessage;
 
 // ============================================
 // Outgoing Messages (from Webview to Extension)

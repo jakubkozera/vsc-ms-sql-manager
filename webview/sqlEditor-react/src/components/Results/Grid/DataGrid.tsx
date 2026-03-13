@@ -7,7 +7,7 @@ import { GridHeader } from './GridHeader';
 import { GridRow } from './GridRow';
 import { ExpandedRow } from './ExpandedRow';
 import { FilterPopup } from './FilterPopup';
-import { ContextMenu, ContextMenuItem, ROW_CONTEXT_MENU_ITEMS, buildCellMenuItems } from './ContextMenu';
+import { ContextMenu, ContextMenuItem, ROW_CONTEXT_MENU_ITEMS, buildCellMenuItems, buildColumnMenuItems } from './ContextMenu';
 import { ExportMenu } from './ExportMenu';
 import { FKQuickPick } from './FKQuickPick';
 import { exportData, copyToClipboard, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
@@ -46,7 +46,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   
   // Popups
   const [filterPopup, setFilterPopup] = useState<{ column: ColumnDef; position: { x: number; y: number } } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; position: { x: number; y: number }; rowIndex?: number; colIndex?: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; position: { x: number; y: number }; rowIndex?: number; colIndex?: number; isColumnHeader?: boolean } | null>(null);
   const [exportMenu, setExportMenu] = useState<{ position: { x: number; y: number } } | null>(null);
   const [fkQuickPick, setFkQuickPick] = useState<{ 
     relations: ForeignKeyReference[]; 
@@ -623,6 +623,18 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     await copyToClipboard(text);
   }, [sortedData, columnDefs, metadata]);
 
+  // Copy all values of a column (optionally with header)
+  const handleCopyColumnValues = useCallback(async (colIndex: number, includeHeader: boolean) => {
+    const colDef = columnDefs[colIndex];
+    if (!colDef) return;
+    const values = sortedData.map(row => {
+      const val = row[colIndex];
+      return val === null || val === undefined ? '' : String(val);
+    });
+    const text = includeHeader ? [colDef.name, ...values].join('\n') : values.join('\n');
+    await copyToClipboard(text);
+  }, [sortedData, columnDefs]);
+
   const handleExport = useCallback((format: ExportFormat, includeHeaders: boolean) => {
     const selectedIndices = getSelectedRowIndices();
     const hasSelection = selectedIndices.length > 0;
@@ -706,6 +718,16 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     return buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable });
   }, [isEditable, metadata]);
 
+  const handleColumnHeaderContextMenu = useCallback((colIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({
+      items: buildColumnMenuItems(),
+      position: { x: e.clientX, y: e.clientY },
+      colIndex,
+      isColumnHeader: true,
+    });
+  }, []);
+
   const handleContextMenu = useCallback((e: React.MouseEvent, rowIndex?: number, colIndex?: number) => {
     e.preventDefault();
     
@@ -756,6 +778,18 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       case 'copyAsJSON':
         handleExport('json', true);
         break;
+      case 'copyColumnValues': {
+        if (ctx?.colIndex !== undefined) {
+          handleCopyColumnValues(ctx.colIndex, false);
+        }
+        break;
+      }
+      case 'copyColumnValuesWithHeader': {
+        if (ctx?.colIndex !== undefined) {
+          handleCopyColumnValues(ctx.colIndex, true);
+        }
+        break;
+      }
       case 'selectAll':
         selectAllRows(sortedData.length);
         break;
@@ -794,7 +828,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       }
     }
     setContextMenu(null);
-  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleExport]);
+  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport]);
 
   // Global keyboard shortcuts when grid is active
   useEffect(() => {
@@ -953,6 +987,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
             onColumnSelect={handleColumnSelect}
             isColumnSelected={isColumnSelected}
             calculatePinnedOffset={calculatePinnedOffset}
+            onColumnContextMenu={handleColumnHeaderContextMenu}
           />
           <tbody style={{ position: 'relative', height: totalHeight }}>
             {virtualItems.map((virtualRow) => {

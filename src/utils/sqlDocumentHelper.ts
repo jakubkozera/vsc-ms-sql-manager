@@ -9,14 +9,17 @@ export async function openSqlInCustomEditor(
     filename?: string, 
     context?: vscode.ExtensionContext,
     connectionId?: string,
-    database?: string
+    database?: string,
+    _unused?: unknown,
+    historyInfo?: Record<string, unknown>
 ): Promise<void> {
     if (connectionId) {
         await vscode.commands.executeCommand(
             'mssqlManager.newQuery',
             { connectionId, database },
             content,
-            false
+            false,
+            historyInfo
         );
         return;
     }

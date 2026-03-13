@@ -157,6 +157,18 @@ export const SELECTION_CONTEXT_MENU_ITEMS: ContextMenuItem[] = [
 ];
 
 /**
+ * Build context menu items for a column header right-click.
+ */
+export function buildColumnMenuItems(): ContextMenuItem[] {
+  return [
+    { id: 'copyColumnValues', label: 'Copy values' },
+    { id: 'copyColumnValuesWithHeader', label: 'Copy values with header' },
+    { id: 'separator1', label: '', separator: true },
+    { id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' },
+  ];
+}
+
+/**
  * Build context menu items for a cell right-click.
  * "Set to NULL" is only included when the column is nullable.
  */

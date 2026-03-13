@@ -27,6 +27,50 @@ export class QueryHistoryManager {
     }
 
     addEntry(entry: Omit<QueryHistoryEntry, 'id' | 'executedAt'>): void {
+        const saveOnlyUnique = vscode.workspace.getConfiguration('mssqlManager').get<boolean>('queryHistorySaveOnlyUnique', true);
+
+        if (saveOnlyUnique) {
+            // Look for an existing entry with the same query text AND same connection+database
+            const normalizedQuery = entry.query.trim();
+            const existingIdx = this.history.findIndex(e =>
+                e.query.trim() === normalizedQuery &&
+                e.connectionId === entry.connectionId &&
+                e.database === entry.database
+            );
+
+            if (existingIdx !== -1) {
+                // Update existing entry in-place, then move to top
+                const [existing] = this.history.splice(existingIdx, 1);
+                existing.executedAt = new Date();
+                existing.resultSetCount = entry.resultSetCount;
+                existing.rowCounts = entry.rowCounts;
+                existing.duration = entry.duration;
+                // Keep existing id, title, pinned status
+
+                // If pinned, insert at end of pinned block; otherwise at beginning
+                if (existing.pinned) {
+                    const firstNonPinned = this.history.findIndex(e => !e.pinned);
+                    if (firstNonPinned === -1) {
+                        this.history.push(existing);
+                    } else {
+                        this.history.splice(firstNonPinned, 0, existing);
+                    }
+                } else {
+                    // Insert after pinned block (at first non-pinned position)
+                    const firstNonPinned = this.history.findIndex(e => !e.pinned);
+                    if (firstNonPinned === -1) {
+                        this.history.push(existing);
+                    } else {
+                        this.history.splice(firstNonPinned, 0, existing);
+                    }
+                }
+
+                this.saveHistory();
+                this._onDidChangeHistory.fire();
+                return;
+            }
+        }
+
         const historyEntry: QueryHistoryEntry = {
             ...entry,
             id: this.generateId(),

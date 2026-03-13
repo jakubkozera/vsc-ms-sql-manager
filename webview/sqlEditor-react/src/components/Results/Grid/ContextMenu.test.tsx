@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '../../../test/testUtils';
-import { ContextMenu, ContextMenuItem, buildCellMenuItems } from './ContextMenu';
+import { ContextMenu, ContextMenuItem, buildCellMenuItems, buildColumnMenuItems } from './ContextMenu';
 
 describe('ContextMenu', () => {
   const mockItems: ContextMenuItem[] = [
@@ -119,5 +119,68 @@ describe('buildCellMenuItems - Set NULL visibility', () => {
     const delIdx = ids.indexOf('deleteRow');
     expect(editIdx).toBeLessThan(nullIdx);
     expect(nullIdx).toBeLessThan(delIdx);
+  });
+});
+
+describe('buildColumnMenuItems', () => {
+  it('returns copyColumnValues as first item', () => {
+    const items = buildColumnMenuItems();
+    const nonSep = items.filter(i => !i.separator);
+    expect(nonSep[0].id).toBe('copyColumnValues');
+    expect(nonSep[0].label).toBe('Copy values');
+  });
+
+  it('returns copyColumnValuesWithHeader as second item', () => {
+    const items = buildColumnMenuItems();
+    const nonSep = items.filter(i => !i.separator);
+    expect(nonSep[1].id).toBe('copyColumnValuesWithHeader');
+    expect(nonSep[1].label).toBe('Copy values with header');
+  });
+
+  it('returns selectAll as last item', () => {
+    const items = buildColumnMenuItems();
+    const nonSep = items.filter(i => !i.separator);
+    expect(nonSep[nonSep.length - 1].id).toBe('selectAll');
+  });
+
+  it('does NOT include copyRow, copyRowAsInsert, or deleteRow', () => {
+    const items = buildColumnMenuItems();
+    const ids = items.map(i => i.id);
+    expect(ids).not.toContain('copyRow');
+    expect(ids).not.toContain('copyRowAsInsert');
+    expect(ids).not.toContain('deleteRow');
+  });
+
+  it('has a separator between copy items and selectAll', () => {
+    const items = buildColumnMenuItems();
+    const sepIdx = items.findIndex(i => i.separator);
+    const selectAllIdx = items.findIndex(i => i.id === 'selectAll');
+    expect(sepIdx).toBeGreaterThan(0);
+    expect(sepIdx).toBeLessThan(selectAllIdx);
+  });
+});
+
+describe('column menu vs row menu differentiation', () => {
+  it('buildCellMenuItems does not include copyColumnValues', () => {
+    const items = buildCellMenuItems({ isEditable: false });
+    const ids = items.map(i => i.id);
+    expect(ids).not.toContain('copyColumnValues');
+    expect(ids).not.toContain('copyColumnValuesWithHeader');
+  });
+
+  it('buildColumnMenuItems does not include copyCell or editCell', () => {
+    const items = buildColumnMenuItems();
+    const ids = items.map(i => i.id);
+    expect(ids).not.toContain('copyCell');
+    expect(ids).not.toContain('editCell');
+    expect(ids).not.toContain('setNull');
+  });
+
+  it('buildCellMenuItems (editable) includes copyRow and deleteRow, not column copy actions', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: false });
+    const ids = items.map(i => i.id);
+    expect(ids).toContain('copyRow');
+    expect(ids).toContain('deleteRow');
+    expect(ids).not.toContain('copyColumnValues');
   });
 });

@@ -1,0 +1,63 @@
+.history-info-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+  font-size: 12px;
+  color: var(--vscode-foreground, #ccc);
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 28px;
+}
+
+.history-info-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  overflow: hidden;
+}
+
+.history-info-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.history-info-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.history-info-item-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-info-item strong {
+  color: var(--vscode-foreground, #e0e0e0);
+}
+
+.history-info-close {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground, #ccc);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.history-info-close:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
