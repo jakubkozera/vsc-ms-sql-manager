@@ -1585,14 +1585,15 @@
     }
   },
   "scripts": {
+    "clean:out": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "build:notebook": "npm ci --prefix webview/sqlNotebook && npm run build --prefix webview/sqlNotebook",
     "vscode:prepublish": "npm run build:notebook && npm run package",
     "compile": "cd webview/sqlEditor-react && npm run build && cd ../.. && webpack",
     "compile:ext": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
+    "compile-tests": "npm run clean:out && tsc -p . --outDir out",
+    "watch-tests": "npm run clean:out && tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
