@@ -19,7 +19,6 @@ interface AllSettings {
     queryTimeout: number;
     colorPrimaryForeignKeys: boolean;
     numberFormat: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
-    useReactWebview: boolean;
     variableHighlightColor: string;
     cteHighlightColor: string;
     multipleResultSetsDisplay: 'single-view' | 'separately';
@@ -121,7 +120,6 @@ export class SettingsWebview {
             queryTimeout: config.get<number>('queryTimeout', 0),
             colorPrimaryForeignKeys: config.get<boolean>('colorPrimaryForeignKeys', true),
             numberFormat: config.get<'plain' | 'locale' | 'fixed-2' | 'fixed-4'>('numberFormat', 'plain'),
-            useReactWebview: config.get<boolean>('useReactWebview', false),
             variableHighlightColor: config.get<string>('variableHighlightColor', '#6adc7a'),
             cteHighlightColor: config.get<string>('cteHighlightColor', '#6adc7a'),
             multipleResultSetsDisplay: config.get<'single-view' | 'separately'>('multipleResultSetsDisplay', 'single-view'),
@@ -148,7 +146,7 @@ export class SettingsWebview {
             await config.update('queryTimeout', settings.queryTimeout, vscode.ConfigurationTarget.Global);
             await config.update('colorPrimaryForeignKeys', settings.colorPrimaryForeignKeys, vscode.ConfigurationTarget.Global);
             await config.update('numberFormat', settings.numberFormat, vscode.ConfigurationTarget.Global);
-            await config.update('useReactWebview', settings.useReactWebview, vscode.ConfigurationTarget.Global);
+            await config.update('useReactWebview', undefined, vscode.ConfigurationTarget.Global);
             await config.update('variableHighlightColor', settings.variableHighlightColor, vscode.ConfigurationTarget.Global);
             await config.update('cteHighlightColor', settings.cteHighlightColor, vscode.ConfigurationTarget.Global);
             await config.update('multipleResultSetsDisplay', settings.multipleResultSetsDisplay, vscode.ConfigurationTarget.Global);

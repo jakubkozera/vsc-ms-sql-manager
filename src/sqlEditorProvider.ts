@@ -21,8 +21,6 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private sqlSnippets: any[] = [];
     // Schema cache instance
     private schemaCache: SchemaCache;
-    // Use React webview (set to true to enable new React UI)
-    private useReactWebview: boolean = true;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -33,10 +31,6 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         this.loadSqlSnippets();
         this.setupSnippetsWatcher();
         this.schemaCache = SchemaCache.getInstance(context);
-        
-        // Check configuration for React webview preference
-        const config = vscode.workspace.getConfiguration('mssqlManager');
-        this.useReactWebview = config.get<boolean>('useReactWebview', true);
     }
 
     public async resolveCustomTextEditor(
@@ -53,9 +47,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         };
 
         // Set initial HTML content (React or legacy)
-        webviewPanel.webview.html = this.useReactWebview 
-            ? this.getReactHtmlForWebview(webviewPanel.webview)
-            : this.getHtmlForWebview(webviewPanel.webview);
+        webviewPanel.webview.html = this.getReactHtmlForWebview(webviewPanel.webview);
 
         // Track webview to document mapping
         this.webviewToDocument.set(webviewPanel.webview, document.uri);
@@ -873,77 +865,6 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     <script type="module" src="${scriptUri}"></script>
 </body>
 </html>`;
-    }
-
-    private getHtmlForWebview(webview: vscode.Webview): string {
-        // External resources (Monaco loader stays on CDN)
-        const monacoLoaderUri = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
-
-        // Build file paths
-        const htmlPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.html');
-        const stylePath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.css');
-        
-        // Modular scripts
-        const snippetsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'snippets.js');
-        const utilsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'utils.js');
-        const uiScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'ui.js');
-        const gridScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'grid.js');
-        const tabsScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'tabs.js');
-        const editorScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'editor.js');
-        const queryScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'query.js');
-        const planScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'plan.js');
-        const scriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlEditor.js');
-        const sqlFormatterScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlFormatter.js');
-        const sqlValidatorScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'sqlValidator.js');
-        const relationExpansionScriptPath = vscode.Uri.joinPath(this.context.extensionUri, 'webview', 'sqlEditor', 'relationExpansion.js');
-
-        // Convert to webview URIs for proper loading
-        // Add cache buster to force reload
-        const cacheBuster = Date.now();
-        const styleUri = webview.asWebviewUri(stylePath).toString() + `?v=${cacheBuster}`;
-        
-        const snippetsScriptUri = webview.asWebviewUri(snippetsScriptPath).toString() + `?v=${cacheBuster}`;
-        const utilsScriptUri = webview.asWebviewUri(utilsScriptPath).toString() + `?v=${cacheBuster}`;
-        const uiScriptUri = webview.asWebviewUri(uiScriptPath).toString() + `?v=${cacheBuster}`;
-        const gridScriptUri = webview.asWebviewUri(gridScriptPath).toString() + `?v=${cacheBuster}`;
-        const tabsScriptUri = webview.asWebviewUri(tabsScriptPath).toString() + `?v=${cacheBuster}`;
-        const editorScriptUri = webview.asWebviewUri(editorScriptPath).toString() + `?v=${cacheBuster}`;
-        const queryScriptUri = webview.asWebviewUri(queryScriptPath).toString() + `?v=${cacheBuster}`;
-        const planScriptUri = webview.asWebviewUri(planScriptPath).toString() + `?v=${cacheBuster}`;
-        const scriptUri = webview.asWebviewUri(scriptPath).toString() + `?v=${cacheBuster}`;
-        const sqlFormatterScriptUri = webview.asWebviewUri(sqlFormatterScriptPath).toString() + `?v=${cacheBuster}`;
-        const sqlValidatorScriptUri = webview.asWebviewUri(sqlValidatorScriptPath).toString() + `?v=${cacheBuster}`;
-        const relationExpansionScriptUri = webview.asWebviewUri(relationExpansionScriptPath).toString() + `?v=${cacheBuster}`;
-
-        // Read base HTML template
-        let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
-
-        // Replace placeholders defined in template
-        // We inject the new scripts before the main script
-        const scriptsBlock = `
-    <script src="${sqlValidatorScriptUri}"></script>    
-    <script src="${snippetsScriptUri}"></script>
-    <script src="${utilsScriptUri}"></script>
-    <script src="${uiScriptUri}"></script>
-    <script src="${gridScriptUri}"></script>
-    <script src="${tabsScriptUri}"></script>
-    <script src="${editorScriptUri}"></script>
-    <script src="${queryScriptUri}"></script>
-    <script src="${planScriptUri}"></script>
-    <script src="${scriptUri}"></script>
-        `;
-
-        html = html
-            .replace(/{{styleUri}}/g, styleUri)
-            .replace(/<script src="{{scriptUri}}"><\/script>/g, scriptsBlock)
-            .replace(/{{scriptUri}}/g, scriptUri) // Fallback if regex above doesn't match
-            .replace(/{{sqlFormatterScriptUri}}/g, sqlFormatterScriptUri)
-            .replace(/{{sqlValidatorScriptUri}}/g, sqlValidatorScriptUri)
-            .replace(/{{relationExpansionScriptUri}}/g, relationExpansionScriptUri)
-            .replace(/{{monacoLoaderUri}}/g, monacoLoaderUri)
-            .replace(/{{cspSource}}/g, webview.cspSource);
-
-        return html;
     }
 
     public forceConnectionUpdate(fileUri: vscode.Uri, connectionId: string, databaseName?: string): void {
@@ -2050,9 +1971,7 @@ COMMIT TRANSACTION;
         this.webviewToDocument.set(panel.webview, syntheticUri);
         this.webviewSelectedConnection.set(panel.webview, compositeId);
 
-        panel.webview.html = this.useReactWebview
-            ? this.getReactHtmlForWebview(panel.webview)
-            : this.getHtmlForWebview(panel.webview);
+        panel.webview.html = this.getReactHtmlForWebview(panel.webview);
 
         // Setup state for serialization/restoration
         this.setupUntitledPanelHandlers(panel, connectionId, databaseName, initialQuery || '', autoExecute, historyInfo);
@@ -2085,9 +2004,7 @@ COMMIT TRANSACTION;
         };
 
         // Setup the restored panel
-        panel.webview.html = this.useReactWebview
-            ? this.getReactHtmlForWebview(panel.webview)
-            : this.getHtmlForWebview(panel.webview);
+        panel.webview.html = this.getReactHtmlForWebview(panel.webview);
         
         // Get connection config to determine base title
         const config = this.connectionProvider.getConnectionConfig(connectionId);

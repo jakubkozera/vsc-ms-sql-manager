@@ -9,7 +9,6 @@ export interface ExtensionSettings {
   queryTimeout: number;
   colorPrimaryForeignKeys: boolean;
   numberFormat: NumberFormat;
-  useReactWebview: boolean;
   /** CSS hex color for SQL variable highlights (e.g. '#6adc7a'). Empty = disabled. */
   variableHighlightColor: string;
   /** CSS hex color for CTE highlights (e.g. '#6adc7a'). Empty = disabled. */
@@ -47,7 +46,6 @@ export const defaultSettings: ExtensionSettings = {
   queryTimeout: 0,
   colorPrimaryForeignKeys: true,
   numberFormat: 'plain',
-  useReactWebview: false,
   variableHighlightColor: '#6adc7a',
   cteHighlightColor: '#6adc7a',
   multipleResultSetsDisplay: 'single-view' as const,

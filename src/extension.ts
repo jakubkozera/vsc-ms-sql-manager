@@ -22,6 +22,7 @@ let outputChannel: vscode.OutputChannel;
 export async function activate(context: vscode.ExtensionContext) {
     // Create output channel for logging
     outputChannel = vscode.window.createOutputChannel('MS SQL Manager');
+    await removeObsoleteConfiguration();
     
     // Initialize dbClient with context for persistent storage
     initializeDbClient(context);
@@ -35,6 +36,23 @@ export async function activate(context: vscode.ExtensionContext) {
     
     outputChannel.appendLine('MS SQL Manager extension activated');
     await initializeExtension(context);
+}
+
+async function removeObsoleteConfiguration(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('mssqlManager');
+    const cleanupTargets = [
+        vscode.ConfigurationTarget.Global,
+        vscode.ConfigurationTarget.Workspace,
+    ];
+
+    for (const target of cleanupTargets) {
+        try {
+            await config.update('useReactWebview', undefined, target);
+        } catch (error) {
+            const targetName = target === vscode.ConfigurationTarget.Global ? 'global' : 'workspace';
+            outputChannel.appendLine(`[Extension] Skipped obsolete useReactWebview cleanup for ${targetName} settings: ${error}`);
+        }
+    }
 }
 
 /**

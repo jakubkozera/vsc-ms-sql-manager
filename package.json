@@ -1513,11 +1513,6 @@
           "default": true,
           "description": "When enabled, executing the same query on the same connection updates the existing history entry instead of creating a duplicate. Different connections always create separate entries."
         },
-        "mssqlManager.useReactWebview": {
-          "type": "boolean",
-          "default": true,
-          "description": "Use the new React-based SQL Editor UI. Disable to use the legacy JavaScript UI."
-        },
         "mssqlManager.formatting.tabWidth": {
           "type": "number",
           "default": 2,

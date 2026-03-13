@@ -179,14 +179,6 @@ export function SettingsApp() {
                 { value: 'fixed-4', label: '4 decimal places (1,234,567.8900)' },
               ]}
             />
-            <BooleanSetting
-              id="useReactWebview"
-              label="Use React Editor UI"
-              description="Use the new React-based SQL Editor UI. Disable to use the legacy JavaScript UI."
-              value={settings.useReactWebview}
-              onChange={(v) => updateSetting('useReactWebview', v)}
-              isModified={isSettingModified('useReactWebview')}
-            />
             <ColorSetting
               id="variableHighlightColor"
               label="Highlight Variables Color"

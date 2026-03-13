@@ -18,6 +18,7 @@ const extensionConfig = {
   output: {
     // the bundle is stored in the 'dist' folder (check package.json), 📖 -> https://webpack.js.org/configuration/output/
     path: path.resolve(__dirname, 'dist'),
+    clean: true,
     filename: 'extension.js',
     libraryTarget: 'commonjs2'
   },
@@ -53,6 +54,9 @@ const extensionConfig = {
           // dist/ subfolder is needed at runtime. node_modules alone is 100 MB+.
           filter: (resourcePath) => {
             const normalized = resourcePath.replace(/\\/g, '/');
+            if (normalized.includes('/sqlEditor/')) {
+              return false;
+            }
             // For React sub-projects that have their own node_modules and src,
             // only the Vite/webpack-built dist/ subfolder is needed at runtime.
             const reactProjects = ['/sqlNotebook/', '/sqlEditor-react/'];
