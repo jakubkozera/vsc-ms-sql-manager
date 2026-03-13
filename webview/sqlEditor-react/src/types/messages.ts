@@ -13,6 +13,7 @@ export interface ConfigMessage {
     numberFormat?: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
     variableHighlightColor?: string;
     cteHighlightColor?: string;
+    jsonXmlHighlightColor?: string;
     multipleResultSetsDisplay?: 'single-view' | 'separately';
   };
 }
@@ -386,6 +387,8 @@ export interface EditorConfig {
   variableHighlightColor: string;
   /** CSS color string (e.g. '#90EE90'). Empty string disables CTE highlighting. */
   cteHighlightColor: string;
+  /** CSS color string used for JSON/XML values in result grid cells. */
+  jsonXmlHighlightColor: string;
   /** How multiple result sets are displayed: stacked or as separate tabs. */
   multipleResultSetsDisplay: 'single-view' | 'separately';
 }
@@ -395,5 +398,6 @@ export const defaultEditorConfig: EditorConfig = {
   numberFormat: 'plain',
   variableHighlightColor: '#6adc7a',
   cteHighlightColor: '#6adc7a',
+  jsonXmlHighlightColor: '#2563eb',
   multipleResultSetsDisplay: 'single-view',
 };

@@ -78,6 +78,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     const numberFormat = config.get<string>('numberFormat', 'plain');
                     const variableHighlightColor = config.get<string>('variableHighlightColor', '#6adc7a');
                     const cteHighlightColor = config.get<string>('cteHighlightColor', '#6adc7a');
+                    const jsonXmlHighlightColor = config.get<string>('jsonXmlHighlightColor', '#2563eb');
                     const multipleResultSetsDisplay = config.get<string>('multipleResultSetsDisplay', 'single-view');
                     webviewPanel.webview.postMessage({
                         type: 'config',
@@ -86,6 +87,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                             numberFormat,
                             variableHighlightColor,
                             cteHighlightColor,
+                            jsonXmlHighlightColor,
                             multipleResultSetsDisplay
                         }
                     });
@@ -2058,10 +2060,11 @@ COMMIT TRANSACTION;
                         const numberFormat = config.get<string>('numberFormat', 'plain');
                         const variableHighlightColor = config.get<string>('variableHighlightColor', '#6adc7a');
                         const cteHighlightColor = config.get<string>('cteHighlightColor', '#6adc7a');
+                        const jsonXmlHighlightColor = config.get<string>('jsonXmlHighlightColor', '#2563eb');
                         const multipleResultSetsDisplay = config.get<string>('multipleResultSetsDisplay', 'single-view');
                         panel.webview.postMessage({
                             type: 'config',
-                            config: { colorPrimaryForeignKeys, numberFormat, variableHighlightColor, cteHighlightColor, multipleResultSetsDisplay }
+                            config: { colorPrimaryForeignKeys, numberFormat, variableHighlightColor, cteHighlightColor, jsonXmlHighlightColor, multipleResultSetsDisplay }
                         });
                     }
 

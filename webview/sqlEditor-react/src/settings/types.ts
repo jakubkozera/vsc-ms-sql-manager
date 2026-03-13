@@ -13,6 +13,8 @@ export interface ExtensionSettings {
   variableHighlightColor: string;
   /** CSS hex color for CTE highlights (e.g. '#6adc7a'). Empty = disabled. */
   cteHighlightColor: string;
+  /** CSS hex color for JSON/XML values in result grid cells (e.g. '#2563eb'). */
+  jsonXmlHighlightColor: string;
   /** How multiple result sets are displayed: stacked (single-view) or as separate tabs. */
   multipleResultSetsDisplay: 'single-view' | 'separately';
   /** Save identical query+connection executions as a single refreshed history item. */
@@ -48,6 +50,7 @@ export const defaultSettings: ExtensionSettings = {
   numberFormat: 'plain',
   variableHighlightColor: '#6adc7a',
   cteHighlightColor: '#6adc7a',
+  jsonXmlHighlightColor: '#2563eb',
   multipleResultSetsDisplay: 'single-view' as const,
   queryHistorySaveOnlyUnique: true,
   tabWidth: 2,

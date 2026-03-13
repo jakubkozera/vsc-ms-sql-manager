@@ -21,6 +21,7 @@ interface AllSettings {
     numberFormat: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
     variableHighlightColor: string;
     cteHighlightColor: string;
+    jsonXmlHighlightColor: string;
     multipleResultSetsDisplay: 'single-view' | 'separately';
     queryHistorySaveOnlyUnique: boolean;
     // Formatting options (stored in globalState)
@@ -122,6 +123,7 @@ export class SettingsWebview {
             numberFormat: config.get<'plain' | 'locale' | 'fixed-2' | 'fixed-4'>('numberFormat', 'plain'),
             variableHighlightColor: config.get<string>('variableHighlightColor', '#6adc7a'),
             cteHighlightColor: config.get<string>('cteHighlightColor', '#6adc7a'),
+            jsonXmlHighlightColor: config.get<string>('jsonXmlHighlightColor', '#2563eb'),
             multipleResultSetsDisplay: config.get<'single-view' | 'separately'>('multipleResultSetsDisplay', 'single-view'),
             queryHistorySaveOnlyUnique: config.get<boolean>('queryHistorySaveOnlyUnique', true),
             tabWidth: config.get<number>('formatting.tabWidth', formatOptions.tabWidth),
@@ -149,6 +151,7 @@ export class SettingsWebview {
             await config.update('useReactWebview', undefined, vscode.ConfigurationTarget.Global);
             await config.update('variableHighlightColor', settings.variableHighlightColor, vscode.ConfigurationTarget.Global);
             await config.update('cteHighlightColor', settings.cteHighlightColor, vscode.ConfigurationTarget.Global);
+            await config.update('jsonXmlHighlightColor', settings.jsonXmlHighlightColor, vscode.ConfigurationTarget.Global);
             await config.update('multipleResultSetsDisplay', settings.multipleResultSetsDisplay, vscode.ConfigurationTarget.Global);
             await config.update('queryHistorySaveOnlyUnique', settings.queryHistorySaveOnlyUnique, vscode.ConfigurationTarget.Global);
             await config.update('formatting.tabWidth', settings.tabWidth, vscode.ConfigurationTarget.Global);
@@ -197,6 +200,7 @@ export class SettingsWebview {
             await config.update('useReactWebview', undefined, vscode.ConfigurationTarget.Global);
             await config.update('variableHighlightColor', undefined, vscode.ConfigurationTarget.Global);
             await config.update('cteHighlightColor', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('jsonXmlHighlightColor', undefined, vscode.ConfigurationTarget.Global);
             await config.update('multipleResultSetsDisplay', undefined, vscode.ConfigurationTarget.Global);
             await config.update('queryHistorySaveOnlyUnique', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.tabWidth', undefined, vscode.ConfigurationTarget.Global);

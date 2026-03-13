@@ -195,6 +195,14 @@ export function SettingsApp() {
               onChange={(v) => updateSetting('cteHighlightColor', v)}
               isModified={isSettingModified('cteHighlightColor')}
             />
+            <ColorSetting
+              id="jsonXmlHighlightColor"
+              label="Highlight JSON/XML Values Color"
+              description="Color used for JSON/XML values in query result cells."
+              value={settings.jsonXmlHighlightColor}
+              onChange={(v) => updateSetting('jsonXmlHighlightColor', v)}
+              isModified={isSettingModified('jsonXmlHighlightColor')}
+            />
             <SelectSetting
               id="multipleResultSetsDisplay"
               label="Show Multiple Result Sets"

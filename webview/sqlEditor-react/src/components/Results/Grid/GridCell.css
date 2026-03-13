@@ -47,6 +47,35 @@
   font-size: 8px;
 }
 
+.cell-open-content-button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--vscode-panel-border, #3c3c3c);
+  border-radius: 4px;
+  background: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+  color: var(--vscode-foreground);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  z-index: 2;
+}
+
+.grid-cell:hover .cell-open-content-button,
+.cell-open-content-button:focus-visible {
+  display: inline-flex;
+  opacity: 1;
+}
+
+.cell-open-content-button:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
 /* PK/FK cell styling - use CSS variables that work with VS Code themes */
 .grid-cell.pk-cell {
   color: #ffd700 !important; /* Default: gold for primary key */
@@ -139,7 +168,7 @@
 
 .grid-cell.json .cell-content,
 .grid-cell.xml .cell-content {
-  color: var(--vscode-textPreformat-foreground);
+  color: var(--json-xml-highlight-color, var(--vscode-textPreformat-foreground));
   cursor: pointer;
 }
 
@@ -160,4 +189,8 @@
 .grid-cell.editing {
   padding: 0;
   overflow: visible;
+}
+
+.grid-cell.has-open-content-button:hover .cell-expand-chevron {
+  right: 30px;
 }

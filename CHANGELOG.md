@@ -5,6 +5,22 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.1] - 2026-03-13
+
+### Added
+
+- **SQL Editor React — quick open for JSON/XML cell values in Result Grid**
+  - JSON and XML values in result cells now show a hover action icon in the top-right corner of the cell.
+  - Clicking the icon opens the full cell content in a new VS Code editor tab next to the SQL editor.
+  - JSON payloads are formatted before opening for better readability.
+
+### Tests
+
+- Added unit tests for JSON/XML quick-open action in `GridCell`:
+  - button visibility for JSON and XML values,
+  - no button for plain text values,
+  - `openInNewEditor` message payload verification for both JSON and XML.
+
 ## [0.16.0]
 
 ### Added

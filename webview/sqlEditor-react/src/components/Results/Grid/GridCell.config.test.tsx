@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { GridCell } from './GridCell';
 import { ColumnDef } from '../../../types/grid';
 
@@ -16,12 +16,16 @@ function mockConfig(config: {
   colorPrimaryForeignKeys?: boolean;
   numberFormat?: 'plain' | 'locale' | 'fixed-2' | 'fixed-4';
 }) {
+  const postMessage = vi.fn();
   vi.mocked(useVSCode).mockReturnValue({
     config: {
       colorPrimaryForeignKeys: config.colorPrimaryForeignKeys ?? true,
       numberFormat: config.numberFormat ?? 'plain',
     },
+    postMessage,
   } as any);
+
+  return { postMessage };
 }
 
 function renderCell(value: unknown, column: ColumnDef) {
@@ -157,5 +161,112 @@ describe('GridCell — numberFormat setting', () => {
     mockConfig({ numberFormat: 'fixed-2' });
     renderCell(99, numColumn);
     expect(screen.getByTestId('cell-0-0')).toHaveClass('number');
+  });
+});
+
+describe('GridCell — open structured content', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('shows open button for JSON values', () => {
+    mockConfig({});
+    renderCell('{"name":"alice"}', {
+      name: 'payload',
+      index: 0,
+      type: 'string',
+      isPrimaryKey: false,
+      isForeignKey: false,
+      width: 150,
+    });
+
+    expect(screen.getByRole('button', { name: 'Open JSON in new editor' })).toBeInTheDocument();
+  });
+
+  it('shows open button for XML values', () => {
+    mockConfig({});
+    renderCell('<root><item>1</item></root>', {
+      name: 'payload',
+      index: 0,
+      type: 'string',
+      isPrimaryKey: false,
+      isForeignKey: false,
+      width: 150,
+    });
+
+    expect(screen.getByRole('button', { name: 'Open XML in new editor' })).toBeInTheDocument();
+  });
+
+  it('does not show open button for plain text', () => {
+    mockConfig({});
+    renderCell('plain text', {
+      name: 'payload',
+      index: 0,
+      type: 'string',
+      isPrimaryKey: false,
+      isForeignKey: false,
+      width: 150,
+    });
+
+    expect(screen.queryByRole('button', { name: 'Open JSON in new editor' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open XML in new editor' })).not.toBeInTheDocument();
+  });
+
+  it('sends openInNewEditor message with pretty JSON when clicked', () => {
+    const { postMessage } = mockConfig({});
+    renderCell('{"name":"alice","role":"admin"}', {
+      name: 'payload',
+      index: 0,
+      type: 'string',
+      isPrimaryKey: false,
+      isForeignKey: false,
+      width: 150,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open JSON in new editor' }));
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'openInNewEditor',
+      content: '{\n  "name": "alice",\n  "role": "admin"\n}',
+      language: 'json',
+    });
+  });
+
+  it('sends openInNewEditor message with XML when clicked', () => {
+    const { postMessage } = mockConfig({});
+    renderCell('<root><item>1</item></root>', {
+      name: 'payload',
+      index: 0,
+      type: 'string',
+      isPrimaryKey: false,
+      isForeignKey: false,
+      width: 150,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open XML in new editor' }));
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'openInNewEditor',
+      content: '<root><item>1</item></root>',
+      language: 'xml',
+    });
+  });
+
+  it('sends openInNewEditor message on Ctrl+left click for JSON cell', () => {
+    const { postMessage } = mockConfig({});
+    renderCell('{"name":"alice"}', {
+      name: 'payload',
+      index: 0,
+      type: 'string',
+      isPrimaryKey: false,
+      isForeignKey: false,
+      width: 150,
+    });
+
+    fireEvent.click(screen.getByTestId('cell-0-0'), { ctrlKey: true, button: 0 });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'openInNewEditor',
+      content: '{\n  "name": "alice"\n}',
+      language: 'json',
+    });
   });
 });

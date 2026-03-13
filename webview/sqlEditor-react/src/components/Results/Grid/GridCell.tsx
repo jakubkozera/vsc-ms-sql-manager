@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, memo } from 'react';
+import { useState, useMemo, useCallback, useEffect, memo, type CSSProperties } from 'react';
 import { ColumnDef } from '../../../types/grid';
 import { InlineCellEditor } from './InlineCellEditor';
 import { useVSCode } from '../../../context/VSCodeContext';
@@ -45,7 +45,7 @@ function GridCellComponent({
   onFKExpand,
   onCellEdit,
 }: GridCellProps) {
-  const { config } = useVSCode();
+  const { config, postMessage } = useVSCode();
   const [isEditing, setIsEditing] = useState(false);
 
   // Handle forceEdit from context menu
@@ -122,9 +122,45 @@ function GridCellComponent({
     };
   }, [value, config.numberFormat]);
 
+  const structuredContent = useMemo(() => {
+    if (cellType !== 'json' && cellType !== 'xml') {
+      return null;
+    }
+
+    const rawValue = typeof value === 'string' ? value.trim() : String(value);
+    if (cellType === 'json') {
+      try {
+        return JSON.stringify(JSON.parse(rawValue), null, 2);
+      } catch {
+        return rawValue;
+      }
+    }
+
+    return rawValue;
+  }, [cellType, value]);
+
+  const openStructuredContent = useCallback(() => {
+    if (!structuredContent) {
+      return;
+    }
+
+    postMessage({
+      type: 'openInNewEditor',
+      content: structuredContent,
+      language: cellType === 'json' ? 'json' : 'xml',
+    });
+  }, [cellType, postMessage, structuredContent]);
+
   const handleClick = useCallback((e: React.MouseEvent) => {
+    if (structuredContent && e.button === 0 && e.ctrlKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      openStructuredContent();
+      return;
+    }
+
     onClick?.(e);
-  }, [onClick]);
+  }, [onClick, openStructuredContent, structuredContent]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -156,10 +192,18 @@ function GridCellComponent({
     onFKExpand?.(value, e);
   }, [onFKExpand, value]);
 
+  const handleOpenStructuredContent = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    openStructuredContent();
+  }, [openStructuredContent]);
+
   // Build class names
   const classNames = [
     'grid-cell',
     cellType,
+    structuredContent && 'has-open-content-button',
     isLongText && 'long-text',
     isSelected && 'selected',
     isModified && 'modified',
@@ -169,6 +213,21 @@ function GridCellComponent({
     config.colorPrimaryForeignKeys && column.isForeignKey && 'fk-cell',
     column.pinned && 'pinned',
   ].filter(Boolean).join(' ');
+
+  const customJsonXmlStyle = useMemo<CSSProperties | undefined>(() => {
+    if (cellType !== 'json' && cellType !== 'xml') {
+      return undefined;
+    }
+
+    const colorValue = (config.jsonXmlHighlightColor || '').trim();
+    if (!colorValue) {
+      return undefined;
+    }
+
+    return {
+      '--json-xml-highlight-color': colorValue,
+    } as CSSProperties;
+  }, [cellType, config.jsonXmlHighlightColor]);
 
   // Render inline editor when editing
   if (isEditing) {
@@ -201,6 +260,7 @@ function GridCellComponent({
         minWidth: `${column.width}px`,
         maxWidth: `${column.width}px`,
         ...(pinnedOffset !== undefined ? { left: `${pinnedOffset}px` } : {}),
+        ...(customJsonXmlStyle ?? {}),
       }}
       title={isLongText ? displayValue : undefined}
       data-testid={`cell-${rowIndex}-${colIndex}`}
@@ -210,6 +270,36 @@ function GridCellComponent({
     >
       <span className="cell-content">{displayValue}</span>
       {isModified && <span className="cell-modified-indicator" title="Modified">●</span>}
+      {structuredContent && (
+        <button
+          type="button"
+          className="cell-open-content-button"
+          onClick={handleOpenStructuredContent}
+          title={cellType === 'json' ? 'Open JSON in new editor' : 'Open XML in new editor'}
+          aria-label={cellType === 'json' ? 'Open JSON in new editor' : 'Open XML in new editor'}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M16 4l4 0l0 4" />
+            <path d="M14 10l6 -6" />
+            <path d="M8 20l-4 0l0 -4" />
+            <path d="M4 20l6 -6" />
+            <path d="M16 20l4 0l0 -4" />
+            <path d="M14 14l6 6" />
+            <path d="M8 4l-4 0l0 4" />
+            <path d="M4 4l6 6" />
+          </svg>
+        </button>
+      )}
       {(column.isForeignKey || column.isPrimaryKey) && config.colorPrimaryForeignKeys && value !== null && value !== undefined && (
         <span 
           className={`cell-expand-chevron ${isExpanded ? 'expanded' : ''}`}

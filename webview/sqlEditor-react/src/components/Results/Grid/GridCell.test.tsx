@@ -56,7 +56,7 @@ describe('GridCell', () => {
     
     const cell = screen.getByTestId('cell-0-0');
     expect(cell).toHaveClass('boolean');
-    expect(screen.getByText('true')).toBeInTheDocument();
+    expect(screen.getByText('✓')).toBeInTheDocument();
   });
 
   it('detects JSON content', () => {
