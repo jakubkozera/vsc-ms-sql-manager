@@ -6,6 +6,8 @@
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   min-width: 220px;
+  max-width: 300px;
+  width: 300px;
 }
 
 .filter-popup-header {
@@ -61,7 +63,7 @@
 }
 
 .filter-field select,
-.filter-field input {
+.filter-field > input {
   width: 100%;
   padding: 6px 8px;
   background: var(--vscode-input-background);
@@ -73,7 +75,7 @@
 }
 
 .filter-field select:focus,
-.filter-field input:focus {
+.filter-field > input:focus {
   outline: none;
   border-color: var(--vscode-focusBorder);
 }
@@ -112,4 +114,254 @@
 
 .filter-btn-apply:hover {
   background: var(--vscode-button-hoverBackground);
+}
+
+/* Boolean filter options */
+.filter-bool-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-bool-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.filter-bool-label input[type="radio"] {
+  margin: 0;
+}
+
+/* Case sensitive toggle */
+.filter-field-inline {
+  margin-top: 4px;
+}
+
+.filter-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.filter-checkbox-label input[type="checkbox"] {
+  margin: 0;
+}
+
+/* IN filter section */
+.filter-in-section {
+  margin-bottom: 10px;
+}
+
+.filter-in-search input {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  color: var(--vscode-input-foreground);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+  margin-bottom: 6px;
+}
+
+.filter-in-search input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-in-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.filter-in-action-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-textLink-foreground);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.filter-in-action-btn:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+.filter-in-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.filter-in-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  background: var(--vscode-input-background);
+}
+
+.filter-in-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+
+.filter-in-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.filter-in-item input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.filter-in-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ── Date input ─────────────────────────────────────────────────────────────── */
+
+.filter-date-input {
+  position: relative;
+  width: 100%;
+}
+
+.filter-date-input input[type="datetime-local"] {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 30px 6px 8px;
+  box-sizing: border-box;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  color: var(--vscode-input-foreground);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+  /* hide native calendar icon */
+}
+
+.filter-date-input input[type="datetime-local"]:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Make native calendar picker indicator transparent but still clickable.
+   showPicker() is blocked in VS Code cross-origin iframes, so we rely on
+   direct clicks on the (invisible) native indicator instead. */
+.filter-date-input input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  cursor: pointer;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 30px;
+  height: 100%;
+}
+
+.filter-date-input input[type="datetime-local"]::-webkit-inner-spin-button {
+  display: none;
+}
+
+/* make native date picker match VS Code theme */
+body.vscode-dark .filter-date-input input[type="datetime-local"],
+body.vscode-high-contrast .filter-date-input input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+body.vscode-light .filter-date-input input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+.filter-date-icon {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-foreground);
+  opacity: 0.7;
+  /* visual only — clicks pass through to the transparent native indicator */
+  pointer-events: none;
+}
+
+/* ── Numeric input ───────────────────────────────────────────────────────────── */
+
+.filter-numeric-input {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.filter-numeric-input input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--vscode-input-background);
+  border: none;
+  color: var(--vscode-input-foreground);
+  font-size: 12px;
+  font-family: inherit;
+  /* override .filter-field input styles so border/radius are handled by the wrapper */
+  width: auto;
+}
+
+.filter-numeric-input input[type="text"]:focus {
+  outline: none;
+}
+
+.filter-numeric-input:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-numeric-btns {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--vscode-input-border);
+  background: var(--vscode-input-background);
+}
+
+.filter-numeric-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex: 1;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.filter-numeric-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+  opacity: 1;
+}
+
+.filter-numeric-btn + .filter-numeric-btn {
+  border-top: 1px solid var(--vscode-input-border);
 }

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ResultSetMetadata, ForeignKeyReference, RelationResultsMessage } from '../../../types/messages';
-import { SortConfig, ColumnDef, FilterConfig, ExpandedRowState } from '../../../types/grid';
+import { SortConfig, ColumnDef, FilterConfig, ExpandedRowState, getColumnFilterCategory } from '../../../types/grid';
 import { useVirtualScroll } from '../../../hooks/useVirtualScroll';
 import { useGridSelection } from '../../../hooks/useGridSelection';
 import { GridHeader } from './GridHeader';
@@ -1045,6 +1045,23 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
           columnType={filterPopup.column.type}
           currentFilter={filters[filterPopup.column.name]}
           position={filterPopup.position}
+          distinctValues={(() => {
+            const cat = getColumnFilterCategory(filterPopup.column.type);
+            if (cat !== 'text' && cat !== 'guid') return undefined;
+            const colIdx = columns.indexOf(filterPopup.column.name);
+            if (colIdx === -1) return undefined;
+            const vals = new Set<string>();
+            const limit = 500;
+            for (let i = 0; i < data.length && vals.size < limit; i++) {
+              const v = data[i][colIdx];
+              vals.add(v == null ? '(NULL)' : String(v));
+            }
+            return Array.from(vals).sort((a, b) => {
+              if (a === '(NULL)') return -1;
+              if (b === '(NULL)') return 1;
+              return a.localeCompare(b);
+            });
+          })()}
           onApply={handleFilterApply}
           onClose={() => setFilterPopup(null)}
         />
@@ -1087,7 +1104,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
  * Apply a filter to a value
  */
 function applyFilter(value: any, filter: FilterConfig): boolean {
-  const { type, value: filterValue, valueTo } = filter;
+  const { type, value: filterValue, valueTo, caseSensitive, selectedValues } = filter;
 
   switch (type) {
     case 'isNull':
@@ -1095,19 +1112,77 @@ function applyFilter(value: any, filter: FilterConfig): boolean {
     case 'isNotNull':
       return value !== null && value !== undefined;
     case 'equals':
-      return value == filterValue;
-    case 'contains':
-      return String(value).toLowerCase().includes(String(filterValue).toLowerCase());
-    case 'startsWith':
-      return String(value).toLowerCase().startsWith(String(filterValue).toLowerCase());
-    case 'endsWith':
-      return String(value).toLowerCase().endsWith(String(filterValue).toLowerCase());
+      if (caseSensitive) return String(value) === String(filterValue);
+      return String(value).toLowerCase() === String(filterValue).toLowerCase();
+    case 'notEquals':
+      if (caseSensitive) return String(value) !== String(filterValue);
+      return String(value).toLowerCase() !== String(filterValue).toLowerCase();
+    case 'contains': {
+      const str = caseSensitive ? String(value) : String(value).toLowerCase();
+      const search = caseSensitive ? String(filterValue) : String(filterValue).toLowerCase();
+      return str.includes(search);
+    }
+    case 'notContains': {
+      const str = caseSensitive ? String(value) : String(value).toLowerCase();
+      const search = caseSensitive ? String(filterValue) : String(filterValue).toLowerCase();
+      return !str.includes(search);
+    }
+    case 'startsWith': {
+      const str = caseSensitive ? String(value) : String(value).toLowerCase();
+      const search = caseSensitive ? String(filterValue) : String(filterValue).toLowerCase();
+      return str.startsWith(search);
+    }
+    case 'endsWith': {
+      const str = caseSensitive ? String(value) : String(value).toLowerCase();
+      const search = caseSensitive ? String(filterValue) : String(filterValue).toLowerCase();
+      return str.endsWith(search);
+    }
+    case 'regex':
+      try {
+        return new RegExp(String(filterValue), 'i').test(String(value));
+      } catch {
+        return true;
+      }
     case 'greaterThan':
       return Number(value) > Number(filterValue);
     case 'lessThan':
       return Number(value) < Number(filterValue);
     case 'between':
       return Number(value) >= Number(filterValue) && Number(value) <= Number(valueTo);
+    case 'dateEquals': {
+      if (value == null) return false;
+      const d = new Date(value);
+      const fd = new Date(String(filterValue));
+      return d.toDateString() === fd.toDateString();
+    }
+    case 'before': {
+      if (value == null) return false;
+      return new Date(value) < new Date(String(filterValue));
+    }
+    case 'after': {
+      if (value == null) return false;
+      return new Date(value) > new Date(String(filterValue));
+    }
+    case 'dateBetween': {
+      if (value == null) return false;
+      const dv = new Date(value);
+      return dv >= new Date(String(filterValue)) && dv <= new Date(String(valueTo));
+    }
+    case 'boolTrue':
+      return value === true || value === 1 || String(value).toLowerCase() === 'true';
+    case 'boolFalse':
+      return value === false || value === 0 || String(value).toLowerCase() === 'false';
+    case 'boolAny': {
+      if (!selectedValues || selectedValues.size === 0) return false;
+      if (value === null || value === undefined) return selectedValues.has('null');
+      const isTrue = value === true || value === 1 || String(value).toLowerCase() === 'true';
+      return isTrue ? selectedValues.has('true') : selectedValues.has('false');
+    }
+    case 'in': {
+      if (!selectedValues || selectedValues.size === 0) return false;
+      const strVal = value == null ? '(NULL)' : String(value);
+      return selectedValues.has(strVal);
+    }
     default:
       return true;
   }

@@ -134,9 +134,19 @@ function GridHeaderComponent({
                   title="Sort"
                 >
                   {isSorted ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: sortConfig?.direction === 'desc' ? 'rotate(180deg)' : 'none' }}>
-                      <path d="M6 15l6 -6l6 6" />
-                    </svg>
+                    sortConfig?.direction === 'asc' ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 5l0 14" />
+                        <path d="M16 9l-4 -4" />
+                        <path d="M8 9l4 -4" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 5l0 14" />
+                        <path d="M16 15l-4 4" />
+                        <path d="M8 15l4 4" />
+                      </svg>
+                    )
                   ) : (
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 9l4 -4l4 4m-4 -4v14" />

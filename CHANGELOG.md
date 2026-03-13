@@ -5,6 +5,25 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0]
+
+### Added
+
+- **SQL Editor React — Data-type-aware column filters**
+  - Filter popup now adapts to the SQL column type, showing only relevant filter options per category.
+  - **Text** (varchar, nvarchar, char, text, …): Contains, Does not contain, Equals, Not equals, Starts with, Ends with, Regex, In (select values), Is NULL / Is not NULL. Includes a case-sensitive toggle.
+  - **Number** (int, bigint, decimal, float, money, …): Equals, Not equals, Greater than, Less than, Between, Is NULL / Is not NULL.
+  - **Date** (datetime, datetime2, date, datetimeoffset, …): Equals, Before, After, Between, Is NULL / Is not NULL with native datetime-local inputs.
+  - **Boolean** (bit): Radio-button selection for True / False / NULL.
+  - **GUID** (uniqueidentifier): Equals, Not equals, Contains, In (select values), Is NULL / Is not NULL.
+  - **Binary / spatial** (varbinary, image, geography, geometry, hierarchyid): Is NULL / Is not NULL only.
+  - **XML / JSON**: Is NULL / Is not NULL only.
+  - **IN filter**: Checkbox-based multi-select with search, Select all / Deselect all, and selected-count display. Available for text and GUID columns (up to 500 distinct values).
+
+### Tests
+
+- Added 87 unit tests covering all filter categories, IN filter interactions, filter state restore, and `getColumnFilterCategory()` type mapping.
+
 ## [0.15.6] - 2026-03-12
 
 ### Fixed
