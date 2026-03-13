@@ -5,6 +5,65 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.4] - 2026-03-13
+
+### Changed
+
+- **SQL Editor React — Custom CSS validation tooltips**
+  - Replaced native browser `title` attribute with styled CSS tooltip that appears centered above the cell on hover, with a downward-pointing arrow, error border, and smooth opacity transition.
+
+- **SQL Editor React — Validation errors in Pending Changes tab**
+  - Per-row and per-cell commit buttons are disabled when their corresponding cells have validation errors.
+  - Validation error messages are shown inline in both single-change and expanded multi-change views with a ⚠ icon.
+  - "Commit All" button tooltip changes to indicate errors must be fixed first.
+
+### Tests
+
+- Added **8** unit tests for PendingChangesTab validation error display, button disabling, and error message rendering.
+- Updated GridCell and InlineEditing tests for custom tooltip span (replacing `title` attribute checks).
+
+## [0.16.3] - 2026-03-13
+
+### Added
+
+- **SQL Editor React — Data-type validation on cell edit**
+  - When a cell value is edited and committed (blur / Enter / Tab), the new value is validated against the column’s SQL Server data type (`int`, `bigint`, `smallint`, `tinyint`, `decimal`, `numeric`, `float`, `real`, `money`, `smallmoney`, `bit`, `date`, `datetime`, `datetime2`, `datetimeoffset`, `time`, `uniqueidentifier`).
+  - `NULL` values are always accepted; empty strings are treated as `NULL`.
+  - If the value is invalid the cell’s outline and corner triangle turn **red** (uses `--vscode-inputValidation-errorBorder`) and the error description is shown as a native tooltip on hover.
+  - **Commit All** and per-cell commit buttons are disabled while any validation error exists.
+  - Validation logic is extracted into a standalone utility (`utils/cellValidation.ts`) to keep `GridCell.tsx` minimal.
+
+### Changed
+
+- **SQL Editor React — JSON/XML cell colors are now theme-aware by default**
+  - Removed the previous fallback (`--vscode-textPreformat-foreground`).
+  - Default color is now `#ce9178` (dark theme) / `#a31515` (light theme) when no custom color is configured.
+
+- **SQL Editor React — Modified-cell triangle indicator enlarged**
+  - Corner triangle increased from 7×7 px to 10×10 px for better visibility.
+
+### Tests
+
+- Added **37** unit tests for `validateCellValue` covering all SQL types, boundary values, empty-string-as-NULL passthrough, and invalid-format rejection.
+- Added **5** unit tests for GridCell validation-error state:
+  - `validation-error` class presence/absence depending on `isModified` and `validationError`.
+  - Tooltip shows error message on hover.
+  - Long-text title still displayed when no validation error.
+
+## [0.16.2] - 2026-03-13
+
+### Fixed
+
+- **SQL Editor React — Modified cell indicator: triangle corner instead of dot**
+  - Cells with pending changes no longer have their background color altered.
+  - The previous dot (`●`) in the top-right corner is replaced by a small triangle clipped to the top-right corner of the cell (CSS `::after` pseudo-element, same amber color).
+  - An amber outline border is drawn around the entire modified cell for additional visibility.
+
+- **SQL Editor React — JSON objects now display correctly in view mode**
+  - When a query result column contains a JSON object that has been pre-parsed by the `mssql` driver (i.e. the value arrives as a JavaScript object rather than a string), the cell previously rendered `[object Object]`.
+  - The display value is now produced via `JSON.stringify()`, the cell receives the `json` CSS class, and the _Open in editor_ button is shown — matching the behaviour already in place for JSON string values and JSON arrays.
+
+
 ## [0.16.1] - 2026-03-13
 
 ### Added

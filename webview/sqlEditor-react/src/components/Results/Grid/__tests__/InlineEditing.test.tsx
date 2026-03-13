@@ -273,7 +273,6 @@ describe('Inline Cell Editing', () => {
 
       const cell = screen.getByTestId('cell-0-1');
       expect(cell).toHaveClass('modified');
-      expect(screen.getByTitle('Modified')).toBeInTheDocument();
     });
 
     it('shows deleted styling when row is deleted', () => {

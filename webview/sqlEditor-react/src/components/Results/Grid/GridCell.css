@@ -24,7 +24,57 @@
 }
 
 .grid-cell.modified {
-  background-color: rgba(255, 193, 7, 0.15);
+  outline: 1px solid rgba(255, 193, 7, 0.75);
+  outline-offset: -1px;
+}
+
+.grid-cell.modified::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 10px 10px 0;
+  border-color: transparent var(--vscode-inputValidation-warningBorder, #ffc107) transparent transparent;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Validation error overrides — red border + red triangle */
+.grid-cell.modified.validation-error {
+  outline-color: var(--vscode-inputValidation-errorBorder, #f44336);
+}
+
+.grid-cell.modified.validation-error::after {
+  border-color: transparent var(--vscode-inputValidation-errorBorder, #f44336) transparent transparent;
+}
+
+/* Validation error icon wrapper — absolutely positioned to avoid stretching cell height */
+.cell-validation-wrapper {
+  position: absolute;
+  right: 4px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.cell-validation-wrapper .hover-popup-trigger {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cell-validation-icon {
+  color: var(--vscode-inputValidation-errorBorder, #f44336);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
 }
 
 .grid-cell.deleted {
@@ -39,13 +89,7 @@
   text-overflow: ellipsis;
 }
 
-.cell-modified-indicator {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  color: var(--vscode-inputValidation-warningBorder, #ffc107);
-  font-size: 8px;
-}
+/* .cell-modified-indicator removed — now uses CSS ::after triangle on .grid-cell.modified */
 
 .cell-open-content-button {
   position: absolute;
@@ -168,17 +212,20 @@
 
 .grid-cell.json .cell-content,
 .grid-cell.xml .cell-content {
-  color: var(--json-xml-highlight-color, var(--vscode-textPreformat-foreground));
-  cursor: pointer;
+  color: var(--json-xml-highlight-color, #ce9178);
+  cursor: default;
 }
 
-.grid-cell.json:hover,
-.grid-cell.xml:hover {
-  background: var(--vscode-editor-selectionBackground);
+@media (prefers-color-scheme: light) {
+  .grid-cell.json .cell-content,
+  .grid-cell.xml .cell-content {
+    color: var(--json-xml-highlight-color, #a31515);
+  }
 }
 
-.grid-cell.long-text {
-  cursor: help;
+.grid-cell.json:hover .cell-content,
+.grid-cell.xml:hover .cell-content {
+  text-decoration: underline;
 }
 
 .grid-cell.long-text .cell-content::after {

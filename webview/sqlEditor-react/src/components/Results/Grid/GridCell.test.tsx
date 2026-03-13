@@ -3,15 +3,16 @@ import { render, screen } from '../../../test/testUtils';
 import { GridCell } from './GridCell';
 import { ColumnDef } from '../../../types/grid';
 
+const defaultColumn: ColumnDef = {
+  name: 'test',
+  index: 0,
+  type: 'string',
+  isPrimaryKey: false,
+  isForeignKey: false,
+  width: 150,
+};
+
 describe('GridCell', () => {
-  const defaultColumn: ColumnDef = {
-    name: 'test',
-    index: 0,
-    type: 'string',
-    isPrimaryKey: false,
-    isForeignKey: false,
-    width: 150,
-  };
 
   it('renders string value', () => {
     render(
@@ -124,5 +125,145 @@ describe('GridCell', () => {
     
     const cell = screen.getByTestId('cell-0-0');
     expect(cell).toHaveClass('long-text');
+  });
+});
+
+describe('GridCell — modified indicator', () => {
+  it('adds modified class when isModified is true', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value="hello" column={defaultColumn} rowIndex={0} colIndex={0} isModified={true} />
+      </tr></tbody></table>
+    );
+
+    expect(screen.getByTestId('cell-0-0')).toHaveClass('modified');
+  });
+
+  it('does not render the dot indicator span when isModified is true', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value="hello" column={defaultColumn} rowIndex={0} colIndex={0} isModified={true} />
+      </tr></tbody></table>
+    );
+
+    // The old "●" span must be gone — indicator is now a CSS ::after triangle
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell.querySelector('.cell-modified-indicator')).toBeNull();
+  });
+
+  it('does not add modified class when isModified is false', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value="hello" column={defaultColumn} rowIndex={0} colIndex={0} isModified={false} />
+      </tr></tbody></table>
+    );
+
+    expect(screen.getByTestId('cell-0-0')).not.toHaveClass('modified');
+  });
+});
+
+describe('GridCell — JS object / array JSON rendering', () => {
+  it('renders plain JS object as JSON string and applies json class', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value={{ name: 'Alice', age: 30 }} column={defaultColumn} rowIndex={0} colIndex={0} />
+      </tr></tbody></table>
+    );
+
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).toHaveClass('json');
+    expect(cell.querySelector('.cell-content')!.textContent).toBe('{"name":"Alice","age":30}');
+  });
+
+  it('does not render [object Object] for a JS object value', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value={{ id: 1 }} column={defaultColumn} rowIndex={0} colIndex={0} />
+      </tr></tbody></table>
+    );
+
+    expect(screen.queryByText('[object Object]')).toBeNull();
+  });
+
+  it('renders JS array as JSON string and applies json class', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value={[1, 2, 3]} column={defaultColumn} rowIndex={0} colIndex={0} />
+      </tr></tbody></table>
+    );
+
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).toHaveClass('json');
+    expect(cell.querySelector('.cell-content')!.textContent).toBe('[1,2,3]');
+  });
+
+  it('shows open JSON button for a plain JS object', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value={{ key: 'value' }} column={defaultColumn} rowIndex={0} colIndex={0} />
+      </tr></tbody></table>
+    );
+
+    expect(screen.getByRole('button', { name: 'Open JSON in new editor' })).toBeInTheDocument();
+  });
+});
+
+describe('GridCell — validation error', () => {
+  it('adds validation-error class when isModified and validationError is set', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value="abc" column={defaultColumn} rowIndex={0} colIndex={0} isModified={true} validationError="Value must be a whole number for type int" />
+      </tr></tbody></table>
+    );
+
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).toHaveClass('modified');
+    expect(cell).toHaveClass('validation-error');
+  });
+
+  it('does not add validation-error class when isModified is false', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value="abc" column={defaultColumn} rowIndex={0} colIndex={0} isModified={false} validationError="some error" />
+      </tr></tbody></table>
+    );
+
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).not.toHaveClass('validation-error');
+  });
+
+  it('does not add validation-error class when validationError is null', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value="hello" column={defaultColumn} rowIndex={0} colIndex={0} isModified={true} validationError={null} />
+      </tr></tbody></table>
+    );
+
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell).not.toHaveClass('validation-error');
+  });
+
+  it('shows validation error warning icon when isModified and validationError is set', () => {
+    render(
+      <table><tbody><tr>
+        <GridCell value="abc" column={defaultColumn} rowIndex={0} colIndex={0} isModified={true} validationError="Value must be a whole number for type int" />
+      </tr></tbody></table>
+    );
+
+    const icon = screen.getByTestId('validation-icon-0-0');
+    expect(icon).toBeInTheDocument();
+    expect(icon).toHaveClass('cell-validation-icon');
+  });
+
+  it('shows longText title when no validationError', () => {
+    const longText = 'a'.repeat(150);
+    render(
+      <table><tbody><tr>
+        <GridCell value={longText} column={defaultColumn} rowIndex={0} colIndex={0} isModified={false} />
+      </tr></tbody></table>
+    );
+
+    const cell = screen.getByTestId('cell-0-0');
+    expect(cell.getAttribute('title')).toBe(longText);
   });
 });

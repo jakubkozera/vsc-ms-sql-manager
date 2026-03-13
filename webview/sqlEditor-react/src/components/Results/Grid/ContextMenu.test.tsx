@@ -120,6 +120,21 @@ describe('buildCellMenuItems - Set NULL visibility', () => {
     expect(editIdx).toBeLessThan(nullIdx);
     expect(nullIdx).toBeLessThan(delIdx);
   });
+
+  it('includes revertCell when cell is modified', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: true, isModified: true });
+    expect(items.find(i => i.id === 'revertCell')).toBeDefined();
+  });
+
+  it('does not include revertCell when cell is not modified', () => {
+    const items = buildCellMenuItems({ isEditable: true, isNullable: true, isModified: false });
+    expect(items.find(i => i.id === 'revertCell')).toBeUndefined();
+  });
+
+  it('does not include revertCell when not editable', () => {
+    const items = buildCellMenuItems({ isEditable: false, isModified: true });
+    expect(items.find(i => i.id === 'revertCell')).toBeUndefined();
+  });
 });
 
 describe('buildColumnMenuItems', () => {

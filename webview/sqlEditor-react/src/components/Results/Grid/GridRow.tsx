@@ -10,6 +10,7 @@ interface GridRowProps {
   isSelected?: boolean;
   isCellSelected?: (rowIndex: number, colIndex: number) => boolean;
   isCellModified?: (rowIndex: number, colIndex: number) => boolean;
+  getValidationError?: (rowIndex: number, colIndex: number) => string | null;
   isRowDeleted?: boolean;
   expandedColumns?: string[]; // Column names that are currently expanded
   calculatePinnedOffset?: (colIndex: number) => number;
@@ -32,6 +33,7 @@ function GridRowComponent({
   isSelected = false,
   isCellSelected,
   isCellModified,
+  getValidationError,
   isRowDeleted = false,
   expandedColumns = [],
   calculatePinnedOffset,
@@ -101,6 +103,7 @@ function GridRowComponent({
       {columns.map((column, colIndex) => {
         const cellSelected = isCellSelected?.(rowIndex, colIndex) || false;
         const cellModified = isCellModified?.(rowIndex, colIndex) || false;
+        const validationError = getValidationError?.(rowIndex, colIndex) ?? null;
         const isExpanded = expandedColumns.includes(column.name);
         const pinnedOffset = column.pinned && calculatePinnedOffset ? calculatePinnedOffset(colIndex) : undefined;
         
@@ -113,6 +116,7 @@ function GridRowComponent({
             colIndex={colIndex}
             isSelected={cellSelected}
             isModified={cellModified}
+            validationError={validationError}
             isDeleted={isRowDeleted}
             isEditable={!isRowDeleted}
             isExpanded={isExpanded}
@@ -163,6 +167,7 @@ function arePropsEqual(prev: GridRowProps, next: GridRowProps): boolean {
   
   // Cell modified function reference changes when pending changes state changes
   if (prev.isCellModified !== next.isCellModified) return false;
+  if (prev.getValidationError !== next.getValidationError) return false;
   
   // Editing from context menu
   if (prev.editingColIndex !== next.editingColIndex) return false;

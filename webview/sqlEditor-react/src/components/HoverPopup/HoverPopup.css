@@ -1,0 +1,109 @@
+.hover-popup-trigger {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The popup container — fixed position to escape overflow:hidden parents */
+.hover-popup {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: auto;
+  transition: opacity 0.12s ease;
+}
+
+/* Content box */
+.hover-popup-content {
+  padding: 6px 10px;
+  background: var(--vscode-editorHoverWidget-background, #2d2d30);
+  color: var(--vscode-editorHoverWidget-foreground, #cccccc);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Error variant */
+.hover-popup-error .hover-popup-content {
+  border-color: var(--vscode-inputValidation-errorBorder, #f44336);
+}
+
+/* Arrow — shared base */
+.hover-popup-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+/* Arrow per placement */
+/* top: popup is ABOVE trigger, arrow points DOWN */
+.hover-popup-arrow-top {
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px 6px 0 6px;
+  border-color: var(--vscode-editorHoverWidget-border, #454545) transparent transparent transparent;
+}
+.hover-popup-arrow-top::after {
+  content: '';
+  position: absolute;
+  bottom: 1px;
+  left: -5px;
+  border-width: 5px 5px 0 5px;
+  border-style: solid;
+  border-color: var(--vscode-editorHoverWidget-background, #2d2d30) transparent transparent transparent;
+}
+.hover-popup-error .hover-popup-arrow-top {
+  border-color: var(--vscode-inputValidation-errorBorder, #f44336) transparent transparent transparent;
+}
+.hover-popup-error .hover-popup-arrow-top::after {
+  border-color: var(--vscode-editorHoverWidget-background, #2d2d30) transparent transparent transparent;
+}
+
+/* bottom: popup is BELOW trigger, arrow points UP */
+.hover-popup-arrow-bottom {
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 0 6px 6px 6px;
+  border-color: transparent transparent var(--vscode-editorHoverWidget-border, #454545) transparent;
+}
+.hover-popup-arrow-bottom::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: -5px;
+  border-width: 0 5px 5px 5px;
+  border-style: solid;
+  border-color: transparent transparent var(--vscode-editorHoverWidget-background, #2d2d30) transparent;
+}
+.hover-popup-error .hover-popup-arrow-bottom {
+  border-color: transparent transparent var(--vscode-inputValidation-errorBorder, #f44336) transparent;
+}
+
+/* left: popup is to the LEFT of trigger, arrow points RIGHT */
+.hover-popup-arrow-left {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 6px 0 6px 6px;
+  border-color: transparent transparent transparent var(--vscode-editorHoverWidget-border, #454545);
+}
+.hover-popup-error .hover-popup-arrow-left {
+  border-color: transparent transparent transparent var(--vscode-inputValidation-errorBorder, #f44336);
+}
+
+/* right: popup is to the RIGHT of trigger, arrow points LEFT */
+.hover-popup-arrow-right {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 6px 6px 6px 0;
+  border-color: transparent var(--vscode-editorHoverWidget-border, #454545) transparent transparent;
+}
+.hover-popup-error .hover-popup-arrow-right {
+  border-color: transparent var(--vscode-inputValidation-errorBorder, #f44336) transparent transparent;
+}

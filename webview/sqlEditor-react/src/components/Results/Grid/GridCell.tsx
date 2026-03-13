@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, memo, type CSSProperties } from 'react';
 import { ColumnDef } from '../../../types/grid';
 import { InlineCellEditor } from './InlineCellEditor';
+import { HoverPopup } from '../../HoverPopup';
 import { useVSCode } from '../../../context/VSCodeContext';
 import './GridCell.css';
 
@@ -15,6 +16,8 @@ interface GridCellProps {
   isEditable?: boolean;
   isExpanded?: boolean;
   pinnedOffset?: number;
+  /** Validation error message — shown on hover, blocks commit */
+  validationError?: string | null;
   /** Force this cell into edit mode (e.g. from context menu) */
   forceEdit?: boolean;
   /** Called when a force-edit session is complete */
@@ -37,6 +40,7 @@ function GridCellComponent({
   isEditable = true,
   isExpanded = false,
   pinnedOffset,
+  validationError,
   forceEdit = false,
   onForceEditComplete,
   onClick,
@@ -95,6 +99,17 @@ function GridCellComponent({
       return { displayValue: value.toISOString(), cellType: 'date', isLongText: false };
     }
 
+    // Handle plain JS objects / arrays that arrive already parsed from the driver
+    // (would otherwise render as "[object Object]")
+    if (typeof value === 'object') {
+      try {
+        const jsonStr = JSON.stringify(value);
+        return { displayValue: jsonStr, cellType: 'json', isLongText: jsonStr.length > 100 };
+      } catch {
+        // fallthrough
+      }
+    }
+
     // Check for JSON
     if (typeof value === 'string') {
       const trimmed = value.trim();
@@ -135,7 +150,11 @@ function GridCellComponent({
       return null;
     }
 
-    const rawValue = typeof value === 'string' ? value.trim() : String(value);
+    const rawValue = typeof value === 'string'
+      ? value.trim()
+      : (value !== null && typeof value === 'object')
+        ? JSON.stringify(value)
+        : String(value);
     if (cellType === 'json') {
       try {
         return JSON.stringify(JSON.parse(rawValue), null, 2);
@@ -215,6 +234,7 @@ function GridCellComponent({
     isLongText && 'long-text',
     isSelected && 'selected',
     isModified && 'modified',
+    isModified && validationError && 'validation-error',
     isDeleted && 'deleted',
     isEditing && 'editing',
     config.colorPrimaryForeignKeys && column.isPrimaryKey && 'pk-cell',
@@ -270,14 +290,36 @@ function GridCellComponent({
         ...(pinnedOffset !== undefined ? { left: `${pinnedOffset}px` } : {}),
         ...(customJsonXmlStyle ?? {}),
       }}
-      title={isLongText ? displayValue : undefined}
+      title={isLongText && !validationError ? displayValue : undefined}
       data-testid={`cell-${rowIndex}-${colIndex}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onDoubleClick={handleDoubleClick}
     >
       <span className="cell-content">{displayValue}</span>
-      {isModified && <span className="cell-modified-indicator" title="Modified">●</span>}
+      {validationError && (
+        <span className="cell-validation-wrapper">
+          <HoverPopup content={validationError} placement="top" variant="error">
+            <span className="cell-validation-icon" data-testid={`validation-icon-${rowIndex}-${colIndex}`}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 9v4" />
+                <path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z" />
+                <path d="M12 16h.01" />
+              </svg>
+            </span>
+          </HoverPopup>
+        </span>
+      )}
       {structuredContent && (
         <button
           type="button"
@@ -329,6 +371,7 @@ function arePropsEqual(prev: GridCellProps, next: GridCellProps): boolean {
     prev.value === next.value &&
     prev.isSelected === next.isSelected &&
     prev.isModified === next.isModified &&
+    prev.validationError === next.validationError &&
     prev.isDeleted === next.isDeleted &&
     prev.isEditable === next.isEditable &&
     prev.isExpanded === next.isExpanded &&

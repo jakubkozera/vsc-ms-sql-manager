@@ -141,6 +141,11 @@
   margin-top: 4px;
 }
 
+.filter-field-inline label.filter-checkbox-label {
+  display: flex;
+  margin-bottom: 0;
+}
+
 .filter-checkbox-label {
   display: flex;
   align-items: center;

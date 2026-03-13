@@ -175,8 +175,9 @@ export function buildColumnMenuItems(): ContextMenuItem[] {
 export function buildCellMenuItems(options: {
   isEditable: boolean;
   isNullable?: boolean;
+  isModified?: boolean;
 }): ContextMenuItem[] {
-  const { isEditable, isNullable } = options;
+  const { isEditable, isNullable, isModified } = options;
   const items: ContextMenuItem[] = [
     { id: 'copyCell', label: 'Copy Cell', shortcut: 'Ctrl+C' },
     { id: 'copyRow', label: 'Copy Row' },
@@ -187,6 +188,9 @@ export function buildCellMenuItems(options: {
     items.push({ id: 'editCell', label: 'Edit Cell', shortcut: 'F2' });
     if (isNullable === true) {
       items.push({ id: 'setNull', label: 'Set to NULL' });
+    }
+    if (isModified) {
+      items.push({ id: 'revertCell', label: 'Revert Cell' });
     }
     items.push({ id: 'separator_del', label: '', separator: true });
     items.push({ id: 'deleteRow', label: 'Delete Row' });

@@ -32,12 +32,14 @@ interface DataGridProps {
   onCellEdit?: (rowIndex: number, columnName: string, value: any) => void;
   onDeleteRow?: (rowIndex: number) => void;
   onRestoreRow?: (rowIndex: number) => void;
+  onRevertCell?: (rowIndex: number, columnName: string) => void;
   isRowDeleted?: (rowIndex: number) => boolean;
   isCellModified?: (rowIndex: number, colIndex: number) => boolean;
+  getValidationError?: (rowIndex: number, colIndex: number) => string | null;
   onSelectionChange?: (info: SelectionInfo) => void;
 }
 
-export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit, onDeleteRow, onRestoreRow, isRowDeleted, isCellModified, onSelectionChange }: DataGridProps) {
+export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit, onDeleteRow, onRestoreRow, onRevertCell, isRowDeleted, isCellModified, getValidationError, onSelectionChange }: DataGridProps) {
   // State
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
@@ -713,10 +715,11 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     return items;
   }, [isEditable, isRowDeleted]);
 
-  const buildCellContextMenuItems = useCallback((colIndex?: number): ContextMenuItem[] => {
+  const buildCellContextMenuItems = useCallback((rowIndex?: number, colIndex?: number): ContextMenuItem[] => {
     const colMeta = colIndex !== undefined ? metadata?.columns?.[colIndex] : undefined;
-    return buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable });
-  }, [isEditable, metadata]);
+    const modified = (rowIndex !== undefined && colIndex !== undefined) ? (isCellModified?.(rowIndex, colIndex) ?? false) : false;
+    return buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable, isModified: modified });
+  }, [isEditable, metadata, isCellModified]);
 
   const handleColumnHeaderContextMenu = useCallback((colIndex: number, e: React.MouseEvent) => {
     e.preventDefault();
@@ -733,7 +736,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     
     let items: ContextMenuItem[];
     if (rowIndex !== undefined) {
-      items = colIndex !== undefined ? buildCellContextMenuItems(colIndex) : buildRowContextMenuItems(rowIndex);
+      items = colIndex !== undefined ? buildCellContextMenuItems(rowIndex, colIndex) : buildRowContextMenuItems(rowIndex);
     } else {
       items = ROW_CONTEXT_MENU_ITEMS;
     }
@@ -826,9 +829,18 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
         }
         break;
       }
+      case 'revertCell': {
+        if (ctx?.rowIndex !== undefined && ctx?.colIndex !== undefined) {
+          const colName = columnDefs[ctx.colIndex]?.name;
+          if (colName) {
+            onRevertCell?.(ctx.rowIndex, colName);
+          }
+        }
+        break;
+      }
     }
     setContextMenu(null);
-  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport]);
+  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onRevertCell, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport]);
 
   // Global keyboard shortcuts when grid is active
   useEffect(() => {
@@ -1017,6 +1029,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                     isSelected={isSelected}
                     isCellSelected={isCellSelected}
                     isCellModified={isCellModified}
+                    getValidationError={getValidationError}
                     isRowDeleted={rowDeleted}
                     expandedColumns={expandedForRow.map(k => k.split('-')[2])}
                     calculatePinnedOffset={calculatePinnedOffset}

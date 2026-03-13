@@ -269,4 +269,24 @@ describe('GridCell — open structured content', () => {
       language: 'json',
     });
   });
+
+  it('sends openInNewEditor with serialized JSON for a plain JS object value', () => {
+    const { postMessage } = mockConfig({});
+    renderCell({ name: 'alice', role: 'admin' }, {
+      name: 'payload',
+      index: 0,
+      type: 'string',
+      isPrimaryKey: false,
+      isForeignKey: false,
+      width: 150,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open JSON in new editor' }));
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'openInNewEditor',
+      content: '{\n  "name": "alice",\n  "role": "admin"\n}',
+      language: 'json',
+    });
+  });
 });

@@ -265,4 +265,122 @@ describe('PendingChangesTab', () => {
 
     expect(screen.getByText(/1 change/)).toBeInTheDocument();
   });
+
+  describe('validation errors', () => {
+    it('disables Commit All button when hasValidationErrors is true', () => {
+      const changes: RowChange[] = [
+        createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} hasValidationErrors={true} />);
+
+      const commitAllBtn = screen.getByTitle('Fix validation errors before committing');
+      expect(commitAllBtn).toBeDisabled();
+    });
+
+    it('enables Commit All button when hasValidationErrors is false', () => {
+      const changes: RowChange[] = [
+        createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} hasValidationErrors={false} />);
+
+      const commitAllBtn = screen.getByTitle('Commit All');
+      expect(commitAllBtn).not.toBeDisabled();
+    });
+
+    it('disables per-row commit button when row has validation errors', () => {
+      const validationErrors = new Map([['0-name', 'Value must be a whole number for type int']]);
+      const changes: RowChange[] = [
+        createRowChange(0, [['name', { original: 'John', new: 'abc' }]]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} validationErrors={validationErrors} />);
+
+      const commitBtn = screen.getByTitle('Fix validation errors first');
+      expect(commitBtn).toBeDisabled();
+    });
+
+    it('enables per-row commit button when row has no validation errors', () => {
+      const validationErrors = new Map<string, string>();
+      const changes: RowChange[] = [
+        createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} validationErrors={validationErrors} />);
+
+      const commitBtn = screen.getByTitle('Commit');
+      expect(commitBtn).not.toBeDisabled();
+    });
+
+    it('shows validation error message in single-change view', () => {
+      const validationErrors = new Map([['0-name', 'Value must be a whole number for type int']]);
+      const changes: RowChange[] = [
+        createRowChange(0, [['name', { original: '1', new: 'abc' }]]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} validationErrors={validationErrors} />);
+
+      const errorEl = screen.getByTestId('validation-error-0-name');
+      expect(errorEl).toBeInTheDocument();
+      expect(errorEl).toHaveTextContent('Value must be a whole number for type int');
+    });
+
+    it('shows validation error in expanded multi-change view', () => {
+      const validationErrors = new Map([['0-name', 'Invalid value']]);
+      const changes: RowChange[] = [
+        createRowChange(0, [
+          ['name', { original: 'John', new: 'abc' }],
+          ['email', { original: 'john@test.com', new: 'jane@test.com' }],
+        ]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} validationErrors={validationErrors} />);
+
+      // Expand the row
+      fireEvent.click(screen.getByTestId('expand-0'));
+
+      const errorEl = screen.getByTestId('validation-error-0-name');
+      expect(errorEl).toBeInTheDocument();
+      expect(errorEl).toHaveTextContent('Invalid value');
+
+      // email should have no error
+      expect(screen.queryByTestId('validation-error-0-email')).not.toBeInTheDocument();
+    });
+
+    it('disables per-cell commit button in expanded view when cell has error', () => {
+      const validationErrors = new Map([['0-name', 'Invalid value']]);
+      const changes: RowChange[] = [
+        createRowChange(0, [
+          ['name', { original: 'John', new: 'abc' }],
+          ['email', { original: 'john@test.com', new: 'jane@test.com' }],
+        ]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} validationErrors={validationErrors} />);
+
+      // Expand
+      fireEvent.click(screen.getByTestId('expand-0'));
+
+      const commitBtns = screen.getAllByTitle(/Commit this change|Fix validation error first/);
+      // name column button should be disabled
+      const nameBtn = commitBtns.find(btn => btn.title === 'Fix validation error first');
+      expect(nameBtn).toBeDisabled();
+
+      // email column button should be enabled
+      const emailBtn = commitBtns.find(btn => btn.title === 'Commit this change');
+      expect(emailBtn).not.toBeDisabled();
+    });
+
+    it('does not show error elements when validationErrors is empty', () => {
+      const validationErrors = new Map<string, string>();
+      const changes: RowChange[] = [
+        createRowChange(0, [['name', { original: 'John', new: 'Jane' }]]),
+      ];
+
+      render(<PendingChangesTab {...defaultProps} changes={changes} validationErrors={validationErrors} />);
+
+      expect(screen.queryByTestId('validation-error-0-name')).not.toBeInTheDocument();
+    });
+  });
 });

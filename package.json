@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.16.1",
+  "version": "0.16.4",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1481,7 +1481,7 @@
         },
         "mssqlManager.jsonXmlHighlightColor": {
           "type": "string",
-          "default": "#2563eb",
+          "default": "#ce9178",
           "description": "Color used for JSON/XML values in query result cells."
         },
         "mssqlManager.multipleResultSetsDisplay": {

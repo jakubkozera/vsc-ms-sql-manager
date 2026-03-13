@@ -216,3 +216,28 @@
   color: var(--vscode-descriptionForeground);
   font-style: italic;
 }
+
+/* Validation error styling */
+.change-validation-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-errorForeground, #f48771);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.change-detail-error {
+  border-left: 2px solid var(--vscode-errorForeground, #f48771);
+}
+
+.change-commit:disabled,
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.change-commit:disabled:hover,
+.icon-button:disabled:hover {
+  background-color: transparent;
+}

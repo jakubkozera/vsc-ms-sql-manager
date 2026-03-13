@@ -16,6 +16,9 @@ interface PendingChangesTabProps {
   onCommitCell?: (rowIndex: number, columnName: string) => void;
   onPreviewSql?: () => void;
   generateRowSql?: (rowChange: RowChange) => string;
+  hasValidationErrors?: boolean;
+  /** Map of "rowIndex-colName" → error message for cells that fail validation */
+  validationErrors?: Map<string, string>;
 }
 
 function sqlEscape(value: unknown): string {
@@ -51,6 +54,8 @@ export function PendingChangesTab({
   onCommitCell,
   onPreviewSql,
   generateRowSql,
+  hasValidationErrors = false,
+  validationErrors,
 }: PendingChangesTabProps) {
   const modifiedRows = changes.filter(c => !c.isDeleted && c.changes.size > 0);
   const deletedRows = changes.filter(c => c.isDeleted);
@@ -95,7 +100,7 @@ export function PendingChangesTab({
       <div id="pendingChangesContent">
         <div className="pending-changes-header">
           <div className="pending-changes-actions">
-            <button className="icon-button" onClick={onCommit} title="Commit All">
+            <button className="icon-button" onClick={onCommit} title={hasValidationErrors ? 'Fix validation errors before committing' : 'Commit All'} disabled={hasValidationErrors}>
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
                 <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
@@ -135,6 +140,16 @@ export function PendingChangesTab({
             const isExpanded = expandedRows.has(rowChange.rowIndex);
             const sql = generateRowSql ? generateRowSql(rowChange) : '';
 
+            // Collect validation errors for this row
+            const rowErrors = new Map<string, string>();
+            if (validationErrors) {
+              for (const [colName] of rowChange.changes) {
+                const err = validationErrors.get(`${rowChange.rowIndex}-${colName}`);
+                if (err) rowErrors.set(colName, err);
+              }
+            }
+            const rowHasErrors = rowErrors.size > 0;
+
             return (
               <div key={`mod-${rowChange.rowIndex}`} className="change-item" data-testid={`change-row-${rowChange.rowIndex}`}>
                 <div className="change-header">
@@ -162,7 +177,7 @@ export function PendingChangesTab({
                       </button>
                     )}
                     <div className="change-row-actions">
-                      <button className="change-commit" onClick={() => onCommitRow ? onCommitRow(rowChange.rowIndex) : onCommit()} title="Commit">
+                      <button className="change-commit" onClick={() => onCommitRow ? onCommitRow(rowChange.rowIndex) : onCommit()} title={rowHasErrors ? 'Fix validation errors first' : 'Commit'} disabled={rowHasErrors}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
                           <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
@@ -184,11 +199,11 @@ export function PendingChangesTab({
                   isExpanded && (
                     <div className="change-details-expanded">
                       {Array.from(rowChange.changes.entries() as IterableIterator<[string, { original: unknown; new: unknown }]>).map(([colName, { original, new: newVal }]) => (
-                        <div key={colName} className="change-detail-item">
+                        <div key={colName} className={`change-detail-item ${rowErrors.has(colName) ? 'change-detail-error' : ''}`}>
                           <div className="change-detail-item-header">
                             <div className="change-detail-item-actions">
                               {onCommitCell && (
-                                <button className="change-commit" onClick={() => onCommitCell(rowChange.rowIndex, colName)} title="Commit this change" style={{ padding: '4px' }}>
+                                <button className="change-commit" onClick={() => onCommitCell(rowChange.rowIndex, colName)} title={rowErrors.has(colName) ? 'Fix validation error first' : 'Commit this change'} disabled={!!rowErrors.has(colName)} style={{ padding: '4px' }}>
                                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" />
                                     <path d="M12 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
@@ -211,6 +226,12 @@ export function PendingChangesTab({
                             <div className="change-detail-label">New:</div>
                             <div className="change-value-new">{formatValue(newVal)}</div>
                           </div>
+                          {rowErrors.has(colName) && (
+                            <div className="change-validation-error" data-testid={`validation-error-${rowChange.rowIndex}-${colName}`}>
+                              <span className="change-validation-error-icon">⚠</span>
+                              {rowErrors.get(colName)}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -225,6 +246,15 @@ export function PendingChangesTab({
                         <div className="change-value change-value-old">{formatValue(original)}</div>
                         <span className="change-label">New value:</span>
                         <div className="change-value change-value-new">{formatValue(newVal)}</div>
+                        {rowErrors.has(colName) && (
+                          <>
+                            <span className="change-label">&nbsp;</span>
+                            <div className="change-validation-error" data-testid={`validation-error-${rowChange.rowIndex}-${colName}`}>
+                              <span className="change-validation-error-icon">⚠</span>
+                              {rowErrors.get(colName)}
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useVSCode } from '../../context/VSCodeContext';
 import { usePendingChanges } from '../../hooks/usePendingChanges';
 import { PendingChange } from '../../types/messages';
+import { validateCellValue } from '../../utils/cellValidation';
 import { ResultsTabs } from './ResultsTabs';
 import { MessagesTab } from './MessagesTab';
 import { PendingChangesTab } from './PendingChangesTab';
@@ -136,6 +137,43 @@ export function ResultsPanel() {
     pendingChanges.restoreRow(resultSetIndex, rowIndex);
   }, [pendingChanges.restoreRow]);
 
+  // Build per-resultSet validation error getter
+  const makeGetValidationError = useCallback((resultSetIndex: number) => {
+    return (rowIndex: number, colIndex: number): string | null => {
+      const colName = lastColumnNames?.[resultSetIndex]?.[colIndex];
+      if (!colName) return null;
+      if (!pendingChanges.isCellModified(resultSetIndex, rowIndex, colName)) return null;
+      const colMeta = lastMetadata?.[resultSetIndex]?.columns?.[colIndex];
+      const sqlType = colMeta?.type;
+      if (!sqlType) return null;
+      const data = lastResults?.[resultSetIndex];
+      const currentValue = data?.[rowIndex]?.[colIndex];
+      return validateCellValue(currentValue, sqlType);
+    };
+  }, [lastColumnNames, lastMetadata, lastResults, pendingChanges.isCellModified]);
+
+  // Check whether any result set has validation errors (used by commit guards)
+  const hasValidationErrors = useMemo(() => {
+    if (!lastResults) return false;
+    for (let rsIdx = 0; rsIdx < lastResults.length; rsIdx++) {
+      const changes = pendingChanges.getChangesForResultSet(rsIdx);
+      const cols = lastColumnNames?.[rsIdx] || [];
+      const meta = lastMetadata?.[rsIdx];
+      for (const rc of changes) {
+        if (rc.isDeleted) continue;
+        for (const [colName] of rc.changes) {
+          const colIdx = cols.indexOf(colName);
+          if (colIdx < 0) continue;
+          const sqlType = meta?.columns?.[colIdx]?.type;
+          if (!sqlType) continue;
+          const currentValue = lastResults[rsIdx]?.[rc.rowIndex]?.[colIdx];
+          if (validateCellValue(currentValue, sqlType) !== null) return true;
+        }
+      }
+    }
+    return false;
+  }, [lastResults, lastColumnNames, lastMetadata, pendingChanges]);
+
   // Generate SQL statements from pending changes for a result set
   const generateSqlStatements = useCallback((resultSetIndex: number): string[] => {
     const meta = lastMetadata?.[resultSetIndex];
@@ -206,6 +244,7 @@ export function ResultsPanel() {
 
   // Commit a single cell change
   const handleCommitCell = useCallback((resultSetIndex: number, rowIndex: number, columnName: string) => {
+    if (hasValidationErrors) return;
     const meta = lastMetadata?.[resultSetIndex];
     if (!meta || !currentConnectionId || !currentDatabase) return;
 
@@ -244,7 +283,7 @@ export function ResultsPanel() {
       databaseName: currentDatabase,
       originalQuery: originalQuery || undefined,
     });
-  }, [lastMetadata, lastColumnNames, currentConnectionId, currentDatabase, originalQuery, pendingChanges.getChangesForResultSet, postMessage]);
+  }, [lastMetadata, lastColumnNames, currentConnectionId, currentDatabase, originalQuery, pendingChanges.getChangesForResultSet, postMessage, hasValidationErrors]);
 
   // Preview SQL in new editor
   const handlePreviewSql = useCallback((resultSetIndex: number) => {
@@ -260,6 +299,7 @@ export function ResultsPanel() {
 
   // Commit changes
   const handleCommit = useCallback((resultSetIndex: number) => {
+    if (hasValidationErrors) return;
     const meta = lastMetadata?.[resultSetIndex];
     if (!meta || !currentConnectionId || !currentDatabase) return;
 
@@ -321,7 +361,7 @@ export function ResultsPanel() {
         originalQuery: originalQuery || undefined,
       });
     }
-  }, [lastMetadata, lastColumnNames, currentConnectionId, currentDatabase, originalQuery, pendingChanges.getChangesForResultSet, postMessage, generateSqlStatements]);
+  }, [lastMetadata, lastColumnNames, currentConnectionId, currentDatabase, originalQuery, pendingChanges.getChangesForResultSet, postMessage, generateSqlStatements, hasValidationErrors]);
 
   // Determine which tabs have content
   const hasResults = lastResults && lastResults.length > 0;
@@ -353,6 +393,32 @@ export function ResultsPanel() {
     if (!lastMetadata) return 0;
     return lastMetadata.findIndex(m => m?.isEditable) ?? 0;
   }, [lastMetadata]);
+
+  // Build a map of all validation errors: "rowIndex-colName" → error message
+  const validationErrorsMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!lastResults) return map;
+    const rsIdx = firstEditableIndex;
+    if (rsIdx < 0) return map;
+    const changes = pendingChanges.getChangesForResultSet(rsIdx);
+    const cols = lastColumnNames?.[rsIdx] || [];
+    const meta = lastMetadata?.[rsIdx];
+    for (const rc of changes) {
+      if (rc.isDeleted) continue;
+      for (const [colName] of rc.changes) {
+        const colIdx = cols.indexOf(colName);
+        if (colIdx < 0) continue;
+        const sqlType = meta?.columns?.[colIdx]?.type;
+        if (!sqlType) continue;
+        const currentValue = lastResults[rsIdx]?.[rc.rowIndex]?.[colIdx];
+        const error = validateCellValue(currentValue, sqlType);
+        if (error) {
+          map.set(`${rc.rowIndex}-${colName}`, error);
+        }
+      }
+    }
+    return map;
+  }, [lastResults, lastColumnNames, lastMetadata, pendingChanges, firstEditableIndex]);
 
   const pendingChangesCount = pendingChanges.state.totalChangedRows + pendingChanges.state.totalDeletedRows;
 
@@ -431,11 +497,25 @@ export function ResultsPanel() {
                       }}
                       onDeleteRow={(rowIndex) => { handleDeleteRow(idx, rowIndex, data[rowIndex]); }}
                       onRestoreRow={(rowIndex) => { handleRestoreRow(idx, rowIndex); }}
+                      onRevertCell={(rowIndex, colName) => {
+                        const columns = lastColumnNames?.[idx] || [];
+                        const rowChanges = pendingChanges.getChangesForResultSet(idx);
+                        const rc = rowChanges.find(c => c.rowIndex === rowIndex);
+                        if (rc && data?.[rowIndex]) {
+                          const change = rc.changes.get(colName);
+                          if (change) {
+                            const colIdx = columns.indexOf(colName);
+                            if (colIdx >= 0) { data[rowIndex][colIdx] = change.original; }
+                          }
+                        }
+                        pendingChanges.revertCell(idx, rowIndex, colName);
+                      }}
                       isRowDeleted={(rowIndex) => pendingChanges.isRowDeleted(idx, rowIndex)}
                       isCellModified={(rowIndex, colIndex) => {
                         const colName = lastColumnNames?.[idx]?.[colIndex];
                         return colName ? pendingChanges.isCellModified(idx, rowIndex, colName) : false;
                       }}
+                      getValidationError={makeGetValidationError(idx)}
                     />
                   </div>
                 </div>
@@ -472,11 +552,25 @@ export function ResultsPanel() {
                     onRestoreRow={(rowIndex) => {
                       handleRestoreRow(index, rowIndex);
                     }}
+                    onRevertCell={(rowIndex, colName) => {
+                      const cols = lastColumnNames?.[index] || [];
+                      const rowChanges = pendingChanges.getChangesForResultSet(index);
+                      const rc = rowChanges.find(c => c.rowIndex === rowIndex);
+                      if (rc && data?.[rowIndex]) {
+                        const change = rc.changes.get(colName);
+                        if (change) {
+                          const colIdx = cols.indexOf(colName);
+                          if (colIdx >= 0) { data[rowIndex][colIdx] = change.original; }
+                        }
+                      }
+                      pendingChanges.revertCell(index, rowIndex, colName);
+                    }}
                     isRowDeleted={(rowIndex) => pendingChanges.isRowDeleted(index, rowIndex)}
                     isCellModified={(rowIndex, colIndex) => {
                       const colName = lastColumnNames?.[index]?.[colIndex];
                       return colName ? pendingChanges.isCellModified(index, rowIndex, colName) : false;
                     }}
+                    getValidationError={makeGetValidationError(index)}
                   />
                 </div>
               ))}
@@ -576,6 +670,8 @@ export function ResultsPanel() {
             onCommitCell={(rowIndex, columnName) => handleCommitCell(firstEditableIndex, rowIndex, columnName)}
             onPreviewSql={() => handlePreviewSql(firstEditableIndex)}
             generateRowSql={(rowChange) => generateRowSql(firstEditableIndex, rowChange)}
+            hasValidationErrors={hasValidationErrors}
+            validationErrors={validationErrorsMap}
           />
         )}
 
