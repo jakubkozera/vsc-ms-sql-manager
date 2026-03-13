@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ConnectionProvider, ConnectionConfig } from './connectionProvider';
 import { SchemaContextBuilder } from './schemaContextBuilder';
 import { SqlExecutionService } from './sqlExecutionService';
@@ -28,6 +29,31 @@ export interface SqlChatResult extends vscode.ChatResult {
 interface BatchSqlToolQuery {
     label?: string;
     sql: string;
+}
+
+interface ReadFileToolInput {
+    path: string;
+    startLine?: number;
+    endLine?: number;
+}
+
+interface CreateFileToolInput {
+    path: string;
+    content: string;
+    overwrite?: boolean;
+}
+
+interface ModifyFileToolInput {
+    path: string;
+    find: string;
+    replace: string;
+    replaceAll?: boolean;
+}
+
+interface FileToolResult {
+    uri: vscode.Uri;
+    displayPath: string;
+    summary: string;
 }
 
 export class SqlChatHandler {
@@ -219,17 +245,73 @@ export class SqlChatHandler {
                 }
             },
             {
-                name: 'run_sql_query',
-                description: 'Execute one T-SQL query against the connected Microsoft SQL Server database and return results. Use this only when a single follow-up query is truly needed after you already gathered most facts, or when the next query depends on previous results and cannot be planned up front. For independent exploratory work, prefer run_sql_batch.',
+                name: 'read_file',
+                description: 'Read a UTF-8 text file from the current workspace. Use this to inspect input files (for example CSV, JSON, TXT, SQL templates) before generating or executing SQL.',
                 inputSchema: {
                     type: 'object',
                     properties: {
-                        sql: {
+                        path: {
                             type: 'string',
-                            description: 'The T-SQL query to execute against the connected database'
+                            description: 'Workspace-relative file path to read, for example data/input.txt or exports/result.csv'
+                        },
+                        startLine: {
+                            type: 'number',
+                            description: 'Optional 1-based start line for partial reads'
+                        },
+                        endLine: {
+                            type: 'number',
+                            description: 'Optional 1-based end line for partial reads'
                         }
                     },
-                    required: ['sql']
+                    required: ['path']
+                }
+            },
+            {
+                name: 'create_file',
+                description: 'Create a UTF-8 text file in the current workspace. Use this to save generated SQL, CSV exports, or analysis output.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        path: {
+                            type: 'string',
+                            description: 'Workspace-relative file path to create'
+                        },
+                        content: {
+                            type: 'string',
+                            description: 'Text content to write'
+                        },
+                        overwrite: {
+                            type: 'boolean',
+                            description: 'Set to true to overwrite an existing file'
+                        }
+                    },
+                    required: ['path', 'content']
+                }
+            },
+            {
+                name: 'modify_file',
+                description: 'Modify an existing UTF-8 text file in the current workspace by replacing text. Useful for iterative edits to SQL scripts, CSV output, and config files.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        path: {
+                            type: 'string',
+                            description: 'Workspace-relative file path to modify'
+                        },
+                        find: {
+                            type: 'string',
+                            description: 'Exact text to find'
+                        },
+                        replace: {
+                            type: 'string',
+                            description: 'Replacement text'
+                        },
+                        replaceAll: {
+                            type: 'boolean',
+                            description: 'Set to true to replace all occurrences'
+                        }
+                    },
+                    required: ['path', 'find', 'replace']
                 }
             }
         ];
@@ -328,34 +410,60 @@ export class SqlChatHandler {
                                 new vscode.LanguageModelTextPart(resultText)
                             ])
                         ]));
-                    } else if (call.name === 'run_sql_query') {
-                        const input = call.input as { sql: string };
-
-                        // Display SQL to user
-                        stream.markdown('\n```sql\n' + input.sql + '\n```\n');
-                        stream.progress('Executing query...');
+                    } else if (call.name === 'read_file') {
+                        const input = call.input as ReadFileToolInput;
+                        stream.progress(`Reading file: ${input.path}`);
 
                         let resultText: string;
                         try {
-                            resultText = await this.executeQueryForTool(input.sql, conversationState);
-                            // Show brief result summary to user
-                            const summaryLine = resultText.split('\n')[0];
-                            stream.markdown(summaryLine + '\n\n');
-
-                            // Add execute/insert buttons
-                            if (conversationState.connectionContext) {
-                                stream.button({
-                                    command: 'mssqlManager.executeChatGeneratedQuery',
-                                    title: '▶️ Open in SQL Editor',
-                                    arguments: [input.sql, conversationState.connectionContext]
-                                });
-                            }
+                            resultText = await this.readFileForTool(input);
+                            const firstLine = resultText.split('\n')[0];
+                            stream.markdown(`📄 ${firstLine}\n\n`);
                         } catch (error) {
                             resultText = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
                             stream.markdown('❌ ' + resultText + '\n\n');
                         }
 
-                        // Add tool result to messages for LLM analysis
+                        messages.push(vscode.LanguageModelChatMessage.User([
+                            new vscode.LanguageModelToolResultPart(call.callId, [
+                                new vscode.LanguageModelTextPart(resultText)
+                            ])
+                        ]));
+                    } else if (call.name === 'create_file') {
+                        const input = call.input as CreateFileToolInput;
+                        stream.progress(`Creating file: ${input.path}`);
+
+                        let resultText: string;
+                        try {
+                            const result = await this.createFileForTool(input);
+                            resultText = result.summary;
+                            stream.markdown(`📝 ${result.summary}\n\n`);
+                            stream.anchor(result.uri, `Open ${result.displayPath}`);
+                        } catch (error) {
+                            resultText = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                            stream.markdown('❌ ' + resultText + '\n\n');
+                        }
+
+                        messages.push(vscode.LanguageModelChatMessage.User([
+                            new vscode.LanguageModelToolResultPart(call.callId, [
+                                new vscode.LanguageModelTextPart(resultText)
+                            ])
+                        ]));
+                    } else if (call.name === 'modify_file') {
+                        const input = call.input as ModifyFileToolInput;
+                        stream.progress(`Modifying file: ${input.path}`);
+
+                        let resultText: string;
+                        try {
+                            const result = await this.modifyFileForTool(input);
+                            resultText = result.summary;
+                            stream.markdown(`✏️ ${result.summary}\n\n`);
+                            stream.anchor(result.uri, `Open ${result.displayPath}`);
+                        } catch (error) {
+                            resultText = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+                            stream.markdown('❌ ' + resultText + '\n\n');
+                        }
+
                         messages.push(vscode.LanguageModelChatMessage.User([
                             new vscode.LanguageModelToolResultPart(call.callId, [
                                 new vscode.LanguageModelTextPart(resultText)
@@ -486,6 +594,126 @@ export class SqlChatHandler {
         }
 
         return output;
+    }
+
+    private getPrimaryWorkspaceFolder(): vscode.WorkspaceFolder | null {
+        return vscode.workspace.workspaceFolders?.[0] ?? null;
+    }
+
+    private resolveWorkspaceFilePath(filePath: string): { uri: vscode.Uri; displayPath: string } {
+        const workspaceFolder = this.getPrimaryWorkspaceFolder();
+        if (!workspaceFolder) {
+            throw new Error('No workspace is open. Open a workspace folder to use file tools.');
+        }
+
+        const rootPath = workspaceFolder.uri.fsPath;
+        const normalizedInput = (filePath || '').trim().replace(/\\/g, '/');
+        if (!normalizedInput) {
+            throw new Error('File path is required.');
+        }
+
+        const absoluteTarget = path.isAbsolute(normalizedInput)
+            ? path.resolve(normalizedInput)
+            : path.resolve(rootPath, normalizedInput);
+
+        const normalizedRoot = path.resolve(rootPath);
+        const relativeToRoot = path.relative(normalizedRoot, absoluteTarget);
+
+        if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+            throw new Error('File path is outside the current workspace and is not allowed.');
+        }
+
+        const uri = vscode.Uri.file(absoluteTarget);
+        const displayPath = relativeToRoot.split(path.sep).join('/');
+        return { uri, displayPath };
+    }
+
+    private async readFileForTool(input: ReadFileToolInput): Promise<string> {
+        const { uri, displayPath } = this.resolveWorkspaceFilePath(input.path);
+        const contentBytes = await vscode.workspace.fs.readFile(uri);
+        const content = new TextDecoder('utf-8').decode(contentBytes);
+        const allLines = content.split(/\r?\n/);
+
+        const requestedStart = Math.max(1, Math.floor(input.startLine ?? 1));
+        const requestedEnd = Math.max(requestedStart, Math.floor(input.endLine ?? allLines.length));
+
+        const start = Math.min(requestedStart, allLines.length || 1);
+        const end = Math.min(requestedEnd, allLines.length);
+
+        const selectedLines = allLines.slice(start - 1, end);
+        let selectedText = selectedLines.join('\n');
+
+        const maxChars = 20000;
+        if (selectedText.length > maxChars) {
+            selectedText = selectedText.slice(0, maxChars) + '\n\n[Truncated: file content exceeded 20000 characters]';
+        }
+
+        return [
+            `Read file successfully: ${displayPath}`,
+            `Lines returned: ${start}-${end} of ${allLines.length}`,
+            'Content:',
+            selectedText
+        ].join('\n');
+    }
+
+    private async createFileForTool(input: CreateFileToolInput): Promise<FileToolResult> {
+        const { uri, displayPath } = this.resolveWorkspaceFilePath(input.path);
+
+        let existing = false;
+        try {
+            await vscode.workspace.fs.stat(uri);
+            existing = true;
+        } catch {
+            existing = false;
+        }
+
+        if (existing && !input.overwrite) {
+            throw new Error(`File already exists: ${displayPath}. Set overwrite=true to replace it.`);
+        }
+
+        const parentUri = vscode.Uri.file(path.dirname(uri.fsPath));
+        await vscode.workspace.fs.createDirectory(parentUri);
+
+        const encoded = new TextEncoder().encode(input.content ?? '');
+        await vscode.workspace.fs.writeFile(uri, encoded);
+
+        return {
+            uri,
+            displayPath,
+            summary: `Created file successfully: ${displayPath} (${encoded.length} bytes)`
+        };
+    }
+
+    private async modifyFileForTool(input: ModifyFileToolInput): Promise<FileToolResult> {
+        if (!input.find) {
+            throw new Error('The find value must not be empty.');
+        }
+
+        const { uri, displayPath } = this.resolveWorkspaceFilePath(input.path);
+        const contentBytes = await vscode.workspace.fs.readFile(uri);
+        const original = new TextDecoder('utf-8').decode(contentBytes);
+
+        if (!original.includes(input.find)) {
+            throw new Error(`Could not find the requested text in ${displayPath}.`);
+        }
+
+        let updated: string;
+        let replacements = 0;
+
+        if (input.replaceAll) {
+            replacements = original.split(input.find).length - 1;
+            updated = original.split(input.find).join(input.replace);
+        } else {
+            updated = original.replace(input.find, input.replace);
+            replacements = 1;
+        }
+
+        await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(updated));
+        return {
+            uri,
+            displayPath,
+            summary: `Modified file successfully: ${displayPath} (replacements: ${replacements})`
+        };
     }
 
     /**
@@ -660,13 +888,13 @@ ${instructions}
 
         prompt += `
 IMPORTANT - Agentic SQL Execution:
-- You have access to the 'run_sql_query' tool that executes T-SQL queries against the connected database
-- You also have access to the 'run_sql_batch' tool that executes multiple queries in one invocation
+- You have access to the 'run_sql_batch' tool that executes one or more T-SQL queries against the connected database
+- You have access to file tools: 'read_file', 'create_file', and 'modify_file' for workspace text files
 - USE the tool proactively to gather data, verify assumptions, and analyze results
 - You can call the tool MULTIPLE TIMES in a single conversation to iteratively investigate data
 - Preferred strategy: first think through everything you need, then send one batched set of exploratory queries (counts, summaries, validations, breakdowns)
-- Prefer 'run_sql_batch' whenever queries are independent and can be planned up front
-- Only use 'run_sql_query' for a truly dependent follow-up that could not be known before the previous results
+- Use 'run_sql_batch' for both single-query and multi-query execution needs
+- Use file tools when the user asks to read input data from files or save results (for example CSV output)
 - Always analyze results thoroughly before providing your final answer
 - For complex tasks, break them into multiple queries and analyze step by step
 - When the user asks for data or analysis - EXECUTE queries with the tool, don't just show SQL
