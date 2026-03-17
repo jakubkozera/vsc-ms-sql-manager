@@ -5,6 +5,15 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.5] - 2026-03-17
+
+### Fixed
+
+- **SQL variable highlighting — false positives inside string literals**
+  - The `@variable` highlighting regex was incorrectly matching `@`-signs inside single-quoted SQL string literals (e.g. `'some@domain.net'`), causing tokens like `@domain` to be highlighted as if they were SQL variables.
+  - Added a `getSqlStringRanges` helper that pre-scans the query text for all single-quoted string ranges (including `N'...'` Unicode literals and `''` escaped quotes) before applying decorations. Any `@` match whose position falls inside a quoted string is now skipped.
+
+
 ## [0.16.4] - 2026-03-13
 
 ### Changed

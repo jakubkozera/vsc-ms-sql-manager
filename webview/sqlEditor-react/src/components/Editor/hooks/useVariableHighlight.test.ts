@@ -240,4 +240,105 @@ describe('useVariableHighlight', () => {
     const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
     expect(decos).toHaveLength(0);
   });
+
+  // ── String literal exclusion ───────────────────────────────────────────────
+
+  it('does not highlight @ inside a single-quoted string literal', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock("WHERE email = 'user@example.com'");
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(0);
+  });
+
+  it('does not highlight @domain in the reported failing query', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock(
+      "SELECT TOP 100 * FROM [dbo].[Members] [m] WHERE ADPrinciple = 'some@domain.net'"
+    );
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(0);
+  });
+
+  it('highlights @variable outside a string literal but not @ inside it', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock("WHERE email = 'user@example.com' AND id = @UserId");
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(1); // only @UserId
+  });
+
+  it('handles multiple string literals with @ mixed with real variables', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock("WHERE x = 'a@foo.com' OR y = @Status OR z = 'b@bar.org'");
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(1); // only @Status
+  });
+
+  it('handles escaped single quote (\'\') inside a string literal', () => {
+    const monaco = makeMonacoMock();
+    // O''Brien@local.org — the '' is an escaped quote, @local is still inside the string
+    const { editor } = makeEditorMock("WHERE name = 'O''Brien@local.org'");
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(0);
+  });
+
+  it('does not highlight @ inside an N-prefixed unicode string literal', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock("WHERE name = N'test@test.com'");
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(0);
+  });
+
+  it('highlights @variable that appears immediately before a string literal', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock("WHERE x = @Param OR y = 'email@corp.com'");
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(1); // only @Param
+  });
+
+  it('highlights multiple real @variables when no string literals are present', () => {
+    const monaco = makeMonacoMock();
+    const { editor } = makeEditorMock('INSERT INTO t (a, b) VALUES (@Name, @Age)');
+
+    renderHook(() =>
+      useVariableHighlight(makeRefs(monaco as never), makeRefs(editor as never), '#6adc7a', true)
+    );
+
+    const [decos] = (editor.createDecorationsCollection.mock.calls[0] as unknown) as [unknown[]];
+    expect(decos).toHaveLength(2); // @Name and @Age
+  });
 });

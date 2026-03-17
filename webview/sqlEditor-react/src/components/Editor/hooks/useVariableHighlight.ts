@@ -16,7 +16,41 @@ type MonacoType = typeof import('monaco-editor');
 
 const DECORATION_CLASS_ID = 'sql-variable-highlight';
 
-
+/**
+ * Returns the [start, end] index ranges (inclusive) of all single-quoted SQL
+ * string literals in `sql`, including the surrounding quote characters.
+ * Handles the `''` escape sequence and `N'...'` Unicode literals so that
+ * `@`-signs inside quoted strings (e.g. `'user@example.com'`) are not
+ * mistakenly treated as variable references.
+ */
+function getSqlStringRanges(sql: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let i = 0;
+  while (i < sql.length) {
+    const isUnicode = sql[i] === 'N' && sql[i + 1] === "'";
+    if (isUnicode || sql[i] === "'") {
+      const start = i;
+      i += isUnicode ? 2 : 1;
+      while (i < sql.length) {
+        if (sql[i] === "'") {
+          i++;
+          if (i < sql.length && sql[i] === "'") {
+            // Escaped quote '' — stay inside the literal
+            i++;
+          } else {
+            break; // closing quote
+          }
+        } else {
+          i++;
+        }
+      }
+      ranges.push([start, i - 1]);
+    } else {
+      i++;
+    }
+  }
+  return ranges;
+}
 
 export function useVariableHighlight(
   monacoRef: MutableRefObject<MonacoType | null>,
@@ -65,12 +99,18 @@ export function useVariableHighlight(
 
       const text = model.getValue();
       const decorations: editor.IModelDeltaDecoration[] = [];
+      // Pre-compute quoted string ranges so we skip @-signs inside literals
+      // such as 'user@example.com'.
+      const stringRanges = getSqlStringRanges(text);
       // Match @variableName but skip T-SQL system variables like @@ROWCOUNT.
       const re = /@[a-zA-Z_]\w*/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(text)) !== null) {
         if (m.index > 0 && text[m.index - 1] === '@') {
-          continue;
+          continue; // @@system variable
+        }
+        if (stringRanges.some(([s, e]) => m!.index >= s && m!.index <= e)) {
+          continue; // inside a quoted string literal
         }
         const startPos = model.getPositionAt(m.index);
         const endPos = model.getPositionAt(m.index + m[0].length);
