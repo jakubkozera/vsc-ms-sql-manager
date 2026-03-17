@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.16.5",
+  "version": "0.16.6",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1601,7 +1601,8 @@
     "watch-tests": "npm run clean:out && tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test",
+    "test:webview": "npm test --prefix webview/sqlEditor-react",
+    "test": "npm run test:webview && vscode-test",
     "install-extension": "code --install-extension ms-sql-manager-0.0.1.vsix"
   },
   "devDependencies": {

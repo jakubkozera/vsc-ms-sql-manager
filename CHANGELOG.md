@@ -5,6 +5,23 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.6] - 2026-03-17
+
+### Fixed
+
+- **SQL Editor React — Mixed-bracket object notation no longer produces false validation errors**
+  - Queries using a mix of bracketed and unbracketed schema/table identifiers (e.g. `dbo.[Table]` or `[dbo].Table`) were incorrectly flagged as *"Invalid object name 'db'"* due to a regex backtracking bug.
+  - Root cause: the bare-identifier pattern `([a-zA-Z_][a-zA-Z0-9_]*)(?!\s*\.)` could backtrack and match a truncated prefix of the schema name (e.g. `db` from `dbo`) because the negative lookahead passed for the shorter match.
+  - Fixed by adding a word-boundary assertion `\b` after the captured identifier token, preventing partial-word matches.
+  - Added two new regex patterns to explicitly handle the mixed-bracket forms `schema.[Table]` and `[schema].Table`, so these references are correctly parsed and validated instead of falling through to the bare-identifier pattern.
+  - Fix applied to both `findTableReferences` (validation markers) and `extractTableAliasMap` (column validation alias resolution).
+
+### Tests
+
+- Added **7** unit tests covering mixed-bracket notation and the regression:
+  - `findTableReferences` — `schema.[Table]`, `[schema].Table`, backtracking regression guard, multi-JOIN mixed-bracket query.
+  - `validateSql` — no markers for `dbo.[Table]`, `[dbo].Table`, and a multi-JOIN query that previously produced a spurious `'db'` error.
+
 ## [0.16.5] - 2026-03-17
 
 ### Fixed

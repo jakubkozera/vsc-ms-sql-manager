@@ -363,12 +363,16 @@ function extractTableAliasMap(
   const patterns = [
     // [schema].[table] alias
     /\b(?:from|join)\s+\[([^\]]+)\]\s*\.\s*\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+    // [schema].table alias (bracketed schema, unbracketed table)
+    /\b(?:from|join)\s+\[([^\]]+)\]\s*\.\s*([a-zA-Z_]\w*)\b(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+    // schema.[table] alias (unbracketed schema, bracketed table)
+    /\b(?:from|join)\s+([a-zA-Z_]\w*)\s*\.\s*\[([^\]]+)\](?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
     // schema.table alias
     /\b(?:from|join)\s+([a-zA-Z_]\w*)\s*\.\s*([a-zA-Z_]\w*)(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
     // [table] alias
     /\b(?:from|join)\s+\[([^\]]+)\](?!\s*\.)(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
-    // table alias
-    /\b(?:from|join)\s+([a-zA-Z_]\w*)(?!\s*\.)(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
+    // table alias — \b prevents backtracking into schema prefix (e.g. 'db' from 'dbo.[Table]')
+    /\b(?:from|join)\s+([a-zA-Z_]\w*)\b(?!\s*\.)(?:\s+(?:as\s+)?([a-zA-Z_]\w*))?/gi,
   ];
 
   for (let pi = 0; pi < patterns.length; pi++) {
@@ -379,13 +383,13 @@ function extractTableAliasMap(
       let tableName: string;
       let alias: string | undefined;
 
-      if (pi <= 1) {
-        // Has schema
+      if (pi <= 3) {
+        // Has schema (patterns 0-3: [s].[t], [s].t, s.[t], s.t)
         schemaName = m[1];
         tableName = m[2];
         alias = m[3];
       } else {
-        // No schema
+        // No schema (patterns 4-5: [t], t)
         tableName = m[1];
         alias = m[2];
       }
@@ -704,12 +708,16 @@ export function findTableReferences(statementText: string): TableReference[] {
   const patterns = [
     // [schema].[table]
     { regex: /\b(?:from|join)\s+(?:\[([^\]]+)\]\s*\.\s*)\[([^\]]+)\]/gi, hasSchema: true },
+    // [schema].table (bracketed schema, unbracketed table)
+    { regex: /\b(?:from|join)\s+\[([^\]]+)\]\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\b/gi, hasSchema: true },
+    // schema.[table] (unbracketed schema, bracketed table)
+    { regex: /\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\.\s*\[([^\]]+)\]/gi, hasSchema: true },
     // schema.table
     { regex: /\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)/gi, hasSchema: true },
     // [table] (no dot after)
     { regex: /\b(?:from|join)\s+\[([^\]]+)\](?!\s*\.)/gi, hasSchema: false },
-    // table (no dot after)
-    { regex: /\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)(?!\s*\.)/gi, hasSchema: false },
+    // table (no dot after) — \b prevents backtracking into schema prefix (e.g. 'db' from 'dbo.[Table]')
+    { regex: /\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)\b(?!\s*\.)/gi, hasSchema: false },
   ];
 
   for (const p of patterns) {

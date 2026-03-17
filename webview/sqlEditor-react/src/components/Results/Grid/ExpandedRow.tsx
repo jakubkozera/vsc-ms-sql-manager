@@ -112,19 +112,25 @@ function ExpandedRowComponent({ data, metadata, columnNames, isLoading, error, o
             onExportClick={() => {}}
           />
           <tbody>
-            {data.map((row, rowIndex) => (
-              <GridRow
-                key={rowIndex}
-                row={row}
-                rowIndex={rowIndex}
-                columns={columnDefs}
-                isSelected={false}
-                isCellSelected={() => false}
-                onClick={() => {}}
-                onCellClick={() => {}}
-                onContextMenu={() => {}}
-              />
-            ))}
+            {data.map((row, rowIndex) => {
+              // GridRow expects array format — convert object rows to arrays in column order
+              const rowArray = Array.isArray(row)
+                ? row
+                : columns.map((col) => (row as Record<string, unknown>)[col]);
+              return (
+                <GridRow
+                  key={rowIndex}
+                  row={rowArray}
+                  rowIndex={rowIndex}
+                  columns={columnDefs}
+                  isSelected={false}
+                  isCellSelected={() => false}
+                  onClick={() => {}}
+                  onCellClick={() => {}}
+                  onContextMenu={() => {}}
+                />
+              );
+            })}
           </tbody>
         </table>
       </div>

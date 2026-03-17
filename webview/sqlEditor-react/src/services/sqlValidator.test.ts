@@ -198,6 +198,45 @@ describe('sqlValidator', () => {
       // Should not have both "dbo.Users" and "Users"
       expect(refs).toHaveLength(1);
     });
+
+    it('should find mixed-bracket: unbracketed schema, bracketed table (schema.[Table])', () => {
+      const sql = 'SELECT * FROM dbo.[Users]';
+      const refs = findTableReferences(sql);
+      expect(refs).toHaveLength(1);
+      expect(refs[0].table).toBe('Users');
+      expect(refs[0].schema).toBe('dbo');
+    });
+
+    it('should find mixed-bracket: bracketed schema, unbracketed table ([schema].Table)', () => {
+      const sql = 'SELECT * FROM [dbo].Users';
+      const refs = findTableReferences(sql);
+      expect(refs).toHaveLength(1);
+      expect(refs[0].table).toBe('Users');
+      expect(refs[0].schema).toBe('dbo');
+    });
+
+    it('should not produce false positive from schema prefix when table is bracketed (dbo.[Table])', () => {
+      // Regression: regex backtracking caused 'db' to be extracted as a table name
+      // from 'dbo.[Users]' because the bare-table pattern matched 'db' (whose lookahead passed)
+      const sql = 'SELECT * FROM dbo.[Users]';
+      const refs = findTableReferences(sql);
+      expect(refs).toHaveLength(1);
+      expect(refs[0].table).toBe('Users');
+      // Must NOT produce a spurious ref for 'db' or 'dbo'
+      expect(refs.some((r) => r.table === 'db' || r.table === 'dbo')).toBe(false);
+    });
+
+    it('should validate mixed-bracket notation without false errors in JOIN', () => {
+      const sql = `SELECT p.Id
+FROM dbo.[Users] u
+  JOIN dbo.[Orders] o ON o.UserId = u.Id`;
+      const refs = findTableReferences(sql);
+      const tableNames = refs.map((r) => r.table);
+      expect(tableNames).toContain('Users');
+      expect(tableNames).toContain('Orders');
+      expect(tableNames).not.toContain('db');
+      expect(tableNames).not.toContain('dbo');
+    });
   });
 
   describe('findTableInSchema', () => {
@@ -285,6 +324,28 @@ describe('sqlValidator', () => {
       const sql = 'SELECT * FROM wrong.Products';
       const markers = validateSql(sql, mockSchema);
       expect(markers).toHaveLength(1);
+    });
+
+    it('should not flag mixed-bracket notation dbo.[Table] as invalid', () => {
+      const sql = 'SELECT * FROM dbo.[Users]';
+      const markers = validateSql(sql, mockSchema);
+      expect(markers).toHaveLength(0);
+    });
+
+    it('should not flag mixed-bracket notation [dbo].Table as invalid', () => {
+      const sql = 'SELECT * FROM [dbo].Users';
+      const markers = validateSql(sql, mockSchema);
+      expect(markers).toHaveLength(0);
+    });
+
+    it('should not produce false positive for schema prefix in mixed-bracket JOIN query', () => {
+      // Regression: dbo.[Orders] was causing "Invalid object name 'db'" due to regex backtracking
+      const sql = `SELECT u.Id
+FROM dbo.[Users] u
+  JOIN dbo.[Orders] o ON o.UserId = u.Id
+WHERE u.Id = 1`;
+      const markers = validateSql(sql, mockSchema);
+      expect(markers).toHaveLength(0);
     });
   });
 

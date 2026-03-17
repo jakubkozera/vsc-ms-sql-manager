@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen } from '../../../test/testUtils';
 import { ExpandedRow } from './ExpandedRow';
 import type { ResultSetMetadata } from '../../../types/messages';
 
@@ -179,13 +179,13 @@ describe('ExpandedRow', () => {
       expect(screen.getByText('Name')).toBeInTheDocument();
       expect(screen.getByText('Active')).toBeInTheDocument();
       
-      // Check data
+      // Check data (booleans are rendered as ✓ / ✗ in GridCell)
       expect(screen.getByText('id1')).toBeInTheDocument();
       expect(screen.getByText('name1')).toBeInTheDocument();
-      expect(screen.getByText('true')).toBeInTheDocument();
+      expect(screen.getAllByText('✓')[0]).toBeInTheDocument();
       expect(screen.getByText('id2')).toBeInTheDocument();
       expect(screen.getByText('name2')).toBeInTheDocument();
-      expect(screen.getByText('false')).toBeInTheDocument();
+      expect(screen.getAllByText('✗')[0]).toBeInTheDocument();
     });
   });
 

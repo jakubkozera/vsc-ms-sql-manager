@@ -628,9 +628,9 @@ describe('FilterPopup', () => {
 
   // ==================== DATE INPUT ====================
   describe('custom date input (date columns)', () => {
-    it('renders calendar icon button', () => {
+    it('renders date input wrapper with calendar icon', () => {
       render(<FilterPopup {...defaultProps} columnType="datetime" />);
-      expect(screen.getByLabelText('Open date picker')).toBeInTheDocument();
+      expect(document.querySelector('.filter-date-input')).toBeInTheDocument();
     });
 
     it('date input uses datetime-local type', () => {

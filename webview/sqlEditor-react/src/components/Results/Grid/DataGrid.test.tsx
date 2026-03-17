@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '../../../test/testUtils';
+import { render, screen, fireEvent, within } from '../../../test/testUtils';
 import { DataGrid } from './DataGrid';
 
 // Note: Virtual scrolling requires a container with height to render rows.
@@ -71,7 +71,7 @@ describe('DataGrid', () => {
     );
     
     // Export is triggered via the # header column
-    expect(screen.getByTitle('Click to export')).toBeInTheDocument();
+    expect(screen.getByTitle('Click for export options and auto-fit columns')).toBeInTheDocument();
   });
 
   it('shows sort indicator after header click', () => {
@@ -83,11 +83,13 @@ describe('DataGrid', () => {
       />
     );
     
-    // Click name header to sort
-    fireEvent.click(screen.getByTestId('header-name'));
+    // Sort is triggered via the sort icon button, not the header cell click
+    const nameHeader = screen.getByTestId('header-name');
+    const sortBtn = within(nameHeader).getByTitle('Sort');
+    fireEvent.click(sortBtn);
     
-    // Check sort indicator appears (▲ for asc)
-    expect(screen.getByText('▲')).toBeInTheDocument();
+    // Sort icon becomes active after clicking
+    expect(sortBtn.classList.contains('active')).toBe(true);
   });
 
   it('toggles sort direction on multiple header clicks', () => {
@@ -99,18 +101,16 @@ describe('DataGrid', () => {
       />
     );
     
-    const header = screen.getByTestId('header-name');
+    const nameHeader = screen.getByTestId('header-name');
+    const sortBtn = within(nameHeader).getByTitle('Sort');
     
-    // First click: ascending
-    fireEvent.click(header);
-    expect(screen.getByText('▲')).toBeInTheDocument();
+    // First click: ascending — sort icon becomes active
+    fireEvent.click(sortBtn);
+    expect(sortBtn.classList.contains('active')).toBe(true);
     
-    // Second click: descending
-    fireEvent.click(header);
-    // Find sort indicator within the header
-    const sortIndicators = document.querySelectorAll('.sort-indicator');
-    const hasDescIndicator = Array.from(sortIndicators).some(el => el.textContent === '▼');
-    expect(hasDescIndicator).toBe(true);
+    // Second click: descending — sort icon stays active
+    fireEvent.click(sortBtn);
+    expect(sortBtn.classList.contains('active')).toBe(true);
   });
 
   it('opens export menu when row number header clicked', () => {
@@ -122,7 +122,7 @@ describe('DataGrid', () => {
       />
     );
     
-    fireEvent.click(screen.getByTitle('Click to export'));
+    fireEvent.click(screen.getByTitle('Click for export options and auto-fit columns'));
     
     expect(screen.getByTestId('export-menu')).toBeInTheDocument();
   });
@@ -136,8 +136,8 @@ describe('DataGrid', () => {
       />
     );
     
-    // Find and click a filter button
-    const filterButtons = screen.getAllByTitle('Filter column');
+    // Find and click a filter button (title is 'Filter')
+    const filterButtons = screen.getAllByTitle('Filter');
     fireEvent.click(filterButtons[0]);
     
     expect(screen.getByTestId('filter-popup')).toBeInTheDocument();

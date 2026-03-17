@@ -233,7 +233,7 @@ export function FilterPopup({
     if (currentFilter?.type === 'boolAny' && currentFilter.selectedValues) {
       return new Set(currentFilter.selectedValues);
     }
-    return new Set(['true', 'false', 'null']); // default: all selected
+    return new Set(['true']); // default: True selected
   });
 
   // IN filter state

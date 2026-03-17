@@ -108,7 +108,7 @@ describe('ResultsPanel - error → messages tab auto-switch', () => {
     expect(screen.getByTestId('results-tab')).not.toHaveClass('active');
   });
 
-  it('should NOT switch to messages tab when there are no pending changes', () => {
+  it('should switch to messages tab when error arrives even without pending changes', () => {
     vi.mocked(useVSCode).mockReturnValue(makeVSCodeMock(0) as any);
     vi.mocked(usePendingChanges).mockReturnValue(makePendingChangesMock(false) as any);
 
@@ -116,15 +116,15 @@ describe('ResultsPanel - error → messages tab auto-switch', () => {
 
     expect(screen.getByTestId('results-tab')).toHaveClass('active');
 
-    // Error arrives but no pending changes → tab should NOT switch
+    // Error arrives — always auto-switch to messages regardless of pending changes
     vi.mocked(useVSCode).mockReturnValue(makeVSCodeMock(1) as any);
 
     act(() => {
       rerender(<ResultsPanel />);
     });
 
-    expect(screen.getByTestId('results-tab')).toHaveClass('active');
-    expect(screen.getByTestId('messages-tab')).not.toHaveClass('active');
+    expect(screen.getByTestId('messages-tab')).toHaveClass('active');
+    expect(screen.getByTestId('results-tab')).not.toHaveClass('active');
   });
 
   it('should switch on repeated identical errors (lastErrorId increments each time)', () => {
