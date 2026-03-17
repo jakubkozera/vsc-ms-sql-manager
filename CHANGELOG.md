@@ -5,6 +5,28 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.7] - 2026-03-17
+
+### Added
+
+- **Result Grid — Free-range cell selection (Excel-style)**
+  - Cells can now be selected by clicking and dragging across any rectangular region, just like Excel.
+  - The selection anchor is set on `mousedown`; every subsequent `mouseenter` while the button is held live-extends the selection rectangle without changing the anchor.
+  - Releasing the mouse button anywhere (inside or outside the grid) ends the drag.
+  - Shift+click on a cell extends the existing selection rectangle from the current anchor to the clicked cell.
+  - Ctrl+click on a cell adds or removes individual cells from the selection (non-contiguous multi-select).
+
+### Fixed
+
+- **Result Grid — Browser text-selection highlight during Shift+click / drag**
+  - Holding Shift and clicking, or dragging across cells, previously caused the browser to render the native blue text-selection highlight over cell content.
+  - `user-select: none` is now always applied to the grid container (instead of only during mouse drag), completely suppressing OS text selection while keeping cell highlight styles intact.
+
+- **Result Grid — "Copy Row" renamed to "Copy Selection"**
+  - The context-menu entry that copies the active selection was labelled _Copy Row_, which was misleading when multiple rows or a multi-cell range were selected.
+  - It is now labelled **Copy Selection** everywhere it appears (row right-click, cell right-click, and the `buildCellMenuItems` helper).
+
+
 ## [0.16.6] - 2026-03-17
 
 ### Fixed

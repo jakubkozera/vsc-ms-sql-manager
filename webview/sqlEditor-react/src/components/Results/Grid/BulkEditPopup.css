@@ -1,0 +1,112 @@
+.bulk-edit-popup {
+  position: fixed;
+  z-index: 1000;
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  min-width: 260px;
+  max-width: 340px;
+  width: 300px;
+}
+
+.bulk-edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.bulk-edit-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.bulk-edit-close {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  border-radius: 3px;
+}
+
+.bulk-edit-close:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.bulk-edit-content {
+  padding: 12px;
+}
+
+.bulk-edit-info {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.bulk-edit-info strong {
+  color: var(--vscode-foreground);
+}
+
+.bulk-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  color: var(--vscode-input-foreground);
+  font-size: 13px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  padding: 5px 8px;
+  border-radius: 2px;
+  outline: none;
+}
+
+.bulk-edit-input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.bulk-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.bulk-edit-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.bulk-edit-btn-cancel {
+  background: none;
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-button-secondaryBackground, var(--vscode-panel-border));
+}
+
+.bulk-edit-btn-cancel:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.bulk-edit-btn-apply {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+.bulk-edit-btn-apply:hover {
+  background: var(--vscode-button-hoverBackground);
+}

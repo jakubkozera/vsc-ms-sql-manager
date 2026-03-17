@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ResultSetMetadata, ForeignKeyReference, RelationResultsMessage } from '../../../types/messages';
 import { SortConfig, ColumnDef, FilterConfig, ExpandedRowState, getColumnFilterCategory } from '../../../types/grid';
 import { useVirtualScroll } from '../../../hooks/useVirtualScroll';
@@ -10,6 +10,7 @@ import { FilterPopup } from './FilterPopup';
 import { ContextMenu, ContextMenuItem, ROW_CONTEXT_MENU_ITEMS, buildCellMenuItems, buildColumnMenuItems } from './ContextMenu';
 import { ExportMenu } from './ExportMenu';
 import { FKQuickPick } from './FKQuickPick';
+import { BulkEditPopup } from './BulkEditPopup';
 import { exportData, copyToClipboard, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
 import { useVSCode } from '../../../context/VSCodeContext';
 import './DataGrid.css';
@@ -50,6 +51,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const [filterPopup, setFilterPopup] = useState<{ column: ColumnDef; position: { x: number; y: number } } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; position: { x: number; y: number }; rowIndex?: number; colIndex?: number; isColumnHeader?: boolean } | null>(null);
   const [exportMenu, setExportMenu] = useState<{ position: { x: number; y: number } } | null>(null);
+  const [bulkEditPopup, setBulkEditPopup] = useState<{ position: { x: number; y: number } } | null>(null);
   const [fkQuickPick, setFkQuickPick] = useState<{ 
     relations: ForeignKeyReference[]; 
     keyValue: any;
@@ -75,6 +77,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     selectRow,
     selectColumn,
     selectCell,
+    extendToCell,
     clearSelection,
     isRowSelected,
     isColumnSelected,
@@ -82,6 +85,14 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     getSelectedRowIndices,
     selectAllRows,
   } = useGridSelection();
+
+  // Always-fresh ref to selection — avoids stale closures in event handlers
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+
+  // Drag-selection state
+  const isDraggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Computed selection count
   const selectedRowCount = useMemo(() => getSelectedRowIndices().length, [getSelectedRowIndices]);
@@ -385,12 +396,31 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   }, []);
 
   const handleRowClick = useCallback((rowIndex: number, e: React.MouseEvent) => {
+    setContextMenu(null);
     selectRow(rowIndex, e.ctrlKey || e.metaKey, e.shiftKey);
   }, [selectRow]);
 
   const handleCellClick = useCallback((rowIndex: number, colIndex: number, value: any, e: React.MouseEvent) => {
+    setContextMenu(null);
     selectCell(rowIndex, colIndex, value, e.ctrlKey || e.metaKey, e.shiftKey);
   }, [selectCell]);
+
+  const handleCellMouseDown = useCallback((rowIndex: number, colIndex: number, e: React.MouseEvent) => {
+    // Only start drag on primary button, not on right-click
+    if (e.button !== 0) return;
+    // If modifier keys are held let click handler handle it; drag is plain-mouse only
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault(); // prevent browser text selection during drag
+    setContextMenu(null);
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    selectCell(rowIndex, colIndex, sortedData[rowIndex]?.[colIndex], false, false);
+  }, [selectCell, sortedData]);
+
+  const handleCellMouseEnter = useCallback((rowIndex: number, colIndex: number, _e: React.MouseEvent) => {
+    if (!isDraggingRef.current) return;
+    extendToCell(rowIndex, colIndex);
+  }, [extendToCell]);
 
   const handleCellEditInternal = useCallback((rowIndex: number, _: number, columnName: string, newValue: unknown) => {
     onCellEdit?.(rowIndex, columnName, newValue);
@@ -639,12 +669,20 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
 
   const handleExport = useCallback((format: ExportFormat, includeHeaders: boolean) => {
     const selectedIndices = getSelectedRowIndices();
-    const hasSelection = selectedIndices.length > 0;
+    const hasRowSelection = selectedIndices.length > 0;
+
+    // For cell-range selections also restrict to the selected columns
+    let selectedColumnIndices: number[] | undefined;
+    if (selection.type === 'cell' && selection.selections.length > 0) {
+      const colSet = new Set(selection.selections.map(s => s.columnIndex!));
+      selectedColumnIndices = Array.from(colSet).sort((a, b) => a - b);
+    }
     
     const { data: exportDataSet, columns: exportCols } = extractSelectedData(
       sortedData,
       columnDefs,
-      hasSelection ? selectedIndices : sortedData.map((_, i) => i)
+      hasRowSelection ? selectedIndices : sortedData.map((_, i) => i),
+      selectedColumnIndices,
     );
     
     const content = exportData(exportDataSet, exportCols, { format, includeHeaders });
@@ -697,7 +735,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const buildRowContextMenuItems = useCallback((rowIdx: number): ContextMenuItem[] => {
     const isDeleted = isRowDeleted?.(rowIdx) ?? false;
     const items: ContextMenuItem[] = [
-      { id: 'copyRow', label: 'Copy Row', shortcut: 'Ctrl+C' },
+      { id: 'copyRow', label: 'Copy Selection', shortcut: 'Ctrl+C' },
       { id: 'copyRowAsInsert', label: 'Copy as INSERT' },
     ];
 
@@ -715,10 +753,10 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     return items;
   }, [isEditable, isRowDeleted]);
 
-  const buildCellContextMenuItems = useCallback((rowIndex?: number, colIndex?: number): ContextMenuItem[] => {
+  const buildCellContextMenuItems = useCallback((rowIndex?: number, colIndex?: number, selectionSize: number = 1): ContextMenuItem[] => {
     const colMeta = colIndex !== undefined ? metadata?.columns?.[colIndex] : undefined;
     const modified = (rowIndex !== undefined && colIndex !== undefined) ? (isCellModified?.(rowIndex, colIndex) ?? false) : false;
-    return buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable, isModified: modified });
+    return buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable, isModified: modified, selectionSize });
   }, [isEditable, metadata, isCellModified]);
 
   const handleColumnHeaderContextMenu = useCallback((colIndex: number, e: React.MouseEvent) => {
@@ -733,10 +771,22 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
 
   const handleContextMenu = useCallback((e: React.MouseEvent, rowIndex?: number, colIndex?: number) => {
     e.preventDefault();
-    
+
+    // Read selection from ref — always has latest state, immune to stale closures
+    const sel = selectionRef.current;
+    const cellSelectionSize = sel.type === 'cell' ? sel.selections.length : 1;
+
+    console.log('[ContextMenu] selection from ref:', {
+      type: sel.type,
+      selectionsLength: sel.selections.length,
+      cellSelectionSize,
+      rowIndex,
+      colIndex,
+    });
+
     let items: ContextMenuItem[];
     if (rowIndex !== undefined) {
-      items = colIndex !== undefined ? buildCellContextMenuItems(rowIndex, colIndex) : buildRowContextMenuItems(rowIndex);
+      items = colIndex !== undefined ? buildCellContextMenuItems(rowIndex, colIndex, cellSelectionSize) : buildRowContextMenuItems(rowIndex);
     } else {
       items = ROW_CONTEXT_MENU_ITEMS;
     }
@@ -838,9 +888,53 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
         }
         break;
       }
+      case 'setSelectionNull': {
+        // Set all selected cells to NULL
+        if (selection.type === 'cell') {
+          for (const sel of selection.selections) {
+            if (sel.rowIndex !== undefined && sel.columnIndex !== undefined) {
+              const colName = columnDefs[sel.columnIndex]?.name;
+              if (colName) onCellEdit?.(sel.rowIndex, colName, null);
+            }
+          }
+        }
+        break;
+      }
+      case 'bulkEdit': {
+        // Open bulk-edit popup at the context menu position
+        if (ctx) {
+          setBulkEditPopup({ position: ctx.position });
+        }
+        break;
+      }
     }
     setContextMenu(null);
-  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onRevertCell, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport]);
+  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onRevertCell, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport, selection]);
+
+  // Apply the bulk-edit value to all selected cells
+  const handleBulkEditApply = useCallback((value: string) => {
+    if (selection.type === 'cell') {
+      for (const sel of selection.selections) {
+        if (sel.rowIndex !== undefined && sel.columnIndex !== undefined) {
+          const colName = columnDefs[sel.columnIndex]?.name;
+          if (colName) onCellEdit?.(sel.rowIndex, colName, value);
+        }
+      }
+    }
+    setBulkEditPopup(null);
+  }, [selection, columnDefs, onCellEdit]);
+
+  // End drag on mouseup (document-level so we catch release outside grid)
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        setIsDragging(false);
+      }
+    };
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, []);
 
   // Global keyboard shortcuts when grid is active
   useEffect(() => {
@@ -960,7 +1054,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
 
   return (
     <div 
-      className={`data-grid-container ${isSingleResultSet ? 'full-height' : ''}`}
+      className={`data-grid-container ${isSingleResultSet ? 'full-height' : ''} ${isDragging ? 'dragging-selection' : ''}`}
       data-testid="data-grid"
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -1043,6 +1137,8 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                     }}
                     onClick={handleRowClick}
                     onCellClick={handleCellClick}
+                    onCellMouseDown={handleCellMouseDown}
+                    onCellMouseEnter={handleCellMouseEnter}
                     onContextMenu={handleContextMenu}
                     onCellEdit={onCellEdit ? handleCellEditInternal : undefined}
                     onFKExpand={handleFKExpand}
@@ -1131,6 +1227,16 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
           onExport={handleExport}
           onClose={() => setExportMenu(null)}
           onAutoFit={handleAutoFit}
+        />
+      )}
+
+      {bulkEditPopup && selection.type === 'cell' && (
+        <BulkEditPopup
+          cellCount={selection.selections.length}
+          columnCount={new Set(selection.selections.map(s => s.columnIndex)).size}
+          position={bulkEditPopup.position}
+          onApply={handleBulkEditApply}
+          onClose={() => setBulkEditPopup(null)}
         />
       )}
 

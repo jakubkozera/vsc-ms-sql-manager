@@ -27,6 +27,8 @@ interface GridCellProps {
   onDoubleClick?: (e: React.MouseEvent) => void;
   onFKExpand?: (value: any, e: React.MouseEvent) => void;
   onCellEdit?: (newValue: unknown) => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onMouseEnter?: (e: React.MouseEvent) => void;
 }
 
 function GridCellComponent({ 
@@ -48,6 +50,8 @@ function GridCellComponent({
   onDoubleClick,
   onFKExpand,
   onCellEdit,
+  onMouseDown,
+  onMouseEnter,
 }: GridCellProps) {
   const { config, postMessage } = useVSCode();
   const [isEditing, setIsEditing] = useState(false);
@@ -295,6 +299,8 @@ function GridCellComponent({
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onDoubleClick={handleDoubleClick}
+      onMouseDown={onMouseDown}
+      onMouseEnter={onMouseEnter}
     >
       <span className="cell-content">{displayValue}</span>
       {validationError && (

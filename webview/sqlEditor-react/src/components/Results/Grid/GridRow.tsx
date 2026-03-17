@@ -21,6 +21,8 @@ interface GridRowProps {
   style?: CSSProperties;
   onClick?: (rowIndex: number, e: React.MouseEvent) => void;
   onCellClick?: (rowIndex: number, colIndex: number, value: any, e: React.MouseEvent) => void;
+  onCellMouseDown?: (rowIndex: number, colIndex: number, e: React.MouseEvent) => void;
+  onCellMouseEnter?: (rowIndex: number, colIndex: number, e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent, rowIndex?: number, colIndex?: number) => void;
   onCellEdit?: (rowIndex: number, colIndex: number, columnName: string, newValue: unknown) => void;
   onFKExpand?: (rowIndex: number, colIndex: number, columnName: string, value: any) => void;
@@ -42,6 +44,8 @@ function GridRowComponent({
   style,
   onClick,
   onCellClick,
+  onCellMouseDown,
+  onCellMouseEnter,
   onContextMenu,
   onCellEdit,
   onFKExpand,
@@ -61,6 +65,16 @@ function GridRowComponent({
     e.stopPropagation();
     onCellClick?.(rowIndex, colIndex, value, e);
   }, [onCellClick, rowIndex]);
+
+  const handleCellMouseDown = useCallback((colIndex: number, e: React.MouseEvent) => {
+    // No stopPropagation here — we need the native mousedown to reach document
+    // so that ContextMenu's outside-click listener can close the menu.
+    onCellMouseDown?.(rowIndex, colIndex, e);
+  }, [onCellMouseDown, rowIndex]);
+
+  const handleCellMouseEnter = useCallback((colIndex: number, e: React.MouseEvent) => {
+    onCellMouseEnter?.(rowIndex, colIndex, e);
+  }, [onCellMouseEnter, rowIndex]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, colIndex?: number) => {
     onContextMenu?.(e, rowIndex, colIndex);
@@ -124,7 +138,9 @@ function GridRowComponent({
             forceEdit={editingColIndex === colIndex}
             onForceEditComplete={onEditingComplete}
             onClick={(e) => handleCellClick(colIndex, row[colIndex], e)}
-            onContextMenu={(e) => handleContextMenu(e, colIndex)}
+            onContextMenu={(e) => { e.stopPropagation(); handleContextMenu(e, colIndex); }}
+            onMouseDown={(e) => handleCellMouseDown(colIndex, e)}
+            onMouseEnter={(e) => handleCellMouseEnter(colIndex, e)}
             onCellEdit={onCellEdit ? (newValue) => handleCellEdit(colIndex, column.name, newValue) : undefined}
             onFKExpand={onFKExpand ? (value) => handleFKExpand(colIndex, column.name, value) : undefined}
           />

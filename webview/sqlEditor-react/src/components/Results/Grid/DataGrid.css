@@ -5,6 +5,15 @@
   outline: none;
   border: 1px solid var(--vscode-panel-border);
   min-height: 0;
+  /* The grid manages its own selection — prevent browser text selection at all
+     times (Shift+click, drag, etc.) so no blue OS highlight appears over cells. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Crosshair cursor while actively dragging to extend a cell selection */
+.data-grid-container.dragging-selection {
+  cursor: crosshair;
 }
 
 .data-grid-container.full-height {

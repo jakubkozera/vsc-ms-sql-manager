@@ -12,6 +12,7 @@ type SelectionAction =
   | { type: 'SELECT_COLUMN'; columnIndex: number; mode: SelectionMode }
   | { type: 'SELECT_CELL'; rowIndex: number; columnIndex: number; value: any; mode: SelectionMode }
   | { type: 'SELECT_RANGE'; endRowIndex: number; endColumnIndex: number }
+  | { type: 'EXTEND_TO_CELL'; rowIndex: number; columnIndex: number }
   | { type: 'SELECT_ALL_ROWS'; rowCount: number }
   | { type: 'CLEAR_SELECTION' };
 
@@ -201,6 +202,58 @@ function selectionReducer(state: SelectionState, action: SelectionAction): Selec
       };
     }
 
+    /** Extend an existing cell range to a new endpoint (Shift+click or drag). */
+    case 'SELECT_RANGE': {
+      const { endRowIndex, endColumnIndex } = action;
+      if (!state.anchorIndex) {
+        // No anchor — treat as single cell selection
+        return {
+          type: 'cell',
+          selections: [{ rowIndex: endRowIndex, columnIndex: endColumnIndex }],
+          lastClickedIndex: { rowIndex: endRowIndex, columnIndex: endColumnIndex },
+          anchorIndex: { rowIndex: endRowIndex, columnIndex: endColumnIndex },
+        };
+      }
+      const startRow = Math.min(state.anchorIndex.rowIndex ?? endRowIndex, endRowIndex);
+      const endRow = Math.max(state.anchorIndex.rowIndex ?? endRowIndex, endRowIndex);
+      const startCol = Math.min(state.anchorIndex.columnIndex ?? endColumnIndex, endColumnIndex);
+      const endCol = Math.max(state.anchorIndex.columnIndex ?? endColumnIndex, endColumnIndex);
+      const rangeSelections: SelectionItem[] = [];
+      for (let r = startRow; r <= endRow; r++) {
+        for (let c = startCol; c <= endCol; c++) {
+          rangeSelections.push({ rowIndex: r, columnIndex: c });
+        }
+      }
+      return {
+        type: 'cell',
+        selections: rangeSelections,
+        lastClickedIndex: { rowIndex: endRowIndex, columnIndex: endColumnIndex },
+        anchorIndex: state.anchorIndex,
+      };
+    }
+
+    /** Live drag extension — same as SELECT_RANGE but keeps anchor intact. */
+    case 'EXTEND_TO_CELL': {
+      const { rowIndex, columnIndex } = action;
+      if (!state.anchorIndex) return state;
+      const startRow = Math.min(state.anchorIndex.rowIndex ?? rowIndex, rowIndex);
+      const endRow = Math.max(state.anchorIndex.rowIndex ?? rowIndex, rowIndex);
+      const startCol = Math.min(state.anchorIndex.columnIndex ?? columnIndex, columnIndex);
+      const endCol = Math.max(state.anchorIndex.columnIndex ?? columnIndex, columnIndex);
+      const rangeSelections: SelectionItem[] = [];
+      for (let r = startRow; r <= endRow; r++) {
+        for (let c = startCol; c <= endCol; c++) {
+          rangeSelections.push({ rowIndex: r, columnIndex: c });
+        }
+      }
+      return {
+        type: 'cell',
+        selections: rangeSelections,
+        lastClickedIndex: { rowIndex, columnIndex },
+        anchorIndex: state.anchorIndex,
+      };
+    }
+
     case 'SELECT_ALL_ROWS': {
       const { rowCount } = action;
       const selections: SelectionItem[] = [];
@@ -250,6 +303,12 @@ export function useGridSelection() {
 
   const clearSelection = useCallback(() => {
     dispatch({ type: 'CLEAR_SELECTION' });
+  }, []);
+
+  /** Extend the current cell selection rectangle to cover (rowIndex, columnIndex).
+   *  The anchor remains unchanged — use this for live drag updates. */
+  const extendToCell = useCallback((rowIndex: number, columnIndex: number) => {
+    dispatch({ type: 'EXTEND_TO_CELL', rowIndex, columnIndex });
   }, []);
 
   const isRowSelected = useCallback(
@@ -311,6 +370,7 @@ export function useGridSelection() {
     selectRow,
     selectColumn,
     selectCell,
+    extendToCell,
     selectAllRows,
     clearSelection,
     isRowSelected,

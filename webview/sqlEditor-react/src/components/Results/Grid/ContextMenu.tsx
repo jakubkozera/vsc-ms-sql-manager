@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, type RefObject } from 'react';
 import './ContextMenu.css';
 
 export interface ContextMenuItem {
@@ -20,6 +20,10 @@ interface ContextMenuProps {
 export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Keep a stable ref to onClose so document listeners never need to re-register
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   // Adjust position if menu would go off-screen
   const adjustedPosition = useCallback(() => {
     if (!menuRef.current) return position;
@@ -37,43 +41,42 @@ export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuP
     return { x: Math.max(0, x), y: Math.max(0, y) };
   }, [position]);
 
-  // Close on click outside
+  // Close on click outside — registered ONCE, uses ref to always call latest onClose.
+  // The 0 ms delay avoids closing immediately from the right-click that opened the menu.
   useEffect(() => {
+    const _menuRef: RefObject<HTMLDivElement> = menuRef;
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
+      if (_menuRef.current && !_menuRef.current.contains(e.target as Node)) {
+        onCloseRef.current();
       }
     };
-
-    // Use setTimeout to avoid immediate close from the right-click that opened the menu
     const timeoutId = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
     }, 0);
-
     return () => {
       clearTimeout(timeoutId);
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps — registers once on mount, removed on unmount
 
-  // Close on escape
+  // Close on escape — registered ONCE
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
+      if (e.key === 'Escape') onCloseRef.current();
     };
-
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Close on scroll
+  // Close on scroll — registered ONCE
   useEffect(() => {
-    const handleScroll = () => onClose();
+    const handleScroll = () => onCloseRef.current();
     window.addEventListener('scroll', handleScroll, true);
     return () => window.removeEventListener('scroll', handleScroll, true);
-  }, [onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleItemClick = (item: ContextMenuItem) => {
     if (!item.disabled && !item.separator) {
@@ -115,7 +118,7 @@ export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuP
 
 // Predefined menu items for grid context
 export const ROW_CONTEXT_MENU_ITEMS: ContextMenuItem[] = [
-  { id: 'copyRow', label: 'Copy Row', shortcut: 'Ctrl+C' },
+  { id: 'copyRow', label: 'Copy Selection', shortcut: 'Ctrl+C' },
   { id: 'copyRowAsInsert', label: 'Copy as INSERT' },
   { id: 'separator1', label: '', separator: true },
   { id: 'deleteRow', label: 'Delete Row', shortcut: 'Del' },
@@ -139,7 +142,7 @@ export const COLUMN_CONTEXT_MENU_ITEMS: ContextMenuItem[] = [
 
 export const CELL_CONTEXT_MENU_ITEMS: ContextMenuItem[] = [
   { id: 'copyCell', label: 'Copy Cell', shortcut: 'Ctrl+C' },
-  { id: 'copyRow', label: 'Copy Row' },
+  { id: 'copyRow', label: 'Copy Selection' },
   { id: 'separator1', label: '', separator: true },
   { id: 'editCell', label: 'Edit Cell', shortcut: 'F2' },
   { id: 'setNull', label: 'Set to NULL' },
@@ -171,27 +174,43 @@ export function buildColumnMenuItems(): ContextMenuItem[] {
 /**
  * Build context menu items for a cell right-click.
  * "Set to NULL" is only included when the column is nullable.
+ * When selectionSize > 1, bulk actions replace single-cell actions.
  */
 export function buildCellMenuItems(options: {
   isEditable: boolean;
   isNullable?: boolean;
   isModified?: boolean;
+  /** How many cells are currently selected (default 1 = single cell) */
+  selectionSize?: number;
 }): ContextMenuItem[] {
-  const { isEditable, isNullable, isModified } = options;
+  const { isEditable, isNullable, isModified, selectionSize = 1 } = options;
+  const hasMultiSelection = selectionSize > 1;
+
   const items: ContextMenuItem[] = [
-    { id: 'copyCell', label: 'Copy Cell', shortcut: 'Ctrl+C' },
-    { id: 'copyRow', label: 'Copy Row' },
+    { id: 'copyCell', label: hasMultiSelection ? 'Copy Selection' : 'Copy Cell', shortcut: 'Ctrl+C' },
+    // Only show "Copy Row" when it's a single-cell right-click; for multi-selection
+    // "copyCell" already copies the whole selection so "copyRow" would be a duplicate.
+    ...(!hasMultiSelection ? [{ id: 'copyRow', label: 'Copy Selection' } as ContextMenuItem] : []),
   ];
 
   if (isEditable) {
     items.push({ id: 'separator1', label: '', separator: true });
-    items.push({ id: 'editCell', label: 'Edit Cell', shortcut: 'F2' });
-    if (isNullable === true) {
-      items.push({ id: 'setNull', label: 'Set to NULL' });
+
+    if (hasMultiSelection) {
+      // Bulk actions when multiple cells are selected
+      items.push({ id: 'bulkEdit', label: `Fill ${selectionSize} cells…` });
+      items.push({ id: 'setSelectionNull', label: `Set ${selectionSize} cells to NULL` });
+    } else {
+      // Single-cell actions
+      items.push({ id: 'editCell', label: 'Edit Cell', shortcut: 'F2' });
+      if (isNullable === true) {
+        items.push({ id: 'setNull', label: 'Set to NULL' });
+      }
+      if (isModified) {
+        items.push({ id: 'revertCell', label: 'Revert Cell' });
+      }
     }
-    if (isModified) {
-      items.push({ id: 'revertCell', label: 'Revert Cell' });
-    }
+
     items.push({ id: 'separator_del', label: '', separator: true });
     items.push({ id: 'deleteRow', label: 'Delete Row' });
   }

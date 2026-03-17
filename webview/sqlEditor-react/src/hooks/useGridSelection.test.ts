@@ -258,3 +258,128 @@ describe('useGridSelection', () => {
     expect(result.current.isRowSelected(5)).toBe(false);
   });
 });
+
+describe('useGridSelection — free-range / drag selection', () => {
+  it('extendToCell creates rectangular selection from anchor', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    // Set anchor at (1, 1)
+    act(() => {
+      result.current.selectCell(1, 1, 'a');
+    });
+    // Extend to (3, 3) — should select 3×3 = 9 cells
+    act(() => {
+      result.current.extendToCell(3, 3);
+    });
+
+    expect(result.current.selection.type).toBe('cell');
+    expect(result.current.selection.selections).toHaveLength(9);
+
+    for (let r = 1; r <= 3; r++) {
+      for (let c = 1; c <= 3; c++) {
+        expect(result.current.isCellSelected(r, c)).toBe(true);
+      }
+    }
+    // Outside the rectangle — should not be selected
+    expect(result.current.isCellSelected(0, 0)).toBe(false);
+    expect(result.current.isCellSelected(4, 4)).toBe(false);
+  });
+
+  it('extendToCell works with reversed direction (drag up-left)', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectCell(4, 4, 'anchor');
+    });
+    act(() => {
+      result.current.extendToCell(2, 1);
+    });
+
+    // Should cover rows 2-4, cols 1-4 → 3 × 4 = 12 cells
+    expect(result.current.selection.selections).toHaveLength(12);
+    expect(result.current.isCellSelected(2, 1)).toBe(true);
+    expect(result.current.isCellSelected(4, 4)).toBe(true);
+    expect(result.current.isCellSelected(3, 2)).toBe(true);
+    expect(result.current.isCellSelected(1, 1)).toBe(false);
+  });
+
+  it('extendToCell preserves the original anchor across multiple updates (simulates drag)', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.selectCell(0, 0, 'start');
+    });
+    // Simulate mouse moving through several cells
+    act(() => { result.current.extendToCell(1, 1); });
+    act(() => { result.current.extendToCell(2, 2); });
+    act(() => { result.current.extendToCell(3, 3); });
+
+    // anchor is still (0,0), end is (3,3) → 4 × 4 = 16 cells
+    expect(result.current.selection.selections).toHaveLength(16);
+    expect(result.current.isCellSelected(0, 0)).toBe(true);
+    expect(result.current.isCellSelected(3, 3)).toBe(true);
+  });
+
+  it('extendToCell is a no-op when there is no anchor', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => {
+      result.current.extendToCell(2, 2);
+    });
+
+    // No anchor → state unchanged (no selection started)
+    expect(result.current.selection.type).toBeNull();
+    expect(result.current.selection.selections).toHaveLength(0);
+  });
+
+  it('extendToCell to same cell as anchor selects exactly one cell', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => { result.current.selectCell(5, 3, 'val'); });
+    act(() => { result.current.extendToCell(5, 3); });
+
+    expect(result.current.selection.selections).toHaveLength(1);
+    expect(result.current.isCellSelected(5, 3)).toBe(true);
+  });
+
+  it('single-row range: extendToCell across columns', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => { result.current.selectCell(2, 0, 'v1'); });
+    act(() => { result.current.extendToCell(2, 4); });
+
+    // Same row, 5 columns selected
+    expect(result.current.selection.selections).toHaveLength(5);
+    for (let c = 0; c <= 4; c++) {
+      expect(result.current.isCellSelected(2, c)).toBe(true);
+    }
+    expect(result.current.isCellSelected(1, 2)).toBe(false);
+    expect(result.current.isCellSelected(3, 2)).toBe(false);
+  });
+
+  it('single-column range: extendToCell across rows', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => { result.current.selectCell(0, 2, 'v1'); });
+    act(() => { result.current.extendToCell(6, 2); });
+
+    // Same column, 7 rows
+    expect(result.current.selection.selections).toHaveLength(7);
+    for (let r = 0; r <= 6; r++) {
+      expect(result.current.isCellSelected(r, 2)).toBe(true);
+    }
+    expect(result.current.isCellSelected(0, 1)).toBe(false);
+  });
+
+  it('clearing selection after drag resets state', () => {
+    const { result } = renderHook(() => useGridSelection());
+
+    act(() => { result.current.selectCell(1, 1, 'x'); });
+    act(() => { result.current.extendToCell(3, 3); });
+    act(() => { result.current.clearSelection(); });
+
+    expect(result.current.selection.type).toBeNull();
+    expect(result.current.selection.selections).toHaveLength(0);
+    expect(result.current.isCellSelected(2, 2)).toBe(false);
+  });
+});
