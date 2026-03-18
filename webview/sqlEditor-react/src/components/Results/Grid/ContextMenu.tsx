@@ -168,6 +168,8 @@ export function buildColumnMenuItems(): ContextMenuItem[] {
     { id: 'copyColumnValuesWithHeader', label: 'Copy values with header' },
     { id: 'separator1', label: '', separator: true },
     { id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' },
+    { id: 'separator_chart', label: '', separator: true },
+    { id: 'createChart', label: 'Create Chart…' },
   ];
 }
 
@@ -217,5 +219,7 @@ export function buildCellMenuItems(options: {
 
   items.push({ id: 'separator2', label: '', separator: true });
   items.push({ id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' });
+  items.push({ id: 'separator_chart', label: '', separator: true });
+  items.push({ id: 'createChart', label: 'Create Chart…' });
   return items;
 }

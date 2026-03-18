@@ -9,9 +9,12 @@ import { PendingChangesTab } from './PendingChangesTab';
 import { DataGrid, SelectionInfo } from './Grid/DataGrid';
 import { AggregationBar } from './Grid/AggregationBar';
 import { QueryPlanView } from './QueryPlan/QueryPlanView';
+import { ChartPanel } from './Chart/ChartPanel';
+import { ChartConfigDialog } from './Chart/ChartConfigDialog';
+import { ChartConfig, ChartDataSnapshot, DEFAULT_CHART_COLORS } from '../../types/chart';
 import './ResultsPanel.css';
 
-export type TabId = 'results' | 'messages' | 'plan' | 'pendingChanges';
+export type TabId = 'results' | 'messages' | 'plan' | 'pendingChanges' | 'charts';
 
 function sqlEscape(value: unknown): string {
   if (value === null || value === undefined) return 'NULL';
@@ -85,6 +88,43 @@ export function ResultsPanel() {
   const handleSelectionChange = useCallback((info: SelectionInfo) => {
     setSelectionInfo(info);
   }, []);
+
+  // Chart state
+  const [charts, setCharts] = useState<ChartConfig[]>([]);
+  const [chartDialogData, setChartDialogData] = useState<{ data: ChartDataSnapshot; columnTypes: Record<string, string> } | null>(null);
+
+  const handleCreateChartRequest = useCallback((chartData: { columns: string[]; rows: unknown[][]; columnTypes: Record<string, string> }) => {
+    setChartDialogData({
+      data: { columns: chartData.columns, rows: chartData.rows },
+      columnTypes: chartData.columnTypes,
+    });
+  }, []);
+
+  const handleChartConfigCreate = useCallback((config: { chartType: ChartConfig['chartType']; title: string; labelColumn: string; dataColumns: string[] }) => {
+    if (!chartDialogData) return;
+    const newChart: ChartConfig = {
+      id: `chart-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      chartType: config.chartType,
+      title: config.title,
+      labelColumn: config.labelColumn,
+      dataColumns: config.dataColumns,
+      data: chartDialogData.data,
+      colors: DEFAULT_CHART_COLORS,
+    };
+    setCharts(prev => [...prev, newChart]);
+    setChartDialogData(null);
+    setActiveTab('charts');
+  }, [chartDialogData]);
+
+  const handleDeleteChart = useCallback((id: string) => {
+    setCharts(prev => {
+      const next = prev.filter(c => c.id !== id);
+      if (next.length === 0 && activeTab === 'charts') {
+        setActiveTab('results');
+      }
+      return next;
+    });
+  }, [activeTab]);
 
   // Loading timer state
   const [loadingTime, setLoadingTime] = useState('00:00');
@@ -445,6 +485,7 @@ export function ResultsPanel() {
         pendingChangesCount={pendingChangesCount}
         onQuickSave={pendingChangesCount > 0 ? () => handleCommit(firstEditableIndex) : undefined}
         sqlPreview={pendingChangesCount > 0 ? generateSqlStatements(firstEditableIndex).join('\n') : undefined}
+        chartCount={charts.length}
       />
 
       <div className="results-content">
@@ -516,6 +557,7 @@ export function ResultsPanel() {
                         return colName ? pendingChanges.isCellModified(idx, rowIndex, colName) : false;
                       }}
                       getValidationError={makeGetValidationError(idx)}
+                      onCreateChart={handleCreateChartRequest}
                     />
                   </div>
                 </div>
@@ -571,6 +613,7 @@ export function ResultsPanel() {
                       return colName ? pendingChanges.isCellModified(index, rowIndex, colName) : false;
                     }}
                     getValidationError={makeGetValidationError(index)}
+                    onCreateChart={handleCreateChartRequest}
                   />
                 </div>
               ))}
@@ -688,7 +731,20 @@ export function ResultsPanel() {
             <p className="hint">Enable "With execution plan" before running</p>
           </div>
         )}
+
+        {activeTab === 'charts' && (
+          <ChartPanel charts={charts} onDeleteChart={handleDeleteChart} />
+        )}
       </div>
+
+      {chartDialogData && (
+        <ChartConfigDialog
+          data={chartDialogData.data}
+          columnTypes={chartDialogData.columnTypes}
+          onCreate={handleChartConfigCreate}
+          onCancel={() => setChartDialogData(null)}
+        />
+      )}
     </div>
   );
 }
