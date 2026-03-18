@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useVSCode } from '../../context/VSCodeContext';
 import { usePendingChanges } from '../../hooks/usePendingChanges';
+import { useCanvasWidgets } from '../../hooks/useCanvasWidgets';
 import { PendingChange } from '../../types/messages';
 import { validateCellValue } from '../../utils/cellValidation';
 import { ResultsTabs } from './ResultsTabs';
@@ -9,7 +10,7 @@ import { PendingChangesTab } from './PendingChangesTab';
 import { DataGrid, SelectionInfo } from './Grid/DataGrid';
 import { AggregationBar } from './Grid/AggregationBar';
 import { QueryPlanView } from './QueryPlan/QueryPlanView';
-import { ChartPanel } from './Chart/ChartPanel';
+import { ChartPanel } from './Chart/ChartPanelNew';
 import { ChartConfigDialog } from './Chart/ChartConfigDialog';
 import { ChartConfig, ChartDataSnapshot, DEFAULT_CHART_COLORS } from '../../types/chart';
 import './ResultsPanel.css';
@@ -89,8 +90,8 @@ export function ResultsPanel() {
     setSelectionInfo(info);
   }, []);
 
-  // Chart state
-  const [charts, setCharts] = useState<ChartConfig[]>([]);
+  // Chart canvas state
+  const canvasWidgets = useCanvasWidgets();
   const [chartDialogData, setChartDialogData] = useState<{ data: ChartDataSnapshot; columnTypes: Record<string, string> } | null>(null);
 
   const handleCreateChartRequest = useCallback((chartData: { columns: string[]; rows: unknown[][]; columnTypes: Record<string, string> }) => {
@@ -111,20 +112,26 @@ export function ResultsPanel() {
       data: chartDialogData.data,
       colors: DEFAULT_CHART_COLORS,
     };
-    setCharts(prev => [...prev, newChart]);
+    canvasWidgets.addChart(newChart);
     setChartDialogData(null);
     setActiveTab('charts');
-  }, [chartDialogData]);
+  }, [chartDialogData, canvasWidgets.addChart]);
 
-  const handleDeleteChart = useCallback((id: string) => {
-    setCharts(prev => {
-      const next = prev.filter(c => c.id !== id);
-      if (next.length === 0 && activeTab === 'charts') {
-        setActiveTab('results');
-      }
-      return next;
+  const handleDeleteWidget = useCallback((id: string) => {
+    canvasWidgets.removeWidget(id);
+    if (canvasWidgets.widgets.length <= 1 && activeTab === 'charts') {
+      // Will be 0 after removal
+      setActiveTab('results');
+    }
+  }, [activeTab, canvasWidgets]);
+
+  const handleExportHTML = useCallback((html: string) => {
+    postMessage({
+      type: 'openInNewEditor',
+      content: html,
+      language: 'html',
     });
-  }, [activeTab]);
+  }, [postMessage]);
 
   // Loading timer state
   const [loadingTime, setLoadingTime] = useState('00:00');
@@ -485,7 +492,7 @@ export function ResultsPanel() {
         pendingChangesCount={pendingChangesCount}
         onQuickSave={pendingChangesCount > 0 ? () => handleCommit(firstEditableIndex) : undefined}
         sqlPreview={pendingChangesCount > 0 ? generateSqlStatements(firstEditableIndex).join('\n') : undefined}
-        chartCount={charts.length}
+        chartCount={canvasWidgets.widgets.length}
       />
 
       <div className="results-content">
@@ -733,7 +740,15 @@ export function ResultsPanel() {
         )}
 
         {activeTab === 'charts' && (
-          <ChartPanel charts={charts} onDeleteChart={handleDeleteChart} />
+          <ChartPanel
+            widgets={canvasWidgets.widgets}
+            onUpdatePosition={canvasWidgets.updatePosition}
+            onUpdateTextContent={canvasWidgets.updateTextContent}
+            onRemoveWidget={handleDeleteWidget}
+            onBringToFront={canvasWidgets.bringToFront}
+            onAddText={() => canvasWidgets.addText()}
+            onExportHTML={handleExportHTML}
+          />
         )}
       </div>
 

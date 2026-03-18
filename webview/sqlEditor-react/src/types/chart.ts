@@ -15,6 +15,34 @@ export interface ChartDataSnapshot {
   rows: unknown[][];
 }
 
+export type CanvasWidgetType = 'chart' | 'text';
+
+export interface CanvasWidgetPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface CanvasChartWidget {
+  id: string;
+  type: 'chart';
+  position: CanvasWidgetPosition;
+  chart: ChartConfig;
+}
+
+export interface CanvasTextWidget {
+  id: string;
+  type: 'text';
+  position: CanvasWidgetPosition;
+  content: string;
+  fontSize?: number;
+  fontWeight?: 'normal' | 'bold';
+  color?: string;
+}
+
+export type CanvasWidget = CanvasChartWidget | CanvasTextWidget;
+
 export const CHART_TYPE_LABELS: Record<ChartType, string> = {
   bar: 'Bar',
   line: 'Line',
