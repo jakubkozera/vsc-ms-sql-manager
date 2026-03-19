@@ -134,6 +134,25 @@ export function ResultsPanel() {
     });
   }, [postMessage]);
 
+  const handleExportSVG = useCallback((svg: string) => {
+    postMessage({
+      type: 'saveFile',
+      content: svg,
+      defaultFileName: 'chart-export.svg',
+      fileType: 'svg',
+    });
+  }, [postMessage]);
+
+  const handleExportPNG = useCallback((base64: string) => {
+    postMessage({
+      type: 'saveFile',
+      content: base64,
+      defaultFileName: 'chart-export.png',
+      fileType: 'png',
+      encoding: 'base64',
+    });
+  }, [postMessage]);
+
   // Loading timer state
   const [loadingTime, setLoadingTime] = useState('00:00');
   const loadingStartRef = useState<number | null>(null);
@@ -750,6 +769,8 @@ export function ResultsPanel() {
             onBringToFront={canvasWidgets.bringToFront}
             onAddText={() => canvasWidgets.addText()}
             onExportHTML={handleExportHTML}
+            onExportSVG={handleExportSVG}
+            onExportPNG={handleExportPNG}
           />
         )}
       </div>

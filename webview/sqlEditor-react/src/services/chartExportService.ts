@@ -226,3 +226,92 @@ export async function exportCanvasToSVG(widgets: CanvasWidget[], canvasElements:
   svgContent += '\n</svg>';
   return svgContent;
 }
+
+/**
+ * Export the canvas widgets to a PNG image (base64-encoded).
+ * Composites all widget canvases and text onto an offscreen canvas.
+ */
+export async function exportCanvasToPNG(widgets: CanvasWidget[], canvasElements: Map<string, HTMLCanvasElement>): Promise<string> {
+  const padding = 20;
+  const headerHeight = 28;
+  const maxRight = widgets.reduce((max, w) => Math.max(max, w.position.x + w.position.width), 800);
+  const maxBottom = widgets.reduce((max, w) => Math.max(max, w.position.y + w.position.height), 600);
+  const totalWidth = maxRight + padding * 2;
+  const totalHeight = maxBottom + padding * 2;
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = totalWidth;
+  offscreen.height = totalHeight;
+  const ctx = offscreen.getContext('2d')!;
+
+  // Background
+  ctx.fillStyle = '#1e1e1e';
+  ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+  for (const widget of widgets) {
+    const { x, y, width, height } = widget.position;
+    const wx = x + padding;
+    const wy = y + padding;
+
+    // Widget background with rounded corners
+    ctx.fillStyle = '#252526';
+    ctx.beginPath();
+    ctx.roundRect(wx, wy, width, height, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#454545';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Header background
+    ctx.fillStyle = '#2d2d2d';
+    ctx.beginPath();
+    ctx.roundRect(wx, wy, width, headerHeight, [6, 6, 0, 0]);
+    ctx.fill();
+
+    // Header border
+    ctx.strokeStyle = '#454545';
+    ctx.beginPath();
+    ctx.moveTo(wx, wy + headerHeight);
+    ctx.lineTo(wx + width, wy + headerHeight);
+    ctx.stroke();
+
+    if (widget.type === 'chart') {
+      // Header text
+      ctx.fillStyle = '#cccccc';
+      ctx.font = '500 12px sans-serif';
+      ctx.fillText(widget.chart.title, wx + 10, wy + 18);
+
+      // Draw chart canvas image
+      const canvasEl = canvasElements.get(widget.id);
+      if (canvasEl) {
+        try {
+          ctx.drawImage(canvasEl, wx + 8, wy + headerHeight + 8, width - 16, height - headerHeight - 16);
+        } catch {
+          // Canvas tainted or unavailable
+        }
+      }
+    } else if (widget.type === 'text') {
+      // Header text
+      ctx.fillStyle = '#cccccc';
+      ctx.font = '500 12px sans-serif';
+      ctx.fillText('Text', wx + 10, wy + 18);
+
+      // Text content
+      const fontSize = widget.fontSize ?? 14;
+      ctx.fillStyle = widget.color ?? '#cccccc';
+      ctx.font = `${widget.fontWeight ?? 'normal'} ${fontSize}px sans-serif`;
+      const lines = widget.content.split('\n');
+      const lineHeight = fontSize * 1.5;
+      const textY = wy + headerHeight + 8 + fontSize;
+      lines.forEach((line, i) => {
+        if (textY + i * lineHeight < wy + height - 4) {
+          ctx.fillText(line, wx + 12, textY + i * lineHeight);
+        }
+      });
+    }
+  }
+
+  // Convert to base64 (strip the data:image/png;base64, prefix)
+  const dataUrl = offscreen.toDataURL('image/png');
+  return dataUrl.replace(/^data:image\/png;base64,/, '');
+}

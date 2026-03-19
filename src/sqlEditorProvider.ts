@@ -1732,6 +1732,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     case 'markdown': fileExtension = 'md'; break;
                     case 'xml': fileExtension = 'xml'; break;
                     case 'html': fileExtension = 'html'; break;
+                    case 'svg': fileExtension = 'svg'; break;
+                    case 'png': fileExtension = 'png'; break;
                     default: fileExtension = 'txt';
                 }
             }
@@ -1757,6 +1759,12 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     break;
                 case 'html':
                     filters['HTML Files'] = ['html', 'htm'];
+                    break;
+                case 'svg':
+                    filters['SVG Files'] = ['svg'];
+                    break;
+                case 'png':
+                    filters['PNG Images'] = ['png'];
                     break;
             }
             filters['All Files'] = ['*'];

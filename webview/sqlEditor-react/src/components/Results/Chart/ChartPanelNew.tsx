@@ -1,6 +1,6 @@
 import { CanvasWidget } from '../../../types/chart';
 import { ChartCanvas } from './ChartCanvas';
-import { exportCanvasToHTML } from '../../../services/chartExportService';
+import { exportCanvasToHTML, exportCanvasToSVG, exportCanvasToPNG } from '../../../services/chartExportService';
 import './ChartPanel.css';
 
 interface ChartPanelProps {
@@ -12,6 +12,8 @@ interface ChartPanelProps {
   onBringToFront: (id: string) => void;
   onAddText: () => void;
   onExportHTML: (html: string) => void;
+  onExportSVG: (svg: string) => void;
+  onExportPNG: (base64: string) => void;
 }
 
 export function ChartPanel({
@@ -23,10 +25,22 @@ export function ChartPanel({
   onBringToFront,
   onAddText,
   onExportHTML,
+  onExportSVG,
+  onExportPNG,
 }: ChartPanelProps) {
   const handleExportHTML = () => {
     const html = exportCanvasToHTML(widgets);
     onExportHTML(html);
+  };
+
+  const handleExportSVG = async (canvasElements: Map<string, HTMLCanvasElement>) => {
+    const svg = await exportCanvasToSVG(widgets, canvasElements);
+    onExportSVG(svg);
+  };
+
+  const handleExportPNG = async (canvasElements: Map<string, HTMLCanvasElement>) => {
+    const base64 = await exportCanvasToPNG(widgets, canvasElements);
+    onExportPNG(base64);
   };
 
   return (
@@ -40,6 +54,8 @@ export function ChartPanel({
         onBringToFront={onBringToFront}
         onAddText={onAddText}
         onExportHTML={handleExportHTML}
+        onExportSVG={handleExportSVG}
+        onExportPNG={handleExportPNG}
       />
     </div>
   );

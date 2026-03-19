@@ -48,6 +48,8 @@ const defaultProps = {
   onBringToFront: noop,
   onAddText: noop,
   onExportHTML: noop,
+  onExportSVG: noop,
+  onExportPNG: noop,
 };
 
 describe('ChartPanel (canvas-based)', () => {
@@ -69,11 +71,24 @@ describe('ChartPanel (canvas-based)', () => {
     expect(screen.getByTestId('canvas-widget-t1')).toBeInTheDocument();
   });
 
-  it('renders canvas overlay controls with Add Text and Export buttons', () => {
+  it('renders canvas overlay controls with Add Text and Export dropdown', () => {
     render(<ChartPanel widgets={[]} {...defaultProps} />);
     expect(screen.getByTestId('chart-canvas-controls-top-left')).toBeInTheDocument();
     expect(screen.getByTestId('canvas-add-text-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-export-btn')).toBeInTheDocument();
+  });
+
+  it('shows export menu with HTML, SVG, PNG options when Export is clicked', () => {
+    render(<ChartPanel widgets={[]} {...defaultProps} />);
+    // Menu should not be visible initially
+    expect(screen.queryByTestId('canvas-export-menu')).not.toBeInTheDocument();
+    // Click Export button
+    fireEvent.click(screen.getByTestId('canvas-export-btn'));
+    // Menu should appear
+    expect(screen.getByTestId('canvas-export-menu')).toBeInTheDocument();
     expect(screen.getByTestId('canvas-export-html-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-export-svg-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-export-png-btn')).toBeInTheDocument();
   });
 
   it('calls onAddText when Add Text button is clicked', () => {
@@ -95,6 +110,7 @@ describe('ChartPanel (canvas-based)', () => {
     const onExport = vi.fn();
     const widgets = [makeChartWidget('c1', 'Test')];
     render(<ChartPanel widgets={widgets} {...defaultProps} onExportHTML={onExport} />);
+    fireEvent.click(screen.getByTestId('canvas-export-btn'));
     fireEvent.click(screen.getByTestId('canvas-export-html-btn'));
     expect(onExport).toHaveBeenCalledTimes(1);
     expect(onExport.mock.calls[0][0]).toContain('<!DOCTYPE html>');

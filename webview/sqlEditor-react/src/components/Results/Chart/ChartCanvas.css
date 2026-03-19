@@ -288,3 +288,42 @@
 .zoom-reset-btn:hover {
   background: var(--vscode-toolbar-hoverBackground, #5a5d5e50);
 }
+
+/* Export dropdown */
+.canvas-export-dropdown {
+  position: relative;
+}
+
+.canvas-export-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  background: var(--vscode-menu-background, #252526);
+  border: 1px solid var(--vscode-menu-border, #454545);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  z-index: 1300;
+}
+
+.canvas-export-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--vscode-menu-foreground, #cccccc);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.canvas-export-menu-item:hover {
+  background: var(--vscode-menu-selectionBackground, #04395e);
+  color: var(--vscode-menu-selectionForeground, #ffffff);
+}

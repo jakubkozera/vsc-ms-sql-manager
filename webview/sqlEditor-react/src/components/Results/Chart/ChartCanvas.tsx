@@ -14,6 +14,8 @@ interface ChartCanvasProps {
   onBringToFront: (id: string) => void;
   onAddText: () => void;
   onExportHTML: () => void;
+  onExportSVG: (canvasElements: Map<string, HTMLCanvasElement>) => void;
+  onExportPNG: (canvasElements: Map<string, HTMLCanvasElement>) => void;
 }
 
 type ResizeDirection = 'e' | 's' | 'se';
@@ -23,7 +25,7 @@ const MIN_WIDGET_HEIGHT = 60;
 
 // ─── CanvasChartBody ─────────────────────────────────────────
 
-function CanvasChartBody({ widget }: { widget: CanvasChartWidget }) {
+function CanvasChartBody({ widget, onCanvasRef }: { widget: CanvasChartWidget; onCanvasRef?: (id: string, el: HTMLCanvasElement | null) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<Chart | null>(null);
 
@@ -99,6 +101,14 @@ function CanvasChartBody({ widget }: { widget: CanvasChartWidget }) {
     }
   }, [widget.position.width, widget.position.height]);
 
+  // Register/unregister canvas element for SVG export
+  useEffect(() => {
+    if (onCanvasRef) {
+      onCanvasRef(widget.id, canvasRef.current);
+      return () => { onCanvasRef(widget.id, null); };
+    }
+  }, [widget.id, onCanvasRef]);
+
   return (
     <div className="canvas-widget-body chart-body">
       <canvas ref={canvasRef} data-testid={`canvas-chart-${widget.id}`} />
@@ -161,10 +171,11 @@ interface WidgetWrapperProps {
   onUpdateWidgetTitle: ChartCanvasProps['onUpdateWidgetTitle'];
   onRemove: (id: string) => void;
   onBringToFront: (id: string) => void;
+  onCanvasRef?: (id: string, el: HTMLCanvasElement | null) => void;
 }
 
 function CanvasWidgetWrapper({
-  widget, index, zoom, isSelected, onSelect, onUpdatePosition, onUpdateTextContent, onUpdateWidgetTitle, onRemove, onBringToFront,
+  widget, index, zoom, isSelected, onSelect, onUpdatePosition, onUpdateTextContent, onUpdateWidgetTitle, onRemove, onBringToFront, onCanvasRef,
 }: WidgetWrapperProps) {
   const dragStart = useRef<{ x: number; y: number; wx: number; wy: number } | null>(null);
   const resizeStart = useRef<{ x: number; y: number; w: number; h: number; dir: ResizeDirection } | null>(null);
@@ -292,7 +303,7 @@ function CanvasWidgetWrapper({
         </button>
       </div>
 
-      {widget.type === 'chart' && <CanvasChartBody widget={widget} />}
+      {widget.type === 'chart' && <CanvasChartBody widget={widget} onCanvasRef={onCanvasRef} />}
       {widget.type === 'text' && (
         <CanvasTextBody widget={widget} onContentChange={(c) => onUpdateTextContent(widget.id, c)} />
       )}
@@ -322,17 +333,55 @@ function CanvasWidgetWrapper({
 
 // ─── ChartCanvas ──────────────────────────────────────────────
 
-export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, onUpdateWidgetTitle, onRemoveWidget, onBringToFront, onAddText, onExportHTML }: ChartCanvasProps) {
+export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, onUpdateWidgetTitle, onRemoveWidget, onBringToFront, onAddText, onExportHTML, onExportSVG, onExportPNG }: ChartCanvasProps) {
   const [selectedWidget, setSelectedWidget] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
   const panXRef = useRef(0);
   const panYRef = useRef(0);
   const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const canvasElementsRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+
+  const handleCanvasRef = useCallback((id: string, el: HTMLCanvasElement | null) => {
+    if (el) {
+      canvasElementsRef.current.set(id, el);
+    } else {
+      canvasElementsRef.current.delete(id);
+    }
+  }, []);
+
+  const handleExportSVG = useCallback(() => {
+    onExportSVG(canvasElementsRef.current);
+    setExportMenuOpen(false);
+  }, [onExportSVG]);
+
+  const handleExportPNG = useCallback(() => {
+    onExportPNG(canvasElementsRef.current);
+    setExportMenuOpen(false);
+  }, [onExportPNG]);
+
+  const handleExportHTMLClick = useCallback(() => {
+    onExportHTML();
+    setExportMenuOpen(false);
+  }, [onExportHTML]);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [exportMenuOpen]);
 
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
   useEffect(() => { panXRef.current = panX; }, [panX]);
@@ -448,20 +497,54 @@ export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, on
           </svg>
           Add Text
         </button>
-        <button className="canvas-control-btn" onClick={onExportHTML} data-testid="canvas-export-html-btn" title="Export as HTML">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-            <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
-            <path d="M2 21v-6" />
-            <path d="M5 15v6" />
-            <path d="M2 18h3" />
-            <path d="M20 15v6h2" />
-            <path d="M13 21v-6l2 3l2 -3v6" />
-            <path d="M7.5 15h3" />
-            <path d="M9 15v6" />
-          </svg>
-          Export HTML
-        </button>
+        <div className="canvas-export-dropdown" ref={exportMenuRef} data-testid="canvas-export-dropdown">
+          <button className="canvas-control-btn" onClick={() => setExportMenuOpen(o => !o)} data-testid="canvas-export-btn" title="Export">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6" />
+              <path d="M11 13l9 -9" />
+              <path d="M15 4h5v5" />
+            </svg>
+            Export
+          </button>
+          {exportMenuOpen && (
+            <div className="canvas-export-menu" data-testid="canvas-export-menu">
+              <button className="canvas-export-menu-item" onClick={handleExportHTMLClick} data-testid="canvas-export-html-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                  <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+                  <path d="M2 21v-6" />
+                  <path d="M5 15v6" />
+                  <path d="M2 18h3" />
+                  <path d="M20 15v6h2" />
+                  <path d="M13 21v-6l2 3l2 -3v6" />
+                  <path d="M7.5 15h3" />
+                  <path d="M9 15v6" />
+                </svg>
+                HTML
+              </button>
+              <button className="canvas-export-menu-item" onClick={handleExportSVG} data-testid="canvas-export-svg-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+                  <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+                  <path d="M4 20.25c0 .414.336.75.75.75h2.5a.75.75 0 0 0 .75-.75v-1.5a.75.75 0 0 0-.75-.75h-1.5v-1.5h1.5a.75.75 0 0 0 0-1.5h-2.5a.75.75 0 0 0-.75.75v1.5c0 .414.336.75.75.75h1.5v1.5h-1.5a.75.75 0 0 0-.75.75z" />
+                  <path d="M11 15l1.5 6l1.5 -6" />
+                  <path d="M17 21v-2.5a2 2 0 1 1 4 0v2.5" />
+                  <path d="M17 19h4" />
+                </svg>
+                SVG
+              </button>
+              <button className="canvas-export-menu-item" onClick={handleExportPNG} data-testid="canvas-export-png-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 8h.01" />
+                  <path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z" />
+                  <path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5" />
+                  <path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3" />
+                </svg>
+                PNG
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="canvas-overlay-controls canvas-overlay-controls-bottom-right" data-testid="chart-canvas-controls-bottom-right">
@@ -513,6 +596,7 @@ export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, on
             onUpdateWidgetTitle={onUpdateWidgetTitle}
             onRemove={onRemoveWidget}
             onBringToFront={onBringToFront}
+            onCanvasRef={handleCanvasRef}
           />
         ))}
 
