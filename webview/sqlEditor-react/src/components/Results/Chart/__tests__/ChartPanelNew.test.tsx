@@ -69,8 +69,9 @@ describe('ChartPanel (canvas-based)', () => {
     expect(screen.getByTestId('canvas-widget-t1')).toBeInTheDocument();
   });
 
-  it('renders toolbar with Add Text and Export buttons', () => {
+  it('renders canvas overlay controls with Add Text and Export buttons', () => {
     render(<ChartPanel widgets={[]} {...defaultProps} />);
+    expect(screen.getByTestId('chart-canvas-controls-top-left')).toBeInTheDocument();
     expect(screen.getByTestId('canvas-add-text-btn')).toBeInTheDocument();
     expect(screen.getByTestId('canvas-export-html-btn')).toBeInTheDocument();
   });
@@ -111,8 +112,9 @@ describe('ChartPanel (canvas-based)', () => {
     expect(screen.getByTestId('canvas-widget-c2')).toBeInTheDocument();
   });
 
-  it('shows zoom label in toolbar', () => {
+  it('shows zoom controls in bottom-right overlay', () => {
     render(<ChartPanel widgets={[]} {...defaultProps} />);
+    expect(screen.getByTestId('chart-canvas-controls-bottom-right')).toBeInTheDocument();
     expect(screen.getByTestId('canvas-zoom-label')).toHaveTextContent('100%');
   });
 
