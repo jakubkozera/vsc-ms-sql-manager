@@ -325,60 +325,70 @@ function CanvasWidgetWrapper({
 export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, onUpdateWidgetTitle, onRemoveWidget, onBringToFront, onAddText, onExportHTML }: ChartCanvasProps) {
   const [selectedWidget, setSelectedWidget] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
-  const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const panXRef = useRef(0);
+  const panYRef = useRef(0);
+  const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { panXRef.current = panX; }, [panX]);
+  useEffect(() => { panYRef.current = panY; }, [panY]);
 
   // Deselect when clicking empty canvas
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setSelectedWidget(null);
   }, []);
 
-  // Ctrl+Scroll zoom
+  // Ctrl+Scroll → zoom toward cursor; plain scroll → pan
   const handleWheel = useCallback((e: WheelEvent) => {
-    if (!e.ctrlKey) return;
     e.preventDefault();
     const el = canvasRef.current;
     if (!el) return;
 
-    const prevZoom = zoomRef.current;
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    const nextZoom = Math.min(3, Math.max(0.25, Math.round((prevZoom + delta) * 100) / 100));
-    if (nextZoom === prevZoom) return;
+    if (e.ctrlKey) {
+      const prevZoom = zoomRef.current;
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      const nextZoom = Math.min(3, Math.max(0.25, Math.round((prevZoom + delta) * 100) / 100));
+      if (nextZoom === prevZoom) return;
 
-    const rect = el.getBoundingClientRect();
-    const viewportX = e.clientX - rect.left;
-    const viewportY = e.clientY - rect.top;
-    const contentX = (el.scrollLeft + viewportX) / prevZoom;
-    const contentY = (el.scrollTop + viewportY) / prevZoom;
+      const rect = el.getBoundingClientRect();
+      const vx = e.clientX - rect.left;
+      const vy = e.clientY - rect.top;
+      const ratio = nextZoom / prevZoom;
+      // Keep the content point under the cursor fixed after zoom:
+      // new_panX = vx - ratio * (vx - panX)
+      const newPanX = vx - ratio * (vx - panXRef.current);
+      const newPanY = vy - ratio * (vy - panYRef.current);
 
-    setZoom(nextZoom);
-    zoomRef.current = nextZoom;
-
-    requestAnimationFrame(() => {
-      const target = canvasRef.current;
-      if (!target) return;
-      target.scrollLeft = contentX * nextZoom - viewportX;
-      target.scrollTop = contentY * nextZoom - viewportY;
-    });
+      zoomRef.current = nextZoom;
+      panXRef.current = newPanX;
+      panYRef.current = newPanY;
+      setZoom(nextZoom);
+      setPanX(newPanX);
+      setPanY(newPanY);
+    } else {
+      // Plain scroll → pan the canvas
+      const newPanX = panXRef.current - e.deltaX;
+      const newPanY = panYRef.current - e.deltaY;
+      panXRef.current = newPanX;
+      panYRef.current = newPanY;
+      setPanX(newPanX);
+      setPanY(newPanY);
+    }
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 1) return;
-    const el = canvasRef.current;
-    if (!el) return;
-
     e.preventDefault();
     panStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      scrollLeft: el.scrollLeft,
-      scrollTop: el.scrollTop,
+      panX: panXRef.current,
+      panY: panYRef.current,
     };
     setIsPanning(true);
   }, []);
@@ -394,13 +404,16 @@ export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, on
 
     const handleMouseMove = (e: MouseEvent) => {
       const start = panStartRef.current;
-      const el = canvasRef.current;
-      if (!start || !el) return;
+      if (!start) return;
 
       const dx = e.clientX - start.x;
       const dy = e.clientY - start.y;
-      el.scrollLeft = start.scrollLeft - dx;
-      el.scrollTop = start.scrollTop - dy;
+      const newPanX = start.panX + dx;
+      const newPanY = start.panY + dy;
+      panXRef.current = newPanX;
+      panYRef.current = newPanY;
+      setPanX(newPanX);
+      setPanY(newPanY);
     };
 
     const handleMouseUp = () => {
@@ -486,7 +499,7 @@ export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, on
         onAuxClick={handleAuxClick}
         data-testid="chart-canvas"
       >
-        <div className="chart-canvas-inner" style={{ transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
+        <div className="chart-canvas-inner" style={{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})`, transformOrigin: '0 0' }}>
         {widgets.map((widget, index) => (
           <CanvasWidgetWrapper
             key={widget.id}

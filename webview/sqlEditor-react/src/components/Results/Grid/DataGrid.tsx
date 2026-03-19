@@ -1016,8 +1016,9 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   }, [isGridActive, handleCopy, selectAllRows, sortedData.length, isEditable, selection.lastClickedIndex]);
 
   const handleExportButtonClick = useCallback((e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setExportMenu({
-      position: { x: e.clientX, y: e.clientY },
+      position: { x: rect.left, y: rect.bottom },
     });
   }, []);
 

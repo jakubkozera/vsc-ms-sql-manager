@@ -6,7 +6,7 @@
 .chart-canvas {
   position: relative;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
   background:
     radial-gradient(circle, var(--vscode-widget-border, #454545) 1px, transparent 1px);
   background-size: 20px 20px;
