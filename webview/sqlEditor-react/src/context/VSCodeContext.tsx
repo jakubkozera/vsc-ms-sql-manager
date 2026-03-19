@@ -515,9 +515,10 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Clear previous results immediately in the UI and set executing state
+    // Clear previous results immediately in the UI.
+    // Do NOT set isExecuting here — the extension sends 'executing' only after
+    // all DML protection confirmations are done, so the timer starts then.
     dispatch({ type: 'CLEAR_RESULTS' });
-    dispatch({ type: 'SET_EXECUTING', isExecuting: true });
 
     console.log('[VSCodeContext] Sending executeQuery message to extension');
     postMessage({

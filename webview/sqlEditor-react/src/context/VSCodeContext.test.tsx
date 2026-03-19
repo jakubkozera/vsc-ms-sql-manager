@@ -455,7 +455,7 @@ describe('VSCodeContext - Query Execution', () => {
     });
   });
 
-  it('should clear previous results and set isExecuting when executing new query', () => {
+  it('should clear previous results when executing new query', () => {
     const { result } = renderHook(() => useVSCode(), {
       wrapper: VSCodeProvider,
     });
@@ -483,8 +483,15 @@ describe('VSCodeContext - Query Execution', () => {
       result.current.executeQuery('SELECT 1');
     });
 
-    // Should have cleared lastResults and set executing flag
+    // Should have cleared lastResults; isExecuting stays false until the extension
+    // sends back the 'executing' message (after DML protection confirmations).
     expect(result.current.lastResults).toBeNull();
+    expect(result.current.isExecuting).toBe(false);
+
+    // Simulate extension confirming execution start
+    act(() => {
+      sendMessage({ type: 'executing' });
+    });
     expect(result.current.isExecuting).toBe(true);
   });
 

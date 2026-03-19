@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.16.7",
+  "version": "0.17.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1585,6 +1585,22 @@
           "type": "boolean",
           "default": false,
           "description": "Formatting: automatically format query before execution."
+        },
+        "mssqlManager.dmlProtection.warnOnMissingWhere": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a confirmation dialog before executing UPDATE or DELETE statements that do not contain a WHERE clause."
+        },
+        "mssqlManager.dmlProtection.limitAffectedRows": {
+          "type": "boolean",
+          "default": true,
+          "description": "Before executing UPDATE or DELETE, run the statement in a rolled-back transaction to check the number of affected rows. If the count exceeds the safe threshold, a confirmation dialog is shown."
+        },
+        "mssqlManager.dmlProtection.maxAffectedRows": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "description": "Maximum number of affected rows allowed without confirmation when DML row-limit protection is enabled."
         }
       }
     }

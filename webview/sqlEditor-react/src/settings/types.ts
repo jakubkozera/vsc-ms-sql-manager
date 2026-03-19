@@ -28,6 +28,10 @@ export interface ExtensionSettings {
   indentStyle: 'standard' | 'tabularLeft' | 'tabularRight';
   logicalOperatorNewline: 'before' | 'after';
   formatBeforeRun: boolean;
+  // DML Protection
+  dmlWarnOnMissingWhere: boolean;
+  dmlLimitAffectedRows: boolean;
+  dmlMaxAffectedRows: number;
 }
 
 export interface SettingsMessage {
@@ -61,4 +65,7 @@ export const defaultSettings: ExtensionSettings = {
   indentStyle: 'standard',
   logicalOperatorNewline: 'before',
   formatBeforeRun: false,
+  dmlWarnOnMissingWhere: true,
+  dmlLimitAffectedRows: true,
+  dmlMaxAffectedRows: 100,
 };

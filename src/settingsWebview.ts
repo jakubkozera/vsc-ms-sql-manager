@@ -33,6 +33,10 @@ interface AllSettings {
     indentStyle: 'standard' | 'tabularLeft' | 'tabularRight';
     logicalOperatorNewline: 'before' | 'after';
     formatBeforeRun: boolean;
+    // DML Protection
+    dmlWarnOnMissingWhere: boolean;
+    dmlLimitAffectedRows: boolean;
+    dmlMaxAffectedRows: number;
 }
 
 const defaultFormatOptions: FormatOptions = {
@@ -134,6 +138,9 @@ export class SettingsWebview {
             indentStyle: config.get<'standard' | 'tabularLeft' | 'tabularRight'>('formatting.indentStyle', formatOptions.indentStyle),
             logicalOperatorNewline: config.get<'before' | 'after'>('formatting.logicalOperatorNewline', formatOptions.logicalOperatorNewline),
             formatBeforeRun: config.get<boolean>('formatting.formatBeforeRun', formatOptions.formatBeforeRun),
+            dmlWarnOnMissingWhere: config.get<boolean>('dmlProtection.warnOnMissingWhere', true),
+            dmlLimitAffectedRows: config.get<boolean>('dmlProtection.limitAffectedRows', true),
+            dmlMaxAffectedRows: config.get<number>('dmlProtection.maxAffectedRows', 100),
         };
     }
 
@@ -162,6 +169,9 @@ export class SettingsWebview {
             await config.update('formatting.indentStyle', settings.indentStyle, vscode.ConfigurationTarget.Global);
             await config.update('formatting.logicalOperatorNewline', settings.logicalOperatorNewline, vscode.ConfigurationTarget.Global);
             await config.update('formatting.formatBeforeRun', settings.formatBeforeRun, vscode.ConfigurationTarget.Global);
+            await config.update('dmlProtection.warnOnMissingWhere', settings.dmlWarnOnMissingWhere, vscode.ConfigurationTarget.Global);
+            await config.update('dmlProtection.limitAffectedRows', settings.dmlLimitAffectedRows, vscode.ConfigurationTarget.Global);
+            await config.update('dmlProtection.maxAffectedRows', settings.dmlMaxAffectedRows, vscode.ConfigurationTarget.Global);
 
             // Save formatting options to globalState
             const formatOptions: FormatOptions = {
@@ -211,6 +221,9 @@ export class SettingsWebview {
             await config.update('formatting.indentStyle', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.logicalOperatorNewline', undefined, vscode.ConfigurationTarget.Global);
             await config.update('formatting.formatBeforeRun', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('dmlProtection.warnOnMissingWhere', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('dmlProtection.limitAffectedRows', undefined, vscode.ConfigurationTarget.Global);
+            await config.update('dmlProtection.maxAffectedRows', undefined, vscode.ConfigurationTarget.Global);
 
             // Reset formatting options
             await this.context.globalState.update('mssqlManager.formatOptions', defaultFormatOptions);

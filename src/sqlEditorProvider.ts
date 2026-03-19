@@ -5,6 +5,7 @@ import * as os from 'os';
 import { QueryExecutor } from './queryExecutor';
 import { ConnectionProvider } from './connectionProvider';
 import { SchemaCache } from './utils/schemaCache';
+import { checkDmlProtection } from './utils/dmlProtection';
 
 export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'mssqlManager.sqlEditor';
@@ -1326,11 +1327,6 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             return;
         }
 
-        // Notify webview that query is executing
-        webview.postMessage({
-            type: 'executing'
-        });
-
         // Cancel any existing query for this webview
         if (this.webviewCancellationSources.has(webview)) {
             this.webviewCancellationSources.get(webview)?.cancel();
@@ -1342,9 +1338,22 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         this.webviewCancellationSources.set(webview, cancellationSource);
 
         try {
-            const startTime = Date.now();
             this.outputChannel.appendLine(`[SqlEditorProvider] Executing query. config:${config?.id || 'none'} pool:${poolToUse ? (poolToUse?.connected ? 'connected' : 'not-connected') : 'none'} db:${connectionId?.includes('::') ? connectionId.split('::')[1] : (config?.database || 'unknown')}`);
-            
+
+            // DML protection checks (missing WHERE, affected row count) — must run before
+            // notifying the webview so the timer only starts after all confirmations are done.
+            const dmlCheck = await checkDmlProtection(query, poolToUse, this.outputChannel);
+            if (!dmlCheck.proceed) {
+                this.outputChannel.appendLine('[SqlEditorProvider] Query cancelled by DML protection');
+                webview.postMessage({ type: 'queryCancelled' });
+                return;
+            }
+
+            // Notify webview that query is executing (timer starts here, after confirmations)
+            webview.postMessage({ type: 'executing' });
+
+            const startTime = Date.now();
+
             // If actual plan is requested, enable statistics XML
             let finalQuery = query;
             if (includeActualPlan) {
