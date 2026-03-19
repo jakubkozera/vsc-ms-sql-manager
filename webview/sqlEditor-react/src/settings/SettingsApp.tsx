@@ -20,12 +20,13 @@ interface VSCodeApi {
 declare function acquireVsCodeApi(): VSCodeApi;
 
 
-type TabId = 'explorer' | 'editor' | 'formatting';
+type TabId = 'explorer' | 'editor' | 'formatting' | 'dml';
 
 const tabs: { id: TabId; label: string }[] = [
   { id: 'explorer', label: 'Database Explorer' },
   { id: 'editor', label: 'Query Editor' },
   { id: 'formatting', label: 'Formatting Options' },
+  { id: 'dml', label: 'DML Protection' },
 ];
 
 // ============================================
@@ -322,6 +323,35 @@ export function SettingsApp() {
                 }}
               />
             </div>
+          </div>
+
+          {/* DML Protection */}
+          <div className={`settings-tab-panel${activeTab === 'dml' ? ' active' : ''}`}>
+            <BooleanSetting
+              id="dmlWarnOnMissingWhere"
+              label="Warn on missing WHERE clause"
+              description="Show a confirmation dialog before executing UPDATE or DELETE statements that do not contain a WHERE clause."
+              value={settings.dmlWarnOnMissingWhere}
+              onChange={(v) => updateSetting('dmlWarnOnMissingWhere', v)}
+              isModified={isSettingModified('dmlWarnOnMissingWhere')}
+            />
+            <BooleanSetting
+              id="dmlLimitAffectedRows"
+              label="Limit affected rows"
+              description="Before executing UPDATE or DELETE, run the statement in a rolled-back transaction to count affected rows. A confirmation dialog is shown when the count exceeds the threshold below."
+              value={settings.dmlLimitAffectedRows}
+              onChange={(v) => updateSetting('dmlLimitAffectedRows', v)}
+              isModified={isSettingModified('dmlLimitAffectedRows')}
+            />
+            <NumberSetting
+              id="dmlMaxAffectedRows"
+              label="Max affected rows (safe threshold)"
+              description="Maximum number of rows that an UPDATE or DELETE may affect without triggering a confirmation dialog. Only checked when the limit protection above is enabled."
+              value={settings.dmlMaxAffectedRows}
+              onChange={(v) => updateSetting('dmlMaxAffectedRows', v)}
+              min={1}
+              isModified={isSettingModified('dmlMaxAffectedRows')}
+            />
           </div>
         </div>
       </div>

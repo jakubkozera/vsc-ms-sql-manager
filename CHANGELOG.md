@@ -5,6 +5,20 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-03-18
+
+### Added
+
+- **DML Protection — Warn on missing WHERE clause**
+  - New setting `mssqlManager.dmlProtection.warnOnMissingWhere` (default: `true`).
+  - Before executing a batch that contains `UPDATE` or `DELETE` without a `WHERE` clause, a modal confirmation dialog is shown asking the user to confirm execution.
+
+- **DML Protection — Affected-row limit check**
+  - New setting `mssqlManager.dmlProtection.limitAffectedRows` (default: `true`).
+  - New setting `mssqlManager.dmlProtection.maxAffectedRows` (default: `100`).
+  - Before executing `UPDATE` or `DELETE`, the statement is run inside a rolled-back transaction to count affected rows. If the count exceeds `maxAffectedRows`, a confirmation dialog is shown with the exact number.
+  - The dry-run transaction is always rolled back and is **not** recorded in query history.
+
 ## [0.16.7] - 2026-03-17
 
 ### Added
