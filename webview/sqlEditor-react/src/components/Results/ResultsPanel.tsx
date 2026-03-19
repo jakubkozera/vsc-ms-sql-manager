@@ -127,9 +127,10 @@ export function ResultsPanel() {
 
   const handleExportHTML = useCallback((html: string) => {
     postMessage({
-      type: 'openInNewEditor',
+      type: 'saveFile',
       content: html,
-      language: 'html',
+      defaultFileName: 'chart-export.html',
+      fileType: 'html',
     });
   }, [postMessage]);
 
@@ -744,6 +745,7 @@ export function ResultsPanel() {
             widgets={canvasWidgets.widgets}
             onUpdatePosition={canvasWidgets.updatePosition}
             onUpdateTextContent={canvasWidgets.updateTextContent}
+            onUpdateWidgetTitle={canvasWidgets.updateWidgetTitle}
             onRemoveWidget={handleDeleteWidget}
             onBringToFront={canvasWidgets.bringToFront}
             onAddText={() => canvasWidgets.addText()}

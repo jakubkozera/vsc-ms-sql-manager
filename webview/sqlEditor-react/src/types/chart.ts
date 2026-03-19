@@ -35,6 +35,7 @@ export interface CanvasTextWidget {
   id: string;
   type: 'text';
   position: CanvasWidgetPosition;
+  title?: string;
   content: string;
   fontSize?: number;
   fontWeight?: 'normal' | 'bold';

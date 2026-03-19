@@ -144,6 +144,30 @@ describe('useCanvasWidgets', () => {
     expect(result.current.widgets.map(w => w.id)).toEqual(before.map(w => w.id));
   });
 
+  it('updateWidgetTitle updates chart title', () => {
+    const { result } = renderHook(() => useCanvasWidgets());
+    act(() => { result.current.addChart(sampleChart); });
+    const id = result.current.widgets[0].id;
+    act(() => { result.current.updateWidgetTitle(id, 'New Title'); });
+    const w = result.current.widgets[0];
+    if (w.type === 'chart') {
+      expect(w.chart.title).toBe('New Title');
+    }
+  });
+
+  it('updateWidgetTitle updates text widget title', () => {
+    const { result } = renderHook(() => useCanvasWidgets());
+    act(() => { result.current.addText('body text'); });
+    const id = result.current.widgets[0].id;
+    act(() => { result.current.updateWidgetTitle(id, 'Custom Header'); });
+    const w = result.current.widgets[0];
+    if (w.type === 'text') {
+      expect(w.title).toBe('Custom Header');
+      // body content should remain unchanged
+      expect(w.content).toBe('body text');
+    }
+  });
+
   it('clearAll removes all widgets', () => {
     const { result } = renderHook(() => useCanvasWidgets());
     act(() => { result.current.addChart(sampleChart); });

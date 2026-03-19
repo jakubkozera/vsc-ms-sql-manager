@@ -56,6 +56,19 @@ export function useCanvasWidgets() {
     ));
   }, []);
 
+  const updateWidgetTitle = useCallback((id: string, title: string) => {
+    setWidgets(prev => prev.map(w => {
+      if (w.id !== id) return w;
+      if (w.type === 'chart') {
+        return { ...w, chart: { ...w.chart, title } };
+      }
+      if (w.type === 'text') {
+        return { ...w, title };
+      }
+      return w;
+    }));
+  }, []);
+
   const removeWidget = useCallback((id: string) => {
     setWidgets(prev => prev.filter(w => w.id !== id));
   }, []);
@@ -82,6 +95,7 @@ export function useCanvasWidgets() {
     updatePosition,
     updateTextContent,
     updateTextStyle,
+    updateWidgetTitle,
     removeWidget,
     bringToFront,
     clearAll,

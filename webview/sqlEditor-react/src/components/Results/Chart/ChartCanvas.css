@@ -9,6 +9,12 @@
   min-height: 400px;
 }
 
+.chart-canvas-inner {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
 .chart-canvas-toolbar {
   position: sticky;
   top: 0;
@@ -92,15 +98,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.canvas-widget-badge {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--vscode-badge-background, #4d4d4d);
-  color: var(--vscode-badge-foreground, #cccccc);
-  text-transform: capitalize;
+  cursor: default;
 }
 
 .canvas-widget-btn {
@@ -163,50 +161,73 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  direction: ltr;
+  text-align: left;
 }
 
 /* Resize handles */
+.resize-handles-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+  border-radius: inherit;
+}
+
 .resize-handle {
   position: absolute;
-  z-index: 5;
+  pointer-events: auto;
+  z-index: 1;
 }
 
 .resize-handle-se {
   right: 0;
   bottom: 0;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   cursor: se-resize;
-}
-
-.resize-handle-se::after {
-  content: '';
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--vscode-descriptionForeground, #666);
-  border-bottom: 2px solid var(--vscode-descriptionForeground, #666);
-  opacity: 0.5;
-}
-
-.canvas-widget:hover .resize-handle-se::after {
-  opacity: 1;
 }
 
 .resize-handle-e {
   right: 0;
   top: 28px;
-  bottom: 14px;
-  width: 6px;
+  bottom: 16px;
+  width: 8px;
   cursor: e-resize;
 }
 
 .resize-handle-s {
   bottom: 0;
   left: 0;
-  right: 14px;
-  height: 6px;
+  right: 16px;
+  height: 8px;
   cursor: s-resize;
+}
+
+/* Editable widget title input */
+.canvas-widget-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  background: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 2px;
+  padding: 1px 4px;
+  outline: none;
+  font-family: inherit;
+}
+
+/* Zoom label and reset */
+.zoom-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #999);
+  min-width: 36px;
+  text-align: center;
+}
+
+.zoom-reset-btn {
+  font-size: 11px !important;
+  padding: 2px 6px !important;
 }
