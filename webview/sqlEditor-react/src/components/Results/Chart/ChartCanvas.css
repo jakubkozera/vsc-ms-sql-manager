@@ -68,8 +68,8 @@
 }
 
 .canvas-widget.selected {
-  border-color: var(--vscode-focusBorder, #007fd4);
-  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4);
+  border-color: var(--vscode-widget-border, #454545);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .canvas-widget.dragging {
@@ -178,29 +178,54 @@
   position: absolute;
   pointer-events: auto;
   z-index: 1;
+  background: transparent;
+  border: none;
+  opacity: 1;
 }
 
 .resize-handle-se {
   right: 0;
   bottom: 0;
-  width: 16px;
-  height: 16px;
+  left: auto;
+  top: auto;
+  width: 18px;
+  height: 18px;
   cursor: se-resize;
+}
+
+.resize-handle-se::before,
+.resize-handle-se::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border-right: 1px solid var(--vscode-descriptionForeground, #999);
+  border-bottom: 1px solid var(--vscode-descriptionForeground, #999);
+}
+
+.resize-handle-se::before {
+  width: 9px;
+  height: 9px;
+}
+
+.resize-handle-se::after {
+  width: 5px;
+  height: 5px;
 }
 
 .resize-handle-e {
   right: 0;
   top: 28px;
-  bottom: 16px;
-  width: 8px;
+  bottom: 18px;
+  width: 10px;
   cursor: e-resize;
 }
 
 .resize-handle-s {
   bottom: 0;
   left: 0;
-  right: 16px;
-  height: 8px;
+  right: 18px;
+  height: 10px;
   cursor: s-resize;
 }
 

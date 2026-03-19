@@ -16,6 +16,11 @@ interface ChartCanvasProps {
   onExportHTML: () => void;
 }
 
+type ResizeDirection = 'e' | 's' | 'se';
+
+const MIN_WIDGET_WIDTH = 200;
+const MIN_WIDGET_HEIGHT = 60;
+
 // ─── CanvasChartBody ─────────────────────────────────────────
 
 function CanvasChartBody({ widget }: { widget: CanvasChartWidget }) {
@@ -162,7 +167,7 @@ function CanvasWidgetWrapper({
   widget, index, zoom, isSelected, onSelect, onUpdatePosition, onUpdateTextContent, onUpdateWidgetTitle, onRemove, onBringToFront,
 }: WidgetWrapperProps) {
   const dragStart = useRef<{ x: number; y: number; wx: number; wy: number } | null>(null);
-  const resizeStart = useRef<{ x: number; y: number; w: number; h: number; dir: string } | null>(null);
+  const resizeStart = useRef<{ x: number; y: number; w: number; h: number; dir: ResizeDirection } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   // Drag handling
@@ -177,7 +182,7 @@ function CanvasWidgetWrapper({
   }, [widget.id, widget.position.x, widget.position.y, onSelect, onBringToFront]);
 
   // Resize handling
-  const handleResizeStart = useCallback((e: React.MouseEvent, dir: string) => {
+  const handleResizeStart = useCallback((e: React.MouseEvent, dir: ResizeDirection) => {
     e.preventDefault();
     e.stopPropagation();
     onSelect(widget.id);
@@ -203,8 +208,8 @@ function CanvasWidgetWrapper({
         const dy = (e.clientY - resizeStart.current.y) / zoom;
         const { dir, w, h } = resizeStart.current;
         const newPos: Partial<{ width: number; height: number }> = {};
-        if (dir.includes('e')) newPos.width = Math.max(200, w + dx);
-        if (dir.includes('s')) newPos.height = Math.max(60, h + dy);
+        if (dir.includes('e')) newPos.width = Math.max(MIN_WIDGET_WIDTH, w + dx);
+        if (dir.includes('s')) newPos.height = Math.max(MIN_WIDGET_HEIGHT, h + dy);
         onUpdatePosition(widget.id, newPos);
       }
     };
@@ -295,9 +300,21 @@ function CanvasWidgetWrapper({
       {/* Resize handles — wrapped in pointer-events:none overlay so they always
           sit above body content regardless of stacking context */}
       <div className="resize-handles-overlay">
-        <div className="resize-handle resize-handle-se" onMouseDown={e => handleResizeStart(e, 'se')} />
-        <div className="resize-handle resize-handle-e" onMouseDown={e => handleResizeStart(e, 'e')} />
-        <div className="resize-handle resize-handle-s" onMouseDown={e => handleResizeStart(e, 's')} />
+        <div
+          className="resize-handle resize-handle-se"
+          data-testid={`resize-handle-se-${widget.id}`}
+          onMouseDown={e => handleResizeStart(e, 'se')}
+        />
+        <div
+          className="resize-handle resize-handle-e"
+          data-testid={`resize-handle-e-${widget.id}`}
+          onMouseDown={e => handleResizeStart(e, 'e')}
+        />
+        <div
+          className="resize-handle resize-handle-s"
+          data-testid={`resize-handle-s-${widget.id}`}
+          onMouseDown={e => handleResizeStart(e, 's')}
+        />
       </div>
     </div>
   );

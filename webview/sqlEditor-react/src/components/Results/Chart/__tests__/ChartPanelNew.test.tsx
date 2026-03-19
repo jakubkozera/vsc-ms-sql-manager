@@ -155,4 +155,52 @@ describe('ChartPanel (canvas-based)', () => {
     const textEl = screen.getByTestId('canvas-text-t1');
     expect(textEl.getAttribute('dir')).toBe('ltr');
   });
+
+  it('resizes chart widget downward using south handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeChartWidget('c1', 'Resizable')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-s-c1'), { clientX: 100, clientY: 100 });
+    fireEvent.mouseMove(document, { clientX: 100, clientY: 140 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('c1', { height: 390 });
+  });
+
+  it('resizes chart widget diagonally using south-east handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeChartWidget('c1', 'Resizable')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-se-c1'), { clientX: 120, clientY: 120 });
+    fireEvent.mouseMove(document, { clientX: 170, clientY: 150 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('c1', { width: 650, height: 380 });
+  });
+
+  it('resizes text widget downward using south handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeTextWidget('t1', 'Resizable text')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-s-t1'), { clientX: 90, clientY: 90 });
+    fireEvent.mouseMove(document, { clientX: 90, clientY: 120 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('t1', { height: 110 });
+  });
+
+  it('resizes text widget diagonally using south-east handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeTextWidget('t1', 'Resizable text')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-se-t1'), { clientX: 110, clientY: 100 });
+    fireEvent.mouseMove(document, { clientX: 150, clientY: 130 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('t1', { width: 440, height: 110 });
+  });
 });
