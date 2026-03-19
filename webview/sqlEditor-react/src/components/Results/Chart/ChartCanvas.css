@@ -1,3 +1,8 @@
+.chart-canvas-container {
+  position: relative;
+  height: 100%;
+}
+
 .chart-canvas {
   position: relative;
   height: 100%;
@@ -7,6 +12,14 @@
   background-size: 20px 20px;
   background-color: var(--vscode-editor-background, #1e1e1e);
   min-height: 400px;
+}
+
+.chart-canvas.is-panning {
+  cursor: grabbing;
+}
+
+.chart-canvas.is-panning * {
+  cursor: grabbing !important;
 }
 
 .chart-canvas-inner {

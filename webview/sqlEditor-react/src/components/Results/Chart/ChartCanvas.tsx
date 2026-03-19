@@ -325,7 +325,14 @@ function CanvasWidgetWrapper({
 export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, onUpdateWidgetTitle, onRemoveWidget, onBringToFront, onAddText, onExportHTML }: ChartCanvasProps) {
   const [selectedWidget, setSelectedWidget] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(zoom);
+  const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
   // Deselect when clicking empty canvas
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
@@ -336,11 +343,78 @@ export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, on
   const handleWheel = useCallback((e: WheelEvent) => {
     if (!e.ctrlKey) return;
     e.preventDefault();
-    setZoom(prev => {
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      return Math.min(3, Math.max(0.25, Math.round((prev + delta) * 100) / 100));
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const prevZoom = zoomRef.current;
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const nextZoom = Math.min(3, Math.max(0.25, Math.round((prevZoom + delta) * 100) / 100));
+    if (nextZoom === prevZoom) return;
+
+    const rect = el.getBoundingClientRect();
+    const viewportX = e.clientX - rect.left;
+    const viewportY = e.clientY - rect.top;
+    const contentX = (el.scrollLeft + viewportX) / prevZoom;
+    const contentY = (el.scrollTop + viewportY) / prevZoom;
+
+    setZoom(nextZoom);
+    zoomRef.current = nextZoom;
+
+    requestAnimationFrame(() => {
+      const target = canvasRef.current;
+      if (!target) return;
+      target.scrollLeft = contentX * nextZoom - viewportX;
+      target.scrollTop = contentY * nextZoom - viewportY;
     });
   }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 1) return;
+    const el = canvasRef.current;
+    if (!el) return;
+
+    e.preventDefault();
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop,
+    };
+    setIsPanning(true);
+  }, []);
+
+  const handleAuxClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button === 1) {
+      e.preventDefault();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isPanning) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const start = panStartRef.current;
+      const el = canvasRef.current;
+      if (!start || !el) return;
+
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      el.scrollLeft = start.scrollLeft - dx;
+      el.scrollTop = start.scrollTop - dy;
+    };
+
+    const handleMouseUp = () => {
+      panStartRef.current = null;
+      setIsPanning(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isPanning]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -351,60 +425,67 @@ export function ChartCanvas({ widgets, onUpdatePosition, onUpdateTextContent, on
 
   return (
     <div className="chart-canvas-container" style={{ height: '100%' }}>
-      <div className="chart-canvas" ref={canvasRef} onClick={handleCanvasClick} data-testid="chart-canvas">
-        <div className="canvas-overlay-controls canvas-overlay-controls-top-left" data-testid="chart-canvas-controls-top-left">
-          <button className="canvas-control-btn" onClick={onAddText} data-testid="canvas-add-text-btn" title="Add text block">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 16v-6a2 2 0 1 1 4 0v6" />
-              <path d="M3 13h4" />
-              <path d="M10 8v6a2 2 0 1 0 4 0v-1a2 2 0 1 0 -4 0v1" />
-              <path d="M20.732 12a2 2 0 0 0 -3.732 1v1a2 2 0 0 0 3.726 1.01" />
-            </svg>
-            Add Text
-          </button>
-          <button className="canvas-control-btn" onClick={onExportHTML} data-testid="canvas-export-html-btn" title="Export as HTML">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-              <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
-              <path d="M2 21v-6" />
-              <path d="M5 15v6" />
-              <path d="M2 18h3" />
-              <path d="M20 15v6h2" />
-              <path d="M13 21v-6l2 3l2 -3v6" />
-              <path d="M7.5 15h3" />
-              <path d="M9 15v6" />
-            </svg>
-            Export HTML
-          </button>
-        </div>
+      <div className="canvas-overlay-controls canvas-overlay-controls-top-left" data-testid="chart-canvas-controls-top-left">
+        <button className="canvas-control-btn" onClick={onAddText} data-testid="canvas-add-text-btn" title="Add text block">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 16v-6a2 2 0 1 1 4 0v6" />
+            <path d="M3 13h4" />
+            <path d="M10 8v6a2 2 0 1 0 4 0v-1a2 2 0 1 0 -4 0v1" />
+            <path d="M20.732 12a2 2 0 0 0 -3.732 1v1a2 2 0 0 0 3.726 1.01" />
+          </svg>
+          Add Text
+        </button>
+        <button className="canvas-control-btn" onClick={onExportHTML} data-testid="canvas-export-html-btn" title="Export as HTML">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+            <path d="M5 12v-7a2 2 0 0 1 2 -2h7l5 5v4" />
+            <path d="M2 21v-6" />
+            <path d="M5 15v6" />
+            <path d="M2 18h3" />
+            <path d="M20 15v6h2" />
+            <path d="M13 21v-6l2 3l2 -3v6" />
+            <path d="M7.5 15h3" />
+            <path d="M9 15v6" />
+          </svg>
+          Export HTML
+        </button>
+      </div>
 
-        <div className="canvas-overlay-controls canvas-overlay-controls-bottom-right" data-testid="chart-canvas-controls-bottom-right">
-          <span className="zoom-label" data-testid="canvas-zoom-label">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={() => setZoom(1)}
-            className="zoom-reset-btn"
-            data-testid="canvas-zoom-reset"
-            title="Reset zoom"
-            aria-label="Reset zoom"
+      <div className="canvas-overlay-controls canvas-overlay-controls-bottom-right" data-testid="chart-canvas-controls-bottom-right">
+        <span className="zoom-label" data-testid="canvas-zoom-label">{Math.round(zoom * 100)}%</span>
+        <button
+          onClick={() => setZoom(1)}
+          className="zoom-reset-btn"
+          data-testid="canvas-zoom-reset"
+          title="Reset zoom"
+          aria-label="Reset zoom"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 21l-6 -6" />
-              <path d="M3.268 12.043a7.017 7.017 0 0 0 6.634 4.957a7.012 7.012 0 0 0 7.043 -6.131a7 7 0 0 0 -5.314 -7.672a7.021 7.021 0 0 0 -8.241 4.403" />
-              <path d="M3 4v4h4" />
-            </svg>
-          </button>
-        </div>
+            <path d="M21 21l-6 -6" />
+            <path d="M3.268 12.043a7.017 7.017 0 0 0 6.634 4.957a7.012 7.012 0 0 0 7.043 -6.131a7 7 0 0 0 -5.314 -7.672a7.021 7.021 0 0 0 -8.241 4.403" />
+            <path d="M3 4v4h4" />
+          </svg>
+        </button>
+      </div>
 
+      <div
+        className={`chart-canvas ${isPanning ? 'is-panning' : ''}`}
+        ref={canvasRef}
+        onClick={handleCanvasClick}
+        onMouseDown={handleMouseDown}
+        onAuxClick={handleAuxClick}
+        data-testid="chart-canvas"
+      >
         <div className="chart-canvas-inner" style={{ transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
         {widgets.map((widget, index) => (
           <CanvasWidgetWrapper
