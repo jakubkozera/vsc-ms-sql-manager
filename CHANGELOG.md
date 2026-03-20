@@ -5,6 +5,41 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-03-20
+
+### Added
+
+- **Interactive Chart Canvas — visualize query results as charts**
+  - New **Charts** tab in the Results panel groups all chart widgets on a shared freeform canvas.
+  - **Chart configuration dialog**: pick chart type (Bar, Line, Pie, Doughnut, Scatter, Radar), set a title, choose a label column and one or more data columns.
+  - Charts can be created directly from the result grid context menu ("Create Chart…").
+  - Canvas supports **drag-and-drop** repositioning and **resize handles** (E, S, SE corners) for every widget.
+  - **Panning**: drag the canvas background (or use middle-mouse button) to move the viewport.
+  - **Zoom controls**: zoom-in / zoom-out / reset buttons in the overlay toolbar plus `Ctrl+Scroll` shortcut.
+  - **Text widgets**: add free-form text annotations to the canvas alongside charts.
+  - **Widget title editing**: double-click a widget header to rename it inline.
+  - **Bring to front**: right-click a widget to raise it above overlapping widgets.
+  - **Export**:
+    - _HTML_ — self-contained standalone file with embedded Chart.js (no internet required).
+    - _SVG_ — vector export of each chart via `canvas.toDataURL`.
+    - _PNG_ — raster export of each chart.
+  - Full unit-test coverage: `ChartCard`, `ChartConfigDialog`, `ChartPanel`, `ChartPanelNew`, `chartExportService`, `useCanvasWidgets`.
+
+- **Settings — DML Protection tab**
+  - The Settings webview now has a dedicated **DML Protection** tab exposing all three protection settings (`warnOnMissingWhere`, `limitAffectedRows`, `maxAffectedRows`) with descriptions.
+
+### Enhanced
+
+- **SQL Validator — improved type inference for SQL functions**
+  - `MIN`, `MAX`, `SUM`, `AVG`, `ISNULL`, and `COALESCE` expressions now resolve to the underlying column type of their argument (including aliases), providing accurate column-type metadata for chart axis suggestions and cell validation.
+  - `DISTINCT` keyword inside aggregate functions is handled transparently.
+
+- **Query Executor — driver-reported column type fallback**
+  - Computed columns (`COUNT(*)`, `MAX(col)`, `SUM(col)`, etc.) that cannot be resolved by schema introspection now fall back to the type declaration reported directly by the SQL driver, improving type accuracy for chart data column selection.
+
+- **SQL Chat Handler — stable conversation IDs**
+  - Conversation ID generation now uses a deterministic hash across the session lifetime, preventing ID drift that could break multi-turn SQL chat continuity.
+
 ## [0.17.0] - 2026-03-18
 
 ### Added

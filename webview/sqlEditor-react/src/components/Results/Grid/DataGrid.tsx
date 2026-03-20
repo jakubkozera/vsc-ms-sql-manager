@@ -38,9 +38,10 @@ interface DataGridProps {
   isCellModified?: (rowIndex: number, colIndex: number) => boolean;
   getValidationError?: (rowIndex: number, colIndex: number) => string | null;
   onSelectionChange?: (info: SelectionInfo) => void;
+  onCreateChart?: (chartData: { columns: string[]; rows: unknown[][]; columnTypes: Record<string, string> }) => void;
 }
 
-export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit, onDeleteRow, onRestoreRow, onRevertCell, isRowDeleted, isCellModified, getValidationError, onSelectionChange }: DataGridProps) {
+export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResultSet = false, onCellEdit, onDeleteRow, onRestoreRow, onRevertCell, isRowDeleted, isCellModified, getValidationError, onSelectionChange, onCreateChart }: DataGridProps) {
   // State
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
@@ -750,6 +751,8 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
 
     items.push({ id: 'separator2', label: '', separator: true });
     items.push({ id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' });
+    items.push({ id: 'separator_chart', label: '', separator: true });
+    items.push({ id: 'createChart', label: 'Create Chart…' });
     return items;
   }, [isEditable, isRowDeleted]);
 
@@ -907,9 +910,31 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
         }
         break;
       }
+      case 'createChart': {
+        if (onCreateChart) {
+          // Build column type map
+          const columnTypes: Record<string, string> = {};
+          for (const colDef of columnDefs) {
+            columnTypes[colDef.name] = colDef.type;
+          }
+
+          // Use selected rows if available, otherwise all sorted data
+          const selectedIndices = getSelectedRowIndices();
+          const rows = selectedIndices.length > 0
+            ? selectedIndices.map(idx => sortedData[idx]).filter(Boolean)
+            : sortedData;
+
+          onCreateChart({
+            columns: columnDefs.map(c => c.name),
+            rows: rows.map(row => [...row]),
+            columnTypes,
+          });
+        }
+        break;
+      }
     }
     setContextMenu(null);
-  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onRevertCell, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport, selection]);
+  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onRevertCell, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport, selection, onCreateChart, sortedData]);
 
   // Apply the bulk-edit value to all selected cells
   const handleBulkEditApply = useCallback((value: string) => {
@@ -991,8 +1016,9 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   }, [isGridActive, handleCopy, selectAllRows, sortedData.length, isEditable, selection.lastClickedIndex]);
 
   const handleExportButtonClick = useCallback((e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setExportMenu({
-      position: { x: e.clientX, y: e.clientY },
+      position: { x: rect.left, y: rect.bottom },
     });
   }, []);
 

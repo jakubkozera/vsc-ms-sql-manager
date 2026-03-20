@@ -1,0 +1,32 @@
+.chart-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.chart-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground, #999);
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+}
+
+.chart-panel-empty p {
+  margin: 0;
+}
+
+.chart-panel-empty .hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.chart-panel-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

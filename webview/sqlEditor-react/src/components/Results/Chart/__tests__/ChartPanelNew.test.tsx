@@ -1,0 +1,224 @@
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '../../../../test/testUtils';
+import { ChartPanel } from '../ChartPanelNew';
+import { CanvasWidget, DEFAULT_CHART_COLORS } from '../../../../types/chart';
+
+// Mock Chart.js
+vi.mock('chart.js', () => {
+  class MockChart {
+    destroy = vi.fn();
+    update = vi.fn();
+    resize = vi.fn();
+    static register = vi.fn();
+  }
+  return { Chart: MockChart, registerables: [] };
+});
+
+const makeChartWidget = (id: string, title: string): CanvasWidget => ({
+  id,
+  type: 'chart',
+  position: { x: 0, y: 0, width: 600, height: 350 },
+  chart: {
+    id,
+    chartType: 'bar',
+    title,
+    labelColumn: 'Name',
+    dataColumns: ['Value'],
+    data: { columns: ['Name', 'Value'], rows: [['A', 10], ['B', 20]] },
+    colors: DEFAULT_CHART_COLORS,
+  },
+});
+
+const makeTextWidget = (id: string, content: string): CanvasWidget => ({
+  id,
+  type: 'text',
+  position: { x: 0, y: 400, width: 400, height: 80 },
+  content,
+  fontSize: 14,
+  fontWeight: 'normal',
+});
+
+const noop = () => {};
+
+const defaultProps = {
+  onUpdatePosition: noop,
+  onUpdateTextContent: noop,
+  onUpdateWidgetTitle: noop,
+  onRemoveWidget: noop,
+  onBringToFront: noop,
+  onAddText: noop,
+  onExportHTML: noop,
+  onExportSVG: noop,
+  onExportPNG: noop,
+};
+
+describe('ChartPanel (canvas-based)', () => {
+  it('renders empty canvas when no widgets', () => {
+    render(<ChartPanel widgets={[]} {...defaultProps} />);
+    expect(screen.getByTestId('chart-canvas-empty')).toBeInTheDocument();
+  });
+
+  it('renders chart widget on canvas', () => {
+    const widgets = [makeChartWidget('c1', 'Sales Chart')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} />);
+    expect(screen.getByTestId('canvas-widget-c1')).toBeInTheDocument();
+    expect(screen.getByText('Sales Chart')).toBeInTheDocument();
+  });
+
+  it('renders text widget on canvas', () => {
+    const widgets = [makeTextWidget('t1', 'Hello world')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} />);
+    expect(screen.getByTestId('canvas-widget-t1')).toBeInTheDocument();
+  });
+
+  it('renders canvas overlay controls with Add Text and Export dropdown', () => {
+    render(<ChartPanel widgets={[]} {...defaultProps} />);
+    expect(screen.getByTestId('chart-canvas-controls-top-left')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-add-text-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-export-btn')).toBeInTheDocument();
+  });
+
+  it('shows export menu with HTML, SVG, PNG options when Export is clicked', () => {
+    render(<ChartPanel widgets={[]} {...defaultProps} />);
+    // Menu should not be visible initially
+    expect(screen.queryByTestId('canvas-export-menu')).not.toBeInTheDocument();
+    // Click Export button
+    fireEvent.click(screen.getByTestId('canvas-export-btn'));
+    // Menu should appear
+    expect(screen.getByTestId('canvas-export-menu')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-export-html-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-export-svg-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-export-png-btn')).toBeInTheDocument();
+  });
+
+  it('calls onAddText when Add Text button is clicked', () => {
+    const onAddText = vi.fn();
+    render(<ChartPanel widgets={[]} {...defaultProps} onAddText={onAddText} />);
+    fireEvent.click(screen.getByTestId('canvas-add-text-btn'));
+    expect(onAddText).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onRemoveWidget when delete button is clicked', () => {
+    const onRemove = vi.fn();
+    const widgets = [makeChartWidget('c1', 'Test')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onRemoveWidget={onRemove} />);
+    fireEvent.click(screen.getByTestId('canvas-widget-delete-c1'));
+    expect(onRemove).toHaveBeenCalledWith('c1');
+  });
+
+  it('calls onExportHTML when Export HTML is clicked', () => {
+    const onExport = vi.fn();
+    const widgets = [makeChartWidget('c1', 'Test')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onExportHTML={onExport} />);
+    fireEvent.click(screen.getByTestId('canvas-export-btn'));
+    fireEvent.click(screen.getByTestId('canvas-export-html-btn'));
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(onExport.mock.calls[0][0]).toContain('<!DOCTYPE html>');
+  });
+
+  it('renders multiple widgets', () => {
+    const widgets = [
+      makeChartWidget('c1', 'Chart 1'),
+      makeTextWidget('t1', 'Note'),
+      makeChartWidget('c2', 'Chart 2'),
+    ];
+    render(<ChartPanel widgets={widgets} {...defaultProps} />);
+    expect(screen.getByTestId('canvas-widget-c1')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-widget-t1')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-widget-c2')).toBeInTheDocument();
+  });
+
+  it('shows zoom controls in bottom-right overlay', () => {
+    render(<ChartPanel widgets={[]} {...defaultProps} />);
+    expect(screen.getByTestId('chart-canvas-controls-bottom-right')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-zoom-label')).toHaveTextContent('100%');
+  });
+
+  it('has a zoom reset button', () => {
+    render(<ChartPanel widgets={[]} {...defaultProps} />);
+    expect(screen.getByTestId('canvas-zoom-reset')).toBeInTheDocument();
+  });
+
+  it('shows title edit input on double-click and calls onUpdateWidgetTitle on submit', () => {
+    const onUpdateTitle = vi.fn();
+    const widgets = [makeChartWidget('c1', 'My Chart')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdateWidgetTitle={onUpdateTitle} />);
+
+    // Double-click the title to enter edit mode
+    const titleEl = screen.getByText('My Chart');
+    fireEvent.doubleClick(titleEl);
+
+    // Should show the input
+    const input = screen.getByTestId('canvas-widget-title-input-c1');
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveValue('My Chart');
+
+    // Change value and submit
+    fireEvent.change(input, { target: { value: 'Renamed Chart' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateTitle).toHaveBeenCalledWith('c1', 'Renamed Chart');
+  });
+
+  it('does not have badge labels on widgets', () => {
+    const widgets = [makeChartWidget('c1', 'Test'), makeTextWidget('t1', 'Note')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} />);
+    // Badge elements should not exist
+    const badges = document.querySelectorAll('.canvas-widget-badge');
+    expect(badges).toHaveLength(0);
+  });
+
+  it('text widget has LTR direction', () => {
+    const widgets = [makeTextWidget('t1', 'Hello')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} />);
+    const textEl = screen.getByTestId('canvas-text-t1');
+    expect(textEl.getAttribute('dir')).toBe('ltr');
+  });
+
+  it('resizes chart widget downward using south handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeChartWidget('c1', 'Resizable')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-s-c1'), { clientX: 100, clientY: 100 });
+    fireEvent.mouseMove(document, { clientX: 100, clientY: 140 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('c1', { height: 390 });
+  });
+
+  it('resizes chart widget diagonally using south-east handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeChartWidget('c1', 'Resizable')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-se-c1'), { clientX: 120, clientY: 120 });
+    fireEvent.mouseMove(document, { clientX: 170, clientY: 150 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('c1', { width: 650, height: 380 });
+  });
+
+  it('resizes text widget downward using south handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeTextWidget('t1', 'Resizable text')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-s-t1'), { clientX: 90, clientY: 90 });
+    fireEvent.mouseMove(document, { clientX: 90, clientY: 120 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('t1', { height: 110 });
+  });
+
+  it('resizes text widget diagonally using south-east handle', () => {
+    const onUpdatePosition = vi.fn();
+    const widgets = [makeTextWidget('t1', 'Resizable text')];
+    render(<ChartPanel widgets={widgets} {...defaultProps} onUpdatePosition={onUpdatePosition} />);
+
+    fireEvent.mouseDown(screen.getByTestId('resize-handle-se-t1'), { clientX: 110, clientY: 100 });
+    fireEvent.mouseMove(document, { clientX: 150, clientY: 130 });
+    fireEvent.mouseUp(document);
+
+    expect(onUpdatePosition).toHaveBeenCalledWith('t1', { width: 440, height: 110 });
+  });
+});

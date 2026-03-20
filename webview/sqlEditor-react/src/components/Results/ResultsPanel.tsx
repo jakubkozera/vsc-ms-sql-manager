@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useVSCode } from '../../context/VSCodeContext';
 import { usePendingChanges } from '../../hooks/usePendingChanges';
+import { useCanvasWidgets } from '../../hooks/useCanvasWidgets';
 import { PendingChange } from '../../types/messages';
 import { validateCellValue } from '../../utils/cellValidation';
 import { ResultsTabs } from './ResultsTabs';
@@ -9,9 +10,12 @@ import { PendingChangesTab } from './PendingChangesTab';
 import { DataGrid, SelectionInfo } from './Grid/DataGrid';
 import { AggregationBar } from './Grid/AggregationBar';
 import { QueryPlanView } from './QueryPlan/QueryPlanView';
+import { ChartPanel } from './Chart/ChartPanelNew';
+import { ChartConfigDialog } from './Chart/ChartConfigDialog';
+import { ChartConfig, ChartDataSnapshot, DEFAULT_CHART_COLORS } from '../../types/chart';
 import './ResultsPanel.css';
 
-export type TabId = 'results' | 'messages' | 'plan' | 'pendingChanges';
+export type TabId = 'results' | 'messages' | 'plan' | 'pendingChanges' | 'charts';
 
 function sqlEscape(value: unknown): string {
   if (value === null || value === undefined) return 'NULL';
@@ -85,6 +89,69 @@ export function ResultsPanel() {
   const handleSelectionChange = useCallback((info: SelectionInfo) => {
     setSelectionInfo(info);
   }, []);
+
+  // Chart canvas state
+  const canvasWidgets = useCanvasWidgets();
+  const [chartDialogData, setChartDialogData] = useState<{ data: ChartDataSnapshot; columnTypes: Record<string, string> } | null>(null);
+
+  const handleCreateChartRequest = useCallback((chartData: { columns: string[]; rows: unknown[][]; columnTypes: Record<string, string> }) => {
+    setChartDialogData({
+      data: { columns: chartData.columns, rows: chartData.rows },
+      columnTypes: chartData.columnTypes,
+    });
+  }, []);
+
+  const handleChartConfigCreate = useCallback((config: { chartType: ChartConfig['chartType']; title: string; labelColumn: string; dataColumns: string[] }) => {
+    if (!chartDialogData) return;
+    const newChart: ChartConfig = {
+      id: `chart-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      chartType: config.chartType,
+      title: config.title,
+      labelColumn: config.labelColumn,
+      dataColumns: config.dataColumns,
+      data: chartDialogData.data,
+      colors: DEFAULT_CHART_COLORS,
+    };
+    canvasWidgets.addChart(newChart);
+    setChartDialogData(null);
+    setActiveTab('charts');
+  }, [chartDialogData, canvasWidgets.addChart]);
+
+  const handleDeleteWidget = useCallback((id: string) => {
+    canvasWidgets.removeWidget(id);
+    if (canvasWidgets.widgets.length <= 1 && activeTab === 'charts') {
+      // Will be 0 after removal
+      setActiveTab('results');
+    }
+  }, [activeTab, canvasWidgets]);
+
+  const handleExportHTML = useCallback((html: string) => {
+    postMessage({
+      type: 'saveFile',
+      content: html,
+      defaultFileName: 'chart-export.html',
+      fileType: 'html',
+    });
+  }, [postMessage]);
+
+  const handleExportSVG = useCallback((svg: string) => {
+    postMessage({
+      type: 'saveFile',
+      content: svg,
+      defaultFileName: 'chart-export.svg',
+      fileType: 'svg',
+    });
+  }, [postMessage]);
+
+  const handleExportPNG = useCallback((base64: string) => {
+    postMessage({
+      type: 'saveFile',
+      content: base64,
+      defaultFileName: 'chart-export.png',
+      fileType: 'png',
+      encoding: 'base64',
+    });
+  }, [postMessage]);
 
   // Loading timer state
   const [loadingTime, setLoadingTime] = useState('00:00');
@@ -445,6 +512,7 @@ export function ResultsPanel() {
         pendingChangesCount={pendingChangesCount}
         onQuickSave={pendingChangesCount > 0 ? () => handleCommit(firstEditableIndex) : undefined}
         sqlPreview={pendingChangesCount > 0 ? generateSqlStatements(firstEditableIndex).join('\n') : undefined}
+        chartCount={canvasWidgets.widgets.length}
       />
 
       <div className="results-content">
@@ -516,6 +584,7 @@ export function ResultsPanel() {
                         return colName ? pendingChanges.isCellModified(idx, rowIndex, colName) : false;
                       }}
                       getValidationError={makeGetValidationError(idx)}
+                      onCreateChart={handleCreateChartRequest}
                     />
                   </div>
                 </div>
@@ -571,6 +640,7 @@ export function ResultsPanel() {
                       return colName ? pendingChanges.isCellModified(index, rowIndex, colName) : false;
                     }}
                     getValidationError={makeGetValidationError(index)}
+                    onCreateChart={handleCreateChartRequest}
                   />
                 </div>
               ))}
@@ -688,7 +758,31 @@ export function ResultsPanel() {
             <p className="hint">Enable "With execution plan" before running</p>
           </div>
         )}
+
+        {activeTab === 'charts' && (
+          <ChartPanel
+            widgets={canvasWidgets.widgets}
+            onUpdatePosition={canvasWidgets.updatePosition}
+            onUpdateTextContent={canvasWidgets.updateTextContent}
+            onUpdateWidgetTitle={canvasWidgets.updateWidgetTitle}
+            onRemoveWidget={handleDeleteWidget}
+            onBringToFront={canvasWidgets.bringToFront}
+            onAddText={() => canvasWidgets.addText()}
+            onExportHTML={handleExportHTML}
+            onExportSVG={handleExportSVG}
+            onExportPNG={handleExportPNG}
+          />
+        )}
       </div>
+
+      {chartDialogData && (
+        <ChartConfigDialog
+          data={chartDialogData.data}
+          columnTypes={chartDialogData.columnTypes}
+          onCreate={handleChartConfigCreate}
+          onCancel={() => setChartDialogData(null)}
+        />
+      )}
     </div>
   );
 }

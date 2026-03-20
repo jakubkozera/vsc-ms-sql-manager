@@ -29,6 +29,8 @@ interface ResultsTabsProps {
   onQuickSave?: () => void;
   /** SQL preview text for quick save tooltip */
   sqlPreview?: string;
+  /** Number of charts created */
+  chartCount?: number;
 }
 
 export function ResultsTabs({
@@ -48,6 +50,7 @@ export function ResultsTabs({
   pendingChangesCount = 0,
   onQuickSave,
   sqlPreview,
+  chartCount = 0,
 }: ResultsTabsProps) {
   return (
     <div className="results-tabs-container">
@@ -118,6 +121,17 @@ export function ResultsTabs({
             >
               Query Plan
               <span className="tab-indicator" />
+            </button>
+          )}
+
+          {chartCount > 0 && (
+            <button
+              className={`results-tab ${activeTab === 'charts' ? 'active' : ''}`}
+              onClick={() => onTabChange('charts')}
+              data-testid="charts-tab"
+            >
+              Charts
+              <span className="tab-badge">{chartCount}</span>
             </button>
           )}
         </div>

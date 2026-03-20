@@ -1,0 +1,68 @@
+.chart-card {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-widget-border, #454545);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--vscode-sideBar-background, #252526);
+  border-bottom: 1px solid var(--vscode-widget-border, #454545);
+  min-height: 32px;
+}
+
+.chart-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-card-type-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #cccccc);
+  text-transform: capitalize;
+}
+
+.chart-card-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--vscode-descriptionForeground, #999);
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0;
+}
+
+.chart-card-delete:hover {
+  background: var(--vscode-toolbar-hoverBackground, #5a5d5e50);
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.chart-card-body {
+  padding: 12px;
+  flex: 1;
+  min-height: 250px;
+  position: relative;
+}
+
+.chart-card-body canvas {
+  width: 100% !important;
+  height: 100% !important;
+}

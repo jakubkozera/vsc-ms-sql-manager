@@ -216,10 +216,13 @@ describe('buildColumnMenuItems', () => {
     expect(nonSep[1].label).toBe('Copy values with header');
   });
 
-  it('returns selectAll as last item', () => {
+  it('returns selectAll before createChart', () => {
     const items = buildColumnMenuItems();
     const nonSep = items.filter(i => !i.separator);
-    expect(nonSep[nonSep.length - 1].id).toBe('selectAll');
+    const selectAllIdx = nonSep.findIndex(i => i.id === 'selectAll');
+    const createChartIdx = nonSep.findIndex(i => i.id === 'createChart');
+    expect(selectAllIdx).toBeGreaterThanOrEqual(0);
+    expect(createChartIdx).toBeGreaterThan(selectAllIdx);
   });
 
   it('does NOT include copyRow, copyRowAsInsert, or deleteRow', () => {

@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 import { ExportFormat } from '../../../services/exportService';
 import './ExportMenu.css';
 
@@ -25,7 +25,26 @@ const EXPORT_FORMATS: { format: ExportFormat | string; label: string; descriptio
 
 export function ExportMenu({ position, onExport, onClose, onAutoFit }: ExportMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [adjustedPos, setAdjustedPos] = useState<{ x: number; y: number } | null>(null);
   const includeHeaders = true; // Always include headers in new version
+
+  // Measure after mount and flip upward / leftward if menu would overflow the viewport
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    let x = position.x;
+    let y = position.y;
+
+    if (y + rect.height > window.innerHeight - 8) {
+      y = position.y - rect.height; // flip upward
+    }
+    if (x + rect.width > window.innerWidth - 8) {
+      x = window.innerWidth - rect.width - 8;
+    }
+
+    setAdjustedPos({ x: Math.max(0, x), y: Math.max(0, y) });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Click outside to close
   useEffect(() => {
@@ -77,11 +96,11 @@ export function ExportMenu({ position, onExport, onClose, onAutoFit }: ExportMen
     <div
       ref={menuRef}
       className="export-menu"
-      style={{ left: position.x, top: position.y }}
+      style={{ left: (adjustedPos ?? position).x, top: (adjustedPos ?? position).y, visibility: adjustedPos ? 'visible' : 'hidden' }}
       data-testid="export-menu"
     >
       <div className="export-menu-formats">
-        {EXPORT_FORMATS.map(({ format, label, description, action }, index) => {
+        {EXPORT_FORMATS.map(({ format, label, action }, index) => {
           if (action === 'divider') {
             return (
               <div key={`divider-${index}`} className="export-menu-divider" />
@@ -97,10 +116,7 @@ export function ExportMenu({ position, onExport, onClose, onAutoFit }: ExportMen
               <span className="export-format-icon">
                 {getFormatIcon(format)}
               </span>
-              <div className="export-format-info">
-                <span className="export-format-label">{label}</span>
-                {description && <span className="export-format-description">{description}</span>}
-              </div>
+              <span className="export-format-label">{label}</span>
             </button>
           );
         })}

@@ -1,0 +1,195 @@
+.chart-config-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.chart-config-dialog {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-widget-border, #454545);
+  border-radius: 6px;
+  padding: 20px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.chart-config-dialog h3 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.chart-config-field {
+  margin-bottom: 14px;
+}
+
+.chart-config-field label {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-bottom: 4px;
+}
+
+.chart-config-field input[type="text"],
+.chart-config-field select {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, #5a5a5a);
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.chart-config-field input[type="text"]:focus,
+.chart-config-field select:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.chart-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.chart-type-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-input-border, #5a5a5a);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 11px;
+  transition: border-color 0.15s;
+}
+
+.chart-type-option:hover {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.chart-type-option.selected {
+  border-color: var(--vscode-focusBorder, #007fd4);
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+}
+
+.chart-type-option svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.8;
+}
+
+.chart-type-option.selected svg {
+  opacity: 1;
+}
+
+.chart-data-columns {
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-input-border, #5a5a5a);
+  border-radius: 3px;
+  background: var(--vscode-input-background, #3c3c3c);
+}
+
+.chart-data-column-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+}
+
+.chart-data-column-item:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.chart-data-column-item input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0 8px 0 0;
+  padding: 0;
+  vertical-align: middle;
+  accent-color: var(--vscode-focusBorder, #007fd4);
+  cursor: pointer;
+}
+
+.chart-data-column-item .col-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  margin-right: 10px;
+}
+
+.chart-data-column-item code.col-type {
+  flex-shrink: 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, rgba(255,255,255,0.08));
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+  border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15));
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.chart-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.chart-config-actions button {
+  padding: 5px 14px;
+  border-radius: 3px;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+}
+
+.chart-config-actions .btn-primary {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.chart-config-actions .btn-primary:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.chart-config-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chart-config-actions .btn-secondary {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+}
+
+.chart-config-actions .btn-secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}

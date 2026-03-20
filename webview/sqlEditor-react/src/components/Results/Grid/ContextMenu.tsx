@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import './ContextMenu.css';
 
 export interface ContextMenuItem {
@@ -19,27 +19,29 @@ interface ContextMenuProps {
 
 export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [adjustedPos, setAdjustedPos] = useState<{ x: number; y: number } | null>(null);
 
   // Keep a stable ref to onClose so document listeners never need to re-register
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  // Adjust position if menu would go off-screen
-  const adjustedPosition = useCallback(() => {
-    if (!menuRef.current) return position;
-    
+  // Measure after mount and flip upward / leftward if the menu would overflow the viewport
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
     const rect = menuRef.current.getBoundingClientRect();
-    let { x, y } = position;
-    
-    if (x + rect.width > window.innerWidth) {
+    let x = position.x;
+    let y = position.y;
+
+    if (y + rect.height > window.innerHeight - 8) {
+      y = position.y - rect.height; // flip upward
+    }
+    if (x + rect.width > window.innerWidth - 8) {
       x = window.innerWidth - rect.width - 8;
     }
-    if (y + rect.height > window.innerHeight) {
-      y = window.innerHeight - rect.height - 8;
-    }
-    
-    return { x: Math.max(0, x), y: Math.max(0, y) };
-  }, [position]);
+
+    setAdjustedPos({ x: Math.max(0, x), y: Math.max(0, y) });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Close on click outside — registered ONCE, uses ref to always call latest onClose.
   // The 0 ms delay avoids closing immediately from the right-click that opened the menu.
@@ -85,13 +87,13 @@ export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuP
     }
   };
 
-  const pos = adjustedPosition();
+  const pos = adjustedPos ?? position;
 
   return (
     <div
       ref={menuRef}
       className="context-menu"
-      style={{ left: pos.x, top: pos.y }}
+      style={{ left: pos.x, top: pos.y, visibility: adjustedPos ? 'visible' : 'hidden' }}
       data-testid="context-menu"
     >
       {items.map((item, index) => {
@@ -168,6 +170,8 @@ export function buildColumnMenuItems(): ContextMenuItem[] {
     { id: 'copyColumnValuesWithHeader', label: 'Copy values with header' },
     { id: 'separator1', label: '', separator: true },
     { id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' },
+    { id: 'separator_chart', label: '', separator: true },
+    { id: 'createChart', label: 'Create Chart…' },
   ];
 }
 
@@ -217,5 +221,7 @@ export function buildCellMenuItems(options: {
 
   items.push({ id: 'separator2', label: '', separator: true });
   items.push({ id: 'selectAll', label: 'Select All', shortcut: 'Ctrl+A' });
+  items.push({ id: 'separator_chart', label: '', separator: true });
+  items.push({ id: 'createChart', label: 'Create Chart…' });
   return items;
 }

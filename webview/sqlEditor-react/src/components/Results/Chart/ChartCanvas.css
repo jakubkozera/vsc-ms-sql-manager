@@ -1,0 +1,329 @@
+.chart-canvas-container {
+  position: relative;
+  height: 100%;
+}
+
+.chart-canvas {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, var(--vscode-widget-border, #454545) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-color: var(--vscode-editor-background, #1e1e1e);
+  min-height: 400px;
+}
+
+.chart-canvas.is-panning {
+  cursor: grabbing;
+}
+
+.chart-canvas.is-panning * {
+  cursor: grabbing !important;
+}
+
+.chart-canvas-inner {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.canvas-overlay-controls {
+  position: absolute;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.canvas-overlay-controls-top-left {
+  top: 10px;
+  left: 10px;
+}
+
+.canvas-overlay-controls-bottom-right {
+  right: 10px;
+  bottom: 10px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border, #454545) 85%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 88%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.canvas-control-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--vscode-widget-border, #454545) 85%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 90%, transparent);
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.canvas-control-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, #5a5d5e50);
+}
+
+.canvas-widget {
+  position: absolute;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-widget-border, #454545);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: move;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.15s;
+}
+
+.canvas-widget:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.canvas-widget.selected {
+  border-color: var(--vscode-widget-border, #454545);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.canvas-widget.dragging {
+  opacity: 0.85;
+  z-index: 100;
+  cursor: grabbing;
+}
+
+.canvas-widget-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--vscode-sideBar-background, #252526);
+  border-bottom: 1px solid var(--vscode-widget-border, #454545);
+  min-height: 28px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.canvas-widget-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.canvas-widget-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: var(--vscode-descriptionForeground, #999);
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.canvas-widget-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, #5a5d5e50);
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.canvas-widget-btn.delete:hover {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.canvas-widget-body {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+
+/* Chart widget body */
+.canvas-widget-body canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.canvas-widget-body.chart-body {
+  padding: 8px;
+}
+
+/* Text widget body */
+.canvas-widget-body.text-body {
+  padding: 8px 12px;
+  cursor: text;
+}
+
+.text-widget-content {
+  width: 100%;
+  height: 100%;
+  outline: none;
+  color: var(--vscode-foreground, #cccccc);
+  background: transparent;
+  border: none;
+  resize: none;
+  font-family: inherit;
+  line-height: 1.5;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  direction: ltr;
+  text-align: left;
+}
+
+/* Resize handles */
+.resize-handles-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+  border-radius: inherit;
+}
+
+.resize-handle {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 1;
+  background: transparent;
+  border: none;
+  opacity: 1;
+}
+
+.resize-handle-se {
+  right: 0;
+  bottom: 0;
+  left: auto;
+  top: auto;
+  width: 18px;
+  height: 18px;
+  cursor: se-resize;
+}
+
+.resize-handle-se::before,
+.resize-handle-se::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border-right: 1px solid var(--vscode-descriptionForeground, #999);
+  border-bottom: 1px solid var(--vscode-descriptionForeground, #999);
+}
+
+.resize-handle-se::before {
+  width: 9px;
+  height: 9px;
+}
+
+.resize-handle-se::after {
+  width: 5px;
+  height: 5px;
+}
+
+.resize-handle-e {
+  right: 0;
+  top: 28px;
+  bottom: 18px;
+  width: 10px;
+  cursor: e-resize;
+}
+
+.resize-handle-s {
+  bottom: 0;
+  left: 0;
+  right: 18px;
+  height: 10px;
+  cursor: s-resize;
+}
+
+/* Editable widget title input */
+.canvas-widget-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #cccccc);
+  background: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 2px;
+  padding: 1px 4px;
+  outline: none;
+  font-family: inherit;
+}
+
+/* Zoom label and reset */
+.zoom-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #999);
+  min-width: 34px;
+  text-align: center;
+}
+
+.zoom-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-foreground, #cccccc);
+  cursor: pointer;
+}
+
+.zoom-reset-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, #5a5d5e50);
+}
+
+/* Export dropdown */
+.canvas-export-dropdown {
+  position: relative;
+}
+
+.canvas-export-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  background: var(--vscode-menu-background, #252526);
+  border: 1px solid var(--vscode-menu-border, #454545);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  z-index: 1300;
+}
+
+.canvas-export-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--vscode-menu-foreground, #cccccc);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.canvas-export-menu-item:hover {
+  background: var(--vscode-menu-selectionBackground, #04395e);
+  color: var(--vscode-menu-selectionForeground, #ffffff);
+}
