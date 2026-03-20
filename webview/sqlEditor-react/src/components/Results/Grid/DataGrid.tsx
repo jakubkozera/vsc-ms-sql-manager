@@ -11,7 +11,7 @@ import { ContextMenu, ContextMenuItem, ROW_CONTEXT_MENU_ITEMS, buildCellMenuItem
 import { ExportMenu } from './ExportMenu';
 import { FKQuickPick } from './FKQuickPick';
 import { BulkEditPopup } from './BulkEditPopup';
-import { exportData, copyToClipboard, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
+import { exportData, copyToClipboard, copyRichTableToClipboard, getFormatInfo, extractSelectedData, ExportFormat } from '../../../services/exportService';
 import { useVSCode } from '../../../context/VSCodeContext';
 import './DataGrid.css';
 
@@ -688,57 +688,102 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     
     const content = exportData(exportDataSet, exportCols, { format, includeHeaders });
     
-    if (format === 'clipboard') {
-      copyToClipboard(content);
-    } else {
-      const { extension } = getFormatInfo(format);
-      const filename = `results.${extension}`;
-      
-      let fileType = 'Text';
-      switch (format) {
-        case 'json':
-          fileType = 'JSON';
-          break;
-        case 'csv':
-          fileType = 'CSV';
-          break;
-        case 'insert':
-          fileType = 'SQL';
-          break;
-        case 'tsv':
-          fileType = 'TSV';
-          break;
-        case 'markdown':
-          fileType = 'Markdown';
-          break;
-        case 'xml':
-          fileType = 'XML';
-          break;
-        case 'html':
-          fileType = 'HTML';
-          break;
-      }
-      
-      postMessage({
-        type: 'saveFile',
-        content,
-        defaultFileName: filename,
-        fileType,
-      });
+    const { extension } = getFormatInfo(format);
+    const filename = `results.${extension}`;
+    
+    let fileType = 'Text';
+    switch (format) {
+      case 'json':
+        fileType = 'JSON';
+        break;
+      case 'csv':
+        fileType = 'CSV';
+        break;
+      case 'insert':
+        fileType = 'SQL';
+        break;
+      case 'tsv':
+        fileType = 'TSV';
+        break;
+      case 'markdown':
+        fileType = 'Markdown';
+        break;
+      case 'xml':
+        fileType = 'XML';
+        break;
+      case 'html':
+        fileType = 'HTML';
+        break;
     }
     
+    postMessage({
+      type: 'saveFile',
+      content,
+      defaultFileName: filename,
+      fileType,
+    });
+    
     setExportMenu(null);
-  }, [sortedData, columnDefs, getSelectedRowIndices, postMessage]);
+  }, [sortedData, columnDefs, getSelectedRowIndices, postMessage, selection]);
+
+  const handleCopyAs = useCallback((format: ExportFormat, includeHeaders: boolean) => {
+    const selectedIndices = getSelectedRowIndices();
+    const hasRowSelection = selectedIndices.length > 0;
+
+    let selectedColumnIndices: number[] | undefined;
+    if (selection.type === 'cell' && selection.selections.length > 0) {
+      const colSet = new Set(selection.selections.map(s => s.columnIndex!));
+      selectedColumnIndices = Array.from(colSet).sort((a, b) => a - b);
+    }
+
+    const { data: exportDataSet, columns: exportCols } = extractSelectedData(
+      sortedData,
+      columnDefs,
+      hasRowSelection ? selectedIndices : sortedData.map((_, i) => i),
+      selectedColumnIndices,
+    );
+
+    if (format === 'table') {
+      copyRichTableToClipboard(exportDataSet, exportCols);
+    } else {
+      const content = exportData(exportDataSet, exportCols, { format, includeHeaders });
+      copyToClipboard(content);
+    }
+    setExportMenu(null);
+  }, [sortedData, columnDefs, getSelectedRowIndices, selection]);
 
   // Build context menu items dynamically based on editability
   const isEditable = metadata?.isEditable ?? false;
 
+  const SELECTION_COPY_SUBMENU: ContextMenuItem[] = [
+    { id: 'copyAs_table', label: 'as Table' },
+    { id: 'copyAs_json', label: 'as JSON' },
+    { id: 'copyAs_csv', label: 'as CSV' },
+    { id: 'copyAs_tsv', label: 'as TSV' },
+    { id: 'copyAs_markdown', label: 'as Markdown' },
+  ];
+
+  const SELECTION_EXPORT_SUBMENU: ContextMenuItem[] = [
+    { id: 'exportAs_json', label: 'to JSON' },
+    { id: 'exportAs_csv', label: 'to CSV' },
+    { id: 'exportAs_tsv', label: 'to Excel (TSV)' },
+    { id: 'exportAs_insert', label: 'to SQL INSERT' },
+  ];
+
   const buildRowContextMenuItems = useCallback((rowIdx: number): ContextMenuItem[] => {
     const isDeleted = isRowDeleted?.(rowIdx) ?? false;
+    const sel = selectionRef.current;
+    const hasSelection = sel.type !== null && sel.selections.length > 0;
     const items: ContextMenuItem[] = [
       { id: 'copyRow', label: 'Copy Selection', shortcut: 'Ctrl+C' },
       { id: 'copyRowAsInsert', label: 'Copy as INSERT' },
     ];
+
+    if (hasSelection) {
+      items.push({ id: 'separator_copy', label: '', separator: true });
+      items.push({ id: 'copyAs_menu', label: 'Copy as…', children: SELECTION_COPY_SUBMENU });
+      items.push({ id: 'exportAs_menu', label: 'Export to…', children: SELECTION_EXPORT_SUBMENU });
+    }
 
     if (isEditable) {
       items.push({ id: 'separator1', label: '', separator: true });
@@ -759,7 +804,19 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const buildCellContextMenuItems = useCallback((rowIndex?: number, colIndex?: number, selectionSize: number = 1): ContextMenuItem[] => {
     const colMeta = colIndex !== undefined ? metadata?.columns?.[colIndex] : undefined;
     const modified = (rowIndex !== undefined && colIndex !== undefined) ? (isCellModified?.(rowIndex, colIndex) ?? false) : false;
-    return buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable, isModified: modified, selectionSize });
+    const items = buildCellMenuItems({ isEditable, isNullable: colMeta?.isNullable, isModified: modified, selectionSize });
+    const sel = selectionRef.current;
+    const hasSelection = sel.type !== null && sel.selections.length > 0;
+    if (hasSelection) {
+      const firstSepIdx = items.findIndex(item => item.separator);
+      const insertAt = firstSepIdx >= 0 ? firstSepIdx : items.length;
+      items.splice(insertAt, 0,
+        { id: 'separator_copy', label: '', separator: true },
+        { id: 'copyAs_menu', label: 'Copy as…', children: SELECTION_COPY_SUBMENU },
+        { id: 'exportAs_menu', label: 'Export to…', children: SELECTION_EXPORT_SUBMENU },
+      );
+    }
+    return items;
   }, [isEditable, metadata, isCellModified]);
 
   const handleColumnHeaderContextMenu = useCallback((colIndex: number, e: React.MouseEvent) => {
@@ -805,6 +862,23 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   // Track which cell to start editing via context menu
   const [editingCellFromMenu, setEditingCellFromMenu] = useState<{ rowIndex: number; colIndex: number } | null>(null);
 
+  const handleCreateChartForMenu = useCallback(() => {
+    if (!onCreateChart) { return; }
+    const columnTypes: Record<string, string> = {};
+    for (const colDef of columnDefs) {
+      columnTypes[colDef.name] = colDef.type;
+    }
+    const selectedIndices = getSelectedRowIndices();
+    const rows = selectedIndices.length > 0
+      ? selectedIndices.map(idx => sortedData[idx]).filter(Boolean)
+      : sortedData;
+    onCreateChart({
+      columns: columnDefs.map(c => c.name),
+      rows: rows.map(row => [...row]),
+      columnTypes,
+    });
+  }, [onCreateChart, columnDefs, getSelectedRowIndices, sortedData]);
+
   const handleContextMenuSelect = useCallback((itemId: string) => {
     const ctx = contextMenu;
     switch (itemId) {
@@ -829,10 +903,37 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
         break;
       }
       case 'copyAsCSV':
-        handleExport('csv', true);
+        handleCopyAs('csv', true);
         break;
       case 'copyAsJSON':
+        handleCopyAs('json', true);
+        break;
+      case 'copyAs_table':
+        handleCopyAs('table', true);
+        break;
+      case 'copyAs_json':
+        handleCopyAs('json', true);
+        break;
+      case 'copyAs_csv':
+        handleCopyAs('csv', true);
+        break;
+      case 'copyAs_tsv':
+        handleCopyAs('tsv', true);
+        break;
+      case 'copyAs_markdown':
+        handleCopyAs('markdown', true);
+        break;
+      case 'exportAs_json':
         handleExport('json', true);
+        break;
+      case 'exportAs_csv':
+        handleExport('csv', true);
+        break;
+      case 'exportAs_tsv':
+        handleExport('tsv', true);
+        break;
+      case 'exportAs_insert':
+        handleExport('insert', true);
         break;
       case 'copyColumnValues': {
         if (ctx?.colIndex !== undefined) {
@@ -910,31 +1011,12 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
         }
         break;
       }
-      case 'createChart': {
-        if (onCreateChart) {
-          // Build column type map
-          const columnTypes: Record<string, string> = {};
-          for (const colDef of columnDefs) {
-            columnTypes[colDef.name] = colDef.type;
-          }
-
-          // Use selected rows if available, otherwise all sorted data
-          const selectedIndices = getSelectedRowIndices();
-          const rows = selectedIndices.length > 0
-            ? selectedIndices.map(idx => sortedData[idx]).filter(Boolean)
-            : sortedData;
-
-          onCreateChart({
-            columns: columnDefs.map(c => c.name),
-            rows: rows.map(row => [...row]),
-            columnTypes,
-          });
-        }
+      case 'createChart':
+        handleCreateChartForMenu();
         break;
-      }
     }
     setContextMenu(null);
-  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onRevertCell, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleExport, selection, onCreateChart, sortedData]);
+  }, [contextMenu, sortedData.length, selectAllRows, getSelectedRowIndices, onDeleteRow, onRestoreRow, onRevertCell, onCellEdit, columnDefs, handleCopy, handleCopyCell, handleCopyRowAsInsert, handleCopyColumnValues, handleCopyAs, handleExport, handleCreateChartForMenu, selection]);
 
   // Apply the bulk-edit value to all selected cells
   const handleBulkEditApply = useCallback((value: string) => {
@@ -1251,8 +1333,11 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
           position={exportMenu.position}
           hasSelection={selectedRowCount > 0}
           onExport={handleExport}
+          onCopy={handleCopyAs}
           onClose={() => setExportMenu(null)}
           onAutoFit={handleAutoFit}
+          onSelectAll={() => selectAllRows(sortedData.length)}
+          onCreateChart={handleCreateChartForMenu}
         />
       )}
 

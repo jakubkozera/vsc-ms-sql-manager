@@ -1,6 +1,6 @@
 import { ColumnDef } from '../types/grid';
 
-export type ExportFormat = 'csv' | 'json' | 'tsv' | 'insert' | 'clipboard' | 'markdown' | 'xml' | 'html';
+export type ExportFormat = 'csv' | 'json' | 'tsv' | 'insert' | 'clipboard' | 'markdown' | 'xml' | 'html' | 'table';
 
 export interface ExportOptions {
   format: ExportFormat;
@@ -38,6 +38,8 @@ export function exportData(
       return toHTML(data, columns);
     case 'clipboard':
       return toClipboard(data, columns, includeHeaders);
+    case 'table':
+      return toTable(data, columns);
     default:
       return toCSV(data, columns, includeHeaders);
   }
@@ -267,6 +269,87 @@ function toHTML(data: any[][], columns: ColumnDef[]): string {
 </html>`;
   
   return htmlData;
+}
+
+/**
+ * Generate an HTML table string (used for rich clipboard copy)
+ */
+export function toTableHtml(data: any[][], columns: ColumnDef[]): string {
+  const escapeHtml = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  };
+
+  const headerCells = columns.map(c => `<th>${escapeHtml(c.name)}</th>`).join('');
+  const dataRows = data
+    .map(row => '<tr>' + columns.map((_, i) => `<td>${escapeHtml(row[i])}</td>`).join('') + '</tr>')
+    .join('');
+
+  return `<table><thead><tr>${headerCells}</tr></thead><tbody>${dataRows}</tbody></table>`;
+}
+
+/**
+ * Copy data as a rich clipboard entry: text/html (table) + text/plain (markdown)
+ * Applications like Teams, Outlook, Word pick up text/html and render a native table.
+ */
+export async function copyRichTableToClipboard(data: any[][], columns: ColumnDef[]): Promise<boolean> {
+  const htmlContent = toTableHtml(data, columns);
+  const plainContent = toMarkdown(data, columns);
+
+  // Use ClipboardItem for multi-format clipboard when available
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([htmlContent], { type: 'text/html' }),
+          'text/plain': new Blob([plainContent], { type: 'text/plain' }),
+        }),
+      ]);
+      return true;
+    } catch (err) {
+      console.error('Rich clipboard copy failed, falling back to plain text:', err);
+    }
+  }
+
+  // Fallback: plain text markdown
+  return copyToClipboard(plainContent);
+}
+
+/**
+ * Format as aligned ASCII table for clipboard (legacy, kept for reference)
+ */
+function toTable(data: any[][], columns: ColumnDef[]): string {
+  const headers = columns.map(c => c.name);
+  const formattedRows = data.map(row => columns.map((_, i) => formatValue(row[i])));
+
+  // Calculate max width per column
+  const colWidths = headers.map((h, i) => {
+    let maxW = h.length;
+    for (const row of formattedRows) {
+      const len = row[i].length;
+      if (len > maxW) { maxW = len; }
+    }
+    return maxW;
+  });
+
+  const pad = (val: string, width: number) => val + ' '.repeat(Math.max(0, width - val.length));
+  const separator = '+' + colWidths.map(w => '-'.repeat(w + 2)).join('+') + '+';
+  const formatRow = (cells: string[]) =>
+    '| ' + cells.map((c, i) => pad(c, colWidths[i])).join(' | ') + ' |';
+
+  const lines: string[] = [
+    separator,
+    formatRow(headers),
+    separator,
+    ...formattedRows.map(r => formatRow(r)),
+    separator,
+  ];
+
+  return lines.join('\n');
 }
 
 /**

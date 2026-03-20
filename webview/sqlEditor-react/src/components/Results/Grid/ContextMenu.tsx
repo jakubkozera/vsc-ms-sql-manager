@@ -8,6 +8,7 @@ export interface ContextMenuItem {
   disabled?: boolean;
   separator?: boolean;
   shortcut?: string;
+  children?: ContextMenuItem[];
 }
 
 interface ContextMenuProps {
@@ -17,9 +18,18 @@ interface ContextMenuProps {
   onClose: () => void;
 }
 
+function getChevronIcon(): React.ReactNode {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 6l6 6l-6 6" />
+    </svg>
+  );
+}
+
 export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState<{ x: number; y: number } | null>(null);
+  const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
 
   // Keep a stable ref to onClose so document listeners never need to re-register
   const onCloseRef = useRef(onClose);
@@ -81,7 +91,7 @@ export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuP
   }, []);
 
   const handleItemClick = (item: ContextMenuItem) => {
-    if (!item.disabled && !item.separator) {
+    if (!item.disabled && !item.separator && !item.children) {
       onSelect(item.id);
       onClose();
     }
@@ -101,11 +111,53 @@ export function ContextMenu({ items, position, onSelect, onClose }: ContextMenuP
           return <div key={index} className="context-menu-separator" />;
         }
 
+        if (item.children && item.children.length > 0) {
+          return (
+            <div
+              key={item.id}
+              className="context-menu-submenu-container"
+              onMouseEnter={() => setOpenSubmenu(item.id)}
+              onMouseLeave={() => setOpenSubmenu(null)}
+            >
+              <div
+                className={`context-menu-item context-menu-submenu-trigger ${item.disabled ? 'disabled' : ''}`}
+                data-testid={`context-menu-item-${item.id}`}
+              >
+                {item.icon && <span className="context-menu-icon">{item.icon}</span>}
+                <span className="context-menu-label">{item.label}</span>
+                <span className="context-menu-submenu-arrow">{getChevronIcon()}</span>
+              </div>
+              {openSubmenu === item.id && (
+                <div className="context-menu-submenu">
+                  {item.children.map((child, ci) => {
+                    if (child.separator) {
+                      return <div key={ci} className="context-menu-separator" />;
+                    }
+                    return (
+                      <div
+                        key={child.id}
+                        className={`context-menu-item ${child.disabled ? 'disabled' : ''}`}
+                        onClick={() => { if (!child.disabled) { onSelect(child.id); onClose(); } }}
+                        data-testid={`context-menu-item-${child.id}`}
+                      >
+                        {child.icon && <span className="context-menu-icon">{child.icon}</span>}
+                        <span className="context-menu-label">{child.label}</span>
+                        {child.shortcut && <span className="context-menu-shortcut">{child.shortcut}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+
         return (
           <div
             key={item.id}
             className={`context-menu-item ${item.disabled ? 'disabled' : ''}`}
             onClick={() => handleItemClick(item)}
+            onMouseEnter={() => setOpenSubmenu(null)}
             data-testid={`context-menu-item-${item.id}`}
           >
             {item.icon && <span className="context-menu-icon">{item.icon}</span>}

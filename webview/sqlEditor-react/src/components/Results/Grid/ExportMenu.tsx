@@ -5,90 +5,118 @@ import './ExportMenu.css';
 interface ExportMenuProps {
   position: { x: number; y: number };
   onExport: (format: ExportFormat, includeHeaders: boolean) => void;
+  onCopy: (format: ExportFormat, includeHeaders: boolean) => void;
   onClose: () => void;
   hasSelection?: boolean;
   onAutoFit?: () => void;
 }
 
-const EXPORT_FORMATS: { format: ExportFormat | string; label: string; description: string; action?: string }[] = [
-  { format: 'autofit', label: 'Auto-fit all columns', description: '', action: 'autofit' },
-  { format: 'divider', label: '', description: '', action: 'divider' },
-  { format: 'clipboard', label: 'Copy to clipboard', description: '' },
-  { format: 'json', label: 'Export to JSON', description: '' },
-  { format: 'csv', label: 'Export to CSV', description: '' },
-  { format: 'tsv', label: 'Export to Excel (TSV)', description: '' },
-  { format: 'insert', label: 'Export to SQL INSERT', description: '' },
-  { format: 'markdown', label: 'Export to Markdown', description: '' },
-  { format: 'xml', label: 'Export to XML', description: '' },
-  { format: 'html', label: 'Export to HTML', description: '' },
+interface SubMenuItem {
+  format: ExportFormat;
+  label: string;
+}
+
+const COPY_SUBMENU: SubMenuItem[] = [
+  { format: 'clipboard', label: 'to clipboard' },
+  { format: 'table', label: 'as Table' },
+  { format: 'json', label: 'as JSON' },
+  { format: 'csv', label: 'as CSV' },
+  { format: 'tsv', label: 'as TSV' },
+  { format: 'insert', label: 'as SQL INSERT' },
+  { format: 'markdown', label: 'as Markdown' },
+  { format: 'xml', label: 'as XML' },
+  { format: 'html', label: 'as HTML' },
 ];
 
-export function ExportMenu({ position, onExport, onClose, onAutoFit }: ExportMenuProps) {
+const EXPORT_SUBMENU: SubMenuItem[] = [
+  { format: 'json', label: 'to JSON' },
+  { format: 'csv', label: 'to CSV' },
+  { format: 'tsv', label: 'to Excel (TSV)' },
+  { format: 'insert', label: 'to SQL INSERT' },
+  { format: 'markdown', label: 'to Markdown' },
+  { format: 'xml', label: 'to XML' },
+  { format: 'html', label: 'to HTML' },
+];
+
+interface ExportMenuExtProps extends ExportMenuProps {
+  onSelectAll?: () => void;
+  onCreateChart?: () => void;
+}
+
+export function ExportMenu({ position, onExport, onCopy, onClose, onAutoFit, onSelectAll, onCreateChart }: ExportMenuExtProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState<{ x: number; y: number } | null>(null);
-  const includeHeaders = true; // Always include headers in new version
+  const [openSubmenu, setOpenSubmenu] = useState<'copy' | 'export' | null>(null);
+  const includeHeaders = true;
 
-  // Measure after mount and flip upward / leftward if menu would overflow the viewport
   useLayoutEffect(() => {
     if (!menuRef.current) return;
     const rect = menuRef.current.getBoundingClientRect();
     let x = position.x;
     let y = position.y;
-
     if (y + rect.height > window.innerHeight - 8) {
-      y = position.y - rect.height; // flip upward
+      y = position.y - rect.height;
     }
     if (x + rect.width > window.innerWidth - 8) {
       x = window.innerWidth - rect.width - 8;
     }
-
     setAdjustedPos({ x: Math.max(0, x), y: Math.max(0, y) });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Click outside to close
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose();
       }
     };
-
     const timeoutId = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
     }, 0);
-
     return () => {
       clearTimeout(timeoutId);
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [onClose]);
 
-  // Escape to close
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
       }
     };
-
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
-  const handleFormatClick = (format: ExportFormat | string, action?: string) => {
-    if (action === 'autofit') {
-      if (onAutoFit) {
-        onAutoFit();
-      }
-      onClose();
-      return;
+  const handleCopyClick = (format: ExportFormat) => {
+    onCopy(format, includeHeaders);
+    onClose();
+  };
+
+  const handleExportClick = (format: ExportFormat) => {
+    onExport(format, includeHeaders);
+    onClose();
+  };
+
+  const handleAutoFitClick = () => {
+    if (onAutoFit) {
+      onAutoFit();
     }
-    if (action === 'divider') {
-      return; // Ignore clicks on divider
+    onClose();
+  };
+
+  const handleSelectAllClick = () => {
+    if (onSelectAll) {
+      onSelectAll();
     }
-    // For now, unsupported formats will be handled as text export
-    onExport(format as ExportFormat, includeHeaders);
+    onClose();
+  };
+
+  const handleCreateChartClick = () => {
+    if (onCreateChart) {
+      onCreateChart();
+    }
     onClose();
   };
 
@@ -100,26 +128,95 @@ export function ExportMenu({ position, onExport, onClose, onAutoFit }: ExportMen
       data-testid="export-menu"
     >
       <div className="export-menu-formats">
-        {EXPORT_FORMATS.map(({ format, label, action }, index) => {
-          if (action === 'divider') {
-            return (
-              <div key={`divider-${index}`} className="export-menu-divider" />
-            );
-          }
-          return (
-            <button
-              key={format}
-              className="export-format-button"
-              onClick={() => handleFormatClick(format, action)}
-              data-testid={`export-${format}`}
-            >
-              <span className="export-format-icon">
-                {getFormatIcon(format)}
-              </span>
-              <span className="export-format-label">{label}</span>
-            </button>
-          );
-        })}
+        {/* Auto fit */}
+        <button
+          className="export-format-button"
+          onClick={handleAutoFitClick}
+          data-testid="export-autofit"
+        >
+          <span className="export-format-icon">{getFormatIcon('autofit')}</span>
+          <span className="export-format-label">Auto-fit all columns</span>
+        </button>
+
+        {/* Select All */}
+        <button
+          className="export-format-button"
+          onClick={handleSelectAllClick}
+          data-testid="export-select-all"
+        >
+          <span className="export-format-icon">{getFormatIcon('selectAll')}</span>
+          <span className="export-format-label">Select All</span>
+        </button>
+
+        {/* Create Chart */}
+        <button
+          className="export-format-button"
+          onClick={handleCreateChartClick}
+          data-testid="export-create-chart"
+        >
+          <span className="export-format-icon">{getFormatIcon('chart')}</span>
+          <span className="export-format-label">Create Chart…</span>
+        </button>
+
+        <div className="export-menu-divider" />
+
+        {/* Copy → submenu */}
+        <div
+          className="export-submenu-container"
+          onMouseEnter={() => setOpenSubmenu('copy')}
+          onMouseLeave={() => setOpenSubmenu(null)}
+          data-testid="copy-submenu-container"
+        >
+          <button className="export-format-button export-submenu-trigger" data-testid="copy-submenu-trigger">
+            <span className="export-format-icon">{getFormatIcon('clipboard')}</span>
+            <span className="export-format-label">Copy</span>
+            <span className="export-submenu-arrow">{getChevronIcon()}</span>
+          </button>
+          {openSubmenu === 'copy' && (
+            <div className="export-submenu" data-testid="copy-submenu">
+              {COPY_SUBMENU.map(({ format, label }) => (
+                <button
+                  key={`copy-${format}`}
+                  className="export-format-button"
+                  onClick={() => handleCopyClick(format)}
+                  data-testid={`copy-${format}`}
+                >
+                  <span className="export-format-icon">{getFormatIcon(format)}</span>
+                  <span className="export-format-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Export → submenu */}
+        <div
+          className="export-submenu-container"
+          onMouseEnter={() => setOpenSubmenu('export')}
+          onMouseLeave={() => setOpenSubmenu(null)}
+          data-testid="export-submenu-container"
+        >
+          <button className="export-format-button export-submenu-trigger" data-testid="export-submenu-trigger">
+            <span className="export-format-icon">{getFormatIcon('export')}</span>
+            <span className="export-format-label">Export</span>
+            <span className="export-submenu-arrow">{getChevronIcon()}</span>
+          </button>
+          {openSubmenu === 'export' && (
+            <div className="export-submenu" data-testid="export-submenu">
+              {EXPORT_SUBMENU.map(({ format, label }) => (
+                <button
+                  key={`export-${format}`}
+                  className="export-format-button"
+                  onClick={() => handleExportClick(format)}
+                  data-testid={`export-${format}`}
+                >
+                  <span className="export-format-icon">{getFormatIcon(format)}</span>
+                  <span className="export-format-label">{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -134,6 +231,24 @@ function getFormatIcon(format: ExportFormat | string): React.ReactNode {
           <path d="M7 8h10" />
           <path d="M7 12h10" />
           <path d="M7 16h10" />
+        </svg>
+      );
+    case 'table':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M3 9h18" />
+          <path d="M3 15h18" />
+          <path d="M9 3v18" />
+          <path d="M15 3v18" />
+        </svg>
+      );
+    case 'export':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+          <path d="M7 9l5-5l5 5" />
+          <path d="M12 4v12" />
         </svg>
       );
     case 'clipboard':
@@ -206,6 +321,22 @@ function getFormatIcon(format: ExportFormat | string): React.ReactNode {
           <path d="M9 15v6" />
         </svg>
       );
+    case 'selectAll':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7" />
+          <rect x="14" y="3" width="7" height="7" />
+          <rect x="3" y="14" width="7" height="7" />
+          <rect x="14" y="14" width="7" height="7" />
+        </svg>
+      );
+    case 'chart':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 3v18h18" />
+          <path d="M7 16l4-4 4 4 4-6" />
+        </svg>
+      );
     default:
       return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -214,5 +345,23 @@ function getFormatIcon(format: ExportFormat | string): React.ReactNode {
         </svg>
       );
   }
+}
+
+function getChevronIcon(): React.ReactNode {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 6l6 6l-6 6" />
+    </svg>
+  );
 }
 

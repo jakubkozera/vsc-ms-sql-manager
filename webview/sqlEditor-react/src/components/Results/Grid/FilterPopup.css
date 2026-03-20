@@ -1,14 +1,378 @@
 .filter-popup {
   position: fixed;
   z-index: 1000;
-  background: var(--vscode-dropdown-background);
-  border: 1px solid var(--vscode-dropdown-border);
+  background: var(--vscode-menu-background);
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   min-width: 220px;
   max-width: 300px;
   width: 300px;
+  padding: 4px 0;
 }
+
+.filter-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-panel-border));
+}
+
+.filter-popup-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-menu-foreground);
+}
+
+.filter-popup-close {
+  background: none;
+  border: none;
+  color: var(--vscode-menu-foreground);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+
+.filter-popup-close:hover {
+  opacity: 1;
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+  border-radius: 3px;
+}
+
+.filter-popup-content {
+  padding: 8px 12px;
+}
+
+.filter-field {
+  margin-bottom: 10px;
+}
+
+.filter-field:last-child {
+  margin-bottom: 0;
+}
+
+.filter-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--vscode-menu-foreground);
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.filter-field select,
+.filter-field > input {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-menu-border));
+  color: var(--vscode-input-foreground);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.filter-field select:focus,
+.filter-field > input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-popup-footer {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--vscode-menu-separatorBackground, var(--vscode-panel-border));
+  justify-content: flex-end;
+}
+
+.filter-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.filter-btn-clear {
+  background: transparent;
+  color: var(--vscode-menu-foreground);
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+}
+
+.filter-btn-clear:hover {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+.filter-btn-apply {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.filter-btn-apply:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+/* Boolean filter options */
+.filter-bool-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-bool-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--vscode-menu-foreground);
+  cursor: pointer;
+}
+
+.filter-bool-label input[type="radio"] {
+  margin: 0;
+}
+
+/* Case sensitive toggle */
+.filter-field-inline {
+  margin-top: 4px;
+}
+
+.filter-field-inline label.filter-checkbox-label {
+  display: flex;
+  margin-bottom: 0;
+}
+
+.filter-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--vscode-menu-foreground);
+  cursor: pointer;
+}
+
+.filter-checkbox-label input[type="checkbox"] {
+  margin: 0;
+}
+
+/* IN filter section */
+.filter-in-section {
+  margin-bottom: 10px;
+}
+
+.filter-in-search input {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-menu-border));
+  color: var(--vscode-input-foreground);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+  margin-bottom: 6px;
+}
+
+.filter-in-search input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-in-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.filter-in-action-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-textLink-foreground);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.filter-in-action-btn:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
+
+.filter-in-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--vscode-menu-foreground);
+  opacity: 0.6;
+}
+
+.filter-in-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-input-border, var(--vscode-menu-border));
+  border-radius: 3px;
+  background: var(--vscode-input-background);
+}
+
+.filter-in-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--vscode-menu-foreground);
+  cursor: pointer;
+}
+
+.filter-in-item:hover {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+.filter-in-item input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.filter-in-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ── Date input ─────────────────────────────────────────────────────────────── */
+
+.filter-date-input {
+  position: relative;
+  width: 100%;
+}
+
+.filter-date-input input[type="datetime-local"] {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 30px 5px 8px;
+  box-sizing: border-box;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-menu-border));
+  color: var(--vscode-input-foreground);
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.filter-date-input input[type="datetime-local"]:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-date-input input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  cursor: pointer;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 30px;
+  height: 100%;
+}
+
+.filter-date-input input[type="datetime-local"]::-webkit-inner-spin-button {
+  display: none;
+}
+
+body.vscode-dark .filter-date-input input[type="datetime-local"],
+body.vscode-high-contrast .filter-date-input input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+body.vscode-light .filter-date-input input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+.filter-date-icon {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-menu-foreground);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ── Numeric input ───────────────────────────────────────────────────────────── */
+
+.filter-numeric-input {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border: 1px solid var(--vscode-input-border, var(--vscode-menu-border));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.filter-numeric-input input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--vscode-input-background);
+  border: none;
+  color: var(--vscode-input-foreground);
+  font-size: 12px;
+  font-family: inherit;
+  width: auto;
+}
+
+.filter-numeric-input input[type="text"]:focus {
+  outline: none;
+}
+
+.filter-numeric-input:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-numeric-btns {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--vscode-input-border, var(--vscode-menu-border));
+  background: var(--vscode-input-background);
+}
+
+.filter-numeric-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex: 1;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--vscode-menu-foreground);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.filter-numeric-btn:hover {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+  opacity: 1;
+}
+
+.filter-numeric-btn + .filter-numeric-btn {
+  border-top: 1px solid var(--vscode-input-border, var(--vscode-menu-border));
+}
+
 
 .filter-popup-header {
   display: flex;

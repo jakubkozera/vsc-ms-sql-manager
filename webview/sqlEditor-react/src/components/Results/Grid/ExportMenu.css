@@ -7,7 +7,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   min-width: 200px;
   padding: 4px 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .export-menu-formats {
@@ -52,4 +52,35 @@
 
 .export-format-label {
   font-size: 12px;
+  flex: 1;
+}
+
+/* Submenu container */
+.export-submenu-container {
+  position: relative;
+}
+
+.export-submenu-trigger {
+  position: relative;
+}
+
+.export-submenu-arrow {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+
+.export-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  z-index: 1002;
+  background: var(--vscode-menu-background);
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 200px;
+  padding: 4px 0;
 }

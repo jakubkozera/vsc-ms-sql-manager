@@ -5,6 +5,30 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-03-20
+
+### Changed
+
+- **Result Grid — Restructured export/copy menu with submenus**
+  - The row-number column header menu now shows three top-level entries: **Auto-fit all columns**, **Copy →**, and **Export →**.
+  - **Copy →** submenu appears on hover and contains: Copy to clipboard, Copy as Table, Copy as JSON, Copy as CSV, Copy as TSV, Copy as SQL INSERT, Copy as Markdown, Copy as XML, Copy as HTML. All copy options write directly to the clipboard.
+  - **Export →** submenu appears on hover and contains: Export to JSON, Export to CSV, Export to Excel (TSV), Export to SQL INSERT, Export to Markdown, Export to XML, Export to HTML. All export options open a Save As dialog.
+
+- **Result Grid — "Copy as Table" now copies a rich HTML table to clipboard**
+  - Uses the `ClipboardItem` API to write two formats simultaneously: `text/html` (a proper `<table>` element) and `text/plain` (markdown table as fallback).
+  - Applications that read `text/html` from the clipboard — Teams, Outlook, Word, Confluence, Google Docs, Slack, Discord — will paste a native rendered table instead of ASCII art or raw text.
+  - Falls back to plain-text markdown on browsers/environments that do not support `ClipboardItem`.
+
+- **Result Grid — Column filter popup visual style updated**
+  - Filter popup now uses `--vscode-menu-*` CSS variables (same as the cell right-click context menu) instead of `--vscode-dropdown-*`. This makes it visually consistent with the rest of the quick-action popups in the result grid.
+
+### Tests
+
+- Added **25** unit tests for `ExportMenu` (submenus, hover, copy/export dispatches, close handlers).
+- Added **7** unit tests for `toTableHtml`: `<thead>`/`<tbody>` structure, header cells, data cells, HTML special-character escaping, null/undefined handling, `&` escaping.
+- Added **1** unit test for `copyRichTableToClipboard`: verifies `navigator.clipboard.write` is called with a `ClipboardItem` containing both `text/html` and `text/plain` blobs.
+- Added **4** unit tests for the ASCII table format in `exportService`.
+
 ## [0.18.0] - 2026-03-20
 
 ### Added
