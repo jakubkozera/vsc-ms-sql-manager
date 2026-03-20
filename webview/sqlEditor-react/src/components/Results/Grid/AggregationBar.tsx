@@ -17,6 +17,7 @@ type DataCategory = 'numeric' | 'boolean' | 'datetime' | 'text' | 'binary' | 'un
 function getDataTypeCategory(sqlType: string | undefined): DataCategory {
   if (!sqlType) return 'unknown';
   const type = sqlType.toLowerCase();
+  if (type === 'unknown') return 'unknown';
   if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(type)) return 'numeric';
   if (type === 'bit') return 'boolean';
   if (['date', 'datetime', 'datetime2', 'smalldatetime', 'time', 'datetimeoffset'].includes(type)) return 'datetime';

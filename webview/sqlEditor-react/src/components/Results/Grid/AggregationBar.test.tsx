@@ -180,4 +180,41 @@ describe('AggregationBar', () => {
     expect(screen.getByText('Nulls:')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
   });
+
+  it('auto-detects numeric values when columnType is "unknown" (computed columns like COUNT)', () => {
+    render(
+      <AggregationBar selectedValues={[5, 3, 8, 1]} visible={true} columnType="unknown" />
+    );
+
+    expect(screen.getByText('Sum:')).toBeInTheDocument();
+    expect(screen.getByText('17')).toBeInTheDocument();
+    expect(screen.getByText('Avg:')).toBeInTheDocument();
+    expect(screen.getByText('Min:')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('Max:')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+    // Should NOT show text-like stats
+    expect(screen.queryByText('Min Length:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Max Length:')).not.toBeInTheDocument();
+  });
+
+  it('auto-detects numeric strings when columnType is "unknown"', () => {
+    render(
+      <AggregationBar selectedValues={['10', '20', '30']} visible={true} columnType="unknown" />
+    );
+
+    expect(screen.getByText('Sum:')).toBeInTheDocument();
+    expect(screen.getByText('60')).toBeInTheDocument();
+    expect(screen.queryByText('Min Length:')).not.toBeInTheDocument();
+  });
+
+  it('falls back to text stats for non-numeric values with "unknown" type', () => {
+    render(
+      <AggregationBar selectedValues={['apple', 'banana', 'cherry']} visible={true} columnType="unknown" />
+    );
+
+    // Non-numeric values can't be auto-detected as numeric → show distinct count
+    expect(screen.getByText('Count:')).toBeInTheDocument();
+    expect(screen.getByText('Distinct:')).toBeInTheDocument();
+  });
 });

@@ -571,6 +571,83 @@ function inferCastType(expr: string): string | null {
 }
 
 /**
+ * Infer the return type of a SQL function by examining its first argument.
+ * Used for functions like MIN, MAX, SUM, AVG, ISNULL, COALESCE whose return
+ * type depends on the argument type.
+ */
+function inferFunctionArgumentType(
+  expr: string,
+  funcName: string,
+  dbSchema: DatabaseSchema,
+  aliases: Map<string, { schema: string; table: string }>
+): string | null {
+  // Extract the content inside the outermost parentheses
+  const openParen = expr.indexOf('(');
+  if (openParen === -1) return null;
+
+  // Find matching closing paren, accounting for nesting
+  let depth = 0;
+  let closeParen = -1;
+  for (let i = openParen; i < expr.length; i++) {
+    if (expr[i] === '(') depth++;
+    else if (expr[i] === ')') {
+      depth--;
+      if (depth === 0) { closeParen = i; break; }
+    }
+  }
+  if (closeParen === -1) return null;
+
+  let innerArg = expr.substring(openParen + 1, closeParen).trim();
+
+  // For aggregate functions, strip DISTINCT keyword
+  innerArg = innerArg.replace(/^\s*DISTINCT\s+/i, '').trim();
+
+  // For ISNULL/COALESCE, take the first argument (before the first comma at depth 0)
+  if (funcName === 'isnull' || funcName === 'coalesce') {
+    let commaPos = -1;
+    let d = 0;
+    for (let i = 0; i < innerArg.length; i++) {
+      if (innerArg[i] === '(') d++;
+      else if (innerArg[i] === ')') d--;
+      else if (innerArg[i] === ',' && d === 0) { commaPos = i; break; }
+    }
+    if (commaPos !== -1) {
+      innerArg = innerArg.substring(0, commaPos).trim();
+    }
+  }
+
+  // Try to resolve the argument as a column reference: table.column or column
+  const dottedRef = innerArg.match(/^(?:(\[?[a-zA-Z_]\w*\]?)\s*\.\s*)?(\[?[a-zA-Z_]\w*\]?)$/);
+  if (dottedRef) {
+    const tableRef = dottedRef[1]?.replace(/^\[|\]$/g, '');
+    const colRef = dottedRef[2]?.replace(/^\[|\]$/g, '');
+    if (colRef) {
+      const resolved = lookupColumnType(colRef, tableRef, dbSchema, aliases);
+      if (resolved) return resolved.type;
+    }
+  }
+
+  // Check if the argument is a numeric literal
+  if (/^-?\d+$/.test(innerArg)) return 'int';
+  if (/^-?\d+\.\d+$/.test(innerArg)) return 'decimal';
+
+  // Check if it's a string literal
+  if (/^'[^']*'$/.test(innerArg)) return 'nvarchar';
+
+  // Check if inner arg is itself a function call
+  const innerFuncMatch = innerArg.match(/^([a-zA-Z_]\w*)\s*\(/i);
+  if (innerFuncMatch) {
+    const innerFuncName = innerFuncMatch[1].toLowerCase();
+    const innerFuncInfo = SQL_FUNCTION_TYPES[innerFuncName];
+    if (innerFuncInfo) {
+      if (innerFuncInfo.type !== 'varies') return innerFuncInfo.type;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Infer column name, type, and nullability from a single SELECT expression.
  */
 function inferColumnInfo(
@@ -627,6 +704,14 @@ function inferColumnInfo(
           if ((funcName === 'cast' || funcName === 'convert') && funcInfo.type === 'varies') {
             const castType = inferCastType(exprPart);
             if (castType) type = castType;
+          }
+
+          // For functions that return 'varies', try to infer type from argument
+          if (type === 'varies') {
+            const argType = inferFunctionArgumentType(exprPart, funcName, dbSchema, aliases);
+            if (argType) {
+              type = argType;
+            }
           }
         }
       }

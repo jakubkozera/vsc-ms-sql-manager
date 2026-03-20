@@ -589,6 +589,105 @@ WHERE u.Id = 1`;
       );
       expect(cols[0]).toEqual({ name: 'Now', type: 'datetime', nullable: false });
     });
+
+    it('infers int type for COUNT(DISTINCT col)', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT COUNT(DISTINCT Id) AS UniqueCount FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0]).toEqual({ name: 'UniqueCount', type: 'int', nullable: false });
+    });
+
+    it('infers column type for MAX of a column reference', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT MAX(Id) AS MaxId FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('MaxId');
+      expect(cols[0].type).toBe('int');
+    });
+
+    it('infers column type for MIN of a column reference', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT MIN(Name) AS MinName FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('MinName');
+      expect(cols[0].type).toBe('nvarchar');
+    });
+
+    it('infers numeric type for SUM', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT SUM(Id) AS Total FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('Total');
+      // SUM returns 'numeric' (its own fixed return type, not varies)
+      expect(cols[0].type).toBe('numeric');
+    });
+
+    it('infers numeric type for AVG', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT AVG(Id) AS AvgId FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('AvgId');
+      expect(cols[0].type).toBe('numeric');
+    });
+
+    it('infers column type for MAX with table alias', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT MAX(u.Id) AS MaxId FROM dbo.Users u',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('MaxId');
+      expect(cols[0].type).toBe('int');
+    });
+
+    it('infers column type for ISNULL with column argument', () => {
+      const cols = extractSelectColumnsWithTypes(
+        "SELECT ISNULL(Name, 'N/A') AS DisplayName FROM dbo.Users",
+        mockSchema
+      );
+      expect(cols[0].name).toBe('DisplayName');
+      expect(cols[0].type).toBe('nvarchar');
+    });
+
+    it('infers column type for COALESCE with column argument', () => {
+      const cols = extractSelectColumnsWithTypes(
+        "SELECT COALESCE(Name, 'default') AS DisplayName FROM dbo.Users",
+        mockSchema
+      );
+      expect(cols[0].name).toBe('DisplayName');
+      expect(cols[0].type).toBe('nvarchar');
+    });
+
+    it('infers int for LEN function', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT LEN(Name) AS NameLen FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('NameLen');
+      expect(cols[0].type).toBe('int');
+    });
+
+    it('infers nvarchar for UPPER function', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT UPPER(Name) AS UpperName FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('UpperName');
+      expect(cols[0].type).toBe('nvarchar');
+    });
+
+    it('infers bigint for ROW_NUMBER', () => {
+      const cols = extractSelectColumnsWithTypes(
+        'SELECT ROW_NUMBER() OVER (ORDER BY Id) AS RowNum FROM dbo.Users',
+        mockSchema
+      );
+      expect(cols[0].name).toBe('RowNum');
+      expect(cols[0].type).toBe('bigint');
+    });
   });
 
   describe('findColumnReferences', () => {

@@ -89,6 +89,7 @@ export class QueryExecutor {
             const allRecordsets: any[][] = [];
             const allRowsAffected: number[] = [];
             const allColumnNames: string[][] = [];
+            const allDriverColumnTypes: (string | undefined)[][] = [];
 
             // Execute each batch separately
             for (let i = 0; i < batches.length; i++) {
@@ -130,16 +131,19 @@ export class QueryExecutor {
                     // Extract column names and normalize recordsets to array of arrays
                     for (const rs of rawRecordsets) {
                         let columns: string[] = [];
+                        let driverTypes: (string | undefined)[] = [];
                         let rows: any[] = [];
 
                         // Try to get columns from metadata
                         if ((rs as any).columns) {
                             if (Array.isArray((rs as any).columns)) {
                                 columns = (rs as any).columns.map((c: any) => c.name);
+                                driverTypes = (rs as any).columns.map((c: any) => c.type?.declaration as string | undefined);
                             } else {
                                 // Object map (mssql object mode)
                                 // Note: keys might be unique-ified by mssql if duplicates exist in object mode
                                 columns = Object.keys((rs as any).columns);
+                                driverTypes = columns.map(colName => ((rs as any).columns[colName]?.type?.declaration) as string | undefined);
                             }
                         }
 
@@ -166,6 +170,7 @@ export class QueryExecutor {
                         }
                         
                         allColumnNames.push(columns);
+                        allDriverColumnTypes.push(driverTypes);
                         allRecordsets.push(rows);
                     }
 
@@ -198,7 +203,7 @@ export class QueryExecutor {
                 
                 if (allRecordsets.length > 0 && this.isSelectQuery(queryForMetadata)) {
                     try {
-                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection, allColumnNames, token);
+                        queryResult.metadata = await this.extractResultMetadata(queryForMetadata, allRecordsets, connection, allColumnNames, token, allDriverColumnTypes);
                     } catch (error) {
                         if (token && token.isCancellationRequested) {
                             throw new Error('Query cancelled');
@@ -437,7 +442,7 @@ export class QueryExecutor {
      * Extract metadata for result sets to determine editability
      * This analyzes the query and result columns to detect source tables and primary keys
      */
-    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool, columnNamesList?: string[][], token?: vscode.CancellationToken): Promise<ResultSetMetadata[]> {
+    private async extractResultMetadata(query: string, recordsets: any[][], connection: DBPool, columnNamesList?: string[][], token?: vscode.CancellationToken, driverColumnTypesList?: (string | undefined)[][]): Promise<ResultSetMetadata[]> {
         const metadata: ResultSetMetadata[] = [];
 
         for (let i = 0; i < recordsets.length; i++) {
@@ -497,8 +502,12 @@ export class QueryExecutor {
                 // Silently continue without cache
             }
             
+            // Get driver-reported column types for this result set
+            const driverColumnTypes = driverColumnTypesList ? driverColumnTypesList[i] : undefined;
+            
             // For each column, try to determine its source
-            for (const colName of columnNames) {
+            for (let colIdx = 0; colIdx < columnNames.length; colIdx++) {
+                const colName = columnNames[colIdx];
                 if (token && token.isCancellationRequested) {
                     throw new Error('Operation cancelled');
                 }
@@ -530,6 +539,16 @@ export class QueryExecutor {
                         }
                     } catch (error) {
                         // Silently continue without metadata for this column
+                    }
+                }
+
+                // If type is still unknown, use driver-reported type as fallback
+                // This handles computed columns (COUNT, MAX, SUM, etc.) and expressions
+                if (colMetadata.type === 'unknown' && driverColumnTypes) {
+                    const driverType = driverColumnTypes[colIdx];
+                    if (driverType) {
+                        colMetadata.type = driverType;
+                        this.outputChannel.appendLine(`[QueryExecutor] Using driver-reported type for column '${colName}': ${driverType}`);
                     }
                 }
 

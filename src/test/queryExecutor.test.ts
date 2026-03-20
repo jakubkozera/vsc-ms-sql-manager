@@ -522,4 +522,104 @@ suite('QueryExecutor Basic Tests', () => {
             assert.ok(memoryIncrease < 100 * 1024 * 1024); // Less than 100MB increase
         });
     });
+
+    suite('Driver Column Type Extraction', () => {
+        test('should extract driver column types from mssql column metadata (object map)', async () => {
+            // Simulate mssql arrayRowMode result with column type metadata
+            const rs = [
+                [1, 'Alice', 5],
+                [2, 'Bob', 3]
+            ];
+            // mssql stores columns as an object map in arrayRowMode
+            (rs as any).columns = {
+                'MemberId': { index: 0, name: 'MemberId', type: { declaration: 'int' }, nullable: false },
+                'Name': { index: 1, name: 'Name', type: { declaration: 'nvarchar' }, nullable: true },
+                'ProjectCount': { index: 2, name: 'ProjectCount', type: { declaration: 'int' }, nullable: false }
+            };
+
+            mockConnection.request.returns({
+                query: sandbox.stub().resolves({
+                    recordsets: [rs],
+                    rowsAffected: [2]
+                }),
+                cancel: sandbox.stub(),
+                setArrayRowMode: sandbox.stub()
+            });
+
+            const result = await queryExecutor.executeQuery('SELECT MemberId, Name, COUNT(DISTINCT ProjectId) AS ProjectCount FROM dbo.Members GROUP BY MemberId, Name');
+
+            // Verify the metadata uses driver types for computed columns
+            assert.ok(result.metadata, 'Result should have metadata');
+            assert.strictEqual(result.metadata!.length, 1);
+
+            const columns = result.metadata![0].columns;
+            assert.strictEqual(columns.length, 3);
+
+            // ProjectCount is a computed column (COUNT) — should get its type from driver
+            const projectCountCol = columns.find(c => c.name === 'ProjectCount');
+            assert.ok(projectCountCol, 'ProjectCount column should exist in metadata');
+            assert.strictEqual(projectCountCol!.type, 'int', 'ProjectCount type should be "int" from driver metadata');
+        });
+
+        test('should extract driver column types from mssql column metadata (array format)', async () => {
+            const rs = [
+                [100, '2024-01-15'],
+                [200, '2024-06-20']
+            ];
+            // Some drivers may provide columns as an array
+            (rs as any).columns = [
+                { index: 0, name: 'TotalAmount', type: { declaration: 'money' }, nullable: true },
+                { index: 1, name: 'MaxDate', type: { declaration: 'datetime' }, nullable: true }
+            ];
+
+            mockConnection.request.returns({
+                query: sandbox.stub().resolves({
+                    recordsets: [rs],
+                    rowsAffected: [2]
+                }),
+                cancel: sandbox.stub(),
+                setArrayRowMode: sandbox.stub()
+            });
+
+            const result = await queryExecutor.executeQuery('SELECT SUM(Amount) AS TotalAmount, MAX(OrderDate) AS MaxDate FROM dbo.Orders');
+
+            assert.ok(result.metadata);
+            const columns = result.metadata![0].columns;
+
+            const totalAmountCol = columns.find(c => c.name === 'TotalAmount');
+            assert.ok(totalAmountCol, 'TotalAmount column should exist');
+            assert.strictEqual(totalAmountCol!.type, 'money', 'SUM(Amount) should have "money" type from driver');
+
+            const maxDateCol = columns.find(c => c.name === 'MaxDate');
+            assert.ok(maxDateCol, 'MaxDate column should exist');
+            assert.strictEqual(maxDateCol!.type, 'datetime', 'MAX(OrderDate) should have "datetime" type from driver');
+        });
+
+        test('should handle missing type declaration gracefully', async () => {
+            const rs = [
+                [42]
+            ];
+            (rs as any).columns = {
+                'Result': { index: 0, name: 'Result', type: null, nullable: true }
+            };
+
+            mockConnection.request.returns({
+                query: sandbox.stub().resolves({
+                    recordsets: [rs],
+                    rowsAffected: [1]
+                }),
+                cancel: sandbox.stub(),
+                setArrayRowMode: sandbox.stub()
+            });
+
+            const result = await queryExecutor.executeQuery('SELECT 42 AS Result');
+
+            assert.ok(result.metadata);
+            const columns = result.metadata![0].columns;
+            const resultCol = columns.find(c => c.name === 'Result');
+            assert.ok(resultCol, 'Result column should exist');
+            // Type should remain 'unknown' when driver type is null
+            assert.strictEqual(resultCol!.type, 'unknown');
+        });
+    });
 });
