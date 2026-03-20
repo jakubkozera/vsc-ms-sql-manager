@@ -87,7 +87,7 @@ export class SqlChatHandler {
         stream: vscode.ChatResponseStream,
         token: vscode.CancellationToken
     ): Promise<SqlChatResult> {
-        const conversationId = this.getConversationId(context);
+        const conversationId = this.getConversationId(context, request.prompt);
 
         try {
             // Get or create conversation state
@@ -539,7 +539,17 @@ export class SqlChatHandler {
             throw new Error('No active database connection. Please reconnect.');
         }
 
-        const pool = this.connectionProvider.getConnection(connectionContext.connectionId);
+        let pool: any;
+
+        if (connectionContext.database) {
+            // Use a database-specific pool (avoids USE statement which fails on Azure SQL)
+            pool = await this.connectionProvider.ensureConnectionAndGetDbPool(
+                connectionContext.connectionId,
+                connectionContext.database
+            );
+        } else {
+            pool = this.connectionProvider.getConnection(connectionContext.connectionId);
+        }
 
         if (!pool) {
             throw new Error('No active database connection. Please reconnect.');
@@ -547,22 +557,13 @@ export class SqlChatHandler {
 
         const startTime = Date.now();
 
-        // Add database context if needed
-        let fullSql = sql;
-        if (connectionContext.database) {
-            fullSql = `USE [${connectionContext.database}];\n${sql}`;
-        }
-
-        const result = await pool.request().query(fullSql);
+        const result = await pool.request().query(sql);
         const elapsed = Date.now() - startTime;
 
         let output = '';
 
-        // Find the meaningful recordset (skip USE result if present)
         const recordsets = result.recordsets || [];
-        const recordset = connectionContext.database && recordsets.length > 1
-            ? recordsets[recordsets.length - 1]
-            : recordsets[0];
+        const recordset = recordsets[0];
 
         if (recordset && recordset.length > 0) {
             const rowCount = recordset.length;
@@ -1318,13 +1319,33 @@ Answer:`;
     }
 
     /**
-     * Get conversation ID from context
+     * Get conversation ID from context.
+     * Uses the first turn's prompt for a stable key across the entire conversation.
      */
-    private getConversationId(context: vscode.ChatContext): string {
-        // Use the conversation history to generate a unique ID
-        return context.history.length > 0 ?
-            `conv_${Math.abs(JSON.stringify(context.history).split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0))}` :
-            `conv_${Date.now()}`;
+    private getConversationId(context: vscode.ChatContext, currentPrompt?: string): string {
+        let key: string | undefined;
+
+        // From the second message onward, history[0] is the first request
+        if (context.history.length > 0) {
+            const firstTurn = context.history[0];
+            if (firstTurn instanceof vscode.ChatRequestTurn) {
+                key = firstTurn.prompt;
+            }
+        }
+
+        // First message: use the current prompt (will become history[0] next turn)
+        if (!key && currentPrompt) {
+            key = currentPrompt;
+        }
+
+        if (key) {
+            const hash = Math.abs(
+                key.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+            );
+            return `conv_${hash}`;
+        }
+
+        return `conv_${Date.now()}`;
     }
 
     /**
