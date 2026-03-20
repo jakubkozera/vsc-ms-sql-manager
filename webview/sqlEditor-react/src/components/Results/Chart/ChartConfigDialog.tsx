@@ -197,9 +197,9 @@ export function ChartConfigDialog({ data, columnTypes, onCreate, onCancel }: Cha
                     onChange={() => toggleDataColumn(col)}
                     data-testid={`chart-data-col-${col}`}
                   />
-                  {col}
+                  <span className="col-name">{col}</span>
                   {columnTypes?.[col] && (
-                    <span className="col-type">{columnTypes[col]}</span>
+                    <code className="col-type">{columnTypes[col]}</code>
                   )}
                 </label>
               ))}

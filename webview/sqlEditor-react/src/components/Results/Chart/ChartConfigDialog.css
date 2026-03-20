@@ -33,7 +33,6 @@
 }
 
 .chart-config-field label {
-  display: block;
   font-size: 12px;
   color: var(--vscode-descriptionForeground, #999);
   margin-bottom: 4px;
@@ -108,12 +107,16 @@
 
 .chart-data-column-item {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  min-height: 24px;
+  padding: 3px 8px;
   font-size: 12px;
+  line-height: 1;
   color: var(--vscode-foreground, #cccccc);
   cursor: pointer;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
 }
 
 .chart-data-column-item:hover {
@@ -121,13 +124,36 @@
 }
 
 .chart-data-column-item input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0 8px 0 0;
+  padding: 0;
+  vertical-align: middle;
   accent-color: var(--vscode-focusBorder, #007fd4);
+  cursor: pointer;
 }
 
-.chart-data-column-item .col-type {
-  color: var(--vscode-descriptionForeground, #999);
-  font-size: 11px;
-  margin-left: auto;
+.chart-data-column-item .col-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  margin-right: 10px;
+}
+
+.chart-data-column-item code.col-type {
+  flex-shrink: 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, rgba(255,255,255,0.08));
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+  border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.15));
+  white-space: nowrap;
+  line-height: 1.4;
 }
 
 .chart-config-actions {
