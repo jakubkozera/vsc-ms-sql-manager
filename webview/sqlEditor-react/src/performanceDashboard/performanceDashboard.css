@@ -1,0 +1,299 @@
+.perf-dashboard-root {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 18px;
+  color: var(--vscode-foreground);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--vscode-editor-background) 94%, #0a5f8f 6%) 0%, var(--vscode-editor-background) 42%, color-mix(in srgb, var(--vscode-editor-background) 96%, #1f7d3f 4%) 100%);
+  overflow: auto;
+}
+
+.perf-dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.perf-dashboard-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.perf-dashboard-header p {
+  margin: 4px 0 0;
+  opacity: 0.8;
+  font-size: 12px;
+}
+
+.perf-dashboard-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.perf-dashboard-actions select,
+.perf-dashboard-actions button {
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.perf-dashboard-actions button {
+  cursor: pointer;
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
+  border-radius: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 85%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metric-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  opacity: 0.75;
+  letter-spacing: 0.08em;
+}
+
+.metric-value {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.metric-subtitle {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.metric-ok {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #2cb67d 28%, transparent);
+}
+
+.metric-warn {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #f4a261 34%, transparent);
+}
+
+.metric-critical {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #e63946 38%, transparent);
+}
+
+.metric-neutral {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #4ea8de 24%, transparent);
+}
+
+.perf-error {
+  border: 1px solid color-mix(in srgb, #e63946 55%, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 84%, #e63946 16%);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 14px;
+}
+
+.perf-section {
+  margin-top: 18px;
+}
+
+.perf-section h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+.trend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.trend-card {
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 88%, transparent);
+  padding: 10px;
+}
+
+.trend-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.trend-card header span {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.trend-card header strong {
+  font-size: 20px;
+}
+
+.sparkline {
+  width: 100%;
+  height: 72px;
+  display: block;
+}
+
+.sparkline path {
+  fill: none;
+  stroke-width: 2.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.sparkline-ok path {
+  stroke: #2cb67d;
+}
+
+.sparkline-warn path {
+  stroke: #f4a261;
+}
+
+.sparkline-critical path {
+  stroke: #e63946;
+}
+
+.server-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.server-card {
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 88%, transparent);
+  padding: 12px;
+}
+
+.server-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.server-card header span {
+  text-transform: uppercase;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.server-card p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.82;
+}
+
+.server-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.server-healthy {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #2cb67d 28%, transparent);
+}
+
+.server-warning {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #f4a261 34%, transparent);
+}
+
+.server-critical {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #e63946 38%, transparent);
+}
+
+/* ─── Storage card ─────────────────────────────────────────────────────────── */
+
+.storage-card {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 88%, transparent);
+  padding: 20px 24px;
+}
+
+.storage-donut-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+}
+
+.storage-donut {
+  width: 120px;
+  height: 120px;
+}
+
+.storage-donut-bg {
+  fill: none;
+  stroke: color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
+  stroke-width: 14;
+}
+
+.storage-donut-used {
+  fill: none;
+  stroke: #4ea8de;
+  stroke-width: 14;
+  stroke-linecap: butt;
+  transition: stroke-dashoffset 0.6s ease;
+}
+
+.storage-donut-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.storage-legend {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 28px;
+}
+
+.storage-legend-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 3px solid transparent;
+}
+
+.storage-legend-used { border-left-color: #4ea8de; }
+.storage-legend-remaining { border-left-color: color-mix(in srgb, var(--vscode-panel-border) 80%, transparent); }
+.storage-legend-allocated { border-left-color: #7c83fd; }
+.storage-legend-max { border-left-color: #f4a261; }
+
+.storage-legend-label {
+  font-size: 11px;
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.storage-legend-item strong {
+  font-size: 18px;
+  line-height: 1.2;
+}

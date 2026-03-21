@@ -12,6 +12,7 @@ import { registerQueryHistoryCommands } from './queryHistoryCommands';
 import { registerDatabaseCommands } from './databaseCommands';
 import { registerScriptGenerationCommands } from './scriptGenerationCommands';
 import { registerSchemaCacheCommands } from './schemaCacheCommands';
+import { registerMonitoringCommands } from './monitoringCommands';
 import { SqlEditorProvider } from '../sqlEditorProvider';
 import { SchemaContextBuilder } from '../schemaContextBuilder';
 import { DatabaseInstructionsManager } from '../databaseInstructions';
@@ -83,6 +84,13 @@ export function registerAllCommands(
         outputChannel
     );
 
+    const monitoringCommands = registerMonitoringCommands(
+        context,
+        connectionProvider,
+        queryExecutor,
+        outputChannel
+    );
+
     // Register schema cache management commands
     registerSchemaCacheCommands(context, connectionProvider, outputChannel);
 
@@ -94,7 +102,8 @@ export function registerAllCommands(
         ...tableCommands,
         ...storedProcedureCommands,
         ...databaseCommands,
-        ...scriptGenerationCommands
+        ...scriptGenerationCommands,
+        ...monitoringCommands
     ];
 
     // Register query history commands if available
