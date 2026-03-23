@@ -1224,6 +1224,21 @@
           "command": "mssqlManager.createNotebookSection",
           "when": "view == mssqlManager.notebooks && viewItem == notebookFolder",
           "group": "inline@3"
+        },
+        {
+          "command": "mssqlManager.openDashboards",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^connectionActive/",
+          "group": "9_dashboards@1"
+        },
+        {
+          "command": "mssqlManager.openDashboards",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^serverConnectionActive/",
+          "group": "9_dashboards@1"
+        },
+        {
+          "command": "mssqlManager.openDashboards",
+          "when": "view == mssqlManager.explorer && viewItem =~ /^database/",
+          "group": "9_dashboards@1"
         }
       ],
       "commandPalette": [
@@ -1429,6 +1444,10 @@
         },
         {
           "command": "mssqlManager.createDatabase",
+          "when": "false"
+        },
+        {
+          "command": "mssqlManager.openDashboards",
           "when": "false"
         }
       ]

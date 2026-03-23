@@ -23,6 +23,8 @@ export default defineConfig({
       input: {
         sqlEditor: resolve(__dirname, 'index.html'),
         settings: resolve(__dirname, 'settings.html'),
+        performanceDashboard: resolve(__dirname, 'performanceDashboard.html'),
+        dashboard: resolve(__dirname, 'dashboard.html'),
       },
       output: {
         entryFileNames: '[name].js',

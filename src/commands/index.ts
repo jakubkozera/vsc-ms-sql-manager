@@ -12,6 +12,7 @@ import { registerQueryHistoryCommands } from './queryHistoryCommands';
 import { registerDatabaseCommands } from './databaseCommands';
 import { registerScriptGenerationCommands } from './scriptGenerationCommands';
 import { registerSchemaCacheCommands } from './schemaCacheCommands';
+import { registerDashboardCommands } from './dashboardCommands';
 import { SqlEditorProvider } from '../sqlEditorProvider';
 import { SchemaContextBuilder } from '../schemaContextBuilder';
 import { DatabaseInstructionsManager } from '../databaseInstructions';
