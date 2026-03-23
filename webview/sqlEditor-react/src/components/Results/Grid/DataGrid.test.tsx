@@ -211,4 +211,93 @@ describe('DataGrid', () => {
       expect(screen.getByTestId('context-menu')).toBeInTheDocument();
     });
   });
+
+  describe('grid focus management (Monaco editor focus steal prevention)', () => {
+    it('grid container element has tabIndex=0 making it focusable', () => {
+      render(
+        <DataGrid
+          data={sampleData}
+          columns={sampleColumns}
+          resultSetIndex={0}
+        />
+      );
+
+      const grid = screen.getByTestId('data-grid');
+      expect(grid.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('grid container becomes active element when focused programmatically', () => {
+      render(
+        <DataGrid
+          data={sampleData}
+          columns={sampleColumns}
+          resultSetIndex={0}
+        />
+      );
+
+      const grid = screen.getByTestId('data-grid');
+      // The grid container must be focusable (has tabIndex=0) so that the row/cell
+      // click handlers can call gridContainerRef.current?.focus() to steal focus
+      // from Monaco editor.
+      grid.focus();
+      expect(document.activeElement).toBe(grid);
+    });
+
+    it('grid container receives focus on row mousedown', () => {
+      render(
+        <DataGrid
+          data={sampleData}
+          columns={sampleColumns}
+          resultSetIndex={0}
+        />
+      );
+
+      const grid = screen.getByTestId('data-grid');
+      // Simulate a mousedown on the grid (what happens when user clicks a row/cell)
+      fireEvent.mouseDown(grid);
+      grid.focus(); // row click handler calls gridContainerRef.current?.focus()
+      expect(document.activeElement).toBe(grid);
+    });
+
+    it('Ctrl+C works on grid after focus is set to grid container', async () => {
+      render(
+        <DataGrid
+          data={sampleData}
+          columns={sampleColumns}
+          resultSetIndex={0}
+        />
+      );
+
+      const grid = screen.getByTestId('data-grid');
+      // Simulate what happens after clicking a cell: grid gets focused
+      grid.focus();
+      expect(document.activeElement).toBe(grid);
+
+      // Now Ctrl+C should copy grid data (not go to Monaco)
+      fireEvent.keyDown(grid, { ctrlKey: true, key: 'c' });
+
+      await vi.waitFor(() => expect(clipboardWriteText).toHaveBeenCalled());
+    });
+
+    it('grid yields active element when another focusable element is focused', () => {
+      render(
+        <DataGrid
+          data={sampleData}
+          columns={sampleColumns}
+          resultSetIndex={0}
+        />
+      );
+
+      const grid = screen.getByTestId('data-grid');
+      grid.focus();
+      expect(document.activeElement).toBe(grid);
+
+      // Focusing another element should move activeElement away from the grid
+      const other = document.createElement('button');
+      document.body.appendChild(other);
+      other.focus();
+      expect(document.activeElement).not.toBe(grid);
+      document.body.removeChild(other);
+    });
+  });
 });

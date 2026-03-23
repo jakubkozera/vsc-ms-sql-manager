@@ -5,6 +5,16 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.1] - 2026-03-23
+
+### Fixed
+
+- **Result Grid — Focus stolen by Monaco editor after query execution**
+  - Clicking a row or cell in the result grid now explicitly transfers keyboard focus to the grid container, pulling it away from the Monaco SQL editor.
+  - Previously, after executing a query, Monaco retained focus even when the user clicked cells in the result set. This caused `Ctrl+C` to copy the SQL text instead of the selected grid cells, and `Ctrl+A` to select SQL text rather than all grid rows.
+  - Root cause: `handleCellMouseDown` calls `e.preventDefault()` to suppress browser text-selection during drag operations. This has a side-effect of preventing the browser from naturally moving DOM focus to the clicked element. The fix explicitly calls `gridContainerRef.current?.focus({ preventScroll: true })` inside both `handleCellMouseDown` and `handleRowClick`.
+
+
 ## [0.19.0] - 2026-03-20
 
 ### Changed

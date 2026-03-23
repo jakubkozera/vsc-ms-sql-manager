@@ -91,6 +91,9 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
 
+  // Ref to the grid container — used to explicitly steal focus from Monaco editor
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+
   // Drag-selection state
   const isDraggingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -399,6 +402,8 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   const handleRowClick = useCallback((rowIndex: number, e: React.MouseEvent) => {
     setContextMenu(null);
     selectRow(rowIndex, e.ctrlKey || e.metaKey, e.shiftKey);
+    // Pull focus away from Monaco so Ctrl+C / Ctrl+A work on the grid
+    gridContainerRef.current?.focus({ preventScroll: true });
   }, [selectRow]);
 
   const handleCellClick = useCallback((rowIndex: number, colIndex: number, value: any, e: React.MouseEvent) => {
@@ -416,6 +421,9 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     isDraggingRef.current = true;
     setIsDragging(true);
     selectCell(rowIndex, colIndex, sortedData[rowIndex]?.[colIndex], false, false);
+    // Explicitly move focus to the grid container so Monaco loses focus
+    // and Ctrl+C / Ctrl+A operate on the result grid, not the SQL editor.
+    gridContainerRef.current?.focus({ preventScroll: true });
   }, [selectCell, sortedData]);
 
   const handleCellMouseEnter = useCallback((rowIndex: number, colIndex: number, _e: React.MouseEvent) => {
@@ -1164,6 +1172,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     <div 
       className={`data-grid-container ${isSingleResultSet ? 'full-height' : ''} ${isDragging ? 'dragging-selection' : ''}`}
       data-testid="data-grid"
+      ref={gridContainerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onContextMenu={(e) => handleContextMenu(e)}
