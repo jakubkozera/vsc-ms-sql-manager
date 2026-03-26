@@ -75,7 +75,9 @@ GO
 
                 // Get procedure definition
                 const query = `
-                    SELECT OBJECT_DEFINITION(OBJECT_ID('${node.schema}.${node.name}')) AS definition
+                    SELECT 
+                        OBJECT_DEFINITION(OBJECT_ID('[${node.schema}].[${node.name}]')) AS definition,
+                        OBJECTPROPERTY(OBJECT_ID('[${node.schema}].[${node.name}]'), 'IsEncrypted') AS is_encrypted
                 `;
 
                 const result = await connection.request().query(query);
@@ -90,8 +92,10 @@ GO
                     const content = `USE [${node.database}];\nGO\n\n${definition}\nGO\n`;
 
                     await openSqlInCustomEditor(content, `alter_${node.name}.sql`, context, node.connectionId, node.database);
+                } else if (result?.recordset?.[0]?.is_encrypted === 1) {
+                    vscode.window.showErrorMessage(`Procedure [${node.schema}].[${node.name}] is encrypted — its definition cannot be retrieved.`);
                 } else {
-                    vscode.window.showErrorMessage('Could not retrieve procedure definition');
+                    vscode.window.showErrorMessage(`Could not retrieve definition for [${node.schema}].[${node.name}]. Ensure the current user has VIEW DEFINITION permission.`);
                 }
             } catch (error) {
                 vscode.window.showErrorMessage(`Error retrieving procedure: ${error}`);
@@ -509,7 +513,7 @@ async function scriptProcedureTo(
             script += ';\nGO\n';
         } else {
             // CREATE or ALTER
-            const query = `SELECT OBJECT_DEFINITION(OBJECT_ID('${node.schema}.${node.name}')) AS definition`;
+            const query = `SELECT OBJECT_DEFINITION(OBJECT_ID('[${node.schema}].[${node.name}]')) AS definition, OBJECTPROPERTY(OBJECT_ID('[${node.schema}].[${node.name}]'), 'IsEncrypted') AS is_encrypted`;
             const result = await connection.request().query(query);
             
             if (result && result.recordset && result.recordset.length > 0 && result.recordset[0].definition) {
@@ -520,8 +524,11 @@ async function scriptProcedureTo(
                 }
                 
                 script = `USE [${node.database}];\nGO\n\n${definition}\nGO\n`;
+            } else if (result?.recordset?.[0]?.is_encrypted === 1) {
+                vscode.window.showErrorMessage(`Procedure [${node.schema}].[${node.name}] is encrypted — its definition cannot be retrieved.`);
+                return;
             } else {
-                vscode.window.showErrorMessage('Could not retrieve procedure definition');
+                vscode.window.showErrorMessage(`Could not retrieve definition for [${node.schema}].[${node.name}]. Ensure the current user has VIEW DEFINITION permission.`);
                 return;
             }
         }

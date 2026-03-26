@@ -5,6 +5,16 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.3] - 2026-03-26
+
+### Fixed
+
+- **Stored Procedures — Actionable error when definition cannot be retrieved**
+  - "Modify" and all "Script as CREATE/ALTER" actions now distinguish between two failure modes instead of showing a generic error:
+    - If the procedure was created `WITH ENCRYPTION`, the message reads: *"Procedure [schema].[name] is encrypted — its definition cannot be retrieved."*
+    - If the definition is `NULL` for any other reason (e.g. insufficient permissions), the message reads: *"Could not retrieve definition for [schema].[name]. Ensure the current user has VIEW DEFINITION permission."*
+  - The `OBJECT_DEFINITION` query now also fetches `OBJECTPROPERTY(..., 'IsEncrypted')` in the same round-trip to determine the cause without an extra query.
+
 ## [0.19.2] - 2026-03-26
 
 ### Added
