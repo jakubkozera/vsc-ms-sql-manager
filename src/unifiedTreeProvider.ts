@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as sql from 'mssql';
 import { ConnectionProvider, ConnectionConfig, ServerGroup } from './connectionProvider';
-import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon, createFunctionIcon, createTriggerIcon, createTypeIcon, createSequenceIcon, createSynonymIcon, createAssemblyIcon } from './serverGroupIcon';
+import { createServerGroupIcon, createTableIcon, createColumnIcon, createStoredProcedureIcon, createViewIcon, createLoadingSpinnerIcon, createDatabaseIcon, createFunctionIcon, createTriggerIcon, createTypeIcon, createSequenceIcon, createSynonymIcon, createAssemblyIcon, createTemporalTableIcon } from './serverGroupIcon';
 import { SchemaCache } from './utils/schemaCache';
 
 export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.FileDecorationProvider, vscode.TreeDragAndDropController<TreeNode> {
@@ -751,10 +751,13 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                         this.outputChannel.appendLine(`[UnifiedTreeProvider] Found ${cachedTables.length} tables to display in database ${element.database || 'current'}`);
                     }
                     
-                    return tablesToDisplay.map((table) => {
+                    return tablesToDisplay
+                        .filter(table => table.temporalType !== 1)
+                        .map((table) => {
+                        const itemType = table.temporalType === 2 ? 'temporal-table' : 'table';
                         const tableNode = new SchemaItemNode(
                             `${table.schema}.${table.name}`,
-                            'table',
+                            itemType,
                             table.schema,
                             vscode.TreeItemCollapsibleState.Collapsed
                         );
@@ -784,8 +787,9 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                                 formattedSize = '< 1 MB';
                             }
                             
-                            // Set description: "1.6k Rows 34 MB"
-                            tableNode.description = `${formattedRows} Rows ${formattedSize}`;
+                            // Set description: "1.6k Rows 34 MB" (+ system-versioned label for temporal tables)
+                            const temporalSuffix = table.temporalType === 2 ? ' (system-versioned)' : '';
+                            tableNode.description = `${formattedRows} Rows ${formattedSize}${temporalSuffix}`;
                         }
                         
                         return tableNode;
@@ -1132,7 +1136,7 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                 }
                 
                 return items;
-            } else if (element.itemType === 'table') {
+            } else if (element.itemType === 'table' || element.itemType === 'temporal-table') {
                 // Show table details (columns, keys, etc.)
                 // Extract table name from label format schema.tableName
                 const fullLabel = element.label as string;
@@ -1603,6 +1607,27 @@ export class UnifiedTreeProvider implements vscode.TreeDataProvider<TreeNode>, v
                     statisticsNode.connectionId = connectionId;
                     statisticsNode.database = database;
                     items.push(statisticsNode);
+                    
+                    // History table node for system-versioned (temporal) tables
+                    const allTables = await this.schemaCache.getTables(cacheConnection, connection);
+                    const currentTable = allTables.find(t => 
+                        t.name.toLowerCase() === tableName.toLowerCase() &&
+                        t.schema.toLowerCase() === schema.toLowerCase()
+                    );
+                    if (currentTable?.temporalType === 2 && currentTable.historyTableName && currentTable.historyTableSchema) {
+                        const historyNode = new SchemaItemNode(
+                            `${currentTable.historyTableSchema}.${currentTable.historyTableName}`,
+                            'table',
+                            currentTable.historyTableSchema,
+                            vscode.TreeItemCollapsibleState.Collapsed
+                        );
+                        (historyNode as any).tableName = currentTable.historyTableName;
+                        historyNode.connectionId = connectionId;
+                        historyNode.database = database;
+                        historyNode.iconPath = new vscode.ThemeIcon('history');
+                        historyNode.description = '(History)';
+                        items.push(historyNode);
+                    }
                     
                     this.outputChannel.appendLine(`[UnifiedTreeProvider] Returning ${items.length} items from cache for table ${tableName}`);
                     return items;
@@ -2693,6 +2718,10 @@ export class SchemaItemNode extends TreeNode {
                 break;
             case 'table':
                 this.iconPath = createTableIcon();
+                this.contextValue = 'table';
+                break;
+            case 'temporal-table':
+                this.iconPath = createTemporalTableIcon();
                 this.contextValue = 'table';
                 break;
             case 'view':

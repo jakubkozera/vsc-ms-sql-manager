@@ -46,6 +46,10 @@ export interface TableInfo {
     sizeMB?: number;
     type: 'table';
     lastModified?: Date;
+    /** 0 = non-temporal, 1 = history table, 2 = system-versioned temporal table (SQL Server 2016+) */
+    temporalType?: number;
+    historyTableSchema?: string;
+    historyTableName?: string;
 }
 
 /**
@@ -396,7 +400,31 @@ export class SchemaCache {
      * Fetch all tables from database
      */
     private async fetchTables(pool: DBPool): Promise<Map<string, TableInfo>> {
-        const query = `
+        // Query with temporal table columns (SQL Server 2016+).
+        // Falls back to a simpler query if temporal_type column doesn't exist.
+        const temporalQuery = `
+            SELECT 
+                t.TABLE_SCHEMA as [schema],
+                t.TABLE_NAME as name,
+                USER_NAME(st.principal_id) AS owner,
+                ISNULL(SUM(p.rows), 0) as [rowCount],
+                SUM(a.total_pages) * 8 / 1024.0 AS [sizeMB],
+                st.modify_date as lastModified,
+                st.temporal_type as temporalType,
+                OBJECT_SCHEMA_NAME(st.history_table_id) as historySchema,
+                OBJECT_NAME(st.history_table_id) as historyTable
+            FROM INFORMATION_SCHEMA.TABLES t
+            INNER JOIN sys.tables st ON t.TABLE_NAME = st.name AND t.TABLE_SCHEMA = SCHEMA_NAME(st.schema_id)
+            LEFT JOIN sys.indexes i ON st.object_id = i.object_id AND i.index_id <= 1
+            LEFT JOIN sys.partitions p ON st.object_id = p.object_id AND i.index_id = p.index_id
+            LEFT JOIN sys.allocation_units a ON p.partition_id = a.container_id
+            WHERE t.TABLE_TYPE = 'BASE TABLE'
+            GROUP BY t.TABLE_SCHEMA, t.TABLE_NAME, st.principal_id, st.modify_date,
+                st.temporal_type, st.history_table_id
+            ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
+        `;
+
+        const fallbackQuery = `
             SELECT 
                 t.TABLE_SCHEMA as [schema],
                 t.TABLE_NAME as name,
@@ -414,7 +442,13 @@ export class SchemaCache {
             ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
         `;
 
-        const result = await pool.request().query(query);
+        let result;
+        try {
+            result = await pool.request().query(temporalQuery);
+        } catch {
+            // SQL Server < 2016 — temporal_type column doesn't exist
+            result = await pool.request().query(fallbackQuery);
+        }
         const tables = new Map<string, TableInfo>();
 
         for (const row of result.recordset) {
@@ -426,7 +460,10 @@ export class SchemaCache {
                 rowCount: row.rowCount,
                 sizeMB: row.sizeMB,
                 type: 'table',
-                lastModified: row.lastModified
+                lastModified: row.lastModified,
+                temporalType: row.temporalType || 0,
+                historyTableSchema: row.historySchema || undefined,
+                historyTableName: row.historyTable || undefined
             });
         }
 

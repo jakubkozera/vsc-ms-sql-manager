@@ -5,6 +5,18 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.2] - 2026-03-26
+
+### Added
+
+- **Database Explorer — System-versioned (temporal) table support**
+  - System-versioned tables now display a distinct sparkle icon (✦) in the database explorer to visually differentiate them from regular tables.
+  - The table description now includes a `(system-versioned)` label after the row count and size (e.g. `51 Rows < 1 MB (system-versioned)`).
+  - History tables (`temporal_type = 1`) are hidden from the main Tables list — they only appear as a child node when expanding their associated system-versioned table.
+  - Expanding a system-versioned table shows a **History** child node (clock icon) pointing to the linked history table with full exploration support: Columns, Indexes, Statistics.
+  - Scripting commands (Select Top 1000, Script Table Create, etc.) work on both system-versioned tables and their history child nodes without SQL name escaping issues.
+  - Compatible with SQL Server 2008–2014 via automatic fallback query when `temporal_type` column is absent.
+
 ## [0.19.1] - 2026-03-23
 
 ### Fixed
