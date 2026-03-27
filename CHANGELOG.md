@@ -5,6 +5,15 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.4] - 2026-03-27
+
+### Fixed
+
+- **Stored Procedures — Definition not retrieved when connection is server-level (root cause fix)**
+  - All stored procedure commands (`Modify`, `Script as CREATE/ALTER/EXECUTE`, `Execute`, `View Dependencies`, `Rename`, `Delete`, `Properties`) were calling `getConnection()`, which returns the server-level connection pool. That pool is typically connected to `master` (or the server default database), so `OBJECT_ID('dbo.ProcName')` and `sys.procedures` queries silently resolved against the wrong database and returned `NULL`.
+  - All commands now use `ensureConnectionAndGetDbPool(connectionId, database)` — the same pattern used by Schema Compare, SQL Chat and the Notebook editor — which guarantees the query runs against the correct database context.
+  - This is the true fix behind the *"Could not retrieve procedure definition"* / *"Could not retrieve definition for [...]. Ensure the current user has VIEW DEFINITION permission."* error that appeared even for sysadmin users with no encryption.
+
 ## [0.19.3] - 2026-03-26
 
 ### Fixed

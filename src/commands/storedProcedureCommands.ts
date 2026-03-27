@@ -67,11 +67,7 @@ GO
             }
 
             try {
-                const connection = connectionProvider.getConnection(node.connectionId);
-                if (!connection) {
-                    vscode.window.showErrorMessage('Connection not found');
-                    return;
-                }
+                const connection = await connectionProvider.ensureConnectionAndGetDbPool(node.connectionId, node.database);
 
                 // Get procedure definition
                 const query = `
@@ -113,11 +109,7 @@ GO
             }
 
             try {
-                const connection = connectionProvider.getConnection(node.connectionId);
-                if (!connection) {
-                    vscode.window.showErrorMessage('Connection not found');
-                    return;
-                }
+                const connection = await connectionProvider.ensureConnectionAndGetDbPool(node.connectionId, node.database);
 
                 // Get procedure parameters
                 const paramsQuery = `
@@ -269,11 +261,7 @@ GO
             }
 
             try {
-                const connection = connectionProvider.getConnection(node.connectionId);
-                if (!connection) {
-                    vscode.window.showErrorMessage('Connection not found');
-                    return;
-                }
+                const connection = await connectionProvider.ensureConnectionAndGetDbPool(node.connectionId, node.database);
 
                 const query = `
                     SELECT 
@@ -340,11 +328,7 @@ GO
             }
 
             try {
-                const connection = connectionProvider.getConnection(node.connectionId);
-                if (!connection) {
-                    vscode.window.showErrorMessage('Connection not found');
-                    return;
-                }
+                const connection = await connectionProvider.ensureConnectionAndGetDbPool(node.connectionId, node.database);
 
                 const query = `EXEC sp_rename '${node.schema}.${node.name}', '${newName}', 'OBJECT'`;
                 await connection.request().query(query);
@@ -377,11 +361,7 @@ GO
             }
 
             try {
-                const connection = connectionProvider.getConnection(node.connectionId);
-                if (!connection) {
-                    vscode.window.showErrorMessage('Connection not found');
-                    return;
-                }
+                const connection = await connectionProvider.ensureConnectionAndGetDbPool(node.connectionId, node.database);
 
                 const query = `DROP PROCEDURE [${node.schema}].[${node.name}]`;
                 await connection.request().query(query);
@@ -404,11 +384,7 @@ GO
             }
 
             try {
-                const connection = connectionProvider.getConnection(node.connectionId);
-                if (!connection) {
-                    vscode.window.showErrorMessage('Connection not found');
-                    return;
-                }
+                const connection = await connectionProvider.ensureConnectionAndGetDbPool(node.connectionId, node.database);
 
                 const query = `
                     SELECT 
@@ -467,11 +443,7 @@ async function scriptProcedureTo(
     }
 
     try {
-        const connection = connectionProvider.getConnection(node.connectionId);
-        if (!connection) {
-            vscode.window.showErrorMessage('Connection not found');
-            return;
-        }
+        const connection = await connectionProvider.ensureConnectionAndGetDbPool(node.connectionId, node.database);
 
         let script = '';
 
