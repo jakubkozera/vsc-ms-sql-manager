@@ -96,16 +96,65 @@ export function splitSqlStatements(sql: string): SqlStatement[] {
 }
 
 /**
+ * Strip SQL line comments (--) and block comments (/* *\/) from a SQL string.
+ * String literals are preserved unchanged so comment-like text inside quotes is not removed.
+ */
+function stripSqlComments(sql: string): string {
+  let result = '';
+  let i = 0;
+  while (i < sql.length) {
+    if (sql[i] === "'") {
+      // String literal: copy verbatim, handling escaped quotes ('')
+      result += sql[i++];
+      while (i < sql.length) {
+        const ch = sql[i++];
+        result += ch;
+        if (ch === "'" ) {
+          if (sql[i] === "'") {
+            result += sql[i++]; // escaped quote
+          } else {
+            break;
+          }
+        }
+      }
+    } else if (sql[i] === '-' && sql[i + 1] === '-') {
+      // Line comment: skip to end of line (keep the newline)
+      result += ' ';
+      while (i < sql.length && sql[i] !== '\n') {
+        i++;
+      }
+    } else if (sql[i] === '/' && sql[i + 1] === '*') {
+      // Block comment: skip to closing */
+      result += ' ';
+      i += 2;
+      while (i < sql.length) {
+        if (sql[i] === '*' && sql[i + 1] === '/') {
+          i += 2;
+          break;
+        }
+        i++;
+      }
+    } else {
+      result += sql[i++];
+    }
+  }
+  return result;
+}
+
+/**
  * Extract CTE (Common Table Expression) names from a statement
  */
 function extractCTEsFromSingleStatement(statementText: string): Set<string> {
   const ctes = new Set<string>();
-  
+
+  // Strip comments so that a comment before WITH does not prevent detection
+  const stripped = stripSqlComments(statementText);
+
   // Find start of WITH clause
-  const withMatch = statementText.match(/^\s*WITH\s+/i);
+  const withMatch = stripped.match(/^\s*WITH\s+/i);
   if (!withMatch) return ctes;
 
-  let remaining = statementText.substring(withMatch[0].length + (withMatch.index || 0));
+  let remaining = stripped.substring(withMatch[0].length + (withMatch.index || 0));
   
   // Regex for CTE name: name AS (
   const cteStartRegex = /^\s*(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*))\s+AS\s*\(/i;
@@ -180,10 +229,13 @@ export interface CteDefinition {
 function extractCTEsWithColumnsFromSingleStatement(statementText: string, dbSchema?: DatabaseSchema): CteDefinition[] {
   const ctes: CteDefinition[] = [];
 
-  const withMatch = statementText.match(/^\s*WITH\s+/i);
+  // Strip comments so that a comment before WITH does not prevent detection
+  const stripped = stripSqlComments(statementText);
+
+  const withMatch = stripped.match(/^\s*WITH\s+/i);
   if (!withMatch) return ctes;
 
-  let remaining = statementText.substring(withMatch[0].length + (withMatch.index || 0));
+  let remaining = stripped.substring(withMatch[0].length + (withMatch.index || 0));
   const cteStartRegex = /^\s*(?:\[([^\]]+)\]|([a-zA-Z_][a-zA-Z0-9_]*))\s+AS\s*\(/i;
 
   while (true) {

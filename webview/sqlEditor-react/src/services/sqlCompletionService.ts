@@ -868,16 +868,63 @@ export interface CTEDefinition {
 }
 
 /**
+ * Strip SQL line comments (--) and block comments (/* *\/) from a SQL string.
+ * String literals are preserved so comment-like text inside quotes is not removed.
+ * Duplicated here to avoid a circular dependency with sqlValidator.ts.
+ */
+function stripSqlComments(sql: string): string {
+  let result = '';
+  let i = 0;
+  while (i < sql.length) {
+    if (sql[i] === "'") {
+      result += sql[i++];
+      while (i < sql.length) {
+        const ch = sql[i++];
+        result += ch;
+        if (ch === "'") {
+          if (sql[i] === "'") {
+            result += sql[i++];
+          } else {
+            break;
+          }
+        }
+      }
+    } else if (sql[i] === '-' && sql[i + 1] === '-') {
+      result += ' ';
+      while (i < sql.length && sql[i] !== '\n') {
+        i++;
+      }
+    } else if (sql[i] === '/' && sql[i + 1] === '*') {
+      result += ' ';
+      i += 2;
+      while (i < sql.length) {
+        if (sql[i] === '*' && sql[i + 1] === '/') {
+          i += 2;
+          break;
+        }
+        i++;
+      }
+    } else {
+      result += sql[i++];
+    }
+  }
+  return result;
+}
+
+/**
  * Extract CTE definitions from a SQL query (WITH ... AS (...) blocks)
  */
 export function extractCTEsFromQuery(query: string): CTEDefinition[] {
   const ctes: CTEDefinition[] = [];
 
-  const withMatch = query.match(/\bWITH\s+/i);
+  // Strip comments to avoid matching WITH inside a comment
+  const stripped = stripSqlComments(query);
+
+  const withMatch = stripped.match(/\bWITH\s+/i);
   if (!withMatch || withMatch.index === undefined) return ctes;
 
   let pos = withMatch.index + withMatch[0].length;
-  const text = query;
+  const text = stripped;
 
   while (pos < text.length) {
     const cteHeaderMatch = text.substring(pos).match(

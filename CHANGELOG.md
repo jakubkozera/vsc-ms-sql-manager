@@ -5,6 +5,22 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.5] - 2026-04-01
+
+### Fixed
+
+- **SQL Editor — FROM/SELECT autocomplete now shows schema-qualified names for non-`dbo` tables and views**
+  - When typing `SELECT * FROM …` (or any `FROM`/`JOIN` context), tables and views belonging to a schema other than `dbo` (e.g. `SalesLT`, `hr`, `sales`) are now suggested as `[schema].[table]` instead of bare `table`.
+  - `dbo` objects continue to be suggested without a schema prefix, matching existing behaviour.
+  - Inserting a qualified name produces immediately valid SQL without the user having to manually add the schema.
+
+- **SQL Editor — CTE highlighting and detection no longer fails when a SQL comment precedes `WITH`**
+  - CTE names were not detected (and therefore not highlighted or offered in autocomplete) when a line comment (`--`) or block comment (`/* … */`) appeared before the `WITH` keyword without a preceding semicolon.
+  - Root cause: the detection regex `^\s*WITH\s+` did not match because it expects only whitespace before `WITH`, and SQL comments are not whitespace.
+  - Fix: SQL comments are now stripped before the `WITH` detection in `extractCTEsFromSingleStatement`, `extractCTEsWithColumnsFromSingleStatement` (sqlValidator.ts) and `extractCTEsFromQuery` (sqlCompletionService.ts). String literals are preserved unchanged so comment-like content inside quotes is never accidentally removed.
+
+
+
 ## [0.19.4] - 2026-03-27
 
 ### Fixed

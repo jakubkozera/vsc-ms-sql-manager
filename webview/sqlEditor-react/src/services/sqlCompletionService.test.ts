@@ -734,6 +734,43 @@ SELECT * FROM Users`;
       expect(ctes).toHaveLength(1);
       expect(ctes[0].name).toBe('MyCTE');
     });
+
+    it('should detect CTE when a line comment precedes WITH', () => {
+      const query = `-- fetch active users
+WITH ActiveUsers AS (SELECT Id, Name FROM Users WHERE Id > 0)
+SELECT * FROM ActiveUsers`;
+      const ctes = extractCTEsFromQuery(query);
+      expect(ctes).toHaveLength(1);
+      expect(ctes[0].name).toBe('ActiveUsers');
+    });
+
+    it('should detect CTE when a block comment precedes WITH', () => {
+      const query = `/* report query */
+WITH ReportData AS (SELECT Id FROM Orders)
+SELECT * FROM ReportData`;
+      const ctes = extractCTEsFromQuery(query);
+      expect(ctes).toHaveLength(1);
+      expect(ctes[0].name).toBe('ReportData');
+    });
+
+    it('should detect multiple CTEs when multiple line comments precede WITH', () => {
+      const query = `-- CTE that aggregates totals
+-- second line of comment
+WITH Totals AS (SELECT SUM(Total) AS Total FROM Orders),
+     Ranked AS (SELECT * FROM Totals)
+SELECT * FROM Ranked`;
+      const ctes = extractCTEsFromQuery(query);
+      expect(ctes).toHaveLength(2);
+      expect(ctes[0].name).toBe('Totals');
+      expect(ctes[1].name).toBe('Ranked');
+    });
+
+    it('should not match WITH inside a comment as a CTE', () => {
+      const query = `-- WITH nolock hint example
+SELECT * FROM Users`;
+      const ctes = extractCTEsFromQuery(query);
+      expect(ctes).toHaveLength(0);
+    });
   });
 
   describe('getCTEColumns', () => {

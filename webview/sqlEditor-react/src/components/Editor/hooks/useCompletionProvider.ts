@@ -156,24 +156,30 @@ export function useCompletionProvider(
 
           case 'FROM': {
             // Only suggest table and view names — no snippets, no procs/functions
+            // For non-dbo schemas qualify the name as [schema].[table] so the
+            // inserted text is immediately valid SQL.
             dbSchema.tables?.forEach((table: TableInfo) => {
+              const nonDbo = table.schema && table.schema.toLowerCase() !== 'dbo';
+              const displayName = nonDbo ? `[${table.schema}].[${table.name}]` : table.name;
               suggestions.push({
-                label: table.name,
+                label: displayName,
                 kind: monacoInstance.languages.CompletionItemKind.Class,
-                insertText: table.name,
+                insertText: displayName,
                 range,
                 detail: `Table (${table.columns.length} columns)`,
-                sortText: `1_${table.name}`,
+                sortText: `1_${table.schema ?? ''}_${table.name}`,
               });
             });
             dbSchema.views?.forEach((view: ViewInfo) => {
+              const nonDbo = view.schema && view.schema.toLowerCase() !== 'dbo';
+              const displayName = nonDbo ? `[${view.schema}].[${view.name}]` : view.name;
               suggestions.push({
-                label: view.name,
+                label: displayName,
                 kind: monacoInstance.languages.CompletionItemKind.Interface,
-                insertText: view.name,
+                insertText: displayName,
                 range,
                 detail: 'View',
-                sortText: `2_${view.name}`,
+                sortText: `2_${view.schema ?? ''}_${view.name}`,
               });
             });
             return { suggestions };

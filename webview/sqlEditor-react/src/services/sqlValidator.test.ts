@@ -139,6 +139,34 @@ describe('sqlValidator', () => {
       expect(ctes.has('targetmembers')).toBe(true);
       expect(ctes.size).toBe(2);
     });
+
+    it('should detect CTE when a line comment precedes WITH', () => {
+      const sql = '-- fetch active users\nWITH ActiveUsers AS (SELECT Id FROM Users WHERE Active = 1)\nSELECT * FROM ActiveUsers';
+      const ctes = extractCTEs(sql);
+      expect(ctes.has('activeusers')).toBe(true);
+      expect(ctes.size).toBe(1);
+    });
+
+    it('should detect CTE when a block comment precedes WITH', () => {
+      const sql = '/* report query */\nWITH ReportData AS (SELECT Id FROM Orders)\nSELECT * FROM ReportData';
+      const ctes = extractCTEs(sql);
+      expect(ctes.has('reportdata')).toBe(true);
+      expect(ctes.size).toBe(1);
+    });
+
+    it('should detect multiple CTEs when multiple line comments precede WITH', () => {
+      const sql = '-- CTE query\n-- returns grouped totals\nWITH Totals AS (SELECT SUM(Total) AS Total FROM Orders), Ranked AS (SELECT * FROM Totals)\nSELECT * FROM Ranked';
+      const ctes = extractCTEs(sql);
+      expect(ctes.has('totals')).toBe(true);
+      expect(ctes.has('ranked')).toBe(true);
+      expect(ctes.size).toBe(2);
+    });
+
+    it('should not be confused by WITH inside a comment', () => {
+      const sql = '-- WITH nolock hint\nSELECT * FROM Users';
+      const ctes = extractCTEs(sql);
+      expect(ctes.size).toBe(0);
+    });
   });
 
   describe('findTableReferences', () => {
