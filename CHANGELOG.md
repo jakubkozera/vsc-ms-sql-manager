@@ -5,6 +5,23 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.7] - 2026-04-02
+
+### Fixed
+
+- **SQL Editor — Autocomplete suggestions no longer hidden behind result-set sticky header**
+  - The "Result Set N" sticky header had `z-index: 200`, placing it above Monaco's autocomplete widget and covering the suggest dropdown.
+  - Fix: reduced `.result-set-header` z-index from `200` to `2`.
+
+- **SQL Editor — Autocomplete suggestions no longer covered by grid header row**
+  - Monaco renders the suggest (autocomplete) dropdown as an absolutely-positioned overflow widget inside `.monaco-editor` with a built-in z-index of ~40.  Because `.monaco-editor` has no z-index of its own, the suggest widget and our sticky grid elements share the same root stacking context.  Our sticky `<thead>` (z:49) therefore painted on top of the suggest dropdown when it opened downward and overlapped the results panel.
+  - Fix: added `z-index: 50 !important` to our `.monaco-editor .suggest-widget` CSS override in `SqlEditor.css`.  This is the only Monaco widget that needs hoisting; hover widgets already use `position: fixed` at z-index 10 000.
+
+- **SQL Editor — Grid sticky header row no longer covered by body cells when scrolling**
+  - The `data-grid-table thead` had drifted to `z-index: 2`, which was lower than the body's `row-number-cell` (z:48) and `pinned-cell` (z:40) siblings in the same stacking context — causing row-number column cells to paint *above* the sticky header row during scroll.
+  - Fix: restored `thead` z-index to `49` (the established cap for all sticky grid elements).
+  - Removed dead `z-index: 100` from `.grid-header` in `GridHeader.css` (always overridden by the more-specific `.data-grid-table thead` rule).
+
 ## [0.19.5] - 2026-04-01
 
 ### Fixed

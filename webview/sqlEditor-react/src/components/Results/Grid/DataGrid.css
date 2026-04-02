@@ -53,6 +53,14 @@
   display: block;
   position: sticky;
   top: 0;
+  /* z-index cap = 49.  Rule: no sticky element inside the result grid may
+     exceed 49, so Monaco's overlay widgets (suggest/autocomplete at ~50)
+     always paint above the grid.  This element creates a stacking context
+     that contains all header-cell z-indexes (row-number-header@100,
+     pinned-header@90, regular-header@10) — those values are local to this
+     context and do NOT escape to the parent.  Body sticky cells
+     (row-number-cell@48, pinned-cell@40) are siblings in the parent context
+     and must stay below 49 to slide behind the sticky header when scrolling. */
   z-index: 49;
 }
 

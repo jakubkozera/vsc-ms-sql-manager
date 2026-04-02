@@ -56,10 +56,17 @@
   background: var(--vscode-scrollbarSlider-activeBackground) !important;
 }
 
-/* Autocomplete widget */
+/* Autocomplete widget.
+   Monaco renders the suggest widget as an absolutely-positioned "overflow"
+   content widget.  Its built-in z-index is ~40.  Our sticky grid thead is at
+   z-index 49 (same root stacking context), so without this override the grid
+   header row paints ON TOP of the suggest dropdown when it opens downward and
+   overlaps the results panel.  Setting z-index: 50 ensures the popup always
+   renders above every sticky grid element (cap = 49). */
 .monaco-editor .suggest-widget {
   background-color: var(--vscode-editorSuggestWidget-background) !important;
   border: 1px solid var(--vscode-editorSuggestWidget-border) !important;
+  z-index: 50 !important;
 }
 
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row.focused {

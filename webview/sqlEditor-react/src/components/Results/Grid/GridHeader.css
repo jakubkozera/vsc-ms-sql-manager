@@ -2,7 +2,12 @@
   display: block;
   position: sticky;
   top: 0;
-  z-index: 100;
+  /* NOTE: z-index is intentionally NOT set here.  The more specific rule
+     ".data-grid-table thead" in DataGrid.css (specificity 0,1,1 vs 0,1,0)
+     always wins and sets z-index: 49.  Any value placed here would be dead
+     code.  The z-indexes on child cells (.row-number-header, .grid-header-cell
+     etc.) are meaningful because they live inside this element's stacking
+     context. */
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
 }
 

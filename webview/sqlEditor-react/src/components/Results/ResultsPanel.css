@@ -85,7 +85,11 @@
   flex-shrink: 0;
   position: sticky;
   top: 0;
-  z-index: 200;
+  /* Keep below Monaco editor overlay widgets (suggest/autocomplete at ~50).
+     Maximum z-index for results panel sticky elements is 49 — same rule
+     applied to the grid thead. z-index: 2 is sufficient since it only needs
+     to appear above normal flow content (z-index: 1 rows). */
+  z-index: 2;
 }
 
 .results-empty {
