@@ -77,6 +77,14 @@ export function ResultsPanel() {
     }
   }, [lastErrorId]);
 
+  // Auto-switch to results (or messages when no rows) when new results arrive.
+  // This runs BEFORE the plan effect so that plan takes priority when both change.
+  useEffect(() => {
+    if (lastResults !== null) {
+      setActiveTab(lastResults.length > 0 ? 'results' : 'messages');
+    }
+  }, [lastResults]);
+
   // Auto-switch to the plan tab when a query plan is received
   useEffect(() => {
     if (lastPlanXml) {

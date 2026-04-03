@@ -485,3 +485,144 @@ describe('ResultsPanel - multiple result sets display mode', () => {
     expect(screen.getByText('3 rows')).toBeInTheDocument();
   });
 });
+
+// ── Results auto-switch ───────────────────────────────────────────────────────
+
+describe('ResultsPanel - results tab auto-switch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should switch to results tab when results arrive after being on messages', () => {
+    // Start with an error → messages tab becomes active
+    vi.mocked(useVSCode).mockReturnValue(makeVSCodeMock(1) as any);
+    vi.mocked(usePendingChanges).mockReturnValue(makePendingChangesMock(false) as any);
+
+    const { rerender } = render(<ResultsPanel />);
+    expect(screen.getByTestId('messages-tab')).toHaveClass('active');
+
+    // New query succeeds and returns rows
+    const rows = [[1, 'Alice'], [2, 'Bob']];
+    vi.mocked(useVSCode).mockReturnValue({
+      ...makeVSCodeMock(1),
+      lastResults: [rows],
+      lastColumnNames: [['id', 'name']],
+      lastMetadata: [null],
+      lastError: null,
+    } as any);
+
+    act(() => { rerender(<ResultsPanel />); });
+
+    expect(screen.getByTestId('results-tab')).toHaveClass('active');
+    expect(screen.getByTestId('messages-tab')).not.toHaveClass('active');
+  });
+
+  it('should switch to messages tab when results arrive with no rows (e.g. UPDATE)', () => {
+    vi.mocked(useVSCode).mockReturnValue(makeVSCodeMock(0) as any);
+    vi.mocked(usePendingChanges).mockReturnValue(makePendingChangesMock(false) as any);
+
+    const { rerender } = render(<ResultsPanel />);
+    expect(screen.getByTestId('results-tab')).toHaveClass('active');
+
+    // Non-SELECT query returns empty result sets
+    vi.mocked(useVSCode).mockReturnValue({
+      ...makeVSCodeMock(0),
+      lastResults: [],
+      lastColumnNames: [],
+      lastMetadata: [],
+      lastMessages: [{ type: 'info', text: '(1 row affected)' }],
+    } as any);
+
+    act(() => { rerender(<ResultsPanel />); });
+
+    expect(screen.getByTestId('messages-tab')).toHaveClass('active');
+    expect(screen.getByTestId('results-tab')).not.toHaveClass('active');
+  });
+
+  it('should switch to results tab when results arrive after user manually selected messages', () => {
+    vi.mocked(useVSCode).mockReturnValue(makeVSCodeMock(0) as any);
+    vi.mocked(usePendingChanges).mockReturnValue(makePendingChangesMock(false) as any);
+
+    const { rerender } = render(<ResultsPanel />);
+
+    // User manually clicks messages tab
+    act(() => { screen.getByTestId('messages-tab').click(); });
+    expect(screen.getByTestId('messages-tab')).toHaveClass('active');
+
+    // New query returns rows
+    const rows = [[42, 'value']];
+    vi.mocked(useVSCode).mockReturnValue({
+      ...makeVSCodeMock(0),
+      lastResults: [rows],
+      lastColumnNames: [['id', 'val']],
+      lastMetadata: [null],
+    } as any);
+
+    act(() => { rerender(<ResultsPanel />); });
+
+    expect(screen.getByTestId('results-tab')).toHaveClass('active');
+    expect(screen.getByTestId('messages-tab')).not.toHaveClass('active');
+  });
+
+  it('should not switch tabs when lastResults becomes null (CLEAR_RESULTS)', () => {
+    // Start with results visible
+    const rows = [[1, 'a']];
+    vi.mocked(useVSCode).mockReturnValue({
+      ...makeVSCodeMock(0),
+      lastResults: [rows],
+      lastColumnNames: [['id', 'val']],
+      lastMetadata: [null],
+    } as any);
+    vi.mocked(usePendingChanges).mockReturnValue(makePendingChangesMock(false) as any);
+
+    const { rerender } = render(<ResultsPanel />);
+    expect(screen.getByTestId('results-tab')).toHaveClass('active');
+
+    // User switches to messages manually
+    act(() => { screen.getByTestId('messages-tab').click(); });
+    expect(screen.getByTestId('messages-tab')).toHaveClass('active');
+
+    // CLEAR_RESULTS dispatched (results become null — new query started)
+    vi.mocked(useVSCode).mockReturnValue({
+      ...makeVSCodeMock(0),
+      lastResults: null,
+    } as any);
+
+    act(() => { rerender(<ResultsPanel />); });
+
+    // Tab should stay on messages (not switched, since null is not new results)
+    expect(screen.getByTestId('messages-tab')).toHaveClass('active');
+  });
+
+  it('error keeps messages tab active even when lastResults is already non-null', () => {
+    // In the real app, SET_ERROR does NOT change lastResults (it stays from the last
+    // successful query). So when an error arrives, only lastErrorId changes — the
+    // results effect does NOT fire (same reference), only the error effect fires.
+    const rows = [[1, 'a']];
+    const baseState = {
+      ...makeVSCodeMock(0),
+      lastResults: [rows],
+      lastColumnNames: [['id', 'val']],
+      lastMetadata: [null],
+    };
+
+    vi.mocked(useVSCode).mockReturnValue(baseState as any);
+    vi.mocked(usePendingChanges).mockReturnValue(makePendingChangesMock(false) as any);
+
+    const { rerender } = render(<ResultsPanel />);
+    expect(screen.getByTestId('results-tab')).toHaveClass('active');
+
+    // Error arrives: same lastResults reference, lastErrorId increments
+    vi.mocked(useVSCode).mockReturnValue({
+      ...baseState,           // same lastResults reference → results effect won't fire
+      lastErrorId: 1,
+      lastError: 'Syntax error',
+    } as any);
+
+    act(() => { rerender(<ResultsPanel />); });
+
+    // Error effect fires (lastErrorId changed), results effect stays silent.
+    expect(screen.getByTestId('messages-tab')).toHaveClass('active');
+    expect(screen.getByTestId('results-tab')).not.toHaveClass('active');
+  });
+});
