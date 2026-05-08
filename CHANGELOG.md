@@ -5,6 +5,23 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.9] - 2026-05-08
+
+### Fixed
+
+- **Script ROW DELETE — Composite foreign key WHERE clause now generates valid SQL**
+  - Tables with composite foreign keys (e.g. `(MemberId, ProjectId, Role)`) previously generated invalid T-SQL: `WHERE [MemberId, ProjectId, Role] IN (SELECT [MemberId, ProjectId, Role] ...)` — SQL Server does not support multi-column `IN` expressions.
+  - Fix: FK columns are now traced through the dependency chain back to the root table's PK. When a column in the dependent table maps to the root PK (e.g. `ProjectMemberToolCapabilities.MemberId` → `Members.Id`), a simple direct `WHERE [MemberId] = @Target_Id` is generated.
+  - Level-0 dependencies (tables directly referencing the target) use simple direct `WHERE [col] = @Target_X` comparison.
+  - Higher-level dependencies where no FK column traces to root PK fall back to `WHERE EXISTS (...)` with correlated subqueries (composite FK) or `WHERE [col] IN (SELECT ...)` (single-column FK).
+  - Extracted reusable `traceColumnsToRoot`, `buildTargetFilter` and `generateDependentDeletes` utilities into `src/utils/deleteScriptGenerator.ts` for testability.
+
+### Tests
+
+- Added **21** unit tests for `deleteScriptGenerator`: `buildTargetFilter` (7 tests), `generateDependentDeletes` (10 tests), and `traceColumnsToRoot` (4 tests) covering direct column tracing, composite FKs, multi-level nesting, deduplication, ordering, circular reference safety, and the original regression case.
+
+
+
 ## [0.19.8] - 2026-04-02
 
 ### Fixed

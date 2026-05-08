@@ -3,6 +3,7 @@ import { ConnectionProvider } from '../connectionProvider';
 import { UnifiedTreeProvider } from '../unifiedTreeProvider';
 import { openSqlInCustomEditor } from '../utils/sqlDocumentHelper';
 import { SchemaCache } from '../utils/schemaCache';
+import { generateDependentDeletes } from '../utils/deleteScriptGenerator';
 
 export function registerTableCommands(
     context: vscode.ExtensionContext,
@@ -740,92 +741,7 @@ GO`;
 
             // Generate DELETE statements for dependent tables (from most dependent to least dependent)
             if (fkDepsResult.recordset.length > 0) {
-                deleteScript += `    -- Delete dependent records (from most dependent to least dependent)\n\n`;
-
-                // Group by level and table to avoid duplicates
-                const processedTables = new Set<string>();
-                const groupedByLevel = new Map<number, any[]>();
-                
-                fkDepsResult.recordset.forEach((dep: any) => {
-                    const tableKey = `${dep.level}_${dep.ref_schema}.${dep.ref_table}`;
-                    if (!processedTables.has(tableKey)) {
-                        processedTables.add(tableKey);
-                        if (!groupedByLevel.has(dep.level)) {
-                            groupedByLevel.set(dep.level, []);
-                        }
-                        groupedByLevel.get(dep.level)!.push(dep);
-                    }
-                });
-
-                // Sort levels in descending order
-                const sortedLevels = Array.from(groupedByLevel.keys()).sort((a, b) => b - a);
-
-                sortedLevels.forEach(level => {
-                    const depsAtLevel = groupedByLevel.get(level)!;
-                    
-                    depsAtLevel.forEach((dep: any) => {
-                        deleteScript += `    -- Level ${dep.level}: Delete from [${dep.ref_schema}].[${dep.ref_table}]\n`;
-                        deleteScript += `    -- Path: ${dep.path}\n`;
-                        deleteScript += `    DELETE [${dep.ref_schema}].[${dep.ref_table}]\n`;
-                        deleteScript += `    WHERE [${dep.ref_columns}] IN (\n`;
-                        deleteScript += `        SELECT [${dep.target_columns}]\n`;
-                        deleteScript += `        FROM [${dep.target_schema}].[${dep.target_table}]\n`;
-                        
-                        // Build WHERE clause that traces back to the original table
-                        if (dep.level === 0) {
-                            // Direct dependency on the target table
-                            if (pkResult.recordset.length > 0) {
-                                deleteScript += `        WHERE `;
-                                deleteScript += pkResult.recordset.map((pk: any, pkIndex: number) => {
-                                    const operator = pkIndex === 0 ? '' : 'AND ';
-                                    return `${operator}[${pk.COLUMN_NAME}] = @Target_${pk.COLUMN_NAME}`;
-                                }).join(' ');
-                                deleteScript += `\n`;
-                            }
-                        } else {
-                            // For higher levels, check if we can use direct column reference
-                            // Look for a column in ref_table that matches the root table's PK pattern
-                            const rootTableNameSingular = table.endsWith('s') ? table.slice(0, -1) : table;
-                            const potentialColumnNames = [
-                                `${table}Id`,      // e.g., ProjectsId
-                                `${rootTableNameSingular}Id`, // e.g., ProjectId
-                                pkResult.recordset.length > 0 ? pkResult.recordset[0].COLUMN_NAME : null
-                            ].filter(Boolean);
-                            
-                            // Check if any of the ref_columns contains a direct reference to root table
-                            const refColumnsList = dep.ref_columns.split(', ');
-                            const directColumn = refColumnsList.find((col: string) => 
-                                potentialColumnNames.some(pcn => col === pcn)
-                            );
-                            
-                            if (directColumn && pkResult.recordset.length > 0) {
-                                // Use direct column comparison
-                                deleteScript += `        WHERE [${directColumn}] = @Target_${pkResult.recordset[0].COLUMN_NAME}\n`;
-                            } else {
-                                // Fall back to subquery (for cases where there's no direct column)
-                                const parentDep = fkDepsResult.recordset.find((d: any) => 
-                                    d.ref_schema === dep.target_schema && 
-                                    d.ref_table === dep.target_table &&
-                                    d.level === dep.level - 1
-                                );
-                                
-                                if (parentDep) {
-                                    const parentRefColumns = parentDep.ref_columns.split(', ');
-                                    const parentDirectColumn = parentRefColumns.find((col: string) => 
-                                        potentialColumnNames.some(pcn => col === pcn)
-                                    );
-                                    
-                                    if (parentDirectColumn && pkResult.recordset.length > 0) {
-                                        deleteScript += `        WHERE [${parentDirectColumn}] = @Target_${pkResult.recordset[0].COLUMN_NAME}\n`;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        deleteScript += `    );\n`;
-                        deleteScript += `    PRINT 'Deleted ' + CAST(@@ROWCOUNT AS VARCHAR) + ' row(s) from [${dep.ref_schema}].[${dep.ref_table}]';\n\n`;
-                    });
-                });
+                deleteScript += generateDependentDeletes(schema, table, pkResult.recordset, fkDepsResult.recordset);
             }
 
             // Generate DELETE statement for the main table
