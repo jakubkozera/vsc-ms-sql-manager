@@ -15,6 +15,7 @@ import {
   getCTEColumns,
   buildAugmentedSchema,
   getMainQueryText,
+  isCleanStatement,
 } from './sqlCompletionService';
 import type { DatabaseSchema } from '../types/schema';
 
@@ -2244,6 +2245,82 @@ JOIN Orders o ON u.Id = o.UserId`;
       const tables = extractTablesFromQuery(query, mockSchema);
       const users = tables.find(t => t.table === 'Users');
       expect(users?.alias).not.toBe('OVER');
+    });
+  });
+
+  describe('isCleanStatement', () => {
+    it('should return true for empty input', () => {
+      expect(isCleanStatement('')).toBe(true);
+    });
+
+    it('should return true for whitespace-only input', () => {
+      expect(isCleanStatement('   ')).toBe(true);
+    });
+
+    it('should return true for a partial non-keyword word', () => {
+      expect(isCleanStatement('Us')).toBe(true);
+    });
+
+    it('should return false for UPDATE keyword', () => {
+      expect(isCleanStatement('UPDATE ')).toBe(false);
+    });
+
+    it('should return false for DELETE keyword', () => {
+      expect(isCleanStatement('DELETE ')).toBe(false);
+    });
+
+    it('should return false for INSERT keyword', () => {
+      expect(isCleanStatement('INSERT INTO Users')).toBe(false);
+    });
+
+    it('should return false for SELECT keyword', () => {
+      expect(isCleanStatement('SELECT ')).toBe(false);
+    });
+
+    it('should return false for ALTER keyword', () => {
+      expect(isCleanStatement('ALTER TABLE ')).toBe(false);
+    });
+
+    it('should return false for CREATE keyword', () => {
+      expect(isCleanStatement('CREATE ')).toBe(false);
+    });
+
+    it('should return false for EXEC keyword', () => {
+      expect(isCleanStatement('EXEC ')).toBe(false);
+    });
+
+    it('should return false for DECLARE keyword', () => {
+      expect(isCleanStatement('DECLARE @x int')).toBe(false);
+    });
+
+    it('should return true after semicolon with no new keywords', () => {
+      expect(isCleanStatement('SELECT * FROM Users; ')).toBe(true);
+    });
+
+    it('should return true after semicolon with partial word', () => {
+      expect(isCleanStatement('SELECT * FROM Users; Us')).toBe(true);
+    });
+
+    it('should return false after semicolon followed by new keyword', () => {
+      expect(isCleanStatement('SELECT * FROM Users; UPDATE ')).toBe(false);
+    });
+
+    it('should return false for DROP keyword', () => {
+      expect(isCleanStatement('DROP TABLE ')).toBe(false);
+    });
+
+    it('should return false for MERGE keyword', () => {
+      expect(isCleanStatement('MERGE ')).toBe(false);
+    });
+
+    it('should return false for WITH (CTE) keyword', () => {
+      expect(isCleanStatement('WITH cte AS (')).toBe(false);
+    });
+
+    it('should be case-insensitive', () => {
+      expect(isCleanStatement('update ')).toBe(false);
+      expect(isCleanStatement('Update ')).toBe(false);
+      expect(isCleanStatement('UPDATE ')).toBe(false);
     });
   });
 

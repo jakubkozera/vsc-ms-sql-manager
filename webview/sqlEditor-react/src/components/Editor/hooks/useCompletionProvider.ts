@@ -14,6 +14,7 @@ import {
   getAfterFromKeywords,
   buildAugmentedSchema,
   getMainQueryText,
+  isCleanStatement,
   type SqlContextType,
 } from '../../../services';
 
@@ -331,6 +332,13 @@ export function useCompletionProvider(
           (columnFocusedContexts.includes(sqlContext.type) && tablesInQuery.length > 0) ||
           sqlContext.type === 'INSERT_COLUMNS';
 
+        // Quick-script snippets (table100, table*) and built-in snippets should
+        // only appear in a clean statement (empty editor or right after `;`/`GO`).
+        // When the user is inside an existing statement (UPDATE, DELETE, INSERT,
+        // EXEC, ALTER, …) they should see table names but NOT snippet expansions
+        // that insert entire SELECT statements.
+        const cleanStatement = isCleanStatement(textUntilPosition);
+
         if (!suppressGlobal) {
           // Add tables
           dbSchema.tables?.forEach((table: TableInfo) => {
@@ -343,44 +351,47 @@ export function useCompletionProvider(
               sortText: `3_${table.name}`,
             });
 
-            const schema = (table as any).schema || 'dbo';
-            const bracketedName = `[${schema}].[${table.name}]`;
-            const aliasName = generateSmartAlias(table.name);
-            const fullName = schema === 'dbo' ? table.name : `${schema}.${table.name}`;
+            // Only add table quick-script snippets in a clean statement
+            if (cleanStatement) {
+              const schema = (table as any).schema || 'dbo';
+              const bracketedName = `[${schema}].[${table.name}]`;
+              const aliasName = generateSmartAlias(table.name);
+              const fullName = schema === 'dbo' ? table.name : `${schema}.${table.name}`;
 
-            const table100Label = `${table.name}100`;
-            const tableAllLabel = `${table.name}*`;
+              const table100Label = `${table.name}100`;
+              const tableAllLabel = `${table.name}*`;
 
-            const existingLabels = new Set(suggestions.map(s => (typeof s.label === 'string' ? s.label : '').toLowerCase()));
+              const existingLabels = new Set(suggestions.map(s => (typeof s.label === 'string' ? s.label : '').toLowerCase()));
 
-            if (!existingLabels.has(table100Label.toLowerCase())) {
-              suggestions.push({
-                label: table100Label,
-                kind: monacoInstance.languages.CompletionItemKind.Snippet,
-                detail: `📅 Generate SELECT TOP 100 from ${fullName}`,
-                insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
-                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range,
-                sortText: `0_${table.name}_100`,
-                documentation: {
-                  value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`,
-                },
-              });
-            }
+              if (!existingLabels.has(table100Label.toLowerCase())) {
+                suggestions.push({
+                  label: table100Label,
+                  kind: monacoInstance.languages.CompletionItemKind.Snippet,
+                  detail: `📅 Generate SELECT TOP 100 from ${fullName}`,
+                  insertText: `SELECT TOP 100 *\nFROM ${bracketedName} [${aliasName}]`,
+                  insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                  range,
+                  sortText: `0_${table.name}_100`,
+                  documentation: {
+                    value: `**Quick Script**: SELECT TOP 100 rows from ${fullName}\n\nThis will generate a complete SELECT statement to view the first 100 rows from the table.`,
+                  },
+                });
+              }
 
-            if (!existingLabels.has(tableAllLabel.toLowerCase())) {
-              suggestions.push({
-                label: tableAllLabel,
-                kind: monacoInstance.languages.CompletionItemKind.Snippet,
-                detail: `📅 Generate SELECT * from ${fullName}`,
-                insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
-                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                range,
-                sortText: `0_${table.name}_all`,
-                documentation: {
-                  value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`,
-                },
-              });
+              if (!existingLabels.has(tableAllLabel.toLowerCase())) {
+                suggestions.push({
+                  label: tableAllLabel,
+                  kind: monacoInstance.languages.CompletionItemKind.Snippet,
+                  detail: `📅 Generate SELECT * from ${fullName}`,
+                  insertText: `SELECT *\nFROM ${bracketedName} [${aliasName}]`,
+                  insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                  range,
+                  sortText: `0_${table.name}_all`,
+                  documentation: {
+                    value: `**Quick Script**: SELECT all rows from ${fullName}\n\n⚠️ **Warning**: This will return ALL rows from the table.`,
+                  },
+                });
+              }
             }
           });
 
@@ -420,19 +431,21 @@ export function useCompletionProvider(
             });
           });
 
-          // Add snippets
-          builtInSnippets.forEach((snippet) => {
-            suggestions.push({
-              label: snippet.prefix,
-              kind: monacoInstance.languages.CompletionItemKind.Snippet,
-              insertText: snippet.body,
-              insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              range,
-              detail: snippet.name,
-              documentation: snippet.description,
-              sortText: `9_${snippet.prefix}`,
+          // Add built-in snippets only in a clean statement
+          if (cleanStatement) {
+            builtInSnippets.forEach((snippet) => {
+              suggestions.push({
+                label: snippet.prefix,
+                kind: monacoInstance.languages.CompletionItemKind.Snippet,
+                insertText: snippet.body,
+                insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range,
+                detail: snippet.name,
+                documentation: snippet.description,
+                sortText: `9_${snippet.prefix}`,
+              });
             });
-          });
+          }
         }
 
         // Remove duplicates

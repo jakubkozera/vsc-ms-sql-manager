@@ -5,6 +5,20 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.10] - 2026-05-08
+
+### Fixed
+
+- **SQL Editor — Quick-script snippets (`table100`, `table*`) and built-in snippets no longer appear inside existing statements**
+  - Typing a table name after `UPDATE`, `DELETE`, `INSERT INTO`, `ALTER TABLE`, `EXEC`, `DROP`, `MERGE`, `CREATE`, or any other SQL keyword previously showed quick-script snippet completions (e.g. `Users100`, `Users*`) that, when accepted, inserted an entire `SELECT TOP 100 * FROM …` statement — producing invalid SQL like `UPDATE SELECT TOP 100 * FROM [dbo].[Users] [u]`.
+  - Root cause: snippet suggestions were gated only by a column-focused context check. Statements that had not yet reached a column-focused clause (e.g. `UPDATE ` before `SET`) fell through to the default path, which included all snippets.
+  - Fix: added `isCleanStatement()` helper that inspects the current statement fragment (text after the last `;` or start of editor). Quick-script table snippets and all built-in snippets are now suppressed whenever the statement already contains a SQL keyword. Plain table/view/procedure name suggestions remain available in all contexts.
+  - Covers all DML/DDL prefixes: `UPDATE`, `DELETE`, `INSERT`, `SELECT`, `ALTER`, `CREATE`, `DROP`, `EXEC`, `DECLARE`, `MERGE`, `WITH`, and others.
+
+### Tests
+
+- Added **18** unit tests for `isCleanStatement` covering: empty/whitespace input, partial non-keyword words, all major SQL keywords (`UPDATE`, `DELETE`, `INSERT`, `SELECT`, `ALTER`, `CREATE`, `DROP`, `EXEC`, `DECLARE`, `MERGE`, `WITH`), semicolon boundary handling, and case-insensitivity.
+
 ## [0.19.9] - 2026-05-08
 
 ### Fixed

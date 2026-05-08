@@ -116,6 +116,23 @@ function getCurrentStatementFragment(text: string): string {
 }
 
 /**
+ * Checks whether the current statement fragment is "clean" — i.e. the user
+ * has not typed any SQL keyword yet.  Quick-script snippets (table100, table*)
+ * and built-in snippets should only be offered in a clean statement so they
+ * don't pollute suggestions after UPDATE, DELETE, INSERT, EXEC, etc.
+ */
+export function isCleanStatement(textUntilPosition: string): boolean {
+  const fragment = getCurrentStatementFragment(textUntilPosition).trim();
+  if (!fragment) return true;
+
+  // If the fragment contains any recognised SQL keyword it is not clean.
+  // We only test the first word so that a half-typed table name (e.g. "Use")
+  // is not accidentally treated as a keyword.
+  const firstWord = fragment.split(/\s/)[0].toLowerCase();
+  return !SQL_KEYWORDS.has(firstWord);
+}
+
+/**
  * Find a table in the schema by name
  */
 export function findTable(tableName: string, dbSchema: DatabaseSchema): { schema: string; table: string } | null {
