@@ -76,8 +76,6 @@ export function Toolbar({
       {/* Connection Dropdown */}
       <ConnectionDropdown />
 
-
-
       {/* Database Dropdown */}
       <DatabaseDropdown />
 

@@ -12,7 +12,7 @@
 #toolbar {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 0;
   background-color: var(--vscode-editorGroupHeader-tabsBackground);
   border-bottom: 1px solid var(--vscode-panel-border);
   gap: 8px;
@@ -21,7 +21,7 @@
 
 .toolbar-separator {
   width: 1px;
-  height: 24px;
+  height: 100%;
   background-color: var(--vscode-panel-border);
   margin: 0 4px;
 }
@@ -30,6 +30,7 @@
 .button-container {
   display: inline-flex;
   position: relative;
+  margin: 8px 0 8px 12px;
 }
 
 .main-button {

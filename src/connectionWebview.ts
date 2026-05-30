@@ -344,9 +344,39 @@ export class ConnectionWebview {
             margin-top: 10px;
         }
 
+        .checkbox-group label {
+            margin-bottom: 0;
+            font-weight: normal;
+        }
+
         input[type="checkbox"] {
-            width: auto;
-            margin: 0;
+            position: relative;
+            box-sizing: content-box;
+            height: 14px;
+            appearance: none;
+            border-radius: 2px;
+            border: 1px solid var(--vscode-input-border);
+            background-color: var(--vscode-input-background);
+            padding: 0 4px;
+        }
+
+        input[type="checkbox"]:before {
+            content: '';
+            display: block;
+            width: 4px;
+            height: 9px;
+            border-bottom: 2px solid transparent;
+            border-right: 2px solid transparent;
+            transform: rotate(45deg);
+        }
+
+        input[type="checkbox"]:checked:before {
+            border-bottom-color: var(--vscode-button-background);
+            border-right-color: var(--vscode-button-background);
+        }
+
+        .vscode-dark input[type="checkbox"]:checked:before {
+            filter: brightness(1.3);
         }
 
         .auth-fields {
@@ -422,7 +452,7 @@ export class ConnectionWebview {
         .button-group {
             display: flex;
             gap: 12px;
-            margin-top: 30px;
+            margin-top: 25px;
             padding-top: 20px;
             border-top: 1px solid var(--vscode-input-border);
             flex-wrap: wrap;
@@ -632,17 +662,15 @@ export class ConnectionWebview {
         }
 
         .password-toggle {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
+            position: relative;
+            float: right;
+            width: auto;
+            min-width: fit-content;
+            transform: translateY(-100%);
             background: none;
             border: none;
             cursor: pointer;
             padding: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             color: var(--vscode-foreground);
             opacity: 0.7;
             transition: opacity 0.2s;

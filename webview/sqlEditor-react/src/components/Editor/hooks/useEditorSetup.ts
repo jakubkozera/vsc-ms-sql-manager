@@ -41,6 +41,7 @@ export function useEditorSetup(
           verticalScrollbarSize: 10,
           horizontalScrollbarSize: 10,
         },
+        useShadowDOM: false,
       });
 
       // Register formatting providers

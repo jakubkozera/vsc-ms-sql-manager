@@ -17,7 +17,7 @@
   gap: 24px;
   padding: 8px 12px;
   margin-bottom: 12px;
-  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+  background: rgba(127, 127, 127, 0.1);
   border-radius: 4px;
   border-left: 3px solid var(--vscode-textLink-foreground);
 }
@@ -48,7 +48,7 @@
   gap: 8px;
   padding: 8px 12px;
   border-radius: 4px;
-  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+  background: rgba(127, 127, 127, 0.1);
 }
 
 .message-item.error {

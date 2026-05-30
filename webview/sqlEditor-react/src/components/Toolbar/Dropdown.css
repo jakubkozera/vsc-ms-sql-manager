@@ -1,6 +1,8 @@
 .custom-dropdown {
   position: relative;
   display: inline-block;
+  border: 1px solid var(--vscode-button-secondaryBackground);
+  border-radius: 2px;
 }
 
 .dropdown-trigger {
@@ -8,7 +10,7 @@
   border: none;
   color: var(--vscode-input-foreground);
   cursor: pointer;
-  padding: 4px 24px 4px 8px;
+  padding: 5px 24px 5px 8px;
   font-size: 13px;
   font-family: inherit;
   font-weight: 600;
