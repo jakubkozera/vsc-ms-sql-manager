@@ -138,13 +138,13 @@ function GridHeaderComponent({
                 >
                   {isSorted ? (
                     sortConfig?.direction === 'asc' ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-editor-selectionForeground, var(--vscode-foreground))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 5l0 14" />
                         <path d="M16 9l-4 -4" />
                         <path d="M8 9l4 -4" />
                       </svg>
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-button-background, #0e639c)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-editor-selectionForeground, var(--vscode-foreground))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 5l0 14" />
                         <path d="M16 15l-4 4" />
                         <path d="M8 15l4 4" />
@@ -169,7 +169,7 @@ function GridHeaderComponent({
                   }}
                   title="Pin column"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={column.pinned ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={column.pinned ? 'var(--vscode-editor-selectionForeground, var(--vscode-foreground))' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5 -1.5l1.5 -4l4 -4" />
                     <path d="M9 15l-4.5 4.5" />
                     <path d="M14.5 4l5.5 5.5" />
@@ -186,7 +186,7 @@ function GridHeaderComponent({
                     }}
                     title="Filter"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isFiltered ? 'var(--vscode-button-background, #0e639c)' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isFiltered ? 'var(--vscode-editor-selectionForeground, var(--vscode-foreground))' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227z" />
                     </svg>
                   </span>

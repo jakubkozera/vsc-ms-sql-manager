@@ -25,8 +25,7 @@
   color: var(--vscode-foreground);
   border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
   border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
-  background: var(--vscode-editorGroupHeader-tabsBackground, #252526) !important;
-  position: -webkit-sticky !important;
+  background: var(--vscode-editor-background);
   position: sticky !important;
   top: 0 !important;
   user-select: none;
@@ -43,10 +42,7 @@
 } */
 
 .grid-header-cell.pinned {
-  position: -webkit-sticky !important;
-  position: sticky !important;
   z-index: 90 !important;
-  background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526) !important;
 }
 
 .grid-header-cell.resizing {
@@ -54,8 +50,8 @@
 }
 
 .grid-header-cell.selected {
-  background-color: var(--vscode-list-activeSelectionBackground, #094771);
-  color: var(--vscode-list-activeSelectionForeground, #ffffff);
+  background-color: var(--vscode-editor-selectionBackground, #094771);
+  color: var(--vscode-editor-selectionForeground, var(--vscode-foreground));
 }
 
 .row-number-header {
@@ -67,7 +63,7 @@
   left: 0 !important;
   top: 0 !important;
   z-index: 100 !important;
-  background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526) !important;
+  background-color: var(--vscode-editor-background) !important;
   border-right: 2px solid var(--vscode-panel-border, #3c3c3c) !important;
   min-width: 50px !important;
   max-width: 50px !important;
@@ -120,7 +116,7 @@
   border-radius: 2px;
   opacity: 0;
   transition: opacity 0.2s, background-color 0.2s;
-  background-color: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+  background-color: transparent;
   z-index: 1;
 }
 

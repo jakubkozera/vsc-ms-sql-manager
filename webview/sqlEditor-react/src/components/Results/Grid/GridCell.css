@@ -18,9 +18,14 @@
 }
 
 .grid-cell.selected {
-  background: var(--vscode-editor-selectionBackground) !important;
+  background: var(--vscode-list-activeSelectionBackground) !important;
+  color: var(--vscode-list-activeSelectionForeground) !important;
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
+}
+
+.vscode-high-contrast-light .grid-cell.selected {
+  color: var(--vscode-foreground) !important;
 }
 
 .grid-cell.modified {

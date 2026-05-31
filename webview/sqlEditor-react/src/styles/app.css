@@ -164,7 +164,7 @@
 /* Results Tabs */
 .results-tabs {
   display: flex;
-  background-color: var(--vscode-editorGroupHeader-tabsBackground);
+  background-color: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-panel-border);
   flex-shrink: 0;
 }

@@ -16,17 +16,17 @@
 }
 
 .aggregation-label {
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-statusBar-foreground);
   font-weight: 500;
 }
 
 .aggregation-value {
-  color: var(--vscode-foreground);
+  color: var(--vscode-statusBar-foreground);
   font-family: var(--vscode-editor-font-family, 'Consolas', monospace);
 }
 
 .aggregation-value.null-value {
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-statusBar-foreground);
   font-style: italic;
 }
 
