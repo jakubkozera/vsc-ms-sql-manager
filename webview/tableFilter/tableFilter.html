@@ -195,6 +195,7 @@
         .clear-button {
             width: 24px;
             height: 24px;
+            margin: auto;
             background: transparent;
             border: none;
             color: var(--vscode-foreground, #cccccc);
@@ -272,11 +273,15 @@
             display: grid;
             grid-template-columns: 150px 200px 1fr 40px;
             gap: 12px;
-            padding: 0 16px 8px;
+            padding: 12px 16px 0;
             font-size: 11px;
             text-transform: uppercase;
             color: var(--vscode-descriptionForeground, #999999);
             font-weight: 600;
+        }
+
+        .table-header div:last-child {
+            margin: auto;
         }
     </style>
 </head>
