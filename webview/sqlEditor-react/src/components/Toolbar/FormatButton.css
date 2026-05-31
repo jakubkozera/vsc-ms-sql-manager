@@ -189,10 +189,39 @@
 }
 
 .format-option input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  position: relative;
+  box-sizing: content-box;
+  height: 14px;
+  appearance: none;
+  border-radius: 2px;
+  border: 1px solid var(--vscode-input-border);
+  background-color: var(--vscode-input-background);
+  padding: 0 4px;
   margin-right: 8px;
-  accent-color: var(--vscode-button-background);
+}
+
+.format-option input[type="checkbox"]:before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 9px;
+  border-bottom: 2px solid transparent;
+  border-right: 2px solid transparent;
+  transform: rotate(45deg);
+}
+
+.format-option input[type="checkbox"]:checked:before {
+  border-bottom-color: var(--vscode-button-background);
+  border-right-color: var(--vscode-button-background);
+}
+
+.vscode-dark .format-option input[type="checkbox"]:checked:before {
+  filter: brightness(1.3);
+}
+
+.vscode-high-contrast .format-option input[type="checkbox"]:checked:before {
+  border-bottom-color: var(--vscode-button-border);
+  border-right-color: var(--vscode-button-border);
 }
 
 .format-options-footer {

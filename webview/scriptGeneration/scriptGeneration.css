@@ -209,11 +209,39 @@ body {
 }
 
 .checkbox-label input[type="checkbox"] {
+    position: relative;
+    box-sizing: content-box;
+    height: 14px;
+    appearance: none;
+    border-radius: 2px;
+    border: 1px solid var(--vscode-input-border);
+    background-color: var(--vscode-input-background);
+    padding: 0 4px;
     cursor: pointer;
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    accent-color: var(--vscode-button-background, #0e639c);
+}
+
+.checkbox-label input[type="checkbox"]:before {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 9px;
+    border-bottom: 2px solid transparent;
+    border-right: 2px solid transparent;
+    transform: rotate(45deg);
+}
+
+.checkbox-label input[type="checkbox"]:checked:before {
+    border-bottom-color: var(--vscode-button-background);
+    border-right-color: var(--vscode-button-background);
+}
+
+.vscode-dark .checkbox-label input[type="checkbox"]:checked:before {
+    filter: brightness(1.3);
+}
+
+.vscode-high-contrast .checkbox-label input[type="checkbox"]:checked:before {
+    border-bottom-color: var(--vscode-button-border);
+    border-right-color: var(--vscode-button-border);
 }
 
 .empty-message {

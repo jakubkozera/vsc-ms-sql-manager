@@ -124,14 +124,41 @@
 }
 
 .chart-data-column-item input[type="checkbox"] {
-  flex-shrink: 0;
-  width: 13px;
-  height: 13px;
-  margin: 0 8px 0 0;
-  padding: 0;
+  position: relative;
+  box-sizing: content-box;
+  height: 14px;
+  appearance: none;
+  border-radius: 2px;
+  border: 1px solid var(--vscode-input-border);
+  background-color: var(--vscode-input-background);
+  padding: 0 4px;
   vertical-align: middle;
-  accent-color: var(--vscode-focusBorder, #007fd4);
+  margin-right: 8px;
   cursor: pointer;
+}
+
+.chart-data-column-item input[type="checkbox"]:before {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 9px;
+  border-bottom: 2px solid transparent;
+  border-right: 2px solid transparent;
+  transform: rotate(45deg);
+}
+
+.chart-data-column-item input[type="checkbox"]:checked:before {
+  border-bottom-color: var(--vscode-button-background);
+  border-right-color: var(--vscode-button-background);
+}
+
+.vscode-dark .chart-data-column-item input[type="checkbox"]:checked:before {
+  filter: brightness(1.3);
+}
+
+.vscode-high-contrast .chart-data-column-item input[type="checkbox"]:checked:before {
+  border-bottom-color: var(--vscode-button-border);
+  border-right-color: var(--vscode-button-border);
 }
 
 .chart-data-column-item .col-name {

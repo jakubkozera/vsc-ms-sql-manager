@@ -481,7 +481,9 @@
     
     function autoSelectConnectionIfNeeded(connectionId) {
         const connection = allConnections.find(c => c.id === connectionId);
-        if (!connection) return;
+        if (!connection) {
+            return;
+        }
         
         // If neither source nor target is selected, select as source
         if (!selectedSourceConnection && !selectedTargetConnection) {
@@ -823,7 +825,8 @@
                 scrollbar: {
                     vertical: 'auto',
                     horizontal: 'auto'
-                }
+                },
+                useShadowDOM: false,
             });
 
             window.addEventListener('resize', () => {
