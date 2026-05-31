@@ -62,6 +62,10 @@
   background: var(--vscode-button-hoverBackground);
 }
 
+.vscode-high-contrast .dropdown-toggle {
+  border: 1px solid var(--vscode-button-border);
+}
+
 .execute-dropdown-menu {
   position: absolute;
   top: 100%;

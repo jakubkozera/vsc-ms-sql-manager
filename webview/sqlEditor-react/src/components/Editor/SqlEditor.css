@@ -22,15 +22,18 @@
   --autocomplete-selected-foreground: var(--vscode-editorSuggestWidget-selectedForeground);
   --autocomplete-highlight: var(--vscode-editorSuggestWidget-highlightForeground);
   --autocomplete-focus-highlight: var(--vscode-editorSuggestWidget-focusHighlightForeground);
-  --autocomplete-hover: var(--vscode-list-hoverBackground);
+  --list-hover: var(--vscode-list-hoverBackground);
   --hover-widget: var(--vscode-editorHoverWidget-background);
+  --hover-widget-foreground: var(--vscode-editorHoverWidget-foreground);
   --hover-widget-highlight: var(--vscode-editorHoverWidget-highlightForeground);
   --hover-widget-border: var(--vscode-editorHoverWidget-border);
   --hover-widget-status: var(--vscode-editorHoverWidget-statusBarBackground);
+  --widget: var(--vscode-editorWidget-background);
   --widget-border: var(--vscode-editorWidget-border);
   --widget-shadow: var(--vscode-widget-shadow);
   --input: var(--vscode-input-background);
   --input-border: var(--vscode-input-border);
+  --input-validation-info-border: var(--vscode-inputValidation-infoBorder);
   --quick-input: var(--vscode-quickInput-background);
   --quick-input-foreground: var(--vscode-quickInput-foreground);
   --quick-input-focus: var(--vscode-quickInputList-focusBackground);
@@ -66,11 +69,15 @@
 }
 
 .sql-editor-container .monaco-editor .view-overlays .current-line-exact {
-  border: var(--line-highlight-border) !important;
+  border-color: var(--line-highlight-border) !important;
+}
+
+.sql-editor-container .monaco-editor.vs-dark .view-overlays .current-line-exact {
+  border-color: transparent !important;
 }
 
 .sql-editor-container .monaco-editor .margin-view-overlays .current-line-exact-margin {
-  border: transparent !important;
+  border-color: transparent !important;
 }
 
 /* Cursor color */
@@ -136,6 +143,26 @@
   background: var(--scrollbar-active) !important;
 }
 
+/* Reset styles for error and warning messages in editor */
+.sql-editor-container .monaco-editor .message {
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Editor widgets */
+.monaco-editor .editor-widget {
+  background-color: var(--widget) !important;
+}
+
+.monaco-editor .editor-widget .monaco-inputbox {
+  background-color: var(--input) !important;
+}
+
+.monaco-editor .editor-widget .monaco-sash {
+  background-color: var(--widget-border) !important;
+}
+
 /* Autocomplete widget.
    Monaco renders the suggest widget as an absolutely-positioned "overflow"
    content widget.  Its built-in z-index is ~40.  Our sticky grid thead is at
@@ -146,12 +173,12 @@
 .monaco-editor .suggest-widget,
 .monaco-editor .suggest-details {
   background-color: var(--autocomplete) !important;
-  border: 1px solid var(--autocomplete-border) !important;
+  border-color: var(--autocomplete-border) !important;
   z-index: 50 !important;
 }
 
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover {
-  background-color: var(--autocomplete-hover) !important;
+  background-color: var(--list-hover) !important;
 }
 
 .monaco-editor .suggest-widget .monaco-list .monaco-list-row>.contents>.main .monaco-highlighted-label .highlight {
@@ -168,6 +195,12 @@
 }
 
 /* Hover widget */
+.monaco-editor .monaco-editor-overlaymessage .message {
+  color: var(--hover-widget-foreground) !important;
+  background-color: var(--hover-widget) !important;
+  border-color: var(--input-validation-info-border) !important;
+}
+
 .monaco-editor .monaco-hover,
 .monaco-editor .parameter-hints-widget {
   background-color: var(--hover-widget) !important;
@@ -233,6 +266,10 @@
   background-color: var(--quick-input-focus) !important;
 }
 
+.monaco-editor .quick-input-widget .monaco-list-row:hover:not(.selected):not(.focused) {
+  background-color: var(--list-hover) !important;
+}
+
 .monaco-editor .quick-input-widget .monaco-inputbox {
   background-color: var(--input) !important;
   border: none !important;
@@ -254,6 +291,20 @@
 .monaco-menu .monaco-menu .action-item .action-menu-item {
   background-color: var(--menu) !important;
   outline: none !important;
+}
+
+/* Button tooltips */
+.context-view.monaco-component .monaco-hover {
+  color: var(--hover-widget-foreground) !important;
+  background-color: var(--hover-widget) !important;
+  border-color: var(--hover-widget-border) !important;
+  box-shadow: 0 2px 8px var(--widget-shadow) !important;
+}
+
+.context-view.monaco-component .workbench-hover-pointer:after {
+  background-color: var(--hover-widget) !important;
+  border-right-color: var(--hover-widget-border) !important;
+  border-bottom-color: var(--hover-widget-border) !important;
 }
 
 /* Remove underline on palette and menu item hover */

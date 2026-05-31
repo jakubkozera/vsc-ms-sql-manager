@@ -379,6 +379,11 @@ export class ConnectionWebview {
             filter: brightness(1.3);
         }
 
+        .vscode-high-contrast input[type="checkbox"]:checked:before {
+            border-bottom-color: var(--vscode-button-border);
+            border-right-color: var(--vscode-button-border);
+        }
+
         .auth-fields {
             margin-top: 15px;
         }

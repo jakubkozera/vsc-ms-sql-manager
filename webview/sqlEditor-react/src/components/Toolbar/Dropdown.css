@@ -1,7 +1,7 @@
 .custom-dropdown {
   position: relative;
   display: inline-block;
-  border: 1px solid var(--vscode-button-secondaryBackground);
+  border: 1px solid var(--vscode-button-secondaryHoverBackground);
   border-radius: 2px;
 }
 

@@ -13,7 +13,7 @@
   display: flex;
   align-items: center;
   padding: 0;
-  background-color: var(--vscode-editorGroupHeader-tabsBackground);
+  background-color: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-panel-border);
   gap: 8px;
   flex-shrink: 0;
@@ -62,6 +62,11 @@
   width: 14px;
   height: 14px;
   flex-shrink: 0;
+}
+
+.vscode-high-contrast .main-button {
+  border: 1px solid var(--vscode-button-border);
+  padding: 5px 13px;
 }
 
 .toolbar-button {
