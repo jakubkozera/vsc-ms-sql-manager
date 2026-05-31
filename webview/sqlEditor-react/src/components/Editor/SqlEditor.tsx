@@ -438,6 +438,10 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
           options={{
             automaticLayout: true,
             fixedOverflowWidgets: true,
+            fontFamily: cssVar(
+              '--vscode-editor-font-family',
+              "'Cascadia Code', 'Fira Code', Consolas, monospace"
+            ),
           }}
         />
       </div>
