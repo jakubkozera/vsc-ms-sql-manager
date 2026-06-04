@@ -5,6 +5,36 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.2] - 2026-06-04
+
+### Added
+
+Github star report prompt for extension visibility boost.
+
+@https://github.com/jakubkozera/vsc-ms-sql-manager/commit/ead97ba1afd911df2f96f22de18809d59d976fd0#:~:text=Browse%20files-,lien%2Dhung,-authored merge deployment
+
+UI enhancements (#45)
+
+* fix: npm dependency vulnerabilities
+* fix: tsconfig baseUrl deprecated
+* feat: enhance styling for connection webview and editor
+* fix: npm package update
+* feat: more theme color blending and high-contrast fixes
+* feat: filter and dropdown styling
+* feat: customize other checkboxes
+* feat: result tab styles
+* feat: set user font family as default
+
+## [0.20.1] - 2026-06-02
+
+### Fixed
+
+Commitng pending changes now works when clicking the Save icon in the editor title bar.
+
+### Adjusted
+
+Updating `bit` values now uses a checkbox in the UI instead of displaying true/false text.
+
 ## [0.20.0] - 2026-05-29
 
 ### Added

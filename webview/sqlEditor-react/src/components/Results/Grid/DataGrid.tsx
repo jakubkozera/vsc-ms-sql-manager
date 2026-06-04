@@ -1242,6 +1242,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                     isCellModified={isCellModified}
                     getValidationError={getValidationError}
                     isRowDeleted={rowDeleted}
+                    isResultSetEditable={isEditable}
                     expandedColumns={expandedForRow.map(k => k.split('-')[2])}
                     calculatePinnedOffset={calculatePinnedOffset}
                     editingColIndex={editingCol}

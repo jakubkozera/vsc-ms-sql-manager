@@ -6,6 +6,7 @@ import { QueryExecutor } from './queryExecutor';
 import { ConnectionProvider } from './connectionProvider';
 import { SchemaCache } from './utils/schemaCache';
 import { checkDmlProtection } from './utils/dmlProtection';
+import { GitHubStarPrompt } from './githubStarPrompt';
 
 export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'mssqlManager.sqlEditor';
@@ -22,6 +23,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private sqlSnippets: any[] = [];
     // Schema cache instance
     private schemaCache: SchemaCache;
+    private githubStarPrompt: GitHubStarPrompt;
     // Pending options for the next resolveCustomTextEditor call (auto-execute, history info)
     private pendingEditorOptions: { autoExecute?: boolean; historyInfo?: Record<string, unknown> } | null = null;
     // Counter for unique untitled query names
@@ -36,6 +38,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         this.loadSqlSnippets();
         this.setupSnippetsWatcher();
         this.schemaCache = SchemaCache.getInstance(context);
+        this.githubStarPrompt = new GitHubStarPrompt(context, outputChannel);
     }
 
     public async resolveCustomTextEditor(
@@ -1487,6 +1490,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 metadata: result.metadata || [], // Include metadata for editability
                 originalQuery: query // Store original query for UPDATE generation
             });
+
+            await this.githubStarPrompt.promptAfterSuccessfulQuery();
         } catch (error: any) {
             // Check if cancelled
             if (cancellationSource.token.isCancellationRequested || error.message === 'Query cancelled' || error.message === 'Operation cancelled') {

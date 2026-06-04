@@ -12,6 +12,8 @@ interface GridRowProps {
   isCellModified?: (rowIndex: number, colIndex: number) => boolean;
   getValidationError?: (rowIndex: number, colIndex: number) => string | null;
   isRowDeleted?: boolean;
+  /** Whether the result set allows editing (has PK, all columns traceable to source table) */
+  isResultSetEditable?: boolean;
   expandedColumns?: string[]; // Column names that are currently expanded
   calculatePinnedOffset?: (colIndex: number) => number;
   /** Column index to trigger editing from context menu */
@@ -37,6 +39,7 @@ function GridRowComponent({
   isCellModified,
   getValidationError,
   isRowDeleted = false,
+  isResultSetEditable = true,
   expandedColumns = [],
   calculatePinnedOffset,
   editingColIndex,
@@ -132,7 +135,7 @@ function GridRowComponent({
             isModified={cellModified}
             validationError={validationError}
             isDeleted={isRowDeleted}
-            isEditable={!isRowDeleted}
+            isEditable={isResultSetEditable && !isRowDeleted}
             isExpanded={isExpanded}
             pinnedOffset={pinnedOffset}
             forceEdit={editingColIndex === colIndex}

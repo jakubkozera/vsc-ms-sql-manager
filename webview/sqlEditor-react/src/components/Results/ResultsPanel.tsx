@@ -465,9 +465,17 @@ export function ResultsPanel() {
 
   // Helper to get the first editable result set index for pending changes tab
   const firstEditableIndex = useMemo(() => {
-    if (!lastMetadata) return 0;
-    return lastMetadata.findIndex(m => m?.isEditable) ?? 0;
-  }, [lastMetadata]);
+    // Priority: find a result set that has pending changes AND valid editable metadata
+    for (const rsIdx of pendingChanges.state.changesByResultSet.keys()) {
+      if (lastMetadata?.[rsIdx]?.isEditable) return rsIdx;
+    }
+    // Fallback: any editable result set from current metadata
+    if (lastMetadata) {
+      const idx = lastMetadata.findIndex(m => m?.isEditable);
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }, [lastMetadata, pendingChanges.state.changesByResultSet]);
 
   // Build a map of all validation errors: "rowIndex-colName" → error message
   const validationErrorsMap = useMemo(() => {
@@ -518,8 +526,8 @@ export function ResultsPanel() {
         showInlineAggregation={hasSelection && !isDatetimeSelection}
         columnType={selectionInfo.sqlType}
         pendingChangesCount={pendingChangesCount}
-        onQuickSave={pendingChangesCount > 0 ? () => handleCommit(firstEditableIndex) : undefined}
-        sqlPreview={pendingChangesCount > 0 ? generateSqlStatements(firstEditableIndex).join('\n') : undefined}
+        onQuickSave={pendingChangesCount > 0 && firstEditableIndex >= 0 ? () => handleCommit(firstEditableIndex) : undefined}
+        sqlPreview={pendingChangesCount > 0 && firstEditableIndex >= 0 ? generateSqlStatements(firstEditableIndex).join('\n') : undefined}
         chartCount={canvasWidgets.widgets.length}
       />
 
@@ -743,8 +751,8 @@ export function ResultsPanel() {
               }
               pendingChanges.revertAll(firstEditableIndex);
             }}
-            onCommit={() => handleCommit(firstEditableIndex)}
-            onCommitRow={(_rowIndex) => handleCommit(firstEditableIndex)}
+            onCommit={() => { if (firstEditableIndex >= 0) handleCommit(firstEditableIndex); }}
+            onCommitRow={(_rowIndex) => { if (firstEditableIndex >= 0) handleCommit(firstEditableIndex); }}
             onCommitCell={(rowIndex, columnName) => handleCommitCell(firstEditableIndex, rowIndex, columnName)}
             onPreviewSql={() => handlePreviewSql(firstEditableIndex)}
             generateRowSql={(rowChange) => generateRowSql(firstEditableIndex, rowChange)}

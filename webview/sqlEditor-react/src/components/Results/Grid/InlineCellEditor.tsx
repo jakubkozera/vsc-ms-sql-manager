@@ -9,6 +9,10 @@ interface InlineCellEditorProps {
   onCancel: () => void;
 }
 
+function isBitType(columnType?: string): boolean {
+  return columnType?.toLowerCase() === 'bit';
+}
+
 export function InlineCellEditor({ 
   value, 
   columnName, 
@@ -16,6 +20,80 @@ export function InlineCellEditor({
   onSave, 
   onCancel 
 }: InlineCellEditorProps) {
+  // BIT column: render checkbox editor
+  if (isBitType(columnType)) {
+    return (
+      <BitCheckboxEditor
+        value={value}
+        columnName={columnName}
+        onSave={onSave}
+        onCancel={onCancel}
+      />
+    );
+  }
+
+  return (
+    <TextCellEditor
+      value={value}
+      columnName={columnName}
+      columnType={columnType}
+      onSave={onSave}
+      onCancel={onCancel}
+    />
+  );
+}
+
+interface BitCheckboxEditorProps {
+  value: unknown;
+  columnName: string;
+  onSave: (newValue: unknown) => void;
+  onCancel: () => void;
+}
+
+function BitCheckboxEditor({ value, columnName, onSave, onCancel }: BitCheckboxEditorProps) {
+  const checkboxRef = useRef<HTMLInputElement>(null);
+  const checked = value === true || value === 1 || value === '1';
+
+  useEffect(() => {
+    checkboxRef.current?.focus();
+  }, []);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    onSave(e.target.checked);
+  }, [onSave]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onCancel();
+    }
+  }, [onCancel]);
+
+  return (
+    <div className="inline-cell-editor-bit" data-testid="inline-cell-editor-bit">
+      <input
+        ref={checkboxRef}
+        type="checkbox"
+        checked={checked}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        aria-label={`Edit ${columnName}`}
+        data-testid="inline-cell-editor-checkbox"
+        className="inline-cell-editor-checkbox"
+      />
+    </div>
+  );
+}
+
+interface TextCellEditorProps {
+  value: unknown;
+  columnName: string;
+  columnType?: string;
+  onSave: (newValue: unknown) => void;
+  onCancel: () => void;
+}
+
+function TextCellEditor({ value, columnName, columnType, onSave, onCancel }: TextCellEditorProps) {
   const [editValue, setEditValue] = useState<string>(formatValue(value));
   const inputRef = useRef<HTMLInputElement>(null);
 
