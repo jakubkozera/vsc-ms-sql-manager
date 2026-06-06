@@ -217,6 +217,97 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+
+  --background: var(--vscode-editor-background);
+  --line-number: var(--vscode-editorLineNumber-foreground);
+  --line-number-active: var(--vscode-editorLineNumber-activeForeground);
+  --indent-guide: var(--vscode-editorIndentGuide-background1);
+  --indent-guide-active: var(--vscode-editorIndentGuide-activeBackground1);
+  --caret: var(--vscode-editorCursor-foreground);
+  --selection: var(--vscode-editor-selectionBackground);
+  --sticky-shadow: var(--vscode-editorStickyScroll-shadow);
+  --hover-widget: var(--vscode-editorHoverWidget-background);
+  --hover-widget-foreground: var(--vscode-editorHoverWidget-foreground);
+  --hover-widget-border: var(--vscode-editorHoverWidget-border);
+  --widget: var(--vscode-editorWidget-background);
+  --widget-border: var(--vscode-editorWidget-border);
+  --widget-shadow: var(--vscode-widget-shadow);
+  --input: var(--vscode-input-background);
+}
+
+.format-preview-editor .monaco-editor,
+.format-preview-editor .monaco-editor .margin,
+.format-preview-editor .monaco-editor .lines-content {
+  background-color: var(--background) !important;
+}
+
+.format-preview-editor .monaco-editor .cursor {
+  background-color: var(--caret) !important;
+  border-color: var(--caret) !important;
+}
+
+.format-preview-editor .monaco-editor .view-overlays .selected-text {
+  background-color: var(--selection) !important;
+}
+
+.format-preview-editor .monaco-editor .line-numbers {
+  color: var(--line-number) !important;
+}
+
+.format-preview-editor .monaco-editor .line-numbers.active-line-number {
+  color: var(--line-number-active) !important;
+}
+
+.format-preview-editor .monaco-editor .lines-content .core-guide-indent {
+  box-shadow: 1px 0 0 0 var(--indent-guide) inset !important;
+}
+
+.format-preview-editor .monaco-editor .lines-content .core-guide-indent.indent-active {
+  box-shadow: 1px 0 0 0 var(--indent-guide-active) inset !important;
+}
+
+.format-preview-editor .monaco-editor .sticky-widget {
+  border-bottom-color: var(--sticky-border) !important;
+  box-shadow: var(--sticky-shadow) 0 4px 2px -2px !important;
+}
+
+.format-preview-editor .monaco-editor .sticky-widget .sticky-line-number,
+.format-preview-editor .monaco-editor .sticky-widget .sticky-line-content {
+  color: var(--line-number) !important;
+}
+
+.format-preview-editor .monaco-editor .sticky-widget .sticky-widget-line-numbers,
+.format-preview-editor .monaco-editor .sticky-widget .sticky-widget-lines-scrollable {
+  background-color: var(--background) !important;
+}
+
+.format-preview-editor .monaco-editor .editor-widget {
+  background-color: var(--widget) !important;
+}
+
+.format-preview-editor .monaco-editor .editor-widget .monaco-inputbox {
+  background-color: var(--input) !important;
+}
+
+.format-preview-editor .monaco-editor .editor-widget .monaco-sash {
+  background-color: var(--widget-border) !important;
+}
+
+.format-preview-editor .monaco-editor .quick-input-widget {
+  display: none !important;
+}
+
+.format-preview-editor .context-view.monaco-component .monaco-hover {
+  color: var(--hover-widget-foreground) !important;
+  background-color: var(--hover-widget) !important;
+  border-color: var(--hover-widget-border) !important;
+  box-shadow: 0 2px 8px var(--widget-shadow) !important;
+}
+
+.format-preview-editor .context-view.monaco-component .workbench-hover-pointer:after {
+  background-color: var(--hover-widget) !important;
+  border-right-color: var(--hover-widget-border) !important;
+  border-bottom-color: var(--hover-widget-border) !important;
 }
 
 /* Small screens: stack vertically */
@@ -487,6 +578,7 @@
     opacity: 0;
     transform: translateY(-4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);

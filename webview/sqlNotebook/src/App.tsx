@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { postMessage } from './vscode';
 import { Notebook, Connection, CellState, TrackedCell, NotebookCell } from './types';
 import Toolbar from './components/Toolbar';

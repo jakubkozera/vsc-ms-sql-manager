@@ -69,11 +69,18 @@
 }
 
 .sql-editor-container .monaco-editor .view-overlays .current-line-exact {
-  border-color: var(--line-highlight-border) !important;
+  border-color: transparent !important;
 }
 
-.sql-editor-container .monaco-editor.vs-dark .view-overlays .current-line-exact {
-  border-color: transparent !important;
+body:is([data-vscode-theme-name="Light (Visual Studio)"],
+  [data-vscode-theme-name="Light Modern"],
+  [data-vscode-theme-name="Light+"],
+  [data-vscode-theme-name="Visual Studio 2019 Light"],
+  [data-vscode-theme-name="Dark (Visual Studio)"],
+  [data-vscode-theme-name="Dark Modern"],
+  [data-vscode-theme-name="Dark+"],
+  [data-vscode-theme-name="Visual Studio 2019 Dark"]) .sql-editor-container .monaco-editor .view-overlays .current-line-exact {
+  border-color: var(--line-highlight-border) !important;
 }
 
 .sql-editor-container .monaco-editor .margin-view-overlays .current-line-exact-margin {
@@ -254,7 +261,7 @@
   box-shadow: 0 0 8px 2px var(--widget-shadow) !important;
 }
 
-.monaco-editor .quick-input-widget .monaco-scrollable-element > .shadow {
+.monaco-editor .quick-input-widget .monaco-scrollable-element>.shadow {
   box-shadow: var(--scrollbar-shadow) 0 6px 6px -6px inset !important;
 }
 
