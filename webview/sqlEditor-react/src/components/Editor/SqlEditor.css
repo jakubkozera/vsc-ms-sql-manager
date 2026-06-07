@@ -83,6 +83,10 @@ body:is([data-vscode-theme-name="Light (Visual Studio)"],
   border-color: var(--line-highlight-border) !important;
 }
 
+.sql-editor-container .monaco-editor:is(.hc-light, .hc-black) .view-overlays .current-line-exact {
+  border-color: var(--line-highlight-border) !important;
+}
+
 .sql-editor-container .monaco-editor .margin-view-overlays .current-line-exact-margin {
   border-color: transparent !important;
 }
