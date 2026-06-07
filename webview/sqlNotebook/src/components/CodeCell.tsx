@@ -90,6 +90,26 @@ const CodeCell: React.FC<CodeCellProps> = ({
   const sourceRef = useRef(initialSource);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const getTheme = (): 'vs' | 'vs-dark' | 'hc-black' | 'hc-light' => {
+    const { classList } = document.body;
+    if (classList.contains('vscode-high-contrast-light')) return 'hc-light';
+    if (classList.contains('vscode-high-contrast')) return 'hc-black';
+    if (classList.contains('vscode-light')) return 'vs';
+    return 'vs-dark';
+  }
+
+  const [monacoTheme, setMonacoTheme] = useState<string>(() => getTheme());
+
+  // Watch for VS Code theme changes via MutationObserver on body class
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const newTheme = getTheme();
+      setMonacoTheme(newTheme);
+    });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
   // Sync when cell source changes externally (e.g. after move/reorder)
   useEffect(() => {
     const newSource = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
@@ -215,7 +235,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
           height="100%"
           language="sql"
           value={displaySource}
-          theme="vs-dark"
+          theme={monacoTheme}
           onMount={handleEditorMount}
           onChange={collapsed ? undefined : handleSourceChange}
           options={{
