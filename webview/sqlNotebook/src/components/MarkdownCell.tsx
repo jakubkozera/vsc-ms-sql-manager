@@ -107,6 +107,10 @@ const MarkdownCell: React.FC<MarkdownCellProps> = ({
   const [editedSource, setEditedSource] = useState(initialSource);
   const sourceRef = useRef(initialSource);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorFontFamily = useMemo(() => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue('--vscode-editor-font-family').trim();
+    return value || "'Cascadia Code', 'Fira Code', Consolas, monospace";
+  }, []);
 
   const getTheme = (): 'vs' | 'vs-dark' | 'hc-black' | 'hc-light' => {
     const { classList } = document.body;
@@ -208,6 +212,7 @@ const MarkdownCell: React.FC<MarkdownCellProps> = ({
               contextmenu: false,
               folding: false,
               glyphMargin: false,
+              fontFamily: editorFontFamily,
             }}
           />
         </div>
@@ -267,6 +272,7 @@ const MarkdownCell: React.FC<MarkdownCellProps> = ({
                     handleMouseWheel: false,
                   },
                   padding: { top: 6, bottom: 6 },
+                  fontFamily: editorFontFamily,
                 }}
               />
             </div>

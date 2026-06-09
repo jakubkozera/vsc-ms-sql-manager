@@ -154,7 +154,10 @@ body {
 }
 
 .markdown-code-block {
+  --code-block-background: var(--vscode-editor-background);
+
   margin: 8px 0;
+  padding-left: 8px;
   border: 1px solid var(--vscode-panel-border, #333);
   border-radius: 4px;
   overflow: hidden;
@@ -163,6 +166,10 @@ body {
 
 .markdown-code-block .monaco-editor {
   padding: 0;
+}
+
+.markdown-code-block .monaco-editor-background {
+  background-color: var(--code-block-background);
 }
 
 .cell-source {

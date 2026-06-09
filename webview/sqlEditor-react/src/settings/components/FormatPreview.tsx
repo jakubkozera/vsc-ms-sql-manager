@@ -50,6 +50,10 @@ function getTheme(): 'vs' | 'vs-dark' | 'hc-black' | 'hc-light' {
 export function FormatPreview({ settings }: FormatPreviewProps) {
   const editorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const [monacoTheme, setMonacoTheme] = useState<string>(() => getTheme());
+  const editorFontFamily = useMemo(() => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue('--vscode-editor-font-family').trim();
+    return value || "'Cascadia Code', 'Fira Code', Consolas, monospace";
+  }, []);
 
   const formatted = useMemo(() => {
     try {
@@ -107,6 +111,7 @@ export function FormatPreview({ settings }: FormatPreviewProps) {
             readOnly: true,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
+            fontFamily: editorFontFamily,
             fontSize: 13,
             lineNumbers: 'on',
             folding: false,

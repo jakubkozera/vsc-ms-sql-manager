@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { NotebookCell, CellResult } from '../types';
 import CellOutputArea from './CellOutputArea';
@@ -89,6 +89,10 @@ const CodeCell: React.FC<CodeCellProps> = ({
   const [editedSource, setEditedSource] = useState(initialSource);
   const sourceRef = useRef(initialSource);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorFontFamily = useMemo(() => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue('--vscode-editor-font-family').trim();
+    return value || "'Cascadia Code', 'Fira Code', Consolas, monospace";
+  }, []);
 
   const getTheme = (): 'vs' | 'vs-dark' | 'hc-black' | 'hc-light' => {
     const { classList } = document.body;
@@ -250,6 +254,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
               horizontal: 'auto',
               handleMouseWheel: true,
             },
+            fontFamily: editorFontFamily,
           }}
         />
       </div>
