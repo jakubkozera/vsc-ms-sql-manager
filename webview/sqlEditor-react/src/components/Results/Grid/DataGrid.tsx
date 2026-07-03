@@ -202,31 +202,33 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   }, [columnDefs]);
 
   // Apply filters to data
-  const filteredData = useMemo(() => {
-    if (Object.keys(filters).length === 0) return data;
-
-    return data.filter(row => {
+  // Indices are stored for preserving edit and delete highlights on sort
+  const filteredIndices = useMemo(() => {
+    if (Object.keys(filters).length === 0) return data.map((_, i) => i);
+    
+    return data.map((_, i) => i).filter(i => {
       return Object.entries(filters).every(([columnName, filter]) => {
         const colIndex = columns.indexOf(columnName);
         if (colIndex === -1) return true;
-        
-        const value = row[colIndex];
+
+        const value = data[i][colIndex];
         return applyFilter(value, filter);
       });
     });
   }, [data, filters, columns]);
 
+
   // Sort filtered data
-  const sortedData = useMemo(() => {
-    if (!sortConfig) return filteredData;
+  const sortedIndices = useMemo(() => {
+    if (!sortConfig) return filteredIndices;
 
     const { column, direction } = sortConfig;
     const columnIndex = columns.indexOf(column);
-    if (columnIndex === -1) return filteredData;
+    if (columnIndex === -1) return filteredIndices;
 
-    return [...filteredData].sort((a, b) => {
-      const aVal = a[columnIndex];
-      const bVal = b[columnIndex];
+    return [...filteredIndices].sort((a, b) => {
+      const aVal = data[a][columnIndex];
+      const bVal = data[b][columnIndex];
 
       if (aVal == null && bVal == null) return 0;
       if (aVal == null) return direction === 'asc' ? -1 : 1;
@@ -241,7 +243,9 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
       const comparison = aStr.localeCompare(bStr);
       return direction === 'asc' ? comparison : -comparison;
     });
-  }, [filteredData, columns, sortConfig]);
+  }, [filteredIndices, columns, sortConfig]);
+
+  const sortedData = useMemo(() => sortedIndices.map(i => data[i]), [sortedIndices, data]);
 
   // Calculate total height including expanded rows
   const calculateTotalHeight = useCallback(() => {
@@ -432,8 +436,20 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
   }, [extendToCell]);
 
   const handleCellEditInternal = useCallback((rowIndex: number, _: number, columnName: string, newValue: unknown) => {
-    onCellEdit?.(rowIndex, columnName, newValue);
+    onCellEdit?.(sortedIndices[rowIndex] ?? rowIndex, columnName, newValue);
   }, [onCellEdit]);
+
+  const handleDeleteRow = useCallback((rowIndex: number) => {
+    onDeleteRow?.(sortedIndices[rowIndex] ?? rowIndex);
+  }, [onDeleteRow]);
+
+  const handleRestoreRow = useCallback((rowIndex: number) => {
+    onRestoreRow?.(sortedIndices[rowIndex] ?? rowIndex);
+  }, [onRestoreRow]);
+
+  const handleRevertCell = useCallback((rowIndex: number, columnName: string) => {
+    onRevertCell?.(sortedIndices[rowIndex] ?? rowIndex, columnName);
+  }, [onRevertCell]);
 
   const handleFKExpand = useCallback((rowIndex: number, colIndex: number, columnName: string, value: any) => {
     const expandKey = `${resultSetIndex}-${rowIndex}-${columnName}`;
@@ -458,10 +474,10 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
     // Fallback: check dbSchema.foreignKeys if column metadata has no FK refs
     if ((!fkRefs || fkRefs.length === 0) && colMeta?.sourceTable && colMeta?.sourceSchema && dbSchema?.foreignKeys) {
       const schemaFKs = dbSchema.foreignKeys
-        .filter((fk: any) => fk.fromTable === colMeta.sourceTable && 
-                             fk.fromSchema === colMeta.sourceSchema && 
-                             fk.fromColumn === columnName)
-        .map((fk: any) => ({
+        .filter(fk => fk.fromTable === colMeta.sourceTable && 
+                      fk.fromSchema === colMeta.sourceSchema && 
+                      fk.fromColumn === columnName)
+        .map(fk => ({
           schema: fk.toSchema,
           table: fk.toTable,
           column: fk.toColumn,
@@ -963,16 +979,16 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
           // Delete all selected rows if the clicked row is selected, otherwise just the clicked row
           const selectedIndices = getSelectedRowIndices();
           if (selectedIndices.includes(ctx.rowIndex) && selectedIndices.length > 1) {
-            selectedIndices.forEach(idx => onDeleteRow?.(idx));
+            selectedIndices.forEach(idx => handleDeleteRow?.(idx));
           } else {
-            onDeleteRow?.(ctx.rowIndex);
+            handleDeleteRow?.(ctx.rowIndex);
           }
         }
         break;
       }
       case 'restoreRow': {
         if (ctx?.rowIndex !== undefined) {
-          onRestoreRow?.(ctx.rowIndex);
+          handleRestoreRow?.(ctx.rowIndex);
         }
         break;
       }
@@ -995,7 +1011,7 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
         if (ctx?.rowIndex !== undefined && ctx?.colIndex !== undefined) {
           const colName = columnDefs[ctx.colIndex]?.name;
           if (colName) {
-            onRevertCell?.(ctx.rowIndex, colName);
+            handleRevertCell?.(ctx.rowIndex, colName);
           }
         }
         break;
@@ -1226,7 +1242,8 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                 }
               });
               
-              const rowDeleted = isRowDeleted?.(virtualRow.index) ?? false;
+              const originalIndex = sortedIndices[virtualRow.index] ?? virtualRow.index;
+              const rowDeleted = isRowDeleted?.(originalIndex) ?? false;
               // Check if a cell in this row should start editing (from context menu)
               const editingCol = editingCellFromMenu?.rowIndex === virtualRow.index ? editingCellFromMenu.colIndex : undefined;
               
@@ -1239,8 +1256,12 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
                     columns={columnDefs}
                     isSelected={isSelected}
                     isCellSelected={isCellSelected}
-                    isCellModified={isCellModified}
-                    getValidationError={getValidationError}
+                    isCellModified={(rowIndex, colIndex) => {
+                      return isCellModified?.(sortedIndices[rowIndex] ?? rowIndex, colIndex) ?? false;
+                    }}
+                    getValidationError={(rowIndex, colIndex) => {
+                      return getValidationError?.(sortedIndices[rowIndex] ?? rowIndex, colIndex) ?? null;
+                    }}
                     isRowDeleted={rowDeleted}
                     isResultSetEditable={isEditable}
                     expandedColumns={expandedForRow.map(k => k.split('-')[2])}
