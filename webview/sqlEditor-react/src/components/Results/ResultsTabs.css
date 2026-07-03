@@ -184,9 +184,9 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background-color: #1e1e1e;
-  color: #d4d4d4;
-  border: 1px solid #454545;
+  background-color: var(--vscode-editorHoverWidget-background);
+  color: var(--vscode-editorHoverWidget-foreground);
+  border: 1px solid var(--vscode-editorHoverWidget-border);
   padding: 8px 12px;
   border-radius: 3px;
   font-size: 12px;
@@ -201,9 +201,9 @@
   opacity: 0;
   transition: opacity 0.2s, visibility 0.2s;
   z-index: 99999;
-  font-family: 'Consolas', 'Courier New', monospace;
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
   line-height: 1.4;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow);
 }
 
 .quick-save-button:hover .quick-save-tooltip {
