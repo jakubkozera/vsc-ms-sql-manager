@@ -437,19 +437,19 @@ export function DataGrid({ data, columns, metadata, resultSetIndex, isSingleResu
 
   const handleCellEditInternal = useCallback((rowIndex: number, _: number, columnName: string, newValue: unknown) => {
     onCellEdit?.(sortedIndices[rowIndex] ?? rowIndex, columnName, newValue);
-  }, [onCellEdit]);
+  }, [onCellEdit, sortedIndices]);
 
   const handleDeleteRow = useCallback((rowIndex: number) => {
     onDeleteRow?.(sortedIndices[rowIndex] ?? rowIndex);
-  }, [onDeleteRow]);
+  }, [onDeleteRow, sortedIndices]);
 
   const handleRestoreRow = useCallback((rowIndex: number) => {
     onRestoreRow?.(sortedIndices[rowIndex] ?? rowIndex);
-  }, [onRestoreRow]);
+  }, [onRestoreRow, sortedIndices]);
 
   const handleRevertCell = useCallback((rowIndex: number, columnName: string) => {
     onRevertCell?.(sortedIndices[rowIndex] ?? rowIndex, columnName);
-  }, [onRevertCell]);
+  }, [onRevertCell, sortedIndices]);
 
   const handleFKExpand = useCallback((rowIndex: number, colIndex: number, columnName: string, value: any) => {
     const expandKey = `${resultSetIndex}-${rowIndex}-${columnName}`;
