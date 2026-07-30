@@ -4,6 +4,7 @@ import { usePendingChanges } from '../../hooks/usePendingChanges';
 import { useCanvasWidgets } from '../../hooks/useCanvasWidgets';
 import { PendingChange } from '../../types/messages';
 import { validateCellValue } from '../../utils/cellValidation';
+import { getColumnSourceInfo, getTableSpecificPks } from '../../utils/sqlEditUtils';
 import { ResultsTabs } from './ResultsTabs';
 import { MessagesTab } from './MessagesTab';
 import { PendingChangesTab } from './PendingChangesTab';
@@ -256,30 +257,45 @@ export function ResultsPanel() {
 
     const columns = lastColumnNames?.[resultSetIndex] || [];
     const pkColumns = meta.primaryKeyColumns || [];
-    const tableName = meta.sourceTable || '';
-    const schemaName = meta.sourceSchema || 'dbo';
     const rowChanges = pendingChanges.getChangesForResultSet(resultSetIndex);
     const statements: string[] = [];
 
     for (const rowChange of rowChanges) {
-      const pkValues: Record<string, any> = {};
-      for (const pk of pkColumns) {
-        const colIdx = columns.indexOf(pk);
-        if (colIdx >= 0) {
-          pkValues[pk] = rowChange.originalRow[colIdx];
-        }
-      }
-      const whereClause = Object.entries(pkValues)
-        .map(([col, val]) => `[${col}] = ${sqlEscape(val)}`)
-        .join(' AND ');
+      // Helper: build WHERE clause values for a given list of PK columns
+      const buildPkWhere = (pks: string[]) =>
+        pks
+          .map(pk => {
+            const idx = columns.indexOf(pk);
+            return `[${pk}] = ${sqlEscape(idx >= 0 ? rowChange.originalRow[idx] : null)}`;
+          })
+          .join(' AND ');
 
       if (rowChange.isDeleted) {
-        statements.push(`DELETE FROM [${schemaName}].[${tableName}] WHERE ${whereClause};`);
+        // Use source table from the first PK column; fall back to result-set level table
+        const { tableName, schemaName } = pkColumns.length > 0
+          ? getColumnSourceInfo(meta, columns, pkColumns[0])
+          : { tableName: meta.sourceTable || '', schemaName: meta.sourceSchema || 'dbo' };
+        const pks = getTableSpecificPks(meta, pkColumns, tableName, schemaName);
+        statements.push(`DELETE FROM [${schemaName}].[${tableName}] WHERE ${buildPkWhere(pks)};`);
       } else if (rowChange.changes.size > 0) {
-        const setClauses = Array.from(rowChange.changes.entries())
-          .map(([col, vals]) => `    [${col}] = ${sqlEscape((vals as { original: unknown; new: unknown }).new)}`)
-          .join(',\n');
-        statements.push(`UPDATE [${schemaName}].[${tableName}]\nSET ${setClauses}\nWHERE ${whereClause};`);
+        // Group changes by source table so JOIN queries produce one UPDATE per table
+        const byTable = new Map<string, { tableName: string; schemaName: string; setClauses: string[] }>();
+        for (const [colName, vals] of rowChange.changes.entries()) {
+          const { tableName, schemaName } = getColumnSourceInfo(meta, columns, colName);
+          const key = `${schemaName}||${tableName}`;
+          if (!byTable.has(key)) {
+            byTable.set(key, { tableName, schemaName, setClauses: [] });
+          }
+          byTable.get(key)!.setClauses.push(
+            `    [${colName}] = ${sqlEscape((vals as { original: unknown; new: unknown }).new)}`
+          );
+        }
+        for (const { tableName, schemaName, setClauses } of byTable.values()) {
+          const pks = getTableSpecificPks(meta, pkColumns, tableName, schemaName);
+          statements.push(
+            `UPDATE [${schemaName}].[${tableName}]\nSET ${setClauses.join(',\n')}\nWHERE ${buildPkWhere(pks)};`
+          );
+        }
       }
     }
     return statements;
@@ -292,27 +308,40 @@ export function ResultsPanel() {
 
     const columns = lastColumnNames?.[resultSetIndex] || [];
     const pkColumns = meta.primaryKeyColumns || [];
-    const tableName = meta.sourceTable || '';
-    const schemaName = meta.sourceSchema || 'dbo';
 
-    const pkValues: Record<string, any> = {};
-    for (const pk of pkColumns) {
-      const colIdx = columns.indexOf(pk);
-      if (colIdx >= 0) {
-        pkValues[pk] = rowChange.originalRow[colIdx];
-      }
-    }
-    const whereClause = Object.entries(pkValues)
-      .map(([col, val]) => `[${col}] = ${sqlEscape(val)}`)
-      .join(' AND ');
+    const buildPkWhere = (pks: string[]) =>
+      pks
+        .map(pk => {
+          const idx = columns.indexOf(pk);
+          return `[${pk}] = ${sqlEscape(idx >= 0 ? rowChange.originalRow[idx] : null)}`;
+        })
+        .join(' AND ');
 
     if (rowChange.isDeleted) {
-      return `DELETE FROM [${schemaName}].[${tableName}] WHERE ${whereClause};`;
+      const { tableName, schemaName } = pkColumns.length > 0
+        ? getColumnSourceInfo(meta, columns, pkColumns[0])
+        : { tableName: meta.sourceTable || '', schemaName: meta.sourceSchema || 'dbo' };
+      const pks = getTableSpecificPks(meta, pkColumns, tableName, schemaName);
+      return `DELETE FROM [${schemaName}].[${tableName}] WHERE ${buildPkWhere(pks)};`;
     } else if (rowChange.changes.size > 0) {
-      const setClauses = Array.from(rowChange.changes.entries())
-        .map(([col, vals]) => `    [${col}] = ${sqlEscape((vals as { original: unknown; new: unknown }).new)}`)
-        .join(',\n');
-      return `UPDATE [${schemaName}].[${tableName}]\nSET ${setClauses}\nWHERE ${whereClause};`;
+      // Group changes by source table so JOIN queries produce one UPDATE per table
+      const byTable = new Map<string, { tableName: string; schemaName: string; setClauses: string[] }>();
+      for (const [colName, vals] of rowChange.changes.entries()) {
+        const { tableName, schemaName } = getColumnSourceInfo(meta, columns, colName);
+        const key = `${schemaName}||${tableName}`;
+        if (!byTable.has(key)) {
+          byTable.set(key, { tableName, schemaName, setClauses: [] });
+        }
+        byTable.get(key)!.setClauses.push(
+          `    [${colName}] = ${sqlEscape((vals as { original: unknown; new: unknown }).new)}`
+        );
+      }
+      const parts: string[] = [];
+      for (const { tableName, schemaName, setClauses } of byTable.values()) {
+        const pks = getTableSpecificPks(meta, pkColumns, tableName, schemaName);
+        parts.push(`UPDATE [${schemaName}].[${tableName}]\nSET ${setClauses.join(',\n')}\nWHERE ${buildPkWhere(pks)};`);
+      }
+      return parts.join('\n\n');
     }
     return '';
   }, [lastMetadata, lastColumnNames]);
@@ -325,8 +354,10 @@ export function ResultsPanel() {
 
     const columns = lastColumnNames?.[resultSetIndex] || [];
     const pkColumns = meta.primaryKeyColumns || [];
-    const tableName = meta.sourceTable || '';
-    const schemaName = meta.sourceSchema || 'dbo';
+
+    // Use column-level source table for accurate table name in JOIN queries
+    const { tableName, schemaName } = getColumnSourceInfo(meta, columns, columnName);
+    const effectivePks = getTableSpecificPks(meta, pkColumns, tableName, schemaName);
 
     const rowChanges = pendingChanges.getChangesForResultSet(resultSetIndex);
     const rowChange = rowChanges.find(r => r.rowIndex === rowIndex);
@@ -336,7 +367,7 @@ export function ResultsPanel() {
     if (!cellChange) return;
 
     const pkValues: Record<string, any> = {};
-    for (const pk of pkColumns) {
+    for (const pk of effectivePks) {
       const colIdx = columns.indexOf(pk);
       if (colIdx >= 0) pkValues[pk] = rowChange.originalRow[colIdx];
     }
@@ -380,49 +411,59 @@ export function ResultsPanel() {
 
     const columns = lastColumnNames?.[resultSetIndex] || [];
     const pkColumns = meta.primaryKeyColumns || [];
-    const tableName = meta.sourceTable || '';
-    const schemaName = meta.sourceSchema || 'dbo';
 
     const changes: PendingChange[] = [];
     const rowChanges = pendingChanges.getChangesForResultSet(resultSetIndex);
     const statements = generateSqlStatements(resultSetIndex);
 
     for (const rowChange of rowChanges) {
-      if (rowChange.isDeleted) {
-        const pkValues: Record<string, any> = {};
-        for (const pk of pkColumns) {
+      const buildPkValues = (pks: string[]): Record<string, any> => {
+        const vals: Record<string, any> = {};
+        for (const pk of pks) {
           const colIdx = columns.indexOf(pk);
-          if (colIdx >= 0) {
-            pkValues[pk] = rowChange.originalRow[colIdx];
-          }
+          if (colIdx >= 0) vals[pk] = rowChange.originalRow[colIdx];
         }
+        return vals;
+      };
+
+      if (rowChange.isDeleted) {
+        const { tableName, schemaName } = pkColumns.length > 0
+          ? getColumnSourceInfo(meta, columns, pkColumns[0])
+          : { tableName: meta.sourceTable || '', schemaName: meta.sourceSchema || 'dbo' };
+        const pks = getTableSpecificPks(meta, pkColumns, tableName, schemaName);
         changes.push({
           type: 'DELETE',
           tableName,
           schemaName,
-          primaryKeyValues: pkValues,
+          primaryKeyValues: buildPkValues(pks),
           rowIndex: rowChange.rowIndex,
         });
       } else if (rowChange.changes.size > 0) {
-        const pkValues: Record<string, any> = {};
-        for (const pk of pkColumns) {
-          const colIdx = columns.indexOf(pk);
-          if (colIdx >= 0) {
-            pkValues[pk] = rowChange.originalRow[colIdx];
-          }
-        }
-        const changeMap: Record<string, { oldValue: any; newValue: any }> = {};
+        // Group changes by source table so JOIN queries produce one PendingChange per table
+        const byTable = new Map<string, {
+          tableName: string;
+          schemaName: string;
+          changeMap: Record<string, { oldValue: any; newValue: any }>;
+        }>();
         for (const [colName, vals] of rowChange.changes) {
-          changeMap[colName] = { oldValue: vals.original, newValue: vals.new };
+          const { tableName, schemaName } = getColumnSourceInfo(meta, columns, colName);
+          const key = `${schemaName}||${tableName}`;
+          if (!byTable.has(key)) {
+            byTable.set(key, { tableName, schemaName, changeMap: {} });
+          }
+          byTable.get(key)!.changeMap[colName] = { oldValue: vals.original, newValue: vals.new };
         }
-        changes.push({
-          type: 'UPDATE',
-          tableName,
-          schemaName,
-          primaryKeyValues: pkValues,
-          changes: changeMap,
-          rowIndex: rowChange.rowIndex,
-        });
+        for (const { tableName, schemaName, changeMap } of byTable.values()) {
+          const pks = getTableSpecificPks(meta, pkColumns, tableName, schemaName);
+          changes.push({
+            type: 'UPDATE',
+            tableName,
+            schemaName,
+            primaryKeyValues: buildPkValues(pks),
+            changes: changeMap,
+            rowIndex: rowChange.rowIndex,
+          });
+        }
       }
     }
 
