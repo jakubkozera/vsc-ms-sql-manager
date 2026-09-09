@@ -349,7 +349,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
       // NOTE: Monaco's SQL language has NO typeKeywords array — all typed keywords (INT, VARCHAR,
       // NVARCHAR, etc.) live in the flat `keywords` array and get the 'keyword' token (blue).
       // @ts-expect-error — no type declarations for internal Monaco SQL module
-      import('monaco-editor/esm/vs/basic-languages/sql/sql').then(({ language }: { language: any }) => {
+      import('monaco-editor/languages/definitions/sql/sql').then(({ language }: { language: any }) => {
         const extended = { ...language };
 
         // Add missing built-in functions (yellow / predefined token)

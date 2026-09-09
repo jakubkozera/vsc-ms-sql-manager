@@ -1631,12 +1631,15 @@
     "sinon": "^21.0.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.6.2",
-    "webpack": "^5.95.0",
+    "webpack": "^5.110.3",
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
-    "msnodesqlv8": "^5.1.1",
-    "mssql": "^10.0.2"
+    "msnodesqlv8": "^5.3.0",
+    "mssql": "^12.7.1"
+  },
+  "allowScripts": {
+    "msnodesqlv8@5.3.0": true
   }
 }

@@ -7,13 +7,13 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
-      '@components': resolve(__dirname, 'src/components'),
-      '@context': resolve(__dirname, 'src/context'),
-      '@hooks': resolve(__dirname, 'src/hooks'),
-      '@types': resolve(__dirname, 'src/types'),
-      '@services': resolve(__dirname, 'src/services'),
-      '@styles': resolve(__dirname, 'src/styles'),
+      '@': resolve(import.meta.dirname, 'src'),
+      '@components': resolve(import.meta.dirname, 'src/components'),
+      '@context': resolve(import.meta.dirname, 'src/context'),
+      '@hooks': resolve(import.meta.dirname, 'src/hooks'),
+      '@types': resolve(import.meta.dirname, 'src/types'),
+      '@services': resolve(import.meta.dirname, 'src/services'),
+      '@styles': resolve(import.meta.dirname, 'src/styles'),
     },
   },
   build: {
@@ -21,8 +21,8 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        sqlEditor: resolve(__dirname, 'index.html'),
-        settings: resolve(__dirname, 'settings.html'),
+        sqlEditor: resolve(import.meta.dirname, 'index.html'),
+        settings: resolve(import.meta.dirname, 'settings.html'),
       },
       output: {
         entryFileNames: '[name].js',
