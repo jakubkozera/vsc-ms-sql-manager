@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { NotebookCell, CellResult } from '../types';
+import { postMessage } from '../vscode';
 import CellOutputArea from './CellOutputArea';
 import CellActions from './CellActions';
 
@@ -89,6 +90,7 @@ const CodeCell: React.FC<CodeCellProps> = ({
   const [editedSource, setEditedSource] = useState(initialSource);
   const sourceRef = useRef(initialSource);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const editorFontFamily = useMemo(() => {
     const value = getComputedStyle(document.documentElement).getPropertyValue('--vscode-editor-font-family').trim();
     return value || "'Cascadia Code', 'Fira Code', Consolas, monospace";
@@ -166,7 +168,8 @@ const CodeCell: React.FC<CodeCellProps> = ({
     document.body.removeChild(textArea);
   };
 
-  const handleEditorMount: OnMount = (editor) => {
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor;
     editor.updateOptions({
       readOnly: collapsed,
       minimap: { enabled: false },
@@ -188,7 +191,31 @@ const CodeCell: React.FC<CodeCellProps> = ({
       wordWrap: 'off',
       padding: { top: 6, bottom: 6 },
     });
+    editor.onKeyDown(event => {
+      if (event.keyCode !== monaco.KeyCode.KeyV || (!event.ctrlKey && !event.metaKey)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      postMessage({ type: 'readClipboard', cellIndex: index });
+    });
   };
+
+  useEffect(() => {
+    const handleClipboardText = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const message = event.data;
+      if (message?.type !== 'clipboardText' || message.cellIndex !== index) return;
+
+      const editor = editorRef.current;
+      const selections = editor?.getSelections();
+      if (!editor || !selections?.length || typeof message.text !== 'string') return;
+
+      editor.executeEdits('clipboard', selections.map(range => ({ range, text: message.text })));
+      editor.focus();
+    };
+
+    window.addEventListener('message', handleClipboardText);
+    return () => window.removeEventListener('message', handleClipboardText);
+  }, [index]);
 
   return (
     <div className="notebook-cell code-cell">

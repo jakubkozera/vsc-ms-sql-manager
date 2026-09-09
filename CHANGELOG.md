@@ -5,6 +5,13 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.5] - 2026-09-09
+
+### Fixed
+
+- **SQL Notebook - Paste into code cells**
+  - `Ctrl+V` / `Cmd+V` now reads text through the VS Code clipboard API and inserts it at the active cursor position or over the current selection in a code cell.
+
 ## [0.20.4] - 2026-07-03
 
 ### Fixed

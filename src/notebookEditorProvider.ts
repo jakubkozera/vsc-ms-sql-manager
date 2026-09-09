@@ -78,6 +78,10 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
                 case 'updateNotebook':
                     await this.handleUpdateNotebook(document, msg.notebook);
                     break;
+
+                case 'readClipboard':
+                    await this.sendClipboardText(webview, msg.cellIndex);
+                    break;
             }
         });
 
@@ -260,6 +264,16 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
             this.suppressReload = false;
             const errorMsg = e instanceof Error ? e.message : String(e);
             this.outputChannel.appendLine(`[NotebookEditor] Failed to save notebook: ${errorMsg}`);
+        }
+    }
+
+    private async sendClipboardText(webview: vscode.Webview, cellIndex: number): Promise<void> {
+        try {
+            const text = await vscode.env.clipboard.readText();
+            webview.postMessage({ type: 'clipboardText', cellIndex, text });
+        } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            this.outputChannel.appendLine(`[NotebookEditor] Failed to read clipboard: ${errorMsg}`);
         }
     }
 
