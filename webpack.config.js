@@ -4,7 +4,7 @@
 
 const path = require('path');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const TerserPlugin = require('terser-webpack-plugin');
+const MinimizerPlugin = require('minimizer-webpack-plugin');
 
 //@ts-check
 /** @typedef {import('webpack').Configuration} WebpackConfig **/
@@ -73,7 +73,7 @@ const extensionConfig = {
   ],
   optimization: {
     minimizer: [
-      new TerserPlugin({
+      new MinimizerPlugin({
         // Only minify extension.js — webview assets are already optimised
         // by their own build tools (Vite, etc.) and some are too complex for
         // Terser to re-parse without errors.
