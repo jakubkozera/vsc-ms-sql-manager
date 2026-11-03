@@ -130,6 +130,9 @@ const CellOutputArea: React.FC<CellOutputAreaProps> = ({
             columns={result.columnNames?.[i] ?? []}
           />
         ))}
+        {result.messages && result.messages.length > 0 && (
+          <pre className="output-messages">{result.messages.join('\n')}</pre>
+        )}
         {result.recordsets.length === 0 && result.rowsAffected.length > 0 && (
           <div className="output-success">
             ✓ {result.rowsAffected.reduce((a, b) => a + b, 0)} row(s) affected (

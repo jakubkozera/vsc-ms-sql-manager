@@ -1437,7 +1437,12 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             }
 
             // Build informational messages
-            const messages = [];
+            const messages: { type: string; text: string }[] = [];
+
+            // PRINT output from the server
+            for (const text of result.messages || []) {
+                messages.push({ type: 'info', text });
+            }
             
             if (resultSets.length > 0) {
                 const totalRows = resultSets.reduce((sum, rs) => sum + rs.length, 0);

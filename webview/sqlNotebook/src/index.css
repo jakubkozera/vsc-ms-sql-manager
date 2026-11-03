@@ -592,6 +592,14 @@ body {
   font-size: 12px;
 }
 
+.output-messages {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 /* ── Result Table ── */
 .result-table-container {
   overflow: auto;

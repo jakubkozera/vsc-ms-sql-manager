@@ -42,6 +42,7 @@ export interface CellResult {
   rowsAffected: number[];
   executionTime: number;
   columnNames?: string[][];
+  messages?: string[];
 }
 
 export interface CellState {

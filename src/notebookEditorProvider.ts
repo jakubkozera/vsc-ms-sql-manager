@@ -238,7 +238,8 @@ export class NotebookEditorProvider implements vscode.CustomTextEditorProvider {
                     recordsets: result.recordsets,
                     rowsAffected: result.rowsAffected,
                     executionTime: result.executionTime,
-                    columnNames: result.columnNames
+                    columnNames: result.columnNames,
+                    messages: result.messages
                 }
             });
         } catch (e) {

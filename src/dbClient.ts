@@ -40,6 +40,12 @@ interface OdbcError {
 let cachedWorkingDriver: string | null = null;
 let extensionContext: any = null;
 
+// Strips ODBC prefixes like "[Microsoft][ODBC Driver 17 for SQL Server][SQL Server]" from server messages.
+function cleanInfoMessage(info: any): string {
+    const text = String(info?.message ?? info ?? '');
+    return text.replace(/^(\[[^\]]*\])+\s*/, '');
+}
+
 export function initializeDbClient(context: any): void {
     extensionContext = context;
     console.log('[ODBC] DbClient initialized with extension context');
@@ -276,6 +282,14 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                         .map(batch => batch.trim())
                                         .filter(batch => batch.length > 0);
                                     
+                                    // PRINT / informational server messages
+                                    const messages: string[] = [];
+                                    const attachInfo = (q: any) => {
+                                        if (q && typeof q.on === 'function') {
+                                            q.on('info', (m: any) => messages.push(cleanInfoMessage(m)));
+                                        }
+                                    };
+
                                     // If split resulted in only 1 batch, it means no GO was found
                                     if (batches.length <= 1) {
                                         
@@ -299,16 +313,17 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                                 resolve({ 
                                                     recordset: recordsets[0], 
                                                     recordsets: recordsets, 
-                                                    rowsAffected: recordsets.map(r => r.length) 
+                                                    rowsAffected: recordsets.map(r => r.length),
+                                                    messages
                                                 });
                                             }
                                         };
 
                                         try {
                                             if (timeoutMs > 0) {
-                                                connectionHandle.query(sqlText, queryOptions, queryCallback);
+                                                attachInfo(connectionHandle.query(sqlText, queryOptions, queryCallback));
                                             } else {
-                                                connectionHandle.query(sqlText, queryCallback);
+                                                attachInfo(connectionHandle.query(sqlText, queryCallback));
                                             }
                                         } catch (err) {
                                             reject(err);
@@ -332,7 +347,8 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                                             resolve({ 
                                                 recordset: allRecordsets[0] || [], 
                                                 recordsets: allRecordsets, 
-                                                rowsAffected: allRecordsets.map(r => r.length) 
+                                                rowsAffected: allRecordsets.map(r => r.length),
+                                                messages
                                             });
                                             return;
                                         }
@@ -364,9 +380,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
 
                                         try {
                                             if (timeoutMs > 0) {
-                                                connectionHandle.query(currentBatch, queryOptions, queryCallback);
+                                                attachInfo(connectionHandle.query(currentBatch, queryOptions, queryCallback));
                                             } else {
-                                                connectionHandle.query(currentBatch, queryCallback);
+                                                attachInfo(connectionHandle.query(currentBatch, queryCallback));
                                             }
                                         } catch (err) {
                                             reject(err);
@@ -566,6 +582,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
         },
         request() {
             const request = poolInstance.request();
+            // PRINT / informational server messages from all batches
+            const messages: string[] = [];
+            request.on('info', (info: any) => messages.push(cleanInfoMessage(info)));
             return {
                 setArrayRowMode(enabled: boolean) {
                     (request as any).arrayRowMode = enabled;
@@ -583,7 +602,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                     goRegex.lastIndex = 0; // Reset regex state after test
                     
                     if (!hasGo) {
-                        return request.query(sqlText);
+                        const single = await request.query(sqlText);
+                        single.messages = messages;
+                        return single;
                     }
                     
                     const batches = sqlText.split(goRegex)
@@ -597,7 +618,9 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                     
                     if (batches.length <= 1) {
                         console.log('[mssql] Only 1 batch after split, executing as single query');
-                        return request.query(sqlText);
+                        const single = await request.query(sqlText);
+                        single.messages = messages;
+                        return single;
                     }
                     
                     // Multiple batches - execute sequentially and aggregate results
@@ -611,6 +634,7 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                         if ((request as any).arrayRowMode) {
                             (batchRequest as any).arrayRowMode = true;
                         }
+                        batchRequest.on('info', (info: any) => messages.push(cleanInfoMessage(info)));
                         
                         const result = await batchRequest.query(batch);
                         
@@ -634,6 +658,7 @@ export async function createPoolForConfig(cfg: any): Promise<DBPool> {
                         recordset: allRecordsets[0] || [],
                         recordsets: allRecordsets,
                         rowsAffected: allRowsAffected,
+                        messages,
                         output: {},
                         returnValue: 0
                     };

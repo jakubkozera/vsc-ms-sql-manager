@@ -41,6 +41,7 @@ export interface QueryResult {
     query: string;
     metadata?: ResultSetMetadata[]; // Metadata for each result set
     columnNames?: string[][]; // Column names for each result set
+    messages?: string[]; // PRINT / informational server messages
 }
 
 export class QueryExecutor {
@@ -90,6 +91,7 @@ export class QueryExecutor {
             const allRowsAffected: number[] = [];
             const allColumnNames: string[][] = [];
             const allDriverColumnTypes: (string | undefined)[][] = [];
+            const allMessages: string[] = [];
 
             // Execute each batch separately
             for (let i = 0; i < batches.length; i++) {
@@ -176,6 +178,9 @@ export class QueryExecutor {
 
                     // Accumulate rows affected
                     allRowsAffected.push(...batchRowsAffected);
+                    if (Array.isArray(result.messages)) {
+                        allMessages.push(...result.messages);
+                    }
 
                     this.outputChannel.appendLine(`[QueryExecutor] Batch ${i + 1} completed. Result sets: ${rawRecordsets.length}, Rows affected: ${batchRowsAffected.join(', ') || '0'}`);
                 }
@@ -189,7 +194,8 @@ export class QueryExecutor {
                     rowsAffected: allRowsAffected,
                     executionTime,
                     query: queryText,
-                    columnNames: allColumnNames
+                    columnNames: allColumnNames,
+                    messages: allMessages
                 };
 
                 // Detect and invalidate cache for DDL operations
