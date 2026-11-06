@@ -155,7 +155,6 @@ export class SettingsWebview {
             await config.update('queryTimeout', settings.queryTimeout, vscode.ConfigurationTarget.Global);
             await config.update('colorPrimaryForeignKeys', settings.colorPrimaryForeignKeys, vscode.ConfigurationTarget.Global);
             await config.update('numberFormat', settings.numberFormat, vscode.ConfigurationTarget.Global);
-            await config.update('useReactWebview', undefined, vscode.ConfigurationTarget.Global);
             await config.update('variableHighlightColor', settings.variableHighlightColor, vscode.ConfigurationTarget.Global);
             await config.update('cteHighlightColor', settings.cteHighlightColor, vscode.ConfigurationTarget.Global);
             await config.update('jsonXmlHighlightColor', settings.jsonXmlHighlightColor, vscode.ConfigurationTarget.Global);
@@ -207,7 +206,6 @@ export class SettingsWebview {
             await config.update('queryTimeout', undefined, vscode.ConfigurationTarget.Global);
             await config.update('colorPrimaryForeignKeys', undefined, vscode.ConfigurationTarget.Global);
             await config.update('numberFormat', undefined, vscode.ConfigurationTarget.Global);
-            await config.update('useReactWebview', undefined, vscode.ConfigurationTarget.Global);
             await config.update('variableHighlightColor', undefined, vscode.ConfigurationTarget.Global);
             await config.update('cteHighlightColor', undefined, vscode.ConfigurationTarget.Global);
             await config.update('jsonXmlHighlightColor', undefined, vscode.ConfigurationTarget.Global);
