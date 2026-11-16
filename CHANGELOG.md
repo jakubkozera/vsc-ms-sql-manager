@@ -5,6 +5,14 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.8] - 2026-11-16
+
+### Changed
+
+- **GitHub star prompt v2 (`gh` CLI support)**
+  - When the GitHub CLI (`gh`) is installed and authenticated, the extension now silently checks whether you have already starred the repository and skips the prompt if so.
+  - Clicking **Star now** stars the repository directly via `gh` without opening a browser tab, falling back to opening the repository in the browser when `gh` is unavailable or fails.
+
 ## [0.20.7] - 2026-11-06
 
 ### Fixed
