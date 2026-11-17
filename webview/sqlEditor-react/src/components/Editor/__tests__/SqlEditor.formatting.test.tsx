@@ -50,6 +50,7 @@ vi.mock('@monaco-editor/react', () => {
           registerDocumentFormattingEditProvider: registerSpy,
           registerDocumentRangeFormattingEditProvider: registerSpy,
           registerCompletionItemProvider: registerSpy,
+          registerInlineCompletionsProvider: registerSpy,
           registerHoverProvider: registerSpy,
           registerCodeLensProvider: registerSpy,
           registerDefinitionProvider: registerSpy,

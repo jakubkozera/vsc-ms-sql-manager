@@ -5,6 +5,15 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-11-17
+
+### Added
+
+- **AI inline completions and VS Code SQL snippets in the SQL editor** ([#47](https://github.com/jakubkozera/vsc-ms-sql-manager/issues/47))
+  - The custom SQL editor now shows AI ghost-text suggestions (accept with `Tab`) using GitHub Copilot language models, with the current database schema as context. Can be turned off with `mssqlManager.aiInlineCompletions.enabled`; also respects `github.copilot.enable` for SQL.
+  - In editors without GitHub Copilot models (e.g. Cursor, Windsurf), AI suggestions are silently skipped.
+  - User, workspace and extension-contributed SQL snippets are now offered in the autocomplete list.
+
 ## [0.20.8] - 2026-11-16
 
 ### Changed

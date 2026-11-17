@@ -5,3 +5,4 @@ export * from './sqlCompletionService';
 export * from './sqlHoverService';
 export * from './sqlRenameService';
 export * from './sqlWildcardService';
+export * from './aiCompletionContext';

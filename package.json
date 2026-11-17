@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.20.8",
+  "version": "0.21.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -1462,6 +1462,11 @@
           "type": "boolean",
           "default": true,
           "description": "Color primary key columns (gold) and foreign key columns (blue) in query results."
+        },
+        "mssqlManager.aiInlineCompletions.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show AI inline (ghost text) suggestions in the SQL editor using GitHub Copilot language models. Also respects the 'github.copilot.enable' setting for SQL."
         },
         "mssqlManager.variableHighlightColor": {
           "type": "string",

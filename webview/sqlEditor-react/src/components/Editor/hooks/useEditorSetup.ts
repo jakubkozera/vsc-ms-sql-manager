@@ -41,6 +41,7 @@ export function useEditorSetup(
           horizontalScrollbarSize: 10,
         },
         useShadowDOM: false,
+        inlineSuggest: { enabled: true },
       });
 
       // Register formatting providers

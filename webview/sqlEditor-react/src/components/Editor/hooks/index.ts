@@ -6,3 +6,4 @@ export { useSchemaProviders } from './useSchemaProviders';
 export { useCteHighlight } from './useCteHighlight';
 export { useVariableHighlight } from './useVariableHighlight';
 export { useWildcardExpansion } from './useWildcardExpansion';
+export { useAiInlineCompletions, useHostSnippetCompletions } from './useHostCompletions';

@@ -469,6 +469,11 @@ export function VSCodeProvider({ children }: { children: React.ReactNode }) {
             },
           });
           break;
+
+        case 'inlineCompletionResult':
+        case 'hostCompletionsResult':
+          // Handled by the editor completion hooks
+          break;
           
         default:
           console.log('[VSCode] Unhandled message type:', (message as any).type);

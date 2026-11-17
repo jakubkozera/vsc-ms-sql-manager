@@ -125,6 +125,25 @@ export interface PasteContentMessage {
   content: string;
 }
 
+export interface InlineCompletionResultMessage {
+  type: 'inlineCompletionResult';
+  requestId: string;
+  text: string;
+}
+
+export interface HostCompletionItem {
+  label: string;
+  insertText: string;
+  detail?: string;
+  documentation?: string;
+}
+
+export interface HostCompletionsResultMessage {
+  type: 'hostCompletionsResult';
+  requestId: string;
+  items: HostCompletionItem[];
+}
+
 export interface HistoryInfoMessage {
   type: 'historyInfo';
   executedAt: string;
@@ -156,6 +175,8 @@ export type IncomingMessage =
   | SnippetsUpdateMessage
   | SnippetInputReceivedMessage
   | PasteContentMessage
+  | InlineCompletionResultMessage
+  | HostCompletionsResultMessage
   | HistoryInfoMessage;
 
 // ============================================
@@ -251,6 +272,29 @@ export interface RequestPasteOutgoing {
   type: 'requestPaste';
 }
 
+export interface RequestInlineCompletionOutgoing {
+  type: 'requestInlineCompletion';
+  requestId: string;
+  prefix: string;
+  suffix: string;
+  schemaContext?: string;
+}
+
+export interface CancelInlineCompletionOutgoing {
+  type: 'cancelInlineCompletion';
+  requestId: string;
+}
+
+export interface RequestHostCompletionsOutgoing {
+  type: 'requestHostCompletions';
+  requestId: string;
+  content: string;
+  /** 0-based line */
+  line: number;
+  /** 0-based character */
+  character: number;
+}
+
 export interface ReadyOutgoing {
   type: 'ready';
 }
@@ -314,6 +358,9 @@ export type OutgoingMessage =
   | CreateSnippetOutgoing
   | ContentChangedOutgoing
   | RequestPasteOutgoing
+  | RequestInlineCompletionOutgoing
+  | CancelInlineCompletionOutgoing
+  | RequestHostCompletionsOutgoing
   | ReadyOutgoing
   | SaveFileOutgoing
   | SaveQueryOutgoing

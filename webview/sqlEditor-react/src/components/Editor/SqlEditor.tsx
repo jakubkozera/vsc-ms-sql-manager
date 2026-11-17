@@ -4,7 +4,7 @@ import type { editor } from 'monaco-editor';
 import { format } from 'sql-formatter';
 import { useVSCode } from '../../context/VSCodeContext';
 import { useFormatOptions } from '../Toolbar/FormatButton';
-import { useEditorSetup, useEditorActions, useCompletionProvider, useSchemaProviders, useWildcardExpansion, useVariableHighlight, useCteHighlight } from './hooks';
+import { useEditorSetup, useEditorActions, useCompletionProvider, useSchemaProviders, useWildcardExpansion, useVariableHighlight, useCteHighlight, useAiInlineCompletions, useHostSnippetCompletions } from './hooks';
 import './SqlEditor.css';
 
 export interface SqlEditorHandle {
@@ -222,6 +222,8 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(
     });
 
     useCompletionProvider(monacoRef, dbSchema, editorReady);
+    useHostSnippetCompletions(monacoRef, editorReady, postMessage);
+    useAiInlineCompletions(monacoRef, dbSchemaRef, editorReady, postMessage);
     useSchemaProviders(monacoRef, editorRef, dbSchema, editorReady, currentConnectionId);
     useWildcardExpansion(monacoRef, editorRef, dbSchema, editorReady);
     useVariableHighlight(monacoRef, editorRef, config.variableHighlightColor, editorReady);

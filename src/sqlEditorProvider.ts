@@ -7,6 +7,7 @@ import { ConnectionProvider } from './connectionProvider';
 import { SchemaCache } from './utils/schemaCache';
 import { checkDmlProtection } from './utils/dmlProtection';
 import { GitHubStarPrompt } from './githubStarPrompt';
+import { AiInlineCompletionService } from './aiInlineCompletion';
 
 export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'mssqlManager.sqlEditor';
@@ -24,6 +25,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     // Schema cache instance
     private schemaCache: SchemaCache;
     private githubStarPrompt: GitHubStarPrompt;
+    private aiInlineCompletion: AiInlineCompletionService;
     // Pending options for the next resolveCustomTextEditor call (auto-execute, history info)
     private pendingEditorOptions: { autoExecute?: boolean; historyInfo?: Record<string, unknown> } | null = null;
     // Counter for unique untitled query names
@@ -39,6 +41,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
         this.setupSnippetsWatcher();
         this.schemaCache = SchemaCache.getInstance(context);
         this.githubStarPrompt = new GitHubStarPrompt(context, outputChannel);
+        this.aiInlineCompletion = new AiInlineCompletionService(outputChannel);
+        context.subscriptions.push(this.aiInlineCompletion);
     }
 
     public async resolveCustomTextEditor(
@@ -498,6 +502,20 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                     });
                     break;
 
+                case 'requestInlineCompletion':
+                    await this.aiInlineCompletion.handleRequest(webviewPanel.webview, message);
+                    break;
+
+                case 'cancelInlineCompletion':
+                    this.aiInlineCompletion.cancel(message.requestId);
+                    break;
+
+                case 'requestHostCompletions': {
+                    const items = await this.getHostSnippetCompletions(document, message.content, message.line, message.character);
+                    webviewPanel.webview.postMessage({ type: 'hostCompletionsResult', requestId: message.requestId, items });
+                    break;
+                }
+
                 case 'createSnippet':
                     await this.createSnippetFromSelection(message.name, message.prefix, message.body, message.description);
                     break;
@@ -560,6 +578,65 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
             }
         });
     }
+    /**
+     * Collects snippet completions (user, workspace and extension-contributed SQL snippets)
+     * from VS Code's completion providers for the backing document, since the webview's
+     * Monaco instance cannot see them.
+     */
+    private async getHostSnippetCompletions(
+        document: vscode.TextDocument,
+        content: string,
+        line: number,
+        character: number
+    ): Promise<Array<{ label: string; insertText: string; detail?: string; documentation?: string }>> {
+        try {
+            await this.waitForDocumentText(document, content, 500);
+            const list = await vscode.commands.executeCommand<vscode.CompletionList>(
+                'vscode.executeCompletionItemProvider',
+                document.uri,
+                new vscode.Position(line, character)
+            );
+            if (!list) {
+                return [];
+            }
+            return list.items
+                .filter(item => item.kind === vscode.CompletionItemKind.Snippet)
+                .map(item => {
+                    const label = typeof item.label === 'string' ? item.label : item.label.label;
+                    const insertText = item.insertText === undefined
+                        ? label
+                        : typeof item.insertText === 'string' ? item.insertText : item.insertText.value;
+                    const documentation = item.documentation === undefined
+                        ? undefined
+                        : typeof item.documentation === 'string' ? item.documentation : item.documentation.value;
+                    const detail = item.detail ?? (typeof item.label === 'string' ? undefined : item.label.description);
+                    return { label, insertText, detail, documentation };
+                });
+        } catch (error) {
+            this.outputChannel.appendLine(`[SqlEditorProvider] Host completions failed: ${error}`);
+            return [];
+        }
+    }
+
+    private waitForDocumentText(document: vscode.TextDocument, content: string, timeoutMs: number): Promise<boolean> {
+        if (document.getText() === content) {
+            return Promise.resolve(true);
+        }
+        return new Promise(resolve => {
+            const finish = (result: boolean) => {
+                clearTimeout(timer);
+                subscription.dispose();
+                resolve(result);
+            };
+            const subscription = vscode.workspace.onDidChangeTextDocument(e => {
+                if (e.document === document && document.getText() === content) {
+                    finish(true);
+                }
+            });
+            const timer = setTimeout(() => finish(false), timeoutMs);
+        });
+    }
+
     private loadSqlSnippets(): void {
         try {
             const snippetsPaths = this.getSnippetsPaths();
@@ -2336,6 +2413,19 @@ COMMIT TRANSACTION;
 
                 case 'getSnippets':
                     panel.webview.postMessage({ type: 'snippetsUpdate', snippets: this.sqlSnippets });
+                    break;
+
+                case 'requestInlineCompletion':
+                    await this.aiInlineCompletion.handleRequest(panel.webview, message);
+                    break;
+
+                case 'cancelInlineCompletion':
+                    this.aiInlineCompletion.cancel(message.requestId);
+                    break;
+
+                case 'requestHostCompletions':
+                    // No backing TextDocument for restored untitled panels
+                    panel.webview.postMessage({ type: 'hostCompletionsResult', requestId: message.requestId, items: [] });
                     break;
 
                 case 'createSnippet':
