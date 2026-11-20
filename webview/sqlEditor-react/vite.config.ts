@@ -23,6 +23,7 @@ export default defineConfig({
       input: {
         sqlEditor: resolve(import.meta.dirname, 'index.html'),
         settings: resolve(import.meta.dirname, 'settings.html'),
+        mcpConnect: resolve(import.meta.dirname, 'mcpConnect.html'),
       },
       output: {
         entryFileNames: '[name].js',

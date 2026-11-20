@@ -2,7 +2,7 @@
   "name": "ms-sql-manager",
   "displayName": "MS SQL Manager",
   "description": "Manage Microsoft SQL Server databases with connection management, schema browsing, and query execution.",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "publisher": "jakubkozera",
   "icon": "ms-sql-manager.png",
   "sponsor": {
@@ -399,16 +399,19 @@
       },
       {
         "command": "mssqlManager.openSqlChat",
-        "title": "Open SQL Chat",
+        "title": "Ask Copilot about Database",
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "mssqlManager.executeChatGeneratedQuery",
-        "title": "Execute Chat Generated Query"
+        "command": "mssqlManager.connectMcp",
+        "title": "Connect MCP",
+        "category": "MS SQL Manager"
       },
       {
-        "command": "mssqlManager.insertChatGeneratedQuery",
-        "title": "Insert Chat Generated Query"
+        "command": "mssqlManager.copyMcpConfig",
+        "title": "Copy MCP Server Configuration",
+        "category": "MS SQL Manager",
+        "icon": "$(copy)"
       },
       {
         "command": "mssqlManager.addDatabaseInstructions",
@@ -535,40 +538,136 @@
         "icon": "$(file-code)"
       }
     ],
-    "chatParticipants": [
+    "languageModelTools": [
       {
-        "id": "ms-sql-manager.sql",
-        "name": "sql",
-        "fullName": "SQL Database Assistant",
-        "description": "Ask questions about your SQL databases and get help with queries",
-        "isSticky": true,
-        "commands": [
-          {
-            "name": "explain",
-            "description": "Explain a SQL query or database concept"
-          },
-          {
-            "name": "optimize",
-            "description": "Suggest optimizations for a SQL query"
-          },
-          {
-            "name": "schema",
-            "description": "Show information about database tables and structure"
-          }
+        "name": "mssql_list_databases",
+        "displayName": "List SQL Server Databases",
+        "toolReferenceName": "mssqlDatabases",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(database)",
+        "tags": [
+          "sql",
+          "database",
+          "mssql"
         ],
-        "disambiguation": [
-          {
-            "category": "database",
-            "description": "The user wants help with SQL queries, database operations, or understanding database schemas.",
-            "examples": [
-              "Show me all customers from New York",
-              "How do I join these two tables?",
-              "Create a query to find the top selling products",
-              "What's the structure of the users table?",
-              "Help me optimize this slow query"
-            ]
+        "userDescription": "List SQL Server connections and databases connected in MS SQL Manager.",
+        "modelDescription": "Lists the Microsoft SQL Server connections and databases that are currently connected in the MS SQL Manager extension, with their connectionId and database values and which one is current. Use it when the user did not say which database to work with or refers to a database/server by name. Pass the returned connectionId and database to mssql_get_schema, mssql_run_query and mssql_open_query.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "mssql_get_schema",
+        "displayName": "Get SQL Server Database Schema",
+        "toolReferenceName": "mssqlSchema",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(symbol-structure)",
+        "tags": [
+          "sql",
+          "database",
+          "mssql",
+          "schema"
+        ],
+        "userDescription": "Give Copilot the schema and database instructions of a connected SQL Server database.",
+        "modelDescription": "Returns the schema of a Microsoft SQL Server database connected in MS SQL Manager: tables (columns, data types, primary/foreign keys, indexes, row counts), views, stored procedures and functions, the server version/compatibility level, and the user's database-specific instructions (business rules, naming conventions). ALWAYS call this before writing, explaining or optimizing a SQL query for the user's database, and use only objects it returns — never guess table or column names. Follow the returned database instructions. If the target database is ambiguous the user is asked to pick one. For large databases pass 'objects' to get only the tables you need.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "connectionId": {
+              "type": "string",
+              "description": "Connection id (or connection name) from mssql_list_databases or a previous tool result. Omit to infer it."
+            },
+            "database": {
+              "type": "string",
+              "description": "Database name. Omit to infer it from the connection, the active SQL editor or previous calls."
+            },
+            "objects": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Optional object names to include, e.g. ['dbo.Orders', 'Customer*']. Omit for the whole schema."
+            }
           }
-        ]
+        }
+      },
+      {
+        "name": "mssql_run_query",
+        "displayName": "Run SQL Server Query",
+        "toolReferenceName": "mssqlQuery",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(play)",
+        "tags": [
+          "sql",
+          "database",
+          "mssql",
+          "query"
+        ],
+        "userDescription": "Run a T-SQL query on a connected SQL Server database and return the results to Copilot.",
+        "modelDescription": "Executes T-SQL against a Microsoft SQL Server database connected in MS SQL Manager and returns every result set as JSON (limited to maxRows rows each) or the number of affected rows. Use it to look at data, verify assumptions or answer questions about the data. Call mssql_get_schema first so the query only uses existing objects. Batch several independent SELECTs in one call when possible. For INSERT/UPDATE/DELETE/DDL explain the impact and get the user's consent before calling. Reuse the connectionId and database returned in earlier results.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sql": {
+              "type": "string",
+              "description": "The T-SQL to execute."
+            },
+            "connectionId": {
+              "type": "string",
+              "description": "Connection id (or connection name). Omit to infer it."
+            },
+            "database": {
+              "type": "string",
+              "description": "Database name. Omit to infer it."
+            },
+            "maxRows": {
+              "type": "number",
+              "description": "Maximum number of rows returned per result set (default 100, max 1000)."
+            }
+          },
+          "required": [
+            "sql"
+          ]
+        }
+      },
+      {
+        "name": "mssql_open_query",
+        "displayName": "Open Query in SQL Editor",
+        "toolReferenceName": "mssqlOpenQuery",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(file-code)",
+        "tags": [
+          "sql",
+          "database",
+          "mssql"
+        ],
+        "userDescription": "Open a T-SQL query in the MS SQL Manager SQL editor (optionally executing it).",
+        "modelDescription": "Opens a T-SQL query in a new MS SQL Manager SQL editor tab bound to the target connection and database, optionally executing it so the user sees the results grid. Use it when the user wants the query in the editor or wants to see the full result set themselves.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sql": {
+              "type": "string",
+              "description": "The T-SQL to open."
+            },
+            "connectionId": {
+              "type": "string",
+              "description": "Connection id (or connection name). Omit to infer it."
+            },
+            "database": {
+              "type": "string",
+              "description": "Database name. Omit to infer it."
+            },
+            "execute": {
+              "type": "boolean",
+              "description": "Execute the query right after opening it. Defaults to false."
+            }
+          },
+          "required": [
+            "sql"
+          ]
+        }
       }
     ],
     "menus": {
@@ -580,6 +679,10 @@
         {
           "command": "mssqlManager.collapseAll",
           "group": "0_view@1"
+        },
+        {
+          "command": "mssqlManager.connectMcp",
+          "group": "0_view@2"
         },
         {
           "command": "mssqlManager.deployDockerMssql",
@@ -1394,14 +1497,6 @@
           "when": "false"
         },
         {
-          "command": "mssqlManager.executeChatGeneratedQuery",
-          "when": "false"
-        },
-        {
-          "command": "mssqlManager.insertChatGeneratedQuery",
-          "when": "false"
-        },
-        {
           "command": "mssqlManager.removeNotebook",
           "when": "false"
         },
@@ -1486,7 +1581,10 @@
         "mssqlManager.multipleResultSetsDisplay": {
           "type": "string",
           "default": "single-view",
-          "enum": ["single-view", "separately"],
+          "enum": [
+            "single-view",
+            "separately"
+          ],
           "enumDescriptions": [
             "Single view — all result sets displayed stacked in the results tab.",
             "Separately — each result set shown on its own tab (Set 1, Set 2, ...)."
@@ -1496,7 +1594,12 @@
         "mssqlManager.numberFormat": {
           "type": "string",
           "default": "plain",
-          "enum": ["plain", "locale", "fixed-2", "fixed-4"],
+          "enum": [
+            "plain",
+            "locale",
+            "fixed-2",
+            "fixed-4"
+          ],
           "enumDescriptions": [
             "Plain — no formatting, values displayed as-is (e.g. 1234567.89)",
             "Locale — locale-aware thousand separators (e.g. 1,234,567.89)",
@@ -1595,6 +1698,18 @@
           "default": true,
           "description": "Before executing UPDATE or DELETE, run the statement in a rolled-back transaction to check the number of affected rows. If the count exceeds the safe threshold, a confirmation dialog is shown."
         },
+        "mssqlManager.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Run a local MCP server (Streamable HTTP on `127.0.0.1`, bearer-token protected) exposing the `list_databases`, `get_schema` and `run_query` tools, so any MCP client (Claude, Cursor, Copilot CLI, ...) can use the connections opened in MS SQL Manager. Use **MS SQL Manager: Copy MCP Server Configuration** to get the client configuration. Inside VS Code, Copilot uses the built-in `#mssqlSchema` / `#mssqlQuery` tools instead."
+        },
+        "mssqlManager.mcp.port": {
+          "type": "number",
+          "default": 47815,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Port of the local MCP server (bound to 127.0.0.1 only)."
+        },
         "mssqlManager.dmlProtection.maxAffectedRows": {
           "type": "number",
           "default": 100,
@@ -1641,8 +1756,10 @@
   },
   "dependencies": {
     "@azure/identity": "^4.13.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "msnodesqlv8": "^5.3.0",
-    "mssql": "^12.7.1"
+    "mssql": "^12.7.1",
+    "zod": "^4.6.7"
   },
   "allowScripts": {
     "msnodesqlv8@5.3.0": true

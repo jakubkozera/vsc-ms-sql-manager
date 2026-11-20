@@ -8,6 +8,7 @@ import { SchemaCache } from './utils/schemaCache';
 import { checkDmlProtection } from './utils/dmlProtection';
 import { GitHubStarPrompt } from './githubStarPrompt';
 import { AiInlineCompletionService } from './aiInlineCompletion';
+import { parseCompositeConnectionId } from './ai/sqlAgentCore';
 
 export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'mssqlManager.sqlEditor';
@@ -30,6 +31,8 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
     private pendingEditorOptions: { autoExecute?: boolean; historyInfo?: Record<string, unknown> } | null = null;
     // Counter for unique untitled query names
     private untitledCounter = 0;
+    // Last focused SQL editor webview (used as a hint for Copilot / MCP database tools)
+    private lastActiveWebview: vscode.Webview | null = null;
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -63,6 +66,7 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
 
         // Track webview to document mapping
         this.webviewToDocument.set(webviewPanel.webview, document.uri);
+        this.trackActivePanel(webviewPanel);
 
         // Guard flag to prevent echo-back: when the webview sends a content change,
         // we apply it to the document, which triggers onDidChangeTextDocument;
@@ -577,6 +581,30 @@ export class SqlEditorProvider implements vscode.CustomTextEditorProvider {
                 this.updateConnectionsList(webviewPanel.webview);
             }
         });
+    }
+
+    private trackActivePanel(panel: vscode.WebviewPanel): void {
+        if (panel.active) {
+            this.lastActiveWebview = panel.webview;
+        }
+        panel.onDidChangeViewState(e => {
+            if (e.webviewPanel.active) {
+                this.lastActiveWebview = e.webviewPanel.webview;
+            }
+        });
+        panel.onDidDispose(() => {
+            if (this.lastActiveWebview === panel.webview) {
+                this.lastActiveWebview = null;
+            }
+        });
+    }
+
+    /** Connection/database selected in the most recently focused SQL editor, if any. */
+    public getActiveEditorTarget(): { connectionId: string; database?: string } | undefined {
+        if (!this.lastActiveWebview || this.disposedWebviews.has(this.lastActiveWebview)) {
+            return undefined;
+        }
+        return parseCompositeConnectionId(this.webviewSelectedConnection.get(this.lastActiveWebview));
     }
     /**
      * Collects snippet completions (user, workspace and extension-contributed SQL snippets)
@@ -2166,6 +2194,7 @@ COMMIT TRANSACTION;
         const syntheticUri = vscode.Uri.parse(`untitled:query-${Date.now()}`);
         this.webviewToDocument.set(panel.webview, syntheticUri);
         this.webviewSelectedConnection.set(panel.webview, compositeId);
+        this.trackActivePanel(panel);
 
         panel.webview.onDidReceiveMessage(async message => {
             switch (message.type) {

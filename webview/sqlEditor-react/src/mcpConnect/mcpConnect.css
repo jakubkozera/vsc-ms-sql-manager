@@ -1,0 +1,104 @@
+body {
+  margin: 0;
+  color: var(--vscode-editor-foreground, #242424);
+  background: var(--vscode-editor-background, #fff);
+  font: var(--vscode-font-size, 13px)/1.6 var(--vscode-font-family, system-ui, sans-serif);
+}
+
+.mcp-guide {
+  box-sizing: border-box;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: clamp(20px, 5vw, 48px);
+}
+
+.mcp-guide h1,
+.mcp-guide h2 {
+  line-height: 1.25;
+}
+
+.mcp-guide h1 {
+  margin: 4px 0 12px;
+  font-size: 2.4em;
+}
+
+.mcp-guide h2 {
+  margin: 0 0 12px;
+  font-size: 1.35em;
+}
+
+.mcp-guide section {
+  border-top: 1px solid var(--vscode-panel-border, #ccc);
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
+.mcp-eyebrow {
+  margin: 0;
+  color: var(--vscode-descriptionForeground, #555);
+  font-weight: 600;
+}
+
+.mcp-guide ol,
+.mcp-guide ul {
+  padding-inline-start: 24px;
+}
+
+.mcp-guide li + li,
+.mcp-guide dt:not(:first-child) {
+  margin-top: 8px;
+}
+
+.mcp-guide dd {
+  margin: 2px 0 0;
+}
+
+.mcp-guide code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, #eee);
+  color: var(--vscode-textPreformat-foreground, inherit);
+  font-family: var(--vscode-editor-font-family, monospace);
+  overflow-wrap: anywhere;
+}
+
+.mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.mcp-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  background: var(--vscode-button-background, #005a9e);
+  color: var(--vscode-button-foreground, #fff);
+  cursor: pointer;
+  font: inherit;
+}
+
+.mcp-actions button:hover {
+  background: var(--vscode-button-hoverBackground, #004a82);
+}
+
+.mcp-actions .mcp-secondary {
+  background: var(--vscode-button-secondaryBackground, #e5e5e5);
+  color: var(--vscode-button-secondaryForeground, #222);
+}
+
+.mcp-actions .mcp-secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #d5d5d5);
+}
+
+.mcp-actions button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: 2px;
+}
+
+.mcp-note {
+  border-inline-start: 3px solid var(--vscode-textBlockQuote-border, #888);
+  background: var(--vscode-textBlockQuote-background, #eee);
+  padding: 8px 12px;
+}

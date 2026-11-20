@@ -149,6 +149,10 @@ Query results appear in a dedicated webview panel with features:
 - **Disconnect**: Use the disconnect button to close active connections
 - **Status monitoring**: Check connection status in the status bar
 
+### Connecting an MCP Client
+
+Open **Database Explorer → More Options (…) → Connect MCP** for the setup guide and tool reference. Use **Copy MCP Server Configuration** to copy the local Streamable HTTP endpoint and bearer token. Keep the token private and leave VS Code open with an active SQL connection while using the client.
+
 ## Extension Commands
 
 | Command | Description |
@@ -156,6 +160,7 @@ Query results appear in a dedicated webview panel with features:
 | `MS SQL Manager: Connect to Database` | Open connection form in webview |
 | `MS SQL Manager: Execute Query` | Execute SQL query from active editor |
 | `MS SQL Manager: Manage Connections` | Manage saved connection profiles |
+| `MS SQL Manager: Connect MCP` | Open the MCP setup guide and tool reference |
 | `MS SQL Manager: Refresh` | Refresh schema explorer |
 | `Generate SELECT Script` | Create SELECT statement for selected table |
 
@@ -231,4 +236,3 @@ This extension is built following VS Code extension best practices:
 ## License
 
 This project is provided as-is for educational and development purposes.
-

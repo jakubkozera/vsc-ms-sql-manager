@@ -20,6 +20,7 @@ Extension ↔ webview communication uses `postMessage` / `onDidReceiveMessage` w
 | `src/unifiedTreeProvider.ts` | Tree view: servers → databases → tables/views/procs/functions |
 | `src/commands/index.ts` | Central command registration — delegates to `register*Commands()` modules |
 | `src/utils/schemaCache.ts` | Schema caching singleton |
+| `src/ai/` | Copilot LM tools (`languageModelTools.ts`) + local MCP server (`mcpServer.ts`) sharing `DatabaseToolsService` (target resolution, schema + DB instructions, query execution) |
 
 ### Command registration pattern
 

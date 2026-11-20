@@ -5,6 +5,29 @@ All notable changes to the MS SQL Manager extension will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0] - 2026-11-20
+
+### Added
+
+- **Copilot agent tools** (VS Code + GitHub Copilot) — replace the deprecated `@sql` chat participant. Available in agent mode and referenceable in prompts:
+  - `#mssqlDatabases` (`mssql_list_databases`) — lists active connections and their databases.
+  - `#mssqlSchema` (`mssql_get_schema`) — returns tables (columns, keys, indexes), views, routines, the server version / compatibility level and the linked **database instructions**, so the agent writes queries against real objects instead of guessing. Supports an `objects` filter for large databases.
+  - `#mssqlQuery` (`mssql_run_query`) — runs T-SQL and returns the result sets; data-modifying statements are clearly marked in the confirmation dialog.
+  - `#mssqlOpenQuery` (`mssql_open_query`) — opens (and optionally executes) a query in the MS SQL Manager SQL editor.
+- **MCP server for any MCP client** (Claude, Cursor, Copilot CLI, ...) — a local Streamable HTTP server (`127.0.0.1` only, bearer-token protected) with `list_databases`, `get_schema` and `run_query` tools that reuse the connections opened in MS SQL Manager. Disabled by default; enable it with `mssqlManager.mcp.enabled` or run **MS SQL Manager: Copy MCP Server Configuration**, which also copies the client configuration. Port: `mssqlManager.mcp.port` (default `47815`).
+- **Choosing the database with several connections / server connections**
+  - The target is taken from the tool parameters, the database chosen earlier in the conversation, or the database selected in the active SQL editor. System databases are skipped unless requested by name.
+  - When it still can't be determined, Copilot tools show a picker, and the MCP server asks via MCP elicitation (or returns the list of databases so the agent asks the user).
+  - Data-modifying statements over MCP require confirmation (elicitation, or a VS Code dialog when the client can't elicit).
+
+### Changed
+
+- **Ask Copilot about Database** (tree context menu, formerly *Open SQL Chat*) opens Copilot agent mode with `#mssqlSchema` for the selected database.
+
+### Removed
+
+- The `@sql` chat participant (chat participants are no longer supported by the Copilot harness) together with its `/explain`, `/optimize` and `/schema` commands.
+
 ## [0.21.0] - 2026-11-17
 
 ### Added
